@@ -1,0 +1,19 @@
+.main-layout {
+    display: flex;
+    min-height: 100vh;
+}
+
+.main-content {
+    flex: 1;
+    margin-left: 260px;
+    /* Sidebar width */
+    display: flex;
+    flex-direction: column;
+    background-color: var(--color-bg-main);
+    min-height: 100vh;
+}
+
+.page-content {
+    padding: 32px;
+    flex: 1;
+}

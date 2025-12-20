@@ -1,0 +1,120 @@
+.templates-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.templates-filters {
+    display: flex;
+    gap: 12px;
+}
+
+.filter-btn {
+    padding: 8px 16px;
+    border-radius: var(--radius-full);
+    border: 1px solid var(--color-border);
+    background-color: transparent;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+    font-size: 14px;
+    transition: all 0.2s;
+}
+
+.filter-btn:hover {
+    background-color: var(--color-bg-surface);
+    color: var(--color-text-primary);
+}
+
+.filter-btn.active {
+    background-color: #e7f7f3;
+    color: var(--color-primary);
+    border-color: #e7f7f3;
+}
+
+.templates-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 24px;
+}
+
+.template-card {
+    background-color: var(--color-bg-surface);
+    border-radius: var(--radius-lg);
+    padding: 20px;
+    border: 1px solid var(--color-border);
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.template-card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-sm);
+}
+
+.card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.template-name {
+    font-weight: 600;
+    font-family: monospace;
+    font-size: 14px;
+    color: var(--color-text-primary);
+}
+
+.status-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 99px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.status-badge.approved {
+    background-color: #ecfdf5;
+    color: #059669;
+}
+
+.status-badge.pending {
+    background-color: #fff7ed;
+    color: #c2410c;
+}
+
+.status-badge.rejected {
+    background-color: #fef2f2;
+    color: #dc2626;
+}
+
+.template-content {
+    background-color: var(--color-bg-main);
+    padding: 12px;
+    border-radius: var(--radius-md);
+    color: var(--color-text-secondary);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 80px;
+}
+
+.card-footer {
+    display: flex;
+    gap: 8px;
+    margin-top: auto;
+}
+
+.lang-tag,
+.category-tag {
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 4px;
+    background-color: #f3f4f6;
+    color: var(--color-text-secondary);
+    font-weight: 500;
+}

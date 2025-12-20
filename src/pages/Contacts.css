@@ -1,0 +1,120 @@
+.contacts-page {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+}
+
+.header-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.secondary-btn {
+    background-color: transparent;
+    border: 1px solid var(--color-border);
+    padding: 10px 20px;
+    border-radius: var(--radius-md);
+    font-weight: 600;
+    color: var(--color-text-primary);
+}
+
+.secondary-btn:hover {
+    background-color: var(--color-bg-surface);
+}
+
+.contacts-controls {
+    display: flex;
+    gap: 12px;
+    background-color: var(--color-bg-surface);
+    padding: 16px;
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+}
+
+.search-box {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 16px;
+    background-color: var(--color-bg-main);
+    border-radius: var(--radius-md);
+}
+
+.search-box input {
+    border: none;
+    background: none;
+    font-size: 14px;
+    width: 100%;
+    outline: none;
+}
+
+.contacts-table-container {
+    background-color: var(--color-bg-surface);
+    border-radius: var(--radius-lg);
+    border: 1px solid var(--color-border);
+    overflow-x: auto;
+}
+
+.contacts-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.contacts-table th,
+.contacts-table td {
+    padding: 16px;
+    text-align: left;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.contacts-table th {
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    font-size: 14px;
+    background-color: #f9fafb;
+}
+
+.contacts-table td {
+    font-size: 14px;
+    color: var(--color-text-primary);
+}
+
+.tag {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+}
+
+.tag.blue {
+    background-color: #dbeafe;
+    color: #1e40af;
+}
+
+.tag.gray {
+    background-color: #f3f4f6;
+    color: #374151;
+}
+
+.tag.red {
+    background-color: #fee2e2;
+    color: #991b1b;
+}
+
+.badge.active {
+    color: #059669;
+}
+
+.badge.inactive {
+    color: #dc2626;
+}
+
+.action-btn {
+    color: var(--color-text-muted);
+    padding: 4px;
+}
+
+.action-btn:hover {
+    color: var(--color-text-primary);
+}
