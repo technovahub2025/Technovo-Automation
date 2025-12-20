@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { LayoutDashboard, MessageSquare, Radio, Users, Settings, Zap, LogOut, FileText } from 'lucide-react';
+import logo from '../../src/assets/logo.png';
 import './Sidebar.css';
 
 const SidebarItem = ({ icon: Icon, label, to }) => (
@@ -17,7 +18,9 @@ const Sidebar = () => {
     return (
         <aside className="sidebar">
             <div className="logo-container">
-                <div className="logo-icon">T</div>
+                <div className="logo-icon"  >
+                <img src={logo}/>
+                </div>
                 <span className="logo-text">Technovo Hub</span>
             </div>
 

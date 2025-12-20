@@ -23,7 +23,6 @@
 .logo-icon {
     width: 32px;
     height: 32px;
-    background-color: var(--color-secondary);
     color: white;
     border-radius: 8px;
     display: flex;
@@ -31,6 +30,14 @@
     justify-content: center;
     font-weight: bold;
     font-size: 20px;
+}
+
+.logo-icon img {
+    width: 100%;           
+    height: 100%;
+    object-fit: contain;
+    display: block;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.25));
 }
 
 .logo-text {
