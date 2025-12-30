@@ -7,6 +7,7 @@ import Broadcast from './pages/Broadcast';
 import Templates from './pages/Templates';
 import Contacts from './pages/Contacts';
 import Automation from './pages/Automation';
+import VoiceAutomation from "./pages/VoiceAutomation"
 
 function App() {
   return (
@@ -19,6 +20,7 @@ function App() {
           <Route path="/templates" element={<Templates />} />
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/automation" element={<Automation />} />
+          <Route path="/voice-automation" element={<VoiceAutomation />} />
         </Routes>
       </MainLayout>
     </Router>

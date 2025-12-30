@@ -1,0 +1,40 @@
+.voice-automation {
+  padding: 24px;
+}
+
+.voice-automation h2 {
+  font-size: 22px;
+  margin-bottom: 4px;
+}
+
+.subtitle {
+  color: #6b7280;
+  margin-bottom: 20px;
+}
+
+.voice-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.voice-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 20px;
+  border: 1px solid #e5e7eb;
+  transition: 0.2s ease;
+}
+
+.voice-card:hover {
+  border-color: #6366f1;
+}
+
+.voice-card svg {
+  color: #6366f1;
+  margin-bottom: 10px;
+}
+
+.voice-card h4 {
+  margin-bottom: 6px;
+}
