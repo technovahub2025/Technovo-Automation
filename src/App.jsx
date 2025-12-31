@@ -8,7 +8,7 @@ import Templates from './pages/Templates';
 import Contacts from './pages/Contacts';
 import Automation from './pages/Automation';
 import VoiceAutomation from "./pages/VoiceAutomation"
-
+import MissedCalls from './pages/MissedCalls';
 function App() {
   return (
     <Router>
@@ -21,6 +21,7 @@ function App() {
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/automation" element={<Automation />} />
           <Route path="/voice-automation" element={<VoiceAutomation />} />
+          <Route path="/missedcalls" element={<MissedCalls />} /> 
         </Routes>
       </MainLayout>
     </Router>

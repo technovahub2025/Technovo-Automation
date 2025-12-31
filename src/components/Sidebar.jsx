@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, MessageSquare, Radio, Users, Settings, Zap, LogOut, FileText, Phone } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Radio, Users, Settings, Zap, LogOut, FileText, Phone,PhoneMissed } from 'lucide-react';
 import logo from '../../src/assets/logo.png';
 import './Sidebar.css';
 
@@ -32,6 +32,7 @@ const Sidebar = () => {
                 <SidebarItem icon={Users} label="Contacts" to="/contacts" />
                 <SidebarItem icon={Zap} label="Automation" to="/automation" />
                 <SidebarItem icon={Phone} label="Voice Automation" to="/voice-automation" />
+                <SidebarItem icon={PhoneMissed} label="MissedCalls" to="/missedcalls" />
             </nav>
 
             <div className="sidebar-footer">
