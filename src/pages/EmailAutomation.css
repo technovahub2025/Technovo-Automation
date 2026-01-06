@@ -1,0 +1,443 @@
+/* Email Automation Dashboard - Scoped Styles Only */
+/* All styles are scoped to prevent conflicts with other pages */
+
+/* Notification Styles - Scoped to Email Automation */
+.email-automation .notification {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 50;
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  color: white;
+  font-weight: 500;
+  transition: all 0.3s;
+  transform: translateY(0);
+}
+
+.email-automation .notification.success {
+  background-color: #10b981;
+}
+
+.email-automation .notification.error {
+  background-color: #ef4444;
+}
+
+.email-automation .notification.info {
+  background-color: #3b82f6;
+}
+
+/* Main Container - Scoped */
+.email-automation {
+  padding: 0;
+  min-height: 100vh;
+  background-color: #f3f4f6;
+  display: block !important;
+  place-items: initial !important;
+}
+
+/* Header Styles - Scoped */
+.email-automation .automation-header {
+  background: linear-gradient(to right, #9333ea, #4f46e5);
+  color: white;
+  padding: 1.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+.email-automation .header-left {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.email-automation .header-logo {
+  height: 2.5rem;
+  width: auto;
+  border-radius: 0.5rem;
+  object-fit: contain;
+}
+
+.email-automation .automation-header h1 {
+  font-size: 1.875rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.email-automation .tab-navigation {
+  display: flex;
+  gap: 1.5rem;
+}
+
+.email-automation .tab-btn {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 0.5rem 1.5rem;
+  border-radius: 0.5rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.email-automation .tab-btn:hover {
+  background-color: rgba(255, 255, 255, 0.2);
+}
+
+.email-automation .tab-btn.active {
+  background-color: rgba(255, 255, 255, 0.25);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Content Styles - Scoped */
+.email-automation .automation-content {
+  padding: 2rem;
+}
+
+/* Dashboard View - Scoped */
+.email-automation .dashboard-view {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+/* Stats Grid - Scoped */
+.email-automation .stats-grid {
+  display: grid;
+  grid-template-columns: repeat(1, 1fr);
+  gap: 1.5rem;
+}
+
+@media (min-width: 768px) {
+  .email-automation .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .email-automation .stats-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (min-width: 1280px) {
+  .email-automation .stats-grid {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+.email-automation .stat-card {
+  background-color: white;
+  padding: 1.5rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s;
+}
+
+.email-automation .stat-card:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+  transform: translateY(-0.125rem);
+}
+
+.email-automation .stat-card h3 {
+  font-size: 0.875rem;
+  color: #6b7280;
+  margin: 0 0 0.5rem 0;
+  font-weight: 500;
+}
+
+.email-automation .stat-value {
+  font-size: 1.875rem;
+  font-weight: 700;
+  color: #1f2937;
+  margin-bottom: 0.5rem;
+}
+
+.email-automation .stat-change {
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.email-automation .stat-change.positive {
+  color: #10b981;
+}
+
+.email-automation .stat-change.negative {
+  color: #ef4444;
+}
+
+/* Section Cards - Scoped */
+.email-automation .section-card {
+  background-color: white;
+  border-radius: 0.75rem;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.email-automation .section-card h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #1f2937;
+  margin: 0 0 1.5rem 0;
+}
+
+.email-automation .section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.email-automation .history-count {
+  font-size: 0.75rem;
+  color: #6b7280;
+  font-weight: 500;
+}
+
+/* Activity Section - Scoped */
+.email-automation .activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.email-automation .activity-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  background-color: #f9fafb;
+  border-radius: 0.5rem;
+  border-left: 4px solid #9333ea;
+  transition: background-color 0.2s;
+}
+
+.email-automation .activity-item:hover {
+  background-color: #f3f4f6;
+}
+
+.email-automation .activity-info {
+  flex: 1;
+}
+
+.email-automation .filename {
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 0.25rem;
+}
+
+.email-automation .date {
+  font-size: 0.75rem;
+  color: #6b7280;
+}
+
+.email-automation .activity-stats {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+}
+
+.email-automation .keywords {
+  background-color: #dbeafe;
+  color: #2563eb;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.email-automation .score {
+  background-color: #f3e8ff;
+  color: #7c3aed;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+/* Quick Actions - Scoped */
+.email-automation .action-buttons {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.email-automation .action-btn {
+  padding: 0.75rem 1.5rem;
+  border-radius: 0.5rem;
+  border: none;
+  cursor: pointer;
+  font-weight: 500;
+  transition: all 0.2s;
+  font-size: 0.875rem;
+}
+
+.email-automation .action-btn.primary {
+  background: linear-gradient(to right, #9333ea, #4f46e5);
+  color: white;
+}
+
+.email-automation .action-btn.primary:hover {
+  opacity: 0.9;
+  transform: translateY(-0.125rem);
+}
+
+.email-automation .action-btn.secondary {
+  background-color: #f3f4f6;
+  color: #4b5563;
+  border: 1px solid #d1d5db;
+}
+
+.email-automation .action-btn.secondary:hover {
+  background-color: #e5e7eb;
+}
+
+.email-automation .action-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Extractor View - Scoped */
+.email-automation .extractor-view {
+  background-color: white;
+  border-radius: 0.75rem;
+  overflow: hidden;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+/* PDF Extractor specific styles - Scoped to PDF Extractor component */
+.pdf-extractor .data-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0;
+}
+
+.pdf-extractor .data-table th,
+.pdf-extractor .data-table td {
+  border: 1px solid #cbd5e1;
+  padding: 0.5rem;
+  text-align: left;
+  font-size: 0.875rem;
+}
+
+.pdf-extractor .data-table th {
+  background: #f1f5f9;
+  font-weight: 600;
+  color: #374151;
+}
+
+.pdf-extractor .data-table td {
+  color: #111827;
+  word-break: break-word;
+}
+
+.pdf-extractor .text-output {
+  font-family: ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.875rem;
+  line-height: 1.4;
+  color: #111827;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.pdf-extractor .error-message {
+  color: #dc2626;
+  font-weight: 500;
+  padding: 1rem;
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  border-radius: 0.375rem;
+}
+
+/* Responsive Design - Scoped */
+@media (max-width: 768px) {
+  .email-automation .automation-header {
+    flex-direction: column;
+    gap: 1rem;
+    text-align: center;
+    padding: 1rem;
+  }
+  
+  .email-automation .header-left {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+  
+  .email-automation .header-logo {
+    height: 2.25rem;
+  }
+  
+  .email-automation .automation-header h1 {
+    font-size: 1.5rem;
+  }
+  
+  .email-automation .tab-navigation {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  
+  .email-automation .automation-content {
+    padding: 1rem;
+  }
+  
+  .email-automation .stats-grid {
+    grid-template-columns: repeat(1, 1fr);
+  }
+  
+  .email-automation .activity-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.75rem;
+    padding: 0.75rem;
+  }
+  
+  .email-automation .activity-stats {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+  
+  .email-automation .action-buttons {
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+  
+  .email-automation .action-btn {
+    width: 100%;
+    padding: 1rem;
+  }
+  
+  .email-automation .section-card {
+    padding: 1rem;
+  }
+  
+  .email-automation .section-card h2 {
+    font-size: 1.125rem;
+  }
+}
+
+@media (max-width: 480px) {
+  .email-automation .header-logo {
+    height: 2rem;
+  }
+  
+  .email-automation .automation-header h1 {
+    font-size: 1.25rem;
+  }
+  
+  .email-automation .tab-btn {
+    padding: 0.375rem 1rem;
+    font-size: 0.75rem;
+  }
+  
+  .email-automation .stat-value {
+    font-size: 1.5rem;
+  }
+}

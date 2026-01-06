@@ -9,6 +9,8 @@ import Contacts from './pages/Contacts';
 import Automation from './pages/Automation';
 import VoiceAutomation from "./pages/VoiceAutomation"
 import MissedCalls from './pages/MissedCalls';
+import EmailAutomation from './pages/EmailAutomation';
+import PDFExtractor from './pages/PDFExtractor';
 function App() {
   return (
     <Router>
@@ -21,7 +23,9 @@ function App() {
           <Route path="/contacts" element={<Contacts />} />
           <Route path="/automation" element={<Automation />} />
           <Route path="/voice-automation" element={<VoiceAutomation />} />
-          <Route path="/missedcalls" element={<MissedCalls />} /> 
+          <Route path="/missedcalls" element={<MissedCalls />} />
+          <Route path="/email-automation" element={<EmailAutomation />} />
+          <Route path="/pdf-extractor" element={<PDFExtractor />} />
         </Routes>
       </MainLayout>
     </Router>
