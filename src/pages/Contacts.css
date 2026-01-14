@@ -4,56 +4,102 @@
     gap: 24px;
 }
 
+.page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.page-header h2 {
+    font-size: 24px;
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+
+.page-header p {
+    color: var(--color-text-secondary);
+}
+
 .header-actions {
     display: flex;
     gap: 12px;
 }
 
-.secondary-btn {
-    background-color: transparent;
-    border: 1px solid var(--color-border);
-    padding: 10px 20px;
-    border-radius: var(--radius-md);
-    font-weight: 600;
-    color: var(--color-text-primary);
+/* Notification styles */
+.notification {
+    padding: 16px;
+    border-radius: 8px;
+    margin-bottom: 24px;
+    font-weight: 500;
 }
 
-.secondary-btn:hover {
-    background-color: var(--color-bg-surface);
+.notification.success {
+    background-color: #10b981;
+    color: white;
+}
+
+.notification.error {
+    background-color: #ef4444;
+    color: white;
 }
 
 .contacts-controls {
     display: flex;
-    gap: 12px;
-    background-color: var(--color-bg-surface);
-    padding: 16px;
-    border-radius: var(--radius-lg);
-    border: 1px solid var(--color-border);
+    gap: 16px;
+    align-items: center;
 }
 
 .search-box {
-    flex: 1;
     display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 8px 16px;
-    background-color: var(--color-bg-main);
+    gap: 8px;
+    background-color: var(--color-bg-surface);
+    border: 1px solid var(--color-border);
     border-radius: var(--radius-md);
+    padding: 8px 12px;
+    flex: 1;
+    max-width: 400px;
 }
 
 .search-box input {
     border: none;
-    background: none;
-    font-size: 14px;
-    width: 100%;
     outline: none;
+    background: none;
+    flex: 1;
+    font-size: 14px;
+}
+
+.icon-btn {
+    padding: 8px;
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    transition: all 0.2s;
+}
+
+.icon-btn:hover {
+    background-color: var(--color-bg-secondary);
+    color: var(--color-text-primary);
+}
+
+.delete-selected {
+    background-color: #fef2f2;
+    color: #dc2626;
+    border-color: #dc2626;
+}
+
+.delete-selected:hover {
+    background-color: #dc2626;
+    color: white;
 }
 
 .contacts-table-container {
     background-color: var(--color-bg-surface);
-    border-radius: var(--radius-lg);
     border: 1px solid var(--color-border);
-    overflow-x: auto;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
 }
 
 .contacts-table {
@@ -63,7 +109,7 @@
 
 .contacts-table th,
 .contacts-table td {
-    padding: 16px;
+    padding: 12px 16px;
     text-align: left;
     border-bottom: 1px solid var(--color-border);
 }
@@ -72,49 +118,188 @@
     font-weight: 600;
     color: var(--color-text-secondary);
     font-size: 14px;
-    background-color: #f9fafb;
+    background-color: var(--color-bg-secondary);
 }
 
 .contacts-table td {
     font-size: 14px;
-    color: var(--color-text-primary);
 }
 
-.tag {
+.badge {
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: 99px;
     font-size: 12px;
     font-weight: 500;
 }
 
-.tag.blue {
-    background-color: #dbeafe;
-    color: #1e40af;
-}
-
-.tag.gray {
-    background-color: #f3f4f6;
-    color: #374151;
-}
-
-.tag.red {
-    background-color: #fee2e2;
-    color: #991b1b;
-}
-
 .badge.active {
+    background-color: #ecfdf5;
     color: #059669;
 }
 
 .badge.inactive {
+    background-color: #f3f4f6;
+    color: #6b7280;
+}
+
+.tag {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    margin-right: 4px;
+}
+
+.tag.blue {
+    background-color: #eff6ff;
+    color: #2563eb;
+}
+
+.tag.gray {
+    background-color: #f3f4f6;
+    color: #6b7280;
+}
+
+.tag.red {
+    background-color: #fef2f2;
     color: #dc2626;
 }
 
 .action-btn {
-    color: var(--color-text-muted);
-    padding: 4px;
+    padding: 6px;
+    background: none;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    transition: all 0.2s;
+    margin-right: 4px;
 }
 
 .action-btn:hover {
+    background-color: var(--color-bg-secondary);
     color: var(--color-text-primary);
+}
+
+.action-btn.delete:hover {
+    background-color: #fef2f2;
+    color: #dc2626;
+}
+
+/* Modal styles */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+}
+
+.modal {
+    background-color: var(--color-bg-surface);
+    border-radius: var(--radius-lg);
+    width: 90%;
+    max-width: 500px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.modal-header h3 {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.close-btn {
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--color-text-secondary);
+    padding: 0;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+}
+
+.close-btn:hover {
+    background-color: var(--color-bg-secondary);
+}
+
+.modal-body {
+    padding: 20px;
+}
+
+.form-group {
+    margin-bottom: 20px;
+}
+
+.form-group label {
+    display: block;
+    font-weight: 500;
+    font-size: 14px;
+    margin-bottom: 8px;
+    color: var(--color-text-primary);
+}
+
+.file-input {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    font-size: 14px;
+}
+
+.file-info {
+    margin-top: 8px;
+    padding: 8px;
+    background-color: var(--color-bg-secondary);
+    border-radius: var(--radius-md);
+    font-size: 14px;
+    color: var(--color-text-secondary);
+}
+
+.csv-format-info {
+    background-color: var(--color-bg-secondary);
+    padding: 16px;
+    border-radius: var(--radius-md);
+    margin-top: 16px;
+}
+
+.csv-format-info h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    color: var(--color-text-primary);
+}
+
+.csv-format-info p {
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    margin-bottom: 4px;
+}
+
+.modal-footer {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    padding: 20px;
+    border-top: 1px solid var(--color-border);
 }

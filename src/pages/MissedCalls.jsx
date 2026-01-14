@@ -9,7 +9,7 @@ const MissedCalls = () => {
 
   const fetchCalls = () => {
     setLoading(true);
-    fetch("https://technova112.app.n8n.cloud/webhook/missedcall-data")
+    fetch("http://192.168.1.112:5678/webhook/missedcall-data")
       .then(res => res.json())
       .then(data => {
         setAllCalls(data);
