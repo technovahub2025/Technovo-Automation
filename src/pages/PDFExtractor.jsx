@@ -12,7 +12,7 @@ const PDFExtractor = () => {
   const navigate = useNavigate();
 
   const webhookUrl = 'https://technova112.app.n8n.cloud/webhook-test/extract-report';
-const fallbackWebhookUrl = 'https://technova112.app.n8n.cloud/webhook/extract-report';
+  const fallbackWebhookUrl = 'https://technova112.app.n8n.cloud/webhook/extract-report';
 
   const handleFileSelect = (event) => {
     const file = event.target.files[0];
@@ -53,7 +53,7 @@ const fallbackWebhookUrl = 'https://technova112.app.n8n.cloud/webhook/extract-re
 
   const saveHistory = async (filename, data) => {
     try {
-      const response = await fetch('http://localhost:5000/api/extractions', {
+      const response = await fetch('https://technova-hub-voice-backend-node.onrender.com/api/extractions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -65,7 +65,7 @@ const fallbackWebhookUrl = 'https://technova112.app.n8n.cloud/webhook/extract-re
           status: 'success'
         })
       });
-      
+
       if (!response.ok) {
         if (response.status === 0) {
           console.warn('Backend server not available - history not saved');
@@ -73,7 +73,7 @@ const fallbackWebhookUrl = 'https://technova112.app.n8n.cloud/webhook/extract-re
         }
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
-      
+
       const result = await response.json();
       console.log('Extraction saved:', result);
     } catch (error) {
@@ -160,9 +160,9 @@ const fallbackWebhookUrl = 'https://technova112.app.n8n.cloud/webhook/extract-re
       {/* Header */}
       <header className="extractor-header">
         <div className="header-left">
-          <img 
-            src={logo} 
-            alt="Technova Hub Logo" 
+          <img
+            src={logo}
+            alt="Technova Hub Logo"
             className="logo-img"
           />
           <div>
