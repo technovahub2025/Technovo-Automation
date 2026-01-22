@@ -35,12 +35,22 @@ export const useBroadcast = () => {
     return broadcasts.filter(b => b.status === 'in_progress');
   }, [broadcasts]);
 
+  // 🔥 Expose setBroadcasts to allow manual state updates (e.g. from socket events)
+  const updateBroadcastList = useCallback((newList) => {
+    if (typeof newList === 'function') {
+      setBroadcasts(newList);
+    } else {
+      setBroadcasts(newList);
+    }
+  }, []);
+
   return {
     broadcasts,
     loading,
     error,
     refreshBroadcasts,
     getBroadcastById,
-    getActiveBroadcasts
+    getActiveBroadcasts,
+    updateBroadcastList // New method for manual updates
   };
 };

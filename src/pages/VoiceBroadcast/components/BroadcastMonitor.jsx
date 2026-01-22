@@ -4,9 +4,11 @@ import { io } from 'socket.io-client';
 import { broadcastAPI } from '../../../services/broadcastAPI';
 import CallsTable from './CallsTable';
 import StatsChart from './StatsChart';
+import { useBroadcast } from '../hooks/useBroadcast';
 import './BroadcastMonitor.css';
 
-const BroadcastMonitor = ({ broadcastId }) => {
+const BroadcastMonitor = ({ broadcastId, onBroadcastUpdated }) => {
+  const { updateBroadcastList } = useBroadcast(); // Access global list updater
   const [broadcast, setBroadcast] = useState(null);
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -89,11 +91,13 @@ const BroadcastMonitor = ({ broadcastId }) => {
         status: data.status,
         stats: data.stats || prev.stats
       }));
+      // Trigger parent list refresh on status change
+      if (onBroadcastUpdated) onBroadcastUpdated();
     });
 
     socket.on('call_update', (data) => {
       console.log('Call update:', data);
-      
+
       setCalls(prev => {
         const index = prev.findIndex(c => c._id === data.callId || c.callSid === data.callSid);
 
@@ -130,6 +134,7 @@ const BroadcastMonitor = ({ broadcastId }) => {
     try {
       await broadcastAPI.cancelBroadcast(broadcastId);
       loadBroadcastData();
+      if (onBroadcastUpdated) onBroadcastUpdated();
     } catch (error) {
       console.error('Failed to cancel broadcast:', error);
       alert('Failed to cancel broadcast');

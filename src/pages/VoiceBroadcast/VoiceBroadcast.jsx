@@ -38,11 +38,13 @@ const VoiceBroadcast = () => {
       });
     });
 
+    // List updates (create, delete, status change)
     socket.on('broadcast_list_update', () => {
+      console.log('List update received, refreshing...');
       if (refreshBroadcasts) refreshBroadcasts();
     });
 
-    // Cleanup on unmount - only remove listeners, keep socket connected
+    // Cleanup
     return () => {
       socket.off('stats_update');
       socket.off('broadcast_list_update');

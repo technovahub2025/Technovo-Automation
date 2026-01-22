@@ -45,12 +45,36 @@ const VoiceAutomation = () => {
         apiService.checkAIHealth()
       ]);
 
+      // ✅ Check HTTP 200 OR valid status values (handles 'running', 'ok', 'online', 'healthy')
+      const validBackendStatuses = ['online', 'running', 'ok'];
+      const validAIStatuses = ['healthy', 'running', 'ok', 'ready'];
+
+      const isBackendHealthy = backendHealth.status === 200 &&
+        (backendHealth.data?.status &&
+          (validBackendStatuses.includes(backendHealth.data.status.toLowerCase()) ||
+            backendHealth.data.status));
+
+      const isAIHealthy = aiHealth.status === 200 &&
+        (aiHealth.data?.status &&
+          (validAIStatuses.includes(aiHealth.data.status.toLowerCase()) ||
+            aiHealth.data.status));
+
       setHealthStatus({
-        backend: backendHealth.data.status === 'online',
-        ai: aiHealth.data.status === 'healthy'
+        backend: isBackendHealthy,
+        ai: isAIHealthy
       });
+
+      console.log('🏥 Health check results:', {
+        backend: { status: backendHealth.status, data: backendHealth.data, healthy: isBackendHealthy },
+        ai: { status: aiHealth.status, data: aiHealth.data, healthy: isAIHealthy }
+      });
+
     } catch (error) {
       console.error('Health check failed:', error);
+      setHealthStatus({
+        backend: false,
+        ai: false
+      });
     } finally {
       setLoading(false);
     }
