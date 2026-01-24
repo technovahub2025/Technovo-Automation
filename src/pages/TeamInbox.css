@@ -1,7 +1,7 @@
 .inbox-container {
     display: flex;
     height: calc(100vh - 64px - 64px);
-    /* Adjust based on header/padding */
+   
     background-color: var(--color-bg-surface);
     border-radius: var(--radius-lg);
     border: 1px solid var(--color-border);

@@ -3,7 +3,7 @@
  */
 import axios from "axios";
 
- const VITE_API_URL_ROUTE='/api/message/bulknode'
+const VITE_API_URL_ROUTE = '/api/message/bulknode'
 
 
 const API_BASE_URL = import.meta.env.VITE_API_URL;
@@ -19,7 +19,7 @@ const api = axios.create({
 // Request interceptor
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("authToken");
+    const token = localStorage.getItem("token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }

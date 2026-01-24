@@ -6,7 +6,12 @@ export const whatsappService = {
   // Health check
   async healthCheck() {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/health`);
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${API_BASE_URL}/api/health`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
       return await response.json();
     } catch (error) {
       console.error('Health check failed:', error);
@@ -17,7 +22,12 @@ export const whatsappService = {
   // Get all templates
   async getTemplates() {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/templates`);
+      const token = localStorage.getItem("token");
+      const response = await fetch(`${API_BASE_URL}/api/templates`, {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      });
       const data = await response.json();
       return data;
     } catch (error) {
@@ -33,8 +43,12 @@ export const whatsappService = {
       formData.append('template_name', name);
       formData.append('template_message', message);
 
+      const token = localStorage.getItem("token");
       const response = await fetch(`${API_BASE_URL}/save_template`, {
         method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
         body: formData
       });
       return await response.json();
@@ -50,8 +64,12 @@ export const whatsappService = {
       const formData = new FormData();
       formData.append('template_name', name);
 
+      const token = localStorage.getItem("token");
       const response = await fetch(`${API_BASE_URL}/delete_template`, {
         method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
         body: formData
       });
       return await response.json();
@@ -67,8 +85,12 @@ export const whatsappService = {
       const formData = new FormData();
       formData.append('csv_file', file);
 
+      const token = localStorage.getItem("token");
       const response = await fetch(`${API_BASE_URL}/api/upload-csv`, {
         method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`
+        },
         body: formData
       });
       return await response.json();
@@ -84,16 +106,18 @@ export const whatsappService = {
       const payload = {
         message_type: messageType,
         recipients: recipients,
-        ...(messageType === 'template' 
+        ...(messageType === 'template'
           ? { template_name: config.templateName, language: config.language }
           : { custom_message: config.customMessage }
         )
       };
 
+      const token = localStorage.getItem("token");
       const response = await fetch(`${API_BASE_URL}/api/send-bulk`, {
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
         },
         body: JSON.stringify(payload)
       });

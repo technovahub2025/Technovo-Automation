@@ -9,7 +9,12 @@ const MissedCalls = () => {
 
   const fetchCalls = () => {
     setLoading(true);
-    fetch("http://192.168.1.112:5678/webhook/missedcall-data")
+    const token = localStorage.getItem("token");
+    fetch("http://192.168.1.112:5678/webhook/missedcall-data", {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      }
+    })
       .then(res => res.json())
       .then(data => {
         setAllCalls(data);
@@ -26,30 +31,30 @@ const MissedCalls = () => {
 
   // 🔹 Helper: check if call is today
   const isToday = (dateStr) => {
-  if (!dateStr) return false;
+    if (!dateStr) return false;
 
-  const today = new Date();
+    const today = new Date();
 
-  // Handle "Dec 30, 2025"
-  const parts = dateStr.split(" "); // ["Dec", "30,", "2025"]
-  const monthName = parts[0];
-  const day = parseInt(parts[1].replace(",", ""), 10);
-  const year = parseInt(parts[2], 10);
+    // Handle "Dec 30, 2025"
+    const parts = dateStr.split(" "); // ["Dec", "30,", "2025"]
+    const monthName = parts[0];
+    const day = parseInt(parts[1].replace(",", ""), 10);
+    const year = parseInt(parts[2], 10);
 
-  const monthMap = {
-    Jan: 0, Feb: 1, Mar: 2, Apr: 3,
-    May: 4, Jun: 5, Jul: 6, Aug: 7,
-    Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+    const monthMap = {
+      Jan: 0, Feb: 1, Mar: 2, Apr: 3,
+      May: 4, Jun: 5, Jul: 6, Aug: 7,
+      Sep: 8, Oct: 9, Nov: 10, Dec: 11,
+    };
+
+    const callDate = new Date(year, monthMap[monthName], day);
+
+    return (
+      callDate.getDate() === today.getDate() &&
+      callDate.getMonth() === today.getMonth() &&
+      callDate.getFullYear() === today.getFullYear()
+    );
   };
-
-  const callDate = new Date(year, monthMap[monthName], day);
-
-  return (
-    callDate.getDate() === today.getDate() &&
-    callDate.getMonth() === today.getMonth() &&
-    callDate.getFullYear() === today.getFullYear()
-  );
-};
 
 
   // 🔹 Filter handler

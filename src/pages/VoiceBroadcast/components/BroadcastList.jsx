@@ -116,26 +116,34 @@ const BroadcastList = ({ broadcasts, loading, onMonitor, onStop, onDelete }) => 
             </div>
 
             <div className="card-actions" style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
-              {/* Monitor / View Button - Available for all states except draft */}
-              {['in_progress', 'queued', 'completed', 'cancelled'].includes(broadcast.status) && (
+              {['in_progress', 'queued'].includes(broadcast.status) && (
+                <>
+                  <button
+                    className="btn btn-primary"
+                    style={{ flex: 1 }}
+                    onClick={() => onMonitor(broadcast._id || broadcast.id)}
+                  >
+                    <Eye size={16} />
+                    Monitor
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => onStop(broadcast._id || broadcast.id)}
+                    title="Stop Broadcast"
+                  >
+                    <Square size={16} fill="currentColor" />
+                  </button>
+                </>
+              )}
+
+              {['completed', 'cancelled'].includes(broadcast.status) && (
                 <button
-                  className={`btn ${['completed', 'cancelled'].includes(broadcast.status) ? 'btn-secondary' : 'btn-primary'}`}
+                  className="btn btn-secondary btn-block"
                   style={{ flex: 1 }}
                   onClick={() => onMonitor(broadcast._id || broadcast.id)}
                 >
                   <Eye size={16} />
-                  {['completed', 'cancelled'].includes(broadcast.status) ? 'View Results' : 'Monitor'}
-                </button>
-              )}
-
-              {/* Stop Button - ONLY for active/queued */}
-              {['in_progress', 'queued'].includes(broadcast.status) && (
-                <button
-                  className="btn btn-danger"
-                  onClick={() => onStop(broadcast._id || broadcast.id)}
-                  title="Stop Broadcast"
-                >
-                  <Square size={16} fill="currentColor" />
+                  View Results
                 </button>
               )}
 

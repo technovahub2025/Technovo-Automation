@@ -95,11 +95,11 @@ const EmailAutomation = () => {
         </div>
       </div>
 
-      {/* Content */}
+      {}
       <div className="automation-content">
         {activeTab === 'dashboard' && (
           <div className="dashboard-view">
-            {/* Stats Cards */}
+            {}
             <div className="stats-grid">
               {stats.map((stat, index) => {
                 const Icon = stat.icon;
@@ -118,7 +118,7 @@ const EmailAutomation = () => {
               })}
             </div>
 
-            {/* Recent Activity */}
+            {}
             <div className="activity-section">
               <div className="section-card">
                 <div className="section-header">

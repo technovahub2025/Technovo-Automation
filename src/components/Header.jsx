@@ -1,33 +1,44 @@
-import React from 'react';
-import { Search, Bell, ChevronDown } from 'lucide-react';
-import './Header.css';
+import React, { useState, useEffect } from "react";
+import { Search, Bell } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
+import "./Header.css";
 
 const Header = () => {
-    return (
-        <header className="header">
-            <div className="header-left">
-                <h2 className="page-title">Dashboard</h2>
-            </div>
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-            <div className="header-right">
-                <div className="search-bar">
-                    <Search size={18} className="search-icon" />
-                    <input type="text" placeholder="Search..." />
-                </div>
+  const navigate = useNavigate();
+  const location = useLocation();
 
-                <button className="icon-button">
-                    <Bell size={20} />
-                    <span className="notification-dot"></span>
-                </button>
+  
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    setIsLoggedIn(!!token); 
+  }, [location.pathname]);
 
-                <div className="user-profile">
-                    <div className="avatar">VI</div>
-                    <span className="user-name">Vidhyavathi</span>
-                    <ChevronDown size={16} />
-                </div>
-            </div>
-        </header>
-    );
+  return (
+    <header className="header">
+      <div className="header-left">
+        <h2 className="page-title">Dashboard</h2>
+      </div>
+
+      <div className="header-right">
+        {/* Search bar - always visible */}
+        <div className="search-bar">
+          <Search size={18} className="search-icon" />
+          <input type="text" placeholder="Search..." />
+        </div>
+
+        {/* Notification icon - always visible */}
+        <button className="icon-button">
+          <Bell size={20} />
+          <span className="notification-dot"></span>
+        </button>
+
+       
+        
+      </div>
+    </header>
+  );
 };
 
 export default Header;

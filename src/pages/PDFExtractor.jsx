@@ -54,7 +54,6 @@ const PDFExtractor = () => {
   const saveHistory = async (filename, data) => {
     try {
       const response = await fetch('https://technova-hub-voice-backend-node.onrender.com/api/extractions', {
-      // const response = await fetch('http://localhost:5000/api/extractions', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -102,8 +101,12 @@ const PDFExtractor = () => {
       console.log('Uploading to:', url);
       console.log('File:', selectedFile.name, selectedFile.type, selectedFile.size);
 
+      const token = localStorage.getItem("token");
       const response = await fetch(url, {
         method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
         body: formData,
       });
 
