@@ -79,8 +79,8 @@
 }
 
 .status-badge.approved {
-    background-color: #ecfdf5;
-    color: #059669;
+    background-color: #64748b;
+    color: #ffffff;
 }
 
 .status-badge.pending {
