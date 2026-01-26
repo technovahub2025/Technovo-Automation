@@ -50,25 +50,33 @@ const Contacts = () => {
         };
     }, [openActionMenu, showFilterDropdown, showSortDropdown]);
 
-    const loadContacts = async () => {
-        try {
-            const result = await apiClient.getContacts();
-            setContacts(result.data.data || []);
-        } catch (error) {
-            console.error('Failed to load contacts:', error);
-        }
-    };
+const loadContacts = async () => {
+    try {
+        const result = await apiClient.getContacts();
+        console.log('Contacts API Response:', result); // Debug log
+        // Handle different response structures
+        const contactsData = result.data?.data || result.data || [];
+        console.log('Processed Contacts:', contactsData); // Debug log
+        setContacts(Array.isArray(contactsData) ? contactsData : []);
+    } catch (error) {
+        console.error('Failed to load contacts:', error);
+        setContacts([]);
+    } finally {
+        setLoading(false);
+    }
+};
 
-    const loadConversationContacts = async () => {
-        try {
-            const result = await apiClient.getConversationContacts();
-            setConversationContacts(result.data.data || []);
-        } catch (error) {
-            console.error('Failed to load conversation contacts:', error);
-        } finally {
-            setLoading(false);
-        }
-    };
+  const loadConversationContacts = async () => {
+    try {
+        const result = await apiClient.getConversationContacts();
+        console.log('Conversation Contacts API Response:', result); // Debug log
+        const conversationData = result.data?.data || result.data || [];
+        setConversationContacts(Array.isArray(conversationData) ? conversationData : []);
+    } catch (error) {
+        console.error('Failed to load conversation contacts:', error);
+        setConversationContacts([]);
+    }
+};
 
     const filterContacts = () => {
         // This will be used to filter based on search term and active tab

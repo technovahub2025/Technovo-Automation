@@ -18,11 +18,12 @@ import {
   ArrowUpDown,
 } from 'lucide-react';
 
-import { api } from '../services/api';
+import { apiClient as api } from '../services/api';
 import './Broadcast.css';
 import '../styles/whatsapp.css';
 import '../styles/message-preview.css';
 import whatsappLogo from '../assets/WhatsApp.svg.webp';
+
 
 const Broadcast = () => {
   const [activeTab, setActiveTab] = useState('overview');

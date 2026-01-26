@@ -4,31 +4,27 @@
  */
 import axios from "axios";
 
-const VITE_API_URL_ROUTE = '/api/message/bulknode'
-
-
-const API_BASE_URL = import.meta.env.VITE_API_URL;
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 const api = axios.create({
-  baseURL: API_BASE_URL,
+  baseURL: `${API_BASE_URL}/api`,
   timeout: 10000,
   headers: {
     "Content-Type": "application/json",
   },
+  withCredentials: true // This is important for sending cookies if you're using them
 });
 
 // Request interceptor for authentication and logging
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("token");
+    const token = localStorage.getItem("authToken");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
-    console.log(`🚀 API Request: ${config.method?.toUpperCase()} ${config.url}`);
     return config;
   },
   (error) => {
-    console.error('❌ Request Error:', error);
     return Promise.reject(error);
   }
 );
@@ -129,13 +125,13 @@ export const apiClient = {
    * Get all contacts with optional filtering
    * @param {Object} params - Query parameters (search, tags)
    */
-  getContacts: (params = {}) => api.get('/contacts', { params }),
+  getContacts: (params = {}) => api.get('/conversations/contacts', { params }),
   
   /**
    * Create new contact
    * @param {Object} data - Contact data
    */
-  createContact: (data) => api.post('/contacts', data),
+  createContact: (data) => api.post('/conversations/contacts', data),
   
   /**
    * Update contact

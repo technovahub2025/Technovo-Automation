@@ -6,11 +6,11 @@ import axios from "axios";
 
 
 
-const API_BASE_URL = import.meta.env.VITE_API_URL
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001';
 
 
 const api = axios.create({
-  baseURL: `${API_BASE_URL}/broadcast`,
+  baseURL: `${API_BASE_URL}/api/broadcast`,
   timeout: 30000,
   headers: {
     "Content-Type": "application/json",
@@ -39,22 +39,29 @@ api.interceptors.response.use(
 );
 
 export const broadcastAPI = {
-  startBroadcast: (data) => api.post("/start", data),
+  startBroadcast: (data) => api.post("/", data),
 
   getBroadcastStatus: (broadcastId) =>
-    api.get(`/status/${broadcastId}`),
+    api.get(`/${broadcastId}`),
 
   cancelBroadcast: (broadcastId) =>
-    api.post(`/${broadcastId}/cancel`),
+    api.delete(`/${broadcastId}`),
 
   getBroadcastCalls: (broadcastId, params = {}) =>
     api.get(`/${broadcastId}/calls`, { params }),
 
-  listBroadcasts: (params = {}) =>
-    api.get("/list", { params }),
+  listBroadcasts: (params = {}) => api.get("/", { params }),
 
-  deleteBroadcast: (broadcastId) =>
-    api.delete(`/${broadcastId}`),
+  deleteBroadcast: (broadcastId) => api.delete(`/${broadcastId}`),
+
+  // Additional methods for compatibility
+  createBroadcast: (data) => api.post("/", data),
+  
+  sendBroadcast: (broadcastId) => api.post(`/${broadcastId}/send`),
+  
+  checkScheduledBroadcasts: () => api.post("/check-scheduled"),
+  
+  syncBroadcastStats: (broadcastId) => api.post(`/${broadcastId}/sync-stats`),
 };
 
 export default broadcastAPI;
