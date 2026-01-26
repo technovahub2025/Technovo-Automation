@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, UserPlus, Filter, MoreHorizontal, Edit, Trash2, Phone, MessageCircle, CheckSquare, Square, ChevronDown, ArrowUpDown } from 'lucide-react';
-import { api } from '../services/api';
+import { apiClient } from '../services/api';
 import './Contacts.css';
 
 const Contacts = () => {
@@ -52,7 +52,7 @@ const Contacts = () => {
 
     const loadContacts = async () => {
         try {
-            const result = await api.getContacts();
+            const result = await apiClient.getContacts();
             setContacts(result.data.data || []);
         } catch (error) {
             console.error('Failed to load contacts:', error);
@@ -61,7 +61,7 @@ const Contacts = () => {
 
     const loadConversationContacts = async () => {
         try {
-            const result = await api.getConversationContacts();
+            const result = await apiClient.getConversationContacts();
             setConversationContacts(result.data.data || []);
         } catch (error) {
             console.error('Failed to load conversation contacts:', error);
@@ -87,7 +87,7 @@ const Contacts = () => {
                 tags: newContact.tags ? newContact.tags.split(',').map(tag => tag.trim()) : []
             };
             
-            const result = await api.createContact(contactData);
+            const result = await apiClient.createContact(contactData);
             if (result.data.success) {
                 await loadContacts();
                 setNewContact({ name: '', phone: '', email: '', tags: '' });
@@ -117,7 +117,7 @@ const Contacts = () => {
                 phone: newContact.phone
             };
             
-            const result = await api.updateContact(editingContact._id, contactData);
+            const result = await apiClient.updateContact(editingContact._id, contactData);
             if (result.data.success) {
                 await loadContacts();
                 setEditingContact(null);
@@ -142,7 +142,7 @@ const Contacts = () => {
         }
 
         try {
-            const result = await api.deleteContact(contact._id);
+            const result = await apiClient.deleteContact(contact._id);
             if (result.data.success) {
                 await loadContacts();
                 alert('Contact deleted successfully!');
@@ -183,7 +183,7 @@ const Contacts = () => {
 
         try {
             const deletePromises = Array.from(selectedContacts).map(contactId => 
-                api.deleteContact(contactId)
+                apiClient.deleteContact(contactId)
             );
             
             await Promise.all(deletePromises);

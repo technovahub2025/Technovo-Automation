@@ -15,17 +15,17 @@ const Login = () => {
 
   const navigate = useNavigate();
   const { login: loginUser } = useContext(AuthContext);
-
   const [showPassword, setShowPassword] = useState(false);
 
-
+  // ✅ ENV values
+  const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+  const TOKEN_KEY = import.meta.env.VITE_TOKEN_KEY || "token";
 
   const validateForm = () => {
     const newErrors = {};
 
     if (!email.trim()) newErrors.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(email))
-      newErrors.email = "Email is invalid";
+    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = "Email is invalid";
 
     if (!password) newErrors.password = "Password is required";
     else if (password.length < 6)
@@ -40,49 +40,50 @@ const Login = () => {
     if (!validateForm()) return;
 
     setIsLoading(true);
+
     try {
       let res;
       let token;
       let user;
 
-      // Try regular user/admin login first
+      // ✅ Try user/admin login first
       try {
-        res = await axios.post(
-          "http://localhost:8000/api/nexion/login",
-          { email, password }
-        );
+        res = await axios.post(`${API_URL}/api/nexion/login`, {
+          email,
+          password,
+        });
         token = res.data.token;
         user = res.data.user;
       } catch (firstError) {
-        // If regular login fails, try superadmin login
+        // ✅ If regular login fails, try superadmin login
         console.log("Regular login failed, trying superadmin...");
-        res = await axios.post(
-          "http://localhost:8000/superadmin/login",
-          { email, password }
-        );
+
+        res = await axios.post(`${API_URL}/superadmin/login`, {
+          email,
+          password,
+        });
         token = res.data.token;
         user = res.data.user;
       }
 
-      console.log("LOGIN RESPONSE USER:", user);
       if (!token) throw new Error("Login failed");
 
-      // Use the context login function to update state and storage
+      // ✅ Save token using ENV token key (optional)
+      localStorage.setItem(TOKEN_KEY, token);
+
+      // ✅ Update state using context
       loginUser(user, token);
 
-      // Redirect based on role
+      // ✅ Redirect based on role
       if (user.role === "superadmin") {
         navigate("/admin", { replace: true });
-      } else if (user.role === "admin") {
-        navigate("/", { replace: true });
       } else {
         navigate("/", { replace: true });
       }
     } catch (err) {
       setErrors({
         general:
-          err.response?.data?.message ||
-          "Login failed. Please try again.",
+          err.response?.data?.message || "Login failed. Please try again.",
       });
     } finally {
       setIsLoading(false);
@@ -92,8 +93,7 @@ const Login = () => {
   return (
     <div className="login-container">
       <form className="login-box" onSubmit={handleSubmit} autoComplete="off">
-
-        {/* Hidden fields to prevent browser autofill issues */}
+        {/* Hidden fields */}
         <input
           type="text"
           name="fake-user"
@@ -128,10 +128,10 @@ const Login = () => {
             onChange={(e) => setEmail(e.target.value)}
             className={errors.email ? "error" : ""}
           />
-          {errors.email && (
-            <span className="error-text">{errors.email}</span>
-          )}
+          {errors.email && <span className="error-text">{errors.email}</span>}
         </div>
+
+        {/* Password */}
         <div className="input-group password-group">
           <input
             type={showPassword ? "text" : "password"}
@@ -155,7 +155,6 @@ const Login = () => {
           )}
         </div>
 
-
         {/* Remember + Forgot */}
         <div className="login-options">
           <label className="remember-me">
@@ -172,9 +171,7 @@ const Login = () => {
           </Link>
         </div>
 
-        {errors.general && (
-          <div className="general-error">{errors.general}</div>
-        )}
+        {errors.general && <div className="general-error">{errors.general}</div>}
 
         <button
           type="submit"

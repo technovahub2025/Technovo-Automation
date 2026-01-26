@@ -59,6 +59,21 @@ export const whatsappService = {
     }
   },
 
+  // Get all conversations
+  async getConversations(filters = {}) {
+    try {
+      const queryParams = new URLSearchParams(filters).toString();
+      const response = await fetch(`${API_BASE_URL}/api/conversations${queryParams ? '?' + queryParams : ''}`, {
+        headers: getAuthHeaders()
+      });
+      const data = await response.json();
+      return data.data || data || [];
+    } catch (error) {
+      console.error('Failed to fetch conversations:', error);
+      return [];
+    }
+  },
+
   // Get single conversation
   async getConversation(conversationId) {
     try {

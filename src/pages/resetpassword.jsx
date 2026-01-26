@@ -12,6 +12,9 @@ const ResetPassword = () => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // ✅ API URL from ENV
+  const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+
   const handleSubmit = async (e) => {
     e.preventDefault();
 
@@ -29,17 +32,12 @@ const ResetPassword = () => {
     setError("");
 
     try {
-      await axios.post(
-        `http://localhost:8000/api/resetpassword/${token}`,
-        { password }
-      );
+      await axios.post(`${API_URL}/api/resetpassword/${token}`, { password });
 
       alert("Password reset successful");
       navigate("/login");
     } catch (err) {
-      setError(
-        err.response?.data?.message || "Invalid or expired token"
-      );
+      setError(err.response?.data?.message || "Invalid or expired token");
     } finally {
       setLoading(false);
     }

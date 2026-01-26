@@ -1,67 +1,148 @@
-import React, { useState } from "react";
+import React, { useContext } from "react";
+import { NavLink, useNavigate } from "react-router-dom";
 import axios from "axios";
-import { Link } from "react-router-dom";
-import "./login.css";
+import { AuthContext } from "../pages/authcontext";
+import {
+  LayoutDashboard,
+  MessageSquare,
+  Radio,
+  Users,
+  Zap,
+  LogOut,
+  FileText,
+  Phone,
+  PhoneMissed,
+  Mail,
+  LogIn,
+} from "lucide-react";
+import logo from "../../src/assets/logo.png";
 
-const ForgotPassword = () => {
-  const [email, setEmail] = useState("");
-  const [message, setMessage] = useState("");
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+const SidebarItem = ({ icon: Icon, label, to, onClick }) => (
+  <NavLink
+    to={to}
+    onClick={onClick}
+    className={({ isActive }) => `sidebar-item ${isActive ? "active" : ""}`}
+  >
+    <Icon size={20} />
+    <span>{label}</span>
+  </NavLink>
+);
 
-    if (!email) {
-      setError("Email is required");
-      return;
+const Sidebar = () => {
+  const navigate = useNavigate();
+  const { user, logout } = useContext(AuthContext);
+
+  const isLoggedIn = !!user;
+  const userName = user?.username || user?.name || "Guest";
+  const userRole = user?.role || "guest";
+
+  // ✅ Take API URL from ENV
+  const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+
+  // ✅ Take token key name from ENV
+  const TOKEN_KEY = import.meta.env.VITE_TOKEN_KEY || "token";
+
+  const getInitials = (name) => {
+    if (!name || name === "Guest") return "GU";
+    const words = name.split(" ");
+    if (words.length === 1) return name.substring(0, 2).toUpperCase();
+    return (words[0][0] + words[1][0]).toUpperCase();
+  };
+
+  const handleLogout = async () => {
+    const token = localStorage.getItem(TOKEN_KEY);
+
+    if (token) {
+      try {
+        await axios.post(
+          `${API_URL}/api/nexion/logout`,
+          {},
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+      } catch (err) {
+        console.log("Logout API failed:", err?.message);
+      }
     }
 
-    setLoading(true);
-    setError("");
-    setMessage("");
-
-    try {
-      const res = await axios.post(
-        "http://localhost:8000/api/forgotpassword",
-        { email }
-      );
-
-      setMessage(res.data.message || "Reset link sent to your email");
-    } catch (err) {
-      setError(
-        err.response?.data?.message || "Something went wrong"
-      );
-    } finally {
-      setLoading(false);
-    }
+    logout();
+    navigate("/login", { replace: true });
   };
 
   return (
-    <div className="login-container">
-      <form className="login-box" onSubmit={handleSubmit}>
-        <h2>Forgot Password</h2>
+    <aside className="sidebar">
+      <div className="logo-container">
+        <div className="logo-icon">
+          <img src={logo} alt="Logo" />
+        </div>
+        <span className="logo-text">Technovo Hub</span>
+      </div>
 
-        <input
-          type="email"
-          placeholder="Enter your email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-        />
+      <nav className="nav-menu">
+        {/* USER */}
+        {userRole === "user" && (
+          <>
+            <SidebarItem icon={LayoutDashboard} label="Dashboard" to="/" />
+            <SidebarItem icon={MessageSquare} label="Team Inbox" to="/inbox" />
+            <SidebarItem icon={FileText} label="Templates" to="/templates" />
+            <SidebarItem icon={Users} label="Contacts" to="/contacts" />
+          </>
+        )}
 
-        {error && <div className="general-error">{error}</div>}
-        {message && <div className="success-text">{message}</div>}
+        {/* ADMIN */}
+        {userRole === "admin" && (
+          <>
+            <SidebarItem icon={LayoutDashboard} label="Dashboard" to="/" />
+            <SidebarItem icon={Radio} label="Broadcast" to="/broadcast" />
+            <SidebarItem icon={MessageSquare} label="Team Inbox" to="/inbox" />
+            <SidebarItem icon={FileText} label="Templates" to="/templates" />
+            <SidebarItem icon={Users} label="Contacts" to="/contacts" />
+            <SidebarItem icon={Zap} label="Automation" to="/automation" />
+            <SidebarItem icon={Phone} label="Voice Automation" to="/voice-automation" />
+            <SidebarItem icon={PhoneMissed} label="MissedCalls" to="/missedcalls" />
+            <SidebarItem icon={Mail} label="Email Automation" to="/email-automation" />
+          </>
+        )}
 
-        <button className="login-submit-btn" disabled={loading}>
-          {loading ? "Sending..." : "Send Reset Link"}
-        </button>
+        {/* SUPER ADMIN */}
+        {userRole === "superadmin" && (
+          <>
+            <SidebarItem icon={LayoutDashboard} label="Admin" to="/admin" />
+            <SidebarItem icon={LayoutDashboard} label="Dashboard" to="/" />
+            <SidebarItem icon={Radio} label="Broadcast" to="/broadcast" />
+            <SidebarItem icon={MessageSquare} label="Team Inbox" to="/inbox" />
+            <SidebarItem icon={FileText} label="Templates" to="/templates" />
+            <SidebarItem icon={Users} label="Contacts" to="/contacts" />
+            <SidebarItem icon={Zap} label="Automation" to="/automation" />
+            <SidebarItem icon={Phone} label="Voice Automation" to="/voice-automation" />
+            <SidebarItem icon={PhoneMissed} label="MissedCalls" to="/missedcalls" />
+            <SidebarItem icon={Mail} label="Email Automation" to="/email-automation" />
+          </>
+        )}
+      </nav>
 
-        <p className="signup-link">
-          Back to <Link to="/login">Login</Link>
-        </p>
-      </form>
-    </div>
+      <div className="sidebar-footer">
+        {isLoggedIn ? (
+          <>
+            <div className="user-profile logged-in">
+              <div className="avatar">{getInitials(userName)}</div>
+              <span className="user-name">{userName}</span>
+            </div>
+
+            <div className="sidebar-item" onClick={handleLogout}>
+              <LogOut size={20} />
+              <span>Logout</span>
+            </div>
+          </>
+        ) : (
+          <div className="sidebar-item" onClick={() => navigate("/login")}>
+            <LogIn size={20} />
+            <span>Login</span>
+          </div>
+        )}
+      </div>
+    </aside>
   );
 };
 
-export default ForgotPassword;
+export default Sidebar;

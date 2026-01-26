@@ -18,7 +18,7 @@ const api = axios.create({
 });
 
 // Request interceptor for authentication and logging
-apiClient.interceptors.request.use(
+api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem("token");
     if (token) {
@@ -34,7 +34,7 @@ apiClient.interceptors.request.use(
 );
 
 // Response interceptor for error handling and logging
-apiClient.interceptors.response.use(
+api.interceptors.response.use(
   (response) => {
     console.log(`✅ API Response: ${response.status} ${response.config.url}`);
     return response;
@@ -77,51 +77,51 @@ apiClient.interceptors.response.use(
 );
 
 // WhatsApp Business Platform API Methods
-export const api = {
+export const apiClient = {
   // ============ CONVERSATIONS ============
   
   /**
    * Get all conversations with optional filtering
    * @param {Object} params - Query parameters (status, assignedTo, search)
    */
-  getConversations: (params = {}) => apiClient.get('/conversations', { params }),
+  getConversations: (params = {}) => api.get('/conversations', { params }),
   
   /**
    * Get single conversation by ID
    * @param {string} id - Conversation ID
    */
-  getConversation: (id) => apiClient.get(`/conversations/${id}`),
+  getConversation: (id) => api.get(`/conversations/${id}`),
   
   /**
    * Create new conversation
    * @param {Object} data - Conversation data
    */
-  createConversation: (data) => apiClient.post('/conversations', data),
+  createConversation: (data) => api.post('/conversations', data),
   
   /**
    * Update conversation
    * @param {string} id - Conversation ID
    * @param {Object} data - Update data
    */
-  updateConversation: (id, data) => apiClient.put(`/conversations/${id}`, data),
+  updateConversation: (id, data) => api.put(`/conversations/${id}`, data),
   
   /**
    * Mark conversation as read
    * @param {string} id - Conversation ID
    */
-  markConversationAsRead: (id) => apiClient.put(`/conversations/${id}/read`),
+  markConversationAsRead: (id) => api.put(`/conversations/${id}/read`),
   
   /**
    * Get messages for a conversation
    * @param {string} conversationId - Conversation ID
    */
-  getMessages: (conversationId) => apiClient.get(`/conversations/${conversationId}/messages`),
+  getMessages: (conversationId) => api.get(`/conversations/${conversationId}/messages`),
   
   /**
    * Send message
    * @param {Object} data - Message data (to, text, conversationId, mediaUrl, mediaType)
    */
-  sendMessage: (data) => apiClient.post('/messages/send', data),
+  sendMessage: (data) => api.post('/messages/send', data),
 
   // ============ CONTACTS ============
   
@@ -129,26 +129,26 @@ export const api = {
    * Get all contacts with optional filtering
    * @param {Object} params - Query parameters (search, tags)
    */
-  getContacts: (params = {}) => apiClient.get('/contacts', { params }),
+  getContacts: (params = {}) => api.get('/contacts', { params }),
   
   /**
    * Create new contact
    * @param {Object} data - Contact data
    */
-  createContact: (data) => apiClient.post('/contacts', data),
+  createContact: (data) => api.post('/contacts', data),
   
   /**
    * Update contact
    * @param {string} id - Contact ID
    * @param {Object} data - Update data
    */
-  updateContact: (id, data) => apiClient.put(`/conversations/contacts/${id}`, data),
+  updateContact: (id, data) => api.put(`/conversations/contacts/${id}`, data),
   
   /**
    * Delete contact
    * @param {string} id - Contact ID
    */
-  deleteContact: (id) => apiClient.delete(`/conversations/contacts/${id}`),
+  deleteContact: (id) => api.delete(`/conversations/contacts/${id}`),
 
   // ============ TEMPLATES ============
   
@@ -156,37 +156,37 @@ export const api = {
    * Get all templates with optional filtering
    * @param {Object} params - Query parameters (status, category, language)
    */
-  getTemplates: (params = {}) => apiClient.get('/templates', { params }),
+  getTemplates: (params = {}) => api.get('/templates', { params }),
   
   /**
    * Get single template by ID
    * @param {string} id - Template ID
    */
-  getTemplate: (id) => apiClient.get(`/templates/${id}`),
+  getTemplate: (id) => api.get(`/templates/${id}`),
   
   /**
    * Create new template
    * @param {Object} data - Template data
    */
-  createTemplate: (data) => apiClient.post('/templates', data),
+  createTemplate: (data) => api.post('/templates', data),
   
   /**
    * Update template
    * @param {string} id - Template ID
    * @param {Object} data - Update data
    */
-  updateTemplate: (id, data) => apiClient.put(`/templates/${id}`, data),
+  updateTemplate: (id, data) => api.put(`/templates/${id}`, data),
   
   /**
    * Delete template
    * @param {string} id - Template ID
    */
-  deleteTemplate: (id) => apiClient.delete(`/templates/${id}`),
+  deleteTemplate: (id) => api.delete(`/templates/${id}`),
   
   /**
    * Sync templates from WhatsApp Business
    */
-  syncTemplates: () => apiClient.post('/templates/sync'),
+  syncTemplates: () => api.post('/templates/sync'),
 
   // ============ BULK MESSAGING ============
   
@@ -194,39 +194,21 @@ export const api = {
    * Upload CSV file for bulk messaging
    * @param {Object} data - CSV data object with csvData field
    */
-  uploadCSV: (data) => apiClient.post('/bulk/upload', data),
+  uploadCSV: (data) => api.post('/bulk/upload', data),
   
   /**
    * Send bulk messages
    * @param {Object} data - Bulk message data
    */
-  sendBulkMessages: (data) => apiClient.post('/bulk/send', data),
+  sendBulkMessages: (data) => api.post('/bulk/send', data),
 
   // ============ CONVERSATIONS & CONTACTS ============
-  
-  /**
-   * Get all conversations with optional filtering
-   * @param {Object} params - Query parameters
-   */
-  getConversations: (params = {}) => apiClient.get('/conversations', { params }),
-  
-  /**
-   * Get all contacts with optional filtering
-   * @param {Object} params - Query parameters
-   */
-  getContacts: (params = {}) => apiClient.get('/conversations/contacts', { params }),
   
   /**
    * Get unique contacts from conversations (for broadcast)
    * @param {Object} params - Query parameters
    */
-  getConversationContacts: (params = {}) => apiClient.get('/conversations/contacts/unique', { params }),
-  
-  /**
-   * Create a new contact
-   * @param {Object} data - Contact data
-   */
-  createContact: (data) => apiClient.post('/conversations/contacts', data),
+  getConversationContacts: (params = {}) => api.get('/conversations/contacts/unique', { params }),
 
   // ============ BROADCASTS ============
   
@@ -234,41 +216,41 @@ export const api = {
    * Get all broadcasts with optional filtering
    * @param {Object} params - Query parameters
    */
-  getBroadcasts: (params = {}) => apiClient.get('/broadcasts', { params }),
+  getBroadcasts: (params = {}) => api.get('/broadcasts', { params }),
   
   /**
    * Get single broadcast by ID
    * @param {string} id - Broadcast ID
    */
-  getBroadcast: (id) => apiClient.get(`/broadcasts/${id}`),
+  getBroadcast: (id) => api.get(`/broadcasts/${id}`),
   
   /**
    * Create new broadcast campaign
    * @param {Object} data - Broadcast data
    */
-  createBroadcast: (data) => apiClient.post('/broadcasts', data),
+  createBroadcast: (data) => api.post('/broadcasts', data),
   
   /**
    * Send broadcast campaign
    * @param {string} id - Broadcast ID
    */
-  sendBroadcast: (id) => apiClient.post(`/broadcasts/${id}/send`),
+  sendBroadcast: (id) => api.post(`/broadcasts/${id}/send`),
 
   /**
    * Check scheduled broadcasts
    */
-  checkScheduledBroadcasts: () => apiClient.post('/broadcasts/check-scheduled'),
+  checkScheduledBroadcasts: () => api.post('/broadcasts/check-scheduled'),
 
   /**
    * Sync broadcast stats from team inbox messages
    */
-  syncBroadcastStats: (id) => apiClient.post(`/broadcasts/${id}/sync-stats`),
+  syncBroadcastStats: (id) => api.post(`/broadcasts/${id}/sync-stats`),
 
   /**
    * Delete broadcast campaign
    * @param {string} id - Broadcast ID
    */
-  deleteBroadcast: (id) => apiClient.delete(`/broadcasts/${id}`),
+  deleteBroadcast: (id) => api.delete(`/broadcasts/${id}`),
 
   // ============ ANALYTICS ============
   
@@ -276,26 +258,26 @@ export const api = {
    * Get platform analytics
    * @param {Object} params - Query parameters
    */
-  getAnalytics: (params = {}) => apiClient.get('/analytics', { params }),
+  getAnalytics: (params = {}) => api.get('/analytics', { params }),
 
   // ============ HEALTH & SYSTEM ============
   
   /**
    * Check API health status
    */
-  healthCheck: () => apiClient.get('/health'),
+  healthCheck: () => api.get('/health'),
 
   // ============ LEGACY VOICE API (for backward compatibility) ============
   
-  getActiveCalls: () => apiClient.get("/voice/calls/active"),
-  getCallDetails: (callSid) => apiClient.get(`/voice/call/${callSid}`),
-  makeOutboundCall: (to, from) => apiClient.post("/voice/call/outbound", { to, from }),
-  endCall: (callSid) => apiClient.post(`/voice/call/${callSid}/end`),
-  getUsers: () => apiClient.get("/api/users"),
-  getUserDetails: (userId) => apiClient.get(`/api/users/${userId}`),
-  getCallHistory: (params) => apiClient.get("/api/calls/history", { params }),
-  getCallStats: () => apiClient.get("/voice/stats"),
-  checkAIHealth: () => apiClient.get("/ai/health"),
+  getActiveCalls: () => api.get("/voice/calls/active"),
+  getCallDetails: (callSid) => api.get(`/voice/call/${callSid}`),
+  makeOutboundCall: (to, from) => api.post("/voice/call/outbound", { to, from }),
+  endCall: (callSid) => api.post(`/voice/call/${callSid}/end`),
+  getUsers: () => api.get("/api/users"),
+  getUserDetails: (userId) => api.get(`/api/users/${userId}`),
+  getCallHistory: (params) => api.get("/api/calls/history", { params }),
+  getCallStats: () => api.get("/voice/stats"),
+  checkAIHealth: () => api.get("/ai/health"),
 
   // ============ UTILITY METHODS ============
   
@@ -304,14 +286,14 @@ export const api = {
    * @param {string} token - Authentication token
    */
   setAuthToken: (token) => {
-    apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   },
   
   /**
    * Remove authentication token
    */
   removeAuthToken: () => {
-    delete apiClient.defaults.headers.common['Authorization'];
+    delete api.defaults.headers.common['Authorization'];
   },
   
   /**
@@ -319,26 +301,26 @@ export const api = {
    * @param {Object} headers - Headers to set
    */
   setHeaders: (headers) => {
-    Object.assign(apiClient.defaults.headers, headers);
+    Object.assign(api.defaults.headers, headers);
   }
 };
 
 // Legacy export for backward compatibility
 export const apiService = {
-  getActiveCalls: api.getActiveCalls,
-  getCallDetails: api.getCallDetails,
-  makeOutboundCall: api.makeOutboundCall,
-  endCall: api.endCall,
-  getUsers: api.getUsers,
-  getUserDetails: api.getUserDetails,
-  getCallHistory: api.getCallHistory,
-  getCallStats: api.getCallStats,
-  checkBackendHealth: api.healthCheck,
-  checkAIHealth: api.checkAIHealth,
+  getActiveCalls: apiClient.getActiveCalls,
+  getCallDetails: apiClient.getCallDetails,
+  makeOutboundCall: apiClient.makeOutboundCall,
+  endCall: apiClient.endCall,
+  getUsers: apiClient.getUsers,
+  getUserDetails: apiClient.getUserDetails,
+  getCallHistory: apiClient.getCallHistory,
+  getCallStats: apiClient.getCallStats,
+  checkBackendHealth: apiClient.healthCheck,
+  checkAIHealth: apiClient.checkAIHealth,
 };
 
 // Export the axios instance for advanced usage
-export { apiClient };
+export { api };
 
 // Export default API object
-export default api;
+export default apiClient;

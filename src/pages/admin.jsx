@@ -31,7 +31,7 @@ const AdminMultiStep = () => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
-  const backendUrl = "http://localhost:8000";
+  const backendUrl = import.meta.env.VITE_API_ADMIN_URL;
 
   // ------------------- FETCH USERS -------------------
   const fetchUsers = async () => {

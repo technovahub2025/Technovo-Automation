@@ -5,7 +5,7 @@ import { AuthContext } from '../pages/authcontext';
 import {
   LayoutDashboard,
   MessageSquare,
-  Radio,          // ✅ Broadcast icon
+  Radio,
   Users,
   Zap,
   LogOut,
@@ -37,6 +37,9 @@ const Sidebar = () => {
   const userName = user?.username || user?.name || "Guest";
   const userRole = user?.role || "guest";
 
+  // ✅ API URL from .env
+  const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+
   const getInitials = (name) => {
     if (!name || name === "Guest") return "GU";
     const words = name.split(" ");
@@ -46,15 +49,19 @@ const Sidebar = () => {
 
   const handleLogout = async () => {
     const token = localStorage.getItem("token");
+
     if (token) {
       try {
         await axios.post(
-          "http://localhost:8000/api/nexion/logout",
+          `${API_URL}/api/nexion/logout`,
           {},
           { headers: { Authorization: `Bearer ${token}` } }
         );
-      } catch {}
+      } catch (err) {
+        console.log("Logout API failed:", err?.message);
+      }
     }
+
     logout();
     navigate("/login", { replace: true });
   };
@@ -69,7 +76,6 @@ const Sidebar = () => {
       </div>
 
       <nav className="nav-menu">
-
         {/* USER */}
         {userRole === "user" && (
           <>
@@ -110,7 +116,6 @@ const Sidebar = () => {
             <SidebarItem icon={Mail} label="Email Automation" to="/email-automation" />
           </>
         )}
-
       </nav>
 
       <div className="sidebar-footer">
