@@ -18,7 +18,7 @@ import {
   ArrowUpDown,
 } from 'lucide-react';
 
-import { apiClient as api } from '../services/api';
+import { apiClient as api } from '../services/whatsappapi';
 import './Broadcast.css';
 import '../styles/whatsapp.css';
 import '../styles/message-preview.css';

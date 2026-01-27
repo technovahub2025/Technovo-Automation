@@ -1,5 +1,5 @@
 // WhatsApp API Service
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://nexion-broadcast-backend.onrender.com';
 
 // Helper function to get auth headers
 const getAuthHeaders = () => {

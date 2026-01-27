@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, UserPlus, Filter, MoreHorizontal, Edit, Trash2, Phone, MessageCircle, CheckSquare, Square, ChevronDown, ArrowUpDown } from 'lucide-react';
-import { apiClient } from '../services/api';
+import { apiClient } from '../services/whatsappapi';
 import './Contacts.css';
 
 const Contacts = () => {

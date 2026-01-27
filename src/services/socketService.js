@@ -12,7 +12,8 @@ class SocketService {
 
   connect(url) {
     if (!this.socket) {
-      this.socket = io(url || import.meta.env.VITE_API_URL || 'https://technova-hub-voice-backend-node.onrender.com');
+      //this.socket = io(url || import.meta.env.VITE_API_URL || 'https://technova-hub-voice-backend-node.onrender.com');
+      this.socket = io(url || import.meta.env.VITE_API_URL || 'http://localhost:5000');
 
       this.socket.on('connect', () => {
         console.log('✅ Shared socket connected');
