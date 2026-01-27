@@ -1,17 +1,25 @@
 {
-  "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+  "version": 2,
+  "builds": [
+    {
+      "src": "package.json",
+      "use": "@vercel/next"
+    }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "https://broadcast-backend-eurc.onrender.com/api/$1",
+      "dest": "https://nexion-broadcast-backend.onrender.com/api/$1",
       "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
       "headers": {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
         "Access-Control-Allow-Headers": "X-Requested-With, Content-Type, Authorization"
       }
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/"
     }
   ]
 }
