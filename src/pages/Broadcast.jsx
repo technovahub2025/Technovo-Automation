@@ -18,7 +18,7 @@ import {
   ArrowUpDown,
 } from 'lucide-react';
 
-import { apiClient as api } from '../services/whatsappapi';
+import { apiClient } from '../services/whatsappapi';
 import './Broadcast.css';
 import '../styles/whatsapp.css';
 import '../styles/message-preview.css';
@@ -81,7 +81,7 @@ const Broadcast = () => {
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
-        const response = await api.getTemplates();
+        const response = await apiClient.getTemplates();
         setOfficialTemplates(
           Array.isArray(response.data) ? response.data : response.data.data || []
         );
@@ -116,7 +116,7 @@ const Broadcast = () => {
 
   const loadTemplates = async () => {
     try {
-      const result = await api.getTemplates();
+      const result = await apiClient.getTemplates();
       const allTemplates = result.data.data || [];
       const customTemplates = allTemplates.filter((t) => t.type === 'custom');
       setTemplates(customTemplates);
@@ -127,7 +127,7 @@ const Broadcast = () => {
 
   const loadBroadcasts = async () => {
     try {
-      const result = await api.getBroadcasts();
+      const result = await apiClient.getBroadcasts();
       setBroadcasts(result.data.data || []);
     } catch (error) {
       console.error('Failed to load broadcasts:', error);
@@ -201,7 +201,7 @@ const Broadcast = () => {
       const completedBroadcasts = broadcasts.filter((b) => b.status === 'completed');
       for (const broadcast of completedBroadcasts) {
         try {
-          await api.syncBroadcastStats(broadcast._id);
+          await apiClient.syncBroadcastStats(broadcast._id);
         } catch (error) {
           console.warn(`Failed to sync stats for ${broadcast._id}`, error);
         }
@@ -262,7 +262,7 @@ const Broadcast = () => {
     if (selectedCampaigns.length === 0) return;
 
     try {
-      await Promise.all(selectedCampaigns.map((id) => api.deleteBroadcast(id)));
+      await Promise.all(selectedCampaigns.map((id) => apiClient.deleteBroadcast(id)));
       setBroadcasts((prev) => prev.filter((b) => !selectedCampaigns.includes(b._id)));
 
       setShowDeleteModal(false);
@@ -363,7 +363,7 @@ const Broadcast = () => {
       const base64Data = e.target.result.split(',')[1];
 
       try {
-        const result = await api.uploadCSV({ csvData: base64Data });
+        const result = await apiClient.uploadCSV({ csvData: base64Data });
 
         if (result.data.success) {
           const recipientsWithFullData = result.data.csvData || result.data.recipients || [];
@@ -404,7 +404,7 @@ const Broadcast = () => {
         ...(scheduledTime ? { scheduledAt: scheduledTime } : {}),
       };
 
-      const result = await api.createBroadcast(payload);
+      const result = await apiClient.createBroadcast(payload);
 
       if (result.data.success) {
         alert(scheduledTime ? 'Broadcast scheduled successfully!' : 'Broadcast created successfully!');
@@ -425,7 +425,7 @@ const Broadcast = () => {
   // ✅ Send scheduled broadcast now
   const executeBroadcast = async (broadcastId) => {
     try {
-      const result = await api.sendBroadcast(broadcastId);
+      const result = await apiClient.sendBroadcast(broadcastId);
       if (result.data.success) {
         alert('Broadcast sent successfully!');
         await loadBroadcasts();
@@ -466,7 +466,7 @@ const Broadcast = () => {
         ...(messageType === 'template' ? { templateName, language } : { customMessage }),
       };
 
-      const result = await api.sendBulkMessages(payload);
+      const result = await apiClient.sendBulkMessages(payload);
       setSendResults(result.data);
 
       if (result.data.success) {

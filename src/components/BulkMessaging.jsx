@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Upload, Send, FileText, AlertCircle, CheckCircle, Download, X, RefreshCw } from 'lucide-react';
-import { api } from '../services/api';
+import { apiClient } from '../services/whatsappapi';
 import CampaignResults from './CampaignResults';
 import './BulkMessaging.css';
 
@@ -24,7 +24,7 @@ const BulkMessaging = () => {
 
   const fetchTemplates = async () => {
     try {
-      const result = await api.getTemplates();
+      const result = await apiClient.getTemplates();
       setTemplates(result.data || []);
     } catch (error) {
       console.error('Error fetching templates:', error);
@@ -34,7 +34,7 @@ const BulkMessaging = () => {
   const syncTemplates = async () => {
     setSyncing(true);
     try {
-      const result = await api.syncTemplates();
+      const result = await apiClient.syncTemplates();
       if (result.success) {
         await fetchTemplates();
       }
@@ -129,7 +129,7 @@ const BulkMessaging = () => {
 
     try {
       // First upload CSV to get recipients
-      const uploadResult = await api.uploadCSV(csvFile);
+      const uploadResult = await apiClient.uploadCSV(csvFile);
       
       if (!uploadResult.success) {
         throw new Error(uploadResult.error || 'Failed to upload CSV');
@@ -146,7 +146,7 @@ const BulkMessaging = () => {
         broadcastName: broadcastName || `Bulk Send - ${new Date().toLocaleString()}`
       };
 
-      const sendResult = await api.sendBulkMessages(bulkData);
+      const sendResult = await apiClient.sendBulkMessages(bulkData);
       setResults(sendResult);
     } catch (error) {
       console.error('Error sending bulk messages:', error);

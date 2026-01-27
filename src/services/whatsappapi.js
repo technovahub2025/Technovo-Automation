@@ -4,7 +4,7 @@
  */
 import axios from "axios";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://nexion-broadcast-backend.onrender.com';
 
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
@@ -125,26 +125,26 @@ export const apiClient = {
    * Get all contacts with optional filtering
    * @param {Object} params - Query parameters (search, tags)
    */
-  getContacts: (params = {}) => api.get('/conversations/contacts', { params }),
+  getContacts: (params = {}) => api.get('/contacts', { params }),
   
   /**
    * Create new contact
    * @param {Object} data - Contact data
    */
-  createContact: (data) => api.post('/conversations/contacts', data),
+  createContact: (data) => api.post('/contacts', data),
   
   /**
    * Update contact
    * @param {string} id - Contact ID
    * @param {Object} data - Update data
    */
-  updateContact: (id, data) => api.put(`/conversations/contacts/${id}`, data),
+  updateContact: (id, data) => api.put(`/contacts/${id}`, data),
   
   /**
    * Delete contact
    * @param {string} id - Contact ID
    */
-  deleteContact: (id) => api.delete(`/conversations/contacts/${id}`),
+  deleteContact: (id) => api.delete(`/contacts/${id}`),
 
   // ============ TEMPLATES ============
   
@@ -182,7 +182,7 @@ export const apiClient = {
   /**
    * Sync templates from WhatsApp Business
    */
-  syncTemplates: () => api.post('/templates/sync'),
+  syncTemplates: () => api.get('/templates/sync'),
 
   // ============ BULK MESSAGING ============
   
@@ -202,9 +202,10 @@ export const apiClient = {
   
   /**
    * Get unique contacts from conversations (for broadcast)
+   * This endpoint doesn't exist yet - using regular contacts instead
    * @param {Object} params - Query parameters
    */
-  getConversationContacts: (params = {}) => api.get('/conversations/contacts/unique', { params }),
+  getConversationContacts: (params = {}) => api.get('/contacts', { params }),
 
   // ============ BROADCASTS ============
   
