@@ -13,8 +13,8 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
     messageTemplate: '',
     voice: {
       provider: 'edge',
-      voiceId: 'en-IN-NeerjaNeural',
-      language: 'en-IN'
+      voiceId: 'en-GB-SoniaNeural',
+      language: 'en-GB'
     },
     contacts: [],
     maxConcurrent: 50,
@@ -141,8 +141,8 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
       messageTemplate: '',
       voice: {
         provider: 'edge',
-        voiceId: 'en-IN-NeerjaNeural',
-        language: 'en-IN'
+        voiceId: 'en-GB-SoniaNeural',
+        language: 'en-GB'
       },
       contacts: [],
       maxConcurrent: 50,
