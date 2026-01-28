@@ -1,4 +1,4 @@
-.stat-card {
+.stat-card-main {
     background-color: var(--color-bg-surface);
     border-radius: var(--radius-lg);
     padding: 24px;
@@ -7,7 +7,7 @@
     transition: transform 0.2s, box-shadow 0.2s;
 }
 
-.stat-card:hover {
+.stat-card-main:hover {
     transform: translateY(-2px);
     box-shadow: var(--shadow-md);
 }

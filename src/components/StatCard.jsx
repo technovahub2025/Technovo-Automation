@@ -4,7 +4,7 @@ import './StatCard.css';
 
 const StatCard = ({ title, value, change, isPositive, icon: Icon, color }) => {
     return (
-        <div className="stat-card">
+        <div className="stat-card-main">
             <div className="stat-header">
                 <div className="stat-info">
                     <span className="stat-title">{title}</span>

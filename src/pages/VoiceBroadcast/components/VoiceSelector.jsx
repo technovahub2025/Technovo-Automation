@@ -3,13 +3,10 @@ import { Mic, Volume2 } from 'lucide-react';
 
 const VoiceSelector = ({ selected, onChange, disabled }) => {
   const voices = [
-    { id: 'en-IN-NeerjaNeural', name: 'Neerja (Female, Hindi-English)', language: 'en-IN', gender: 'Female' },
-    { id: 'en-IN-PrabhatNeural', name: 'Prabhat (Male, Hindi-English)', language: 'en-IN', gender: 'Male' },
-    { id: 'en-US-AriaNeural', name: 'Aria (Female, US)', language: 'en-US', gender: 'Female' },
-    { id: 'en-US-GuyNeural', name: 'Guy (Male, US)', language: 'en-US', gender: 'Male' },
-    { id: 'en-GB-SoniaNeural', name: 'Sonia (Female, British)', language: 'en-GB', gender: 'Female' },
-    { id: 'hi-IN-SwaraNeural', name: 'Swara (Female, Hindi)', language: 'hi-IN', gender: 'Female' },
-    { id: 'hi-IN-MadhurNeural', name: 'Madhur (Male, Hindi)', language: 'hi-IN', gender: 'Male' }
+    { id: 'ta-IN-PallaviNeural', name: 'PallaviNeural (Female,Tamil)', language: 'ta-IN', gender: 'Female' },
+    { id: 'ta-IN-ValluvarNeural', name: 'ValluvarNeural (Male,Tamil)', language: 'ta-IN', gender: 'Male' },
+    { id: 'en-GB-SoniaNeural', name: 'SoniaNeural (Female,English)', language: 'en-GB', gender: 'Female' },
+    { id: 'en-GB-RyanNeural', name: 'RyanNeural (Male,English)', language: 'en-GB', gender: 'Male' }
   ];
 
   const handleVoiceChange = (voiceId) => {
@@ -54,7 +51,6 @@ const VoiceSelector = ({ selected, onChange, disabled }) => {
       <div className="voice-info">
         <small>
           <strong>Tip:</strong> Select a voice that matches your audience's language and preference.
-          Hindi voices work best for Indian audiences.
         </small>
       </div>
     </div>

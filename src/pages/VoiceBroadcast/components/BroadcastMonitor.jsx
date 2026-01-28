@@ -235,7 +235,7 @@ const BroadcastMonitor = ({ broadcastId }) => {
       {/* Stats Grid */}
       <div className="stats-grid-voice">
         <div className="stat-card">
-          <div className="stat-icon">
+          <div className="stat-icon-broadcast">
             <Users size={24} />
           </div>
           <div className="stat-content">
@@ -245,7 +245,7 @@ const BroadcastMonitor = ({ broadcastId }) => {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: '#dbeafe' }}>
+          <div className="stat-icon-broadcast" style={{ background: '#dbeafe' }}>
             <Phone size={24} color="#3b82f6" />
           </div>
           <div className="stat-content">
@@ -255,7 +255,7 @@ const BroadcastMonitor = ({ broadcastId }) => {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: '#d1fae5' }}>
+          <div className="stat-icon-broadcast" style={{ background: '#d1fae5' }}>
             <CheckCircle size={24} color="#10b981" />
           </div>
           <div className="stat-content">
@@ -265,7 +265,7 @@ const BroadcastMonitor = ({ broadcastId }) => {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: '#fee2e2' }}>
+          <div className="stat-icon-broadcast" style={{ background: '#fee2e2' }}>
             <XCircle size={24} color="#ef4444" />
           </div>
           <div className="stat-content">
@@ -275,7 +275,7 @@ const BroadcastMonitor = ({ broadcastId }) => {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: '#fef3c7' }}>
+          <div className="stat-icon-broadcast" style={{ background: '#fef3c7' }}>
             <Clock size={24} color="#f59e0b" />
           </div>
           <div className="stat-content">
@@ -285,7 +285,7 @@ const BroadcastMonitor = ({ broadcastId }) => {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon" style={{ background: '#e0e7ff' }}>
+          <div className="stat-icon-broadcast" style={{ background: '#e0e7ff' }}>
             <TrendingUp size={24} color="#6366f1" />
           </div>
           <div className="stat-content">

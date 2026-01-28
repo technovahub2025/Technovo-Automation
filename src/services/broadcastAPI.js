@@ -34,6 +34,21 @@ api.interceptors.response.use(
   (response) => response.data,
   (error) => {
     console.error("Broadcast API Error:", error.response?.data || error.message);
+    
+    // Only handle 401 as authentication failure
+    if (error.response?.status === 401) {
+      console.warn('401 Unauthorized - Authentication failed');
+      
+      // Clear invalid token
+      localStorage.removeItem('authToken');
+      localStorage.removeItem('user');
+      
+      // Redirect to login if not already there
+      if (window.location.pathname !== '/login') {
+        window.location.href = '/login';
+      }
+    }
+    
     return Promise.reject(error);
   }
 );

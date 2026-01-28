@@ -109,7 +109,7 @@ const Dashboard = () => {
                 </button>
             </div>
 
-            <div className="stats-grid">
+            <div className="stats-grid-dashboard">
                 <StatCard
                     title="Message Sent"
                     value={formatNumber(getMessageSentCount())}

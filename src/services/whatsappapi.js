@@ -42,11 +42,23 @@ api.interceptors.response.use(
     if (error.response) {
       const { status, data } = error.response;
       
+      // Only handle 401 as authentication failure
+      if (status === 401) {
+        console.error('Unauthorized - Token expired or invalid');
+        
+        // Clear invalid token
+        localStorage.removeItem('authToken');
+        localStorage.removeItem('user');
+        
+        // Redirect to login if not already there
+        if (window.location.pathname !== '/login') {
+          window.location.href = '/login';
+        }
+        return Promise.reject(error);
+      }
+      
+      // Handle other status codes but don't treat as auth failures
       switch (status) {
-        case 401:
-          console.error('Unauthorized - Please check your authentication');
-          // Optionally redirect to login
-          break;
         case 403:
           console.error('Forbidden - Insufficient permissions');
           break;

@@ -130,7 +130,7 @@ const VoiceAutomation = () => {
         <div className="voice-card">
           <PhoneCall size={28} />
           <h4>Inbound Calls</h4>
-          <p>Automatically answer customer calls using AI voice bot.</p>
+          <p>Manage IVR menus, queues, and call routing with advanced features.</p>
           <button
             className="card-button"
             onClick={() => window.location.href = '/voice-automation/inbound'}
