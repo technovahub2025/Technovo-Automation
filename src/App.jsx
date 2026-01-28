@@ -1,5 +1,5 @@
 import React from "react";
-import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { Routes, Route } from "react-router-dom";
 
 import { AuthProvider } from "./pages/authcontext";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
@@ -22,62 +22,56 @@ import InboundCalls from "./pages/InboundCalls";
 
 import Login from "./pages/login";
 import Register from "./pages/register";
-import AdminMultiStep from "./pages/admin";
 import ForgotPassword from "./pages/forgotpassword";
 import ResetPassword from "./pages/resetpassword";
+import AdminMultiStep from "./pages/admin";
 
 function App() {
   return (
     <AuthProvider>
-      <Router>
-        <Routes>
-          {/* ===== PUBLIC ROUTES ===== */}
-          <Route path="/login" element={<Login />} />
-          <Route path="/register" element={<Register />} />
-          <Route path="/forgot-password" element={<ForgotPassword />} />
-          <Route path="/reset-password/:token" element={<ResetPassword />} />
+      <Routes>
+        {/* ===== PUBLIC ROUTES ===== */}
+        <Route path="/login" element={<Login />} />
+        <Route path="/register" element={<Register />} />
+        <Route path="/forgot-password" element={<ForgotPassword />} />
+        <Route path="/reset-password/:token" element={<ResetPassword />} />
 
-          {/* ===== PROTECTED APP ROUTES ===== */}
+        {/* ===== PROTECTED ROUTES ===== */}
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <MainLayout />
+            </ProtectedRoute>
+          }
+        >
+          <Route index element={<Dashboard />} />
+          <Route path="inbox" element={<TeamInbox />} />
+          <Route path="broadcast" element={<Broadcast />} />
+          <Route path="templates" element={<Templates />} />
+          <Route path="contacts" element={<Contacts />} />
+          <Route path="automation" element={<Automation />} />
+
+          <Route path="voice-automation" element={<VoiceAutomation />} />
+          <Route path="voice-automation/inbound" element={<InboundCalls />} />
+          <Route path="voice-automation/outbound" element={<OutboundCall />} />
+          <Route path="voice-automation/history" element={<CallHistory />} />
+
+          <Route path="missedcalls" element={<MissedCalls />} />
+          <Route path="email-automation" element={<EmailAutomation />} />
+          <Route path="pdf-extractor" element={<PDFExtractor />} />
+          <Route path="voice-broadcast" element={<VoiceBroadcast />} />
+
           <Route
-            path="/"
+            path="admin"
             element={
-              <ProtectedRoute>
-                <MainLayout />
+              <ProtectedRoute requiredRole="superadmin">
+                <AdminMultiStep />
               </ProtectedRoute>
             }
-          >
-            <Route index element={<Dashboard />} />
-            <Route path="inbox" element={<TeamInbox />} />
-            <Route path="broadcast" element={<Broadcast />} />
-            <Route path="templates" element={<Templates />} />
-            <Route path="contacts" element={<Contacts />} />
-            <Route path="automation" element={<Automation />} />
-
-            {/* Voice Automation */}
-            <Route path="voice-automation" element={<VoiceAutomation />} />
-            <Route path="voice-automation/inbound" element={<InboundCalls />} />
-            <Route path="voice-automation/outbound" element={<OutboundCall />} />
-            <Route path="voice-automation/history" element={<CallHistory />} />
-
-            {/* Other Modules */}
-            <Route path="inbound-calls" element={<InboundCalls />} />
-            <Route path="missedcalls" element={<MissedCalls />} />
-            <Route path="email-automation" element={<EmailAutomation />} />
-            <Route path="pdf-extractor" element={<PDFExtractor />} />
-            <Route path="voice-broadcast" element={<VoiceBroadcast />} />
-
-            {/* Admin (role based) */}
-            <Route
-              path="admin"
-              element={
-                <ProtectedRoute requiredRole="superadmin">
-                  <AdminMultiStep />
-                </ProtectedRoute>
-              }
-            />
-          </Route>
-        </Routes>
-      </Router>
+          />
+        </Route>
+      </Routes>
     </AuthProvider>
   );
 }
