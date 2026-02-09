@@ -2,10 +2,75 @@
  * Comprehensive API Service - WhatsApp Business Platform
  * Provides complete integration with all backend endpoints
  */
-import apiService from "./api";
+import axios from "axios";
 
-// Use the centralized apiService
-const api = apiService;
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+
+const api = axios.create({
+  baseURL: `${API_BASE_URL}/api`,
+  timeout: 10000,
+  headers: {
+    "Content-Type": "application/json",
+  },
+  withCredentials: true // This is important for sending cookies if you're using them
+});
+
+// Request interceptor for authentication and logging
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem("authToken");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
+// Response interceptor for error handling and logging
+api.interceptors.response.use(
+  (response) => {
+    console.log(`✅ API Response: ${response.status} ${response.config.url}`);
+    return response;
+  },
+  (error) => {
+    console.error("❌ API Error:", error.response?.data || error.message);
+    
+    // Handle common error scenarios
+    if (error.response) {
+      const { status, data } = error.response;
+      
+      switch (status) {
+        case 401:
+          console.error('Unauthorized - Please check your authentication');
+          // Optionally redirect to login
+          break;
+        case 403:
+          console.error('Forbidden - Insufficient permissions');
+          break;
+        case 404:
+          console.error('Not Found - Resource does not exist');
+          break;
+        case 429:
+          console.error('Rate Limit Exceeded - Please try again later');
+          break;
+        case 500:
+          console.error('Server Error - Please try again later');
+          break;
+        default:
+          console.error(`API Error: ${status} - ${data?.message || 'Unknown error'}`);
+      }
+    } else if (error.request) {
+      console.error('Network Error - No response received');
+    } else {
+      console.error('Request Setup Error:', error.message);
+    }
+    
+    return Promise.reject(error);
+  }
+);
 
 // WhatsApp Business Platform API Methods
 export const apiClient = {
@@ -67,7 +132,7 @@ export const apiClient = {
    * @param {Object} data - Contact data
    */
   createContact: (data) => api.post('/contacts', data),
-
+  
   /**
    * Update contact
    * @param {string} id - Contact ID
@@ -84,11 +149,11 @@ export const apiClient = {
   // ============ TEMPLATES ============
 
   /**
-   * Get all templates with optional filtering
+   * Get all templates from Meta WhatsApp Business API
    * @param {Object} params - Query parameters (status, category, language)
    */
   getTemplates: (params = {}) => api.get('/templates', { params }),
-
+  
   /**
    * Get single template by ID
    * @param {string} id - Template ID
@@ -169,6 +234,24 @@ export const apiClient = {
   sendBroadcast: (id) => api.post(`/broadcasts/${id}/send`),
 
   /**
+   * Cancel scheduled broadcast campaign
+   * @param {string} id - Broadcast ID
+   */
+  cancelBroadcast: (id) => api.post(`/broadcasts/${id}/cancel`),
+
+  /**
+   * Pause scheduled broadcast campaign
+   * @param {string} id - Broadcast ID
+   */
+  pauseBroadcast: (id) => api.post(`/broadcasts/${id}/pause`),
+
+  /**
+   * Resume paused broadcast campaign
+   * @param {string} id - Broadcast ID
+   */
+  resumeBroadcast: (id) => api.post(`/broadcasts/${id}/resume`),
+
+  /**
    * Check scheduled broadcasts
    */
   checkScheduledBroadcasts: () => api.post('/broadcasts/check-scheduled'),
@@ -176,7 +259,7 @@ export const apiClient = {
   /**
    * Sync broadcast stats from team inbox messages
    */
-  syncBroadcastStats: (id) => api.post(`/broadcasts/${id}/sync-stats`),
+  syncBroadcastStats: (id) => api.post(`/broadcasts/${id}/sync`),
 
   /**
    * Delete broadcast campaign
@@ -197,7 +280,7 @@ export const apiClient = {
   /**
    * Check API health status
    */
-  healthCheck: () => api.get('/health'),
+  healthCheck: () => api.get('/health', { baseURL: API_BASE_URL }),
 
   // ============ UTILITY METHODS ============
 
@@ -240,6 +323,7 @@ export const whatsappApiService = {
   sendMessage: apiClient.sendMessage,
   getContacts: apiClient.getContacts,
   createContact: apiClient.createContact,
+  importContacts: apiClient.importContacts,
   updateContact: apiClient.updateContact,
   deleteContact: apiClient.deleteContact,
   getTemplates: apiClient.getTemplates,
@@ -255,6 +339,9 @@ export const whatsappApiService = {
   getBroadcast: apiClient.getBroadcast,
   createBroadcast: apiClient.createBroadcast,
   sendBroadcast: apiClient.sendBroadcast,
+  cancelBroadcast: apiClient.cancelBroadcast,
+  pauseBroadcast: apiClient.pauseBroadcast,
+  resumeBroadcast: apiClient.resumeBroadcast,
   checkScheduledBroadcasts: apiClient.checkScheduledBroadcasts,
   syncBroadcastStats: apiClient.syncBroadcastStats,
   deleteBroadcast: apiClient.deleteBroadcast,

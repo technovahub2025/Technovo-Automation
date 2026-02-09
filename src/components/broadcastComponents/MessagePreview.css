@@ -1,0 +1,353 @@
+/* Message Preview Component Styles */
+
+.message-preview-container {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 20px;
+    margin-top: 16px;
+}
+
+.preview-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.preview-header h4 {
+    font-size: 16px;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0;
+}
+
+.preview-header .preview-icon {
+    color: #6b7280;
+}
+
+/* WhatsApp Phone Mockup */
+.whatsapp-mockup {
+    background: #e5ddd5;
+    border-radius: 8px;
+    padding: 12px;
+    position: relative;
+    max-width: 300px;
+    margin: 0 auto;
+}
+
+.whatsapp-mockup::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 60px;
+    background: #075e54;
+    border-radius: 8px 8px 0 0;
+    z-index: 1;
+}
+
+.whatsapp-mockup::after {
+    content: '';
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 24px;
+    height: 24px;
+    background: white;
+    border-radius: 50%;
+    z-index: 2;
+}
+
+.phone-screen {
+    background: white;
+    border-radius: 4px;
+    padding: 16px;
+    margin-top: 60px;
+    min-height: 200px;
+    position: relative;
+}
+
+/* Message Bubble */
+.message-bubble {
+    background: #dcf8c6;
+    border-radius: 8px;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    position: relative;
+    max-width: 80%;
+    word-wrap: break-word;
+}
+
+.message-bubble.sent {
+    background: #dcf8c6;
+    margin-left: auto;
+}
+
+.message-bubble.received {
+    background: white;
+    margin-right: auto;
+}
+
+.message-bubble::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    width: 8px;
+    height: 8px;
+}
+
+.message-bubble.sent::before {
+    right: -4px;
+    background: #dcf8c6;
+    border-radius: 0 4px 0 0;
+}
+
+.message-bubble.received::before {
+    left: -4px;
+    background: white;
+    border-radius: 4px 0 0 4px;
+}
+
+/* Message Content */
+.message-text {
+    font-size: 14px;
+    color: #111b21;
+    line-height: 1.4;
+    margin: 0;
+}
+
+.message-time {
+    font-size: 11px;
+    color: #667781;
+    margin-top: 4px;
+    text-align: right;
+}
+
+/* Template Message Styles */
+.template-message {
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+}
+
+.template-header {
+    font-size: 12px;
+    font-weight: 600;
+    color: #065f46;
+    margin-bottom: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.template-body {
+    font-size: 14px;
+    color: #047857;
+    line-height: 1.4;
+    margin-bottom: 4px;
+}
+
+.template-footer {
+    font-size: 12px;
+    color: #065f46;
+    font-style: italic;
+}
+
+/* Variable Highlighting */
+.variable-highlight {
+    background: #fef3c7;
+    color: #92400e;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-weight: 500;
+}
+
+/* Media Preview */
+.media-preview {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px;
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.media-icon {
+    width: 32px;
+    height: 32px;
+    background: #e5e7eb;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6b7280;
+}
+
+.media-info {
+    flex: 1;
+}
+
+.media-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 2px;
+}
+
+.media-size {
+    font-size: 11px;
+    color: #6b7280;
+}
+
+/* Button Preview */
+.button-preview {
+    background: #128c7e;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-top: 8px;
+    display: inline-block;
+}
+
+/* List Preview */
+.list-preview {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 8px;
+}
+
+.list-item {
+    padding: 8px 12px;
+    border-bottom: 1px solid #f3f4f6;
+    font-size: 14px;
+    color: #374151;
+}
+
+.list-item:last-child {
+    border-bottom: none;
+}
+
+.list-item.selected {
+    background: #f0fdf4;
+    color: #065f46;
+}
+
+/* Location Preview */
+.location-preview {
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 8px;
+    margin-bottom: 8px;
+}
+
+.location-name {
+    font-size: 13px;
+    font-weight: 500;
+    color: #374151;
+    margin-bottom: 2px;
+}
+
+.location-address {
+    font-size: 11px;
+    color: #6b7280;
+}
+
+/* Empty State */
+.empty-preview {
+    text-align: center;
+    padding: 40px 20px;
+    color: #9ca3af;
+}
+
+.empty-preview-icon {
+    width: 48px;
+    height: 48px;
+    background: #f3f4f6;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 12px;
+    color: #9ca3af;
+}
+
+.empty-preview-text {
+    font-size: 14px;
+    margin-bottom: 4px;
+}
+
+.empty-preview-subtext {
+    font-size: 12px;
+    color: #d1d5db;
+}
+
+/* Character Count */
+.character-count {
+    font-size: 12px;
+    color: #6b7280;
+    text-align: right;
+    margin-top: 8px;
+}
+
+.character-count.warning {
+    color: #f59e0b;
+}
+
+.character-count.error {
+    color: #ef4444;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .whatsapp-mockup {
+        max-width: 100%;
+    }
+
+    .message-bubble {
+        max-width: 90%;
+    }
+
+    .template-message,
+    .media-preview,
+    .list-preview,
+    .location-preview {
+        padding: 8px;
+    }
+}
+
+@media (max-width: 480px) {
+    .message-preview-container {
+        padding: 16px;
+    }
+
+    .whatsapp-mockup {
+        padding: 8px;
+    }
+
+    .phone-screen {
+        padding: 12px;
+        min-height: 150px;
+    }
+
+    .message-bubble {
+        max-width: 95%;
+        padding: 6px 10px;
+    }
+
+    .message-text {
+        font-size: 13px;
+    }
+}

@@ -18,7 +18,7 @@ const BroadcastList = ({ broadcasts, loading, onMonitor, onStop, onDelete }) => 
       draft: '#94a3b8',
       queued: '#f59e0b',
       in_progress: '#3b82f6',
-      completed: '#10b981',
+      completed: '#2563eb',
       cancelled: '#ef4444'
     };
     return colors[status] || '#64748b';

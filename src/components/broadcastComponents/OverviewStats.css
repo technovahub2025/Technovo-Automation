@@ -1,0 +1,148 @@
+/* Overview Stats Component Styles - Wati Design */
+
+/* Overview Section */
+.overview-section {
+    margin-bottom: 32px;
+}
+
+.overview-title {
+    font-size: 18px;
+    font-weight: 600;
+    color: #111827;
+    margin: 0 0 20px 0;
+    letter-spacing: -0.01em;
+}
+
+/* Stats Grid */
+.overview-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 16px;
+    width: 100%;
+}
+
+.overview-stats-grid .stat-card {
+    background: white;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    transition: all 0.2s ease;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+    position: relative;
+}
+
+.overview-stats-grid .stat-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.15);
+    border-color: #dbeafe;
+}
+
+.overview-stats-grid .stat-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.overview-stats-grid .stat-value {
+    font-size: 32px;
+    font-weight: 700;
+    color: #1f2937;
+    line-height: 1;
+    letter-spacing: -0.02em;
+    transition: color 0.2s ease;
+}
+
+.overview-stats-grid .stat-card:hover .stat-value {
+    color: #2563eb;
+}
+
+.overview-stats-grid .stat-label-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    order: 2;
+}
+
+.overview-stats-grid .stat-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    background: transparent !important;
+    padding: 0;
+    position: absolute;
+    top: 14px;
+    right: 14px;
+}
+
+.overview-stats-grid .stat-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: #6b7280;
+}
+
+/* Responsive Design */
+@media (max-width: 1400px) {
+    .overview-stats-grid {
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    }
+}
+
+@media (max-width: 1200px) {
+    .overview-stats-grid {
+        grid-template-columns: repeat(4, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .overview-stats-grid {
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+    }
+
+    .overview-stats-grid .stat-card {
+        padding: 16px;
+    }
+
+    .overview-stats-grid .stat-value {
+        font-size: 28px;
+    }
+
+    .overview-stats-grid .stat-label {
+        font-size: 13px;
+    }
+
+    .overview-stats-grid .stat-icon-wrapper {
+        width: 22px;
+        height: 22px;
+    }
+}
+
+@media (max-width: 480px) {
+    .overview-stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 10px;
+    }
+
+    .overview-stats-grid .stat-card {
+        padding: 14px;
+    }
+
+    .overview-stats-grid .stat-value {
+        font-size: 24px;
+    }
+
+    .overview-stats-grid .stat-label {
+        font-size: 12px;
+    }
+
+    .overview-stats-grid .stat-icon-wrapper {
+        width: 20px;
+        height: 20px;
+    }
+}

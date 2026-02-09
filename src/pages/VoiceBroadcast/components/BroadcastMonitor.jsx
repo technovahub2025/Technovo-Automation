@@ -140,7 +140,7 @@ const BroadcastMonitor = ({ broadcastId }) => {
     const colors = {
       queued: '#94a3b8',
       calling: '#3b82f6',
-      answered: '#10b981',
+      answered: '#2563eb',
       completed: '#22c55e',
       failed: '#ef4444',
       opted_out: '#f59e0b'
@@ -255,7 +255,7 @@ const BroadcastMonitor = ({ broadcastId }) => {
         </div>
 
         <div className="stat-card">
-          <div className="stat-icon-broadcast" style={{ background: '#d1fae5' }}>
+          <div className="stat-icon" style={{ background: '#d1fae5' }}>
             <CheckCircle size={24} color="#10b981" />
           </div>
           <div className="stat-content">

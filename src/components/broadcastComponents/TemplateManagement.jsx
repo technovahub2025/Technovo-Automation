@@ -38,7 +38,7 @@ const TemplateManagement = () => {
       const data = await whatsappService.getTemplates();
       setTemplates(data || []);
     } catch (error) {
-      console.error('Error fetching templates:', error);
+      alert('Error fetching templates: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -55,7 +55,6 @@ const TemplateManagement = () => {
         alert('Failed to sync templates: ' + (result.error || result.message));
       }
     } catch (error) {
-      console.error('Error syncing templates:', error);
       alert('Error syncing templates: ' + error.message);
     } finally {
       setSyncing(false);
@@ -88,7 +87,6 @@ const TemplateManagement = () => {
       resetForm();
       await fetchTemplates();
     } catch (error) {
-      console.error('Error saving template:', error);
       alert('Error saving template: ' + error.message);
     } finally {
       setLoading(false);
@@ -106,7 +104,6 @@ const TemplateManagement = () => {
         alert('Failed to delete template: ' + (result.error || result.message));
       }
     } catch (error) {
-      console.error('Error deleting template:', error);
       alert('Error deleting template: ' + error.message);
     }
   };

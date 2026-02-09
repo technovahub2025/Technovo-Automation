@@ -27,7 +27,7 @@ const BulkMessaging = () => {
       const result = await apiClient.getTemplates();
       setTemplates(result.data || []);
     } catch (error) {
-      console.error('Error fetching templates:', error);
+      alert('Error fetching templates: ' + error.message);
     }
   };
 
@@ -39,7 +39,7 @@ const BulkMessaging = () => {
         await fetchTemplates();
       }
     } catch (error) {
-      console.error('Error syncing templates:', error);
+      alert('Error syncing templates: ' + error.message);
     } finally {
       setSyncing(false);
     }
@@ -149,7 +149,6 @@ const BulkMessaging = () => {
       const sendResult = await apiClient.sendBulkMessages(bulkData);
       setResults(sendResult);
     } catch (error) {
-      console.error('Error sending bulk messages:', error);
       setResults({
         success: false,
         message: error.message || 'Failed to send bulk messages'
@@ -332,7 +331,6 @@ const BulkMessaging = () => {
               required
             />
             <label htmlFor="csv-upload" className="csv-upload-label">
-              <Upload className="upload-icon" />
               <p className="upload-text">
                 {csvFile ? csvFile.name : 'Click to upload CSV file'}
               </p>

@@ -7,7 +7,6 @@ import {
   MessageSquare,
   Radio,
   Users,
-  Zap,
   LogOut,
   FileText,
   Phone,
@@ -97,7 +96,6 @@ const Sidebar = () => {
             <SidebarItem icon={MessageSquare} label="Team Inbox" to="/inbox" />
             <SidebarItem icon={FileText} label="Templates" to="/templates" />
             <SidebarItem icon={Users} label="Contacts" to="/contacts" />
-            <SidebarItem icon={Zap} label="Automation" to="/automation" />
             <SidebarItem icon={Phone} label="Voice Automation" to="/voice-automation" />
             <SidebarItem icon={PhoneMissed} label="MissedCalls" to="/missedcalls" />
             <SidebarItem icon={Mail} label="Email Automation" to="/email-automation" />
@@ -113,7 +111,6 @@ const Sidebar = () => {
             <SidebarItem icon={MessageSquare} label="Team Inbox" to="/inbox" />
             <SidebarItem icon={FileText} label="Templates" to="/templates" />
             <SidebarItem icon={Users} label="Contacts" to="/contacts" />
-            <SidebarItem icon={Zap} label="Automation" to="/automation" />
             <SidebarItem icon={Phone} label="Voice Automation" to="/voice-automation" />
             <SidebarItem icon={PhoneMissed} label="MissedCalls" to="/missedcalls" />
             <SidebarItem icon={Mail} label="Email Automation" to="/email-automation" />

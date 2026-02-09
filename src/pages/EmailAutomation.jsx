@@ -20,7 +20,7 @@ const EmailAutomation = () => {
   const stats = [
     { label: 'Total Extractions', value: '24', change: '+12%', icon: FileText, color: '#3b82f6' },
     { label: 'Avg. Keywords', value: '15.3', change: '+5%', icon: Type, color: '#8b5cf6' },
-    { label: 'Success Rate', value: '98.5%', change: '+2%', icon: CheckCircle, color: '#10b981' },
+    { label: 'Success Rate', value: '98.5%', change: '+2%', icon: CheckCircle, color: '#4f46e5' },
     { label: 'Processing Time', value: '2.3s', change: '-15%', icon: Clock, color: '#f59e0b' },
   ];
 

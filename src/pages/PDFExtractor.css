@@ -8,7 +8,7 @@
 
 /* Header Styles */
 .extractor-header {
-  background: linear-gradient(to right, #7c3aed, #4f46e5);
+  background: linear-gradient(to right, #7c3aed, #2563eb);
   color: white;
   padding: 1rem 1.5rem;
   display: flex;
@@ -138,7 +138,7 @@
   margin-top: 1rem;
   width: 100%;
   padding: 0.75rem;
-  background: linear-gradient(to right, #7c3aed, #4f46e5);
+  background: linear-gradient(to right, #7c3aed, #2563eb);
   border: none;
   color: #fff;
   font-size: 1rem;

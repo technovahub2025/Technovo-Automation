@@ -1,75 +1,394 @@
-.sidebar {
-    width: 260px;
+/* Two-Panel Sidebar Design */
+
+/* Main Container */
+.sidebar-container {
+    display: flex;
+    position: fixed;
+    left: 0;
+    top: 0;
     height: 100vh;
-    background-color: var(--color-bg-sidebar);
-    border-right: 1px solid var(--color-border);
+    z-index: 1000;
+}
+
+/* Light Grey Left Panel (Icon Bar) */
+.sidebar-dark {
+    width: 70px;
+    height: 100vh;
+    background:#34346B;
     display: flex;
     flex-direction: column;
-    padding: 24px 16px;
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 50;
-}
-
-.logo-container {
-    display: flex;
     align-items: center;
-    gap: 12px;
-    padding: 0 16px;
-    margin-bottom: 32px;
+    padding: 16px 0;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+    border-right: 1px solid #e5e7eb;
 }
 
-.logo-icon {
-    width: 32px;
-    height: 32px;
-    color: white;
-    border-radius: 8px;
+/* Logo Icon */
+.logo-icon-container {
+    width: 55px;
+    height: 55px;
+    margin-bottom: 24px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-weight: bold;
-    font-size: 20px;
+
 }
 
-.logo-icon img {
-    width: 100%;           
+.logo-icon-container img {
+    width: 100%;
     height: 100%;
     object-fit: contain;
-    display: block;
-    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.25));
 }
 
-.logo-text {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--color-text-primary);
-}
-
-.nav-menu {
+/* Icon Menu */
+.icon-menu {
     flex: 1;
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    overflow-y: auto;
 }
 
-.sidebar-item {
+/* Individual Icon Item */
+.icon-item {
+    width: 100%;
+    height: 56px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    color: white;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    position: relative;
+}
+
+.icon-item:hover {
+    background: white;
+    color: #34346B;
+}
+
+.icon-item.active {
+    background: white;
+    color: #34346B;
+}
+
+.icon-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 4px;
+    height: 32px;
+    background:#34346B;
+    border-radius: 0 4px 4px 0;
+}
+
+.icon-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-align: center;
+}
+
+/* Light Grey Sidebar Footer */
+.sidebar-dark-footer {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    padding-top: 16px;
+    border-top: 1px solid #d1d5db;
+}
+
+.avatar-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: white;
+    color: #374151;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.logout-icon {
+    height: 48px;
+}
+
+/* White Expandable Panel */
+.sidebar-expand-panel {
+    width: 280px;
+    height: 100vh;
+    background: white;
+    border-right: 1px solid #e5e7eb;
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.05);
+    overflow-y: auto;
+    animation: slideIn 0.2s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateX(-20px);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* Panel Header */
+.panel-header {
+    padding: 20px 24px;
+    border-bottom: 1px solid #e5e7eb;
+    position: relative;
+}
+
+.panel-header h3 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0;
+}
+
+/* Panel Close Button */
+.panel-close-btn {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background-color: #f3f4f6;
+    border: 1px solid #d1d5db;
+    border-radius: 6px;
+    padding: 6px;
+    cursor: pointer;
+    color: #6b7280;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.panel-close-btn:hover {
+    background-color: #e5e7eb;
+    color: #374151;
+}
+
+/* Panel Menu */
+.panel-menu {
+    padding: 8px 0;
+}
+
+/* Panel Menu Item */
+.panel-item {
     display: flex;
     align-items: center;
     gap: 12px;
-    padding: 10px 16px;
-    margin-bottom: 4px;
-    color: var(--color-text-secondary);
-    border-radius: var(--radius-md);
+    padding: 12px 24px;
+    color: #374151;
+    text-decoration: none;
     cursor: pointer;
-    transition: all 0.2s;
-    font-weight: 500;
+    transition: all 0.2s ease;
+    font-size: 14px;
+    font-weight: 700;
 }
 
-.sidebar-item:hover {
-    background-color: var(--color-bg-main);
-    color: var(--color-text-primary);
+.panel-item:hover {
+    background: #f3f4f6;
+    color: #1f2937;
 }
 
-.sidebar-item.active {
-    background-color: #e7f7f3;
-    /* Light green tint */
-    color: var(--color-primary);
+.panel-item.active {
+    background: 135deg;
+    color: #2563eb;
+    border-left: 3px solid #34346B;
+}
+
+.panel-item svg {
+    flex-shrink: 0;
+}
+
+/* Scrollbar Styling */
+.sidebar-dark::-webkit-scrollbar,
+.sidebar-expand-panel::-webkit-scrollbar {
+    width: 6px;
+}
+
+.sidebar-dark::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar-dark::-webkit-scrollbar-thumb {
+    background: #9ca3af;
+    border-radius: 3px;
+}
+
+.sidebar-dark::-webkit-scrollbar-thumb:hover {
+    background: #6b7280;
+}
+
+.sidebar-expand-panel::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.sidebar-expand-panel::-webkit-scrollbar-thumb {
+    background: #d1d5db;
+    border-radius: 3px;
+}
+
+.sidebar-expand-panel::-webkit-scrollbar-thumb:hover {
+    background: #9ca3af;
+}
+
+/* Responsive Design */
+@media (max-width: 1024px) {
+    /* Ensure main sidebar remains visible */
+    .sidebar-container {
+        position: fixed;
+        left: 0;
+        top: 0;
+        z-index: 1000;
+        visibility: visible;
+    }
+
+    .sidebar-dark {
+        position: relative;
+        left: 0;
+        visibility: visible;
+    }
+
+    /* Make sidebar expand panel overlay instead of taking space */
+    .sidebar-expand-panel {
+        position: fixed;
+        top: 0;
+        left: 70px;
+        z-index: 999;
+        box-shadow: 4px 0 12px rgba(0, 0, 0, 0.15);
+        transform: translateX(-100%);
+        transition: transform 0.3s ease;
+    }
+
+    .sidebar-expand-panel.open {
+        transform: translateX(0);
+    }
+
+    /* Add toggle button for mobile */
+    .sidebar-toggle-btn {
+        display: flex;
+        position: fixed;
+        top: 20px;
+        left: 85px;
+        z-index: 1001;
+        background: var(--color-primary);
+        color: white;
+        border: none;
+        border-radius: 8px;
+        padding: 8px 12px;
+        cursor: pointer;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+        font-size: 12px;
+        font-weight: 600;
+        gap: 6px;
+        align-items: center;
+    }
+
+    .sidebar-toggle-btn:hover {
+        background: var(--color-secondary);
+    }
+
+    /* Adjust main content to not shift when panel is open */
+    .main-layout .content-shifted {
+        margin-left: 70px !important;
+        width: calc(100% - 70px) !important;
+    }
+}
+
+@media (max-width: 768px) {
+    .sidebar-container {
+        position: fixed;
+        left: 0;
+        top: 0;
+        z-index: 1000;
+        visibility: visible;
+    }
+
+    .sidebar-dark {
+        width: 60px;
+        position: relative;
+        left: 0;
+        visibility: visible;
+    }
+
+    .icon-item {
+        height: 48px;
+    }
+
+    .icon-label {
+        font-size: 9px;
+    }
+
+    .sidebar-expand-panel {
+        width: 240px;
+        left: 60px;
+    }
+
+    .sidebar-toggle-btn {
+        left: 75px;
+    }
+
+    .panel-header {
+        padding: 16px 20px;
+    }
+
+    .panel-header h3 {
+        font-size: 16px;
+    }
+
+    .panel-item {
+        padding: 10px 20px;
+        font-size: 13px;
+    }
+}
+
+@media (max-width: 480px) {
+    .sidebar-container {
+        position: fixed;
+        left: 0;
+        top: 0;
+        z-index: 1000;
+        visibility: visible;
+    }
+
+    .sidebar-dark {
+        width: 56px;
+        position: relative;
+        left: 0;
+        visibility: visible;
+    }
+
+    .logo-icon-container {
+        width: 40px;
+        height: 40px;
+    }
+
+    .icon-item {
+        height: 44px;
+    }
+
+    .sidebar-expand-panel {
+        width: 220px;
+        left: 56px;
+    }
+
+    .sidebar-toggle-btn {
+        left: 71px;
+        padding: 6px 10px;
+        font-size: 11px;
+    }
 }

@@ -5,6 +5,10 @@
     box-shadow: var(--shadow-sm);
     border: 1px solid var(--color-border);
     transition: transform 0.2s, box-shadow 0.2s;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    box-sizing: border-box;
 }
 
 .stat-card-main:hover {
@@ -17,6 +21,14 @@
     justify-content: space-between;
     align-items: flex-start;
     margin-bottom: 16px;
+    flex: 1;
+}
+
+.stat-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-start;
 }
 
 .stat-title {
@@ -31,6 +43,8 @@
     color: var(--color-text-primary);
     font-size: 28px;
     font-weight: 700;
+    line-height: 1.2;
+    margin: 0;
 }
 
 .stat-icon {
@@ -40,6 +54,8 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
+    margin-left: 16px;
 }
 
 .stat-footer {
@@ -47,6 +63,7 @@
     align-items: center;
     gap: 8px;
     font-size: 13px;
+    margin-top: auto;
 }
 
 .stat-change {
@@ -56,10 +73,11 @@
     font-weight: 600;
     padding: 2px 6px;
     border-radius: 4px;
+    white-space: nowrap;
 }
 
 .stat-change.positive {
-    color: #10b981;
+    color: #2563eb;
     background-color: #ecfdf5;
 }
 

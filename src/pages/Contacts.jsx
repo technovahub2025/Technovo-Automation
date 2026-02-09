@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, UserPlus, Filter, MoreHorizontal, Edit, Trash2, Phone, MessageCircle, CheckSquare, Square, ChevronDown, ArrowUpDown } from 'lucide-react';
+import { Search, UserPlus, Filter, MoreHorizontal, Edit, Trash2, Phone, MessageCircle, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X } from 'lucide-react';
 import { apiClient } from '../services/whatsappapi';
 import './Contacts.css';
 
@@ -21,6 +21,12 @@ const Contacts = () => {
     const [showSortDropdown, setShowSortDropdown] = useState(false);
     const [lastActiveFilter, setLastActiveFilter] = useState('all');
     const [sortOption, setSortOption] = useState('name-asc');
+    const [showImportModal, setShowImportModal] = useState(false);
+    const [importFile, setImportFile] = useState(null);
+    const [importPreview, setImportPreview] = useState([]);
+    const [importStep, setImportStep] = useState('upload');
+    const [importMapping, setImportMapping] = useState({});
+    const fileInputRef = useRef(null);
 
     useEffect(() => {
         loadContacts();
@@ -233,6 +239,164 @@ const loadContacts = async () => {
         return `${diffDays} days ago`;
     };
 
+    // Import functions
+    const handleFileSelect = (event) => {
+        const file = event.target.files[0];
+        if (file) {
+            setImportFile(file);
+            parseCSVFile(file);
+        }
+    };
+
+    const parseCSVFile = (file) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const text = e.target.result;
+            const lines = text.split('\n').filter(line => line.trim());
+            
+            if (lines.length < 2) {
+                alert('CSV file must contain at least a header row and one data row');
+                return;
+            }
+
+            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
+            const data = lines.slice(1).map((line, index) => {
+                const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
+                const row = { lineNumber: index + 2 };
+                headers.forEach((header, i) => {
+                    row[header] = values[i] || '';
+                });
+                return row;
+            });
+
+            setImportPreview(data.slice(0, 5)); // Show first 5 rows for preview
+            setImportStep('mapping');
+        };
+        reader.readAsText(file);
+    };
+
+    const handleMappingChange = (field, value) => {
+        setImportMapping(prev => ({
+            ...prev,
+            [field]: value
+        }));
+    };
+
+    const getAvailableFields = () => {
+        if (importPreview.length === 0) return [];
+        return Object.keys(importPreview[0]).filter(key => key !== 'lineNumber');
+    };
+
+    const getMappedContacts = () => {
+        return importPreview.map(row => {
+            const contact = {};
+            
+            // Map fields based on user selection
+            Object.keys(importMapping).forEach(field => {
+                const sourceField = importMapping[field];
+                if (sourceField && row[sourceField] !== undefined) {
+                    switch (field) {
+                        case 'name':
+                            // Combine first and last name if available
+                            const firstName = row[sourceField] || '';
+                            const lastNameField = importMapping['lastName'];
+                            const lastName = lastNameField ? (row[lastNameField] || '') : '';
+                            contact[field] = [firstName, lastName].filter(Boolean).join(' ').trim();
+                            break;
+                        case 'phone':
+                            // Clean phone number
+                            let phone = row[sourceField] || '';
+                            phone = phone.replace(/[^0-9+]/g, '');
+                            if (!phone.startsWith('+') && phone.length > 0) {
+                                phone = '+' + phone;
+                            }
+                            contact[field] = phone;
+                            break;
+                        case 'email':
+                            contact[field] = row[sourceField] || '';
+                            break;
+                        case 'tags':
+                            // Split tags by comma
+                            const tags = row[sourceField] || '';
+                            contact[field] = tags.split(',').map(tag => tag.trim()).filter(Boolean);
+                            break;
+                        case 'status':
+                            contact[field] = row[sourceField] || 'Opted-in';
+                            break;
+                        case 'listName':
+                            contact[field] = row[sourceField] || '';
+                            break;
+                        default:
+                            // Handle custom attributes
+                            if (field.startsWith('custom_attribute_')) {
+                                contact[field] = row[sourceField] || '';
+                            }
+                            break;
+                    }
+                }
+            });
+
+            return contact;
+        }).filter(contact => contact.phone); // Only include contacts with phone numbers
+    };
+
+    const handleImportContacts = async () => {
+        const mappedContacts = getMappedContacts();
+        
+        if (mappedContacts.length === 0) {
+            alert('No valid contacts to import');
+            return;
+        }
+
+        try {
+            setLoading(true);
+            const result = await apiClient.importContacts(mappedContacts);
+            
+            if (result.data.success) {
+                alert(`Successfully imported ${mappedContacts.length} contacts!`);
+                setShowImportModal(false);
+                setImportFile(null);
+                setImportPreview([]);
+                setImportMapping({});
+                setImportStep('upload');
+                await loadContacts();
+            } else {
+                alert('Import failed: ' + (result.data.error || 'Unknown error'));
+            }
+        } catch (error) {
+            alert('Import failed: ' + error.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const downloadSampleCSV = () => {
+        const csvContent = `First Name,Last Name,WhatsApp Number,Email,Status,List Name,Tags,custom_attribute_1,custom_attribute_2,custom_attribute_3
+John,Doe,+1234567890,john@example.com,Opted-in,Main List,"VIP, Lead",Custom1,Custom2,Custom3
+Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Support",Value1,Value2,Value3`;
+        
+        const blob = new Blob([csvContent], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'contact_import_sample.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    };
+
+    const resetImport = () => {
+        setShowImportModal(false);
+        setImportFile(null);
+        setImportPreview([]);
+        setImportMapping({});
+        setImportStep('upload');
+        if (fileInputRef.current) {
+            fileInputRef.current.value = '';
+        }
+    };
+
     const getAllContacts = () => {
         // Show only database contacts
         let allContacts = contacts.map(c => ({
@@ -337,7 +501,10 @@ const loadContacts = async () => {
                         </>
                     ) : (
                         <>
-                            <button className="secondary-btn">Import</button>
+                            <button className="secondary-btn" onClick={() => setShowImportModal(true)}>
+                                <Upload size={18} />
+                                Import
+                            </button>
                             <button className="primary-btn" onClick={() => setShowAddModal(true)}>
                                 <UserPlus size={18} />
                                 Add Contact
@@ -715,6 +882,221 @@ const loadContacts = async () => {
                             <button className="primary-btn" onClick={handleUpdateContact}>
                                 Update Contact
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Import Contacts Modal */}
+            {showImportModal && (
+                <div className="modal-overlay">
+                    <div className="modal import-modal">
+                        <div className="modal-header">
+                            <h3>Import Contacts</h3>
+                            <button className="close-btn" onClick={resetImport}>×</button>
+                        </div>
+                        <div className="modal-body">
+                            {importStep === 'upload' && (
+                                <div className="import-step">
+                                    <div className="form-group">
+                                        <label>Upload CSV File</label>
+                                        <input
+                                            ref={fileInputRef}
+                                            type="file"
+                                            accept=".csv"
+                                            onChange={handleFileSelect}
+                                            className="file-input"
+                                        />
+                                        <div className="file-info">
+                                            {importFile ? `Selected: ${importFile.name}` : 'No file selected'}
+                                        </div>
+                                    </div>
+                                    <div className="csv-format-info">
+                                        <h4>CSV Format Requirements</h4>
+                                        <p>Your CSV file should include the following columns:</p>
+                                        <ul>
+                                            <li><strong>First Name</strong> - Contact's first name</li>
+                                            <li><strong>Last Name</strong> - Contact's last name</li>
+                                            <li><strong>WhatsApp Number</strong> - Phone number with country code</li>
+                                            <li><strong>Email</strong> - Email address (optional)</li>
+                                            <li><strong>Status</strong> - Opted-in or Opted-out</li>
+                                            <li><strong>List Name</strong> - Contact list name (optional)</li>
+                                            <li><strong>Tags</strong> - Comma-separated tags (optional)</li>
+                                            <li><strong>custom_attribute_1,2,3</strong> - Custom fields (optional)</li>
+                                        </ul>
+                                        <button 
+                                            className="secondary-btn download-sample-btn" 
+                                            onClick={downloadSampleCSV}
+                                        >
+                                            <Download size={16} />
+                                            Download Sample CSV
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                            {importStep === 'mapping' && (
+                                <div className="import-step">
+                                    <div className="mapping-header">
+                                        <h4>Map Your Fields</h4>
+                                        <p>Match your CSV columns to our contact fields:</p>
+                                    </div>
+                                    
+                                    <div className="mapping-table-container">
+                                        <table className="mapping-table">
+                                            <thead>
+                                                <tr>
+                                                    <th>Our Field</th>
+                                                    <th>Your CSV Column</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                <tr>
+                                                    <td>Name *</td>
+                                                    <td>
+                                                        <select 
+                                                            value={importMapping.name || ''}
+                                                            onChange={(e) => handleMappingChange('name', e.target.value)}
+                                                            className="mapping-select"
+                                                        >
+                                                            <option value="">Select column...</option>
+                                                            {getAvailableFields().map(field => (
+                                                                <option key={field} value={field}>{field}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Last Name</td>
+                                                    <td>
+                                                        <select 
+                                                            value={importMapping.lastName || ''}
+                                                            onChange={(e) => handleMappingChange('lastName', e.target.value)}
+                                                            className="mapping-select"
+                                                        >
+                                                            <option value="">Select column...</option>
+                                                            {getAvailableFields().map(field => (
+                                                                <option key={field} value={field}>{field}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Phone Number *</td>
+                                                    <td>
+                                                        <select 
+                                                            value={importMapping.phone || ''}
+                                                            onChange={(e) => handleMappingChange('phone', e.target.value)}
+                                                            className="mapping-select"
+                                                        >
+                                                            <option value="">Select column...</option>
+                                                            {getAvailableFields().map(field => (
+                                                                <option key={field} value={field}>{field}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Email</td>
+                                                    <td>
+                                                        <select 
+                                                            value={importMapping.email || ''}
+                                                            onChange={(e) => handleMappingChange('email', e.target.value)}
+                                                            className="mapping-select"
+                                                        >
+                                                            <option value="">Select column...</option>
+                                                            {getAvailableFields().map(field => (
+                                                                <option key={field} value={field}>{field}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Status</td>
+                                                    <td>
+                                                        <select 
+                                                            value={importMapping.status || ''}
+                                                            onChange={(e) => handleMappingChange('status', e.target.value)}
+                                                            className="mapping-select"
+                                                        >
+                                                            <option value="">Select column...</option>
+                                                            {getAvailableFields().map(field => (
+                                                                <option key={field} value={field}>{field}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Tags</td>
+                                                    <td>
+                                                        <select 
+                                                            value={importMapping.tags || ''}
+                                                            onChange={(e) => handleMappingChange('tags', e.target.value)}
+                                                            className="mapping-select"
+                                                        >
+                                                            <option value="">Select column...</option>
+                                                            {getAvailableFields().map(field => (
+                                                                <option key={field} value={field}>{field}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                            </tbody>
+                                        </table>
+                                    </div>
+
+                                    {importPreview.length > 0 && (
+                                        <div className="preview-section">
+                                            <h4>Preview (First 5 rows)</h4>
+                                            <div className="preview-table-container">
+                                                <table className="preview-table">
+                                                    <thead>
+                                                        <tr>
+                                                            <th>Line</th>
+                                                            {Object.keys(importPreview[0]).filter(key => key !== 'lineNumber').map(header => (
+                                                                <th key={header}>{header}</th>
+                                                            ))}
+                                                        </tr>
+                                                    </thead>
+                                                    <tbody>
+                                                        {importPreview.map((row, index) => (
+                                                            <tr key={index}>
+                                                                <td>{row.lineNumber}</td>
+                                                                {Object.keys(importPreview[0]).filter(key => key !== 'lineNumber').map(header => (
+                                                                    <td key={header}>{row[header] || ''}</td>
+                                                                ))}
+                                                            </tr>
+                                                        ))}
+                                                    </tbody>
+                                                </table>
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                        <div className="modal-footer">
+                            {importStep === 'upload' && (
+                                <>
+                                    <button className="secondary-btn" onClick={resetImport}>
+                                        Cancel
+                                    </button>
+                                </>
+                            )}
+                            {importStep === 'mapping' && (
+                                <>
+                                    <button className="secondary-btn" onClick={() => setImportStep('upload')}>
+                                        Back
+                                    </button>
+                                    <button 
+                                        className="primary-btn" 
+                                        onClick={handleImportContacts}
+                                        disabled={!importMapping.phone}
+                                    >
+                                        Import {getMappedContacts().length} Contacts
+                                    </button>
+                                </>
+                            )}
                         </div>
                     </div>
                 </div>

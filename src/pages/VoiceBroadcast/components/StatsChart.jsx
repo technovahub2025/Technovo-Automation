@@ -6,7 +6,7 @@ const StatsChart = ({ broadcast }) => {
   if (!broadcast || !broadcast.stats) return null;
 
   const data = [
-    { name: 'Completed', value: broadcast.stats.completed, color: '#10b981' },
+    { name: 'Completed', value: broadcast.stats.completed, color: '#2563eb' },
     { name: 'Failed', value: broadcast.stats.failed, color: '#ef4444' },
     { name: 'Calling', value: broadcast.stats.calling, color: '#3b82f6' },
     { name: 'Queued', value: broadcast.stats.queued, color: '#94a3b8' },

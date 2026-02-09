@@ -22,7 +22,7 @@ const CallsTable = ({ calls, getStatusColor }) => {
   const getStatusIcon = (status) => {
     switch (status) {
       case 'completed':
-        return <CheckCircle size={16} color="#10b981" />;
+        return <CheckCircle size={16} color="#2563eb" />;
       case 'failed':
       case 'no_answer':
       case 'busy':

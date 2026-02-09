@@ -2,8 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Search, Send, Paperclip, Smile, MoreVertical, Phone, Video, Info, Users, BarChart3, Radio, Check, CheckCheck, Clock, MessageSquare, Bell, FileText, Mail } from 'lucide-react';
 import webSocketService from '../services/websocketService';
 import { whatsappService } from '../services/whatsappService';
-import BulkMessaging from '../components/BulkMessaging';
-import TemplateManagement from '../components/TemplateManagement';
+import BulkMessaging from '../components/broadcastComponents/BulkMessaging';
+import TemplateManagement from '../components/broadcastComponents/TemplateManagement';
 
 const WhatsAppBusinessPlatform = () => {
   const [activeTab, setActiveTab] = useState('inbox');

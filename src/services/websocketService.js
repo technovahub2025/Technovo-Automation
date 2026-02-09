@@ -84,6 +84,7 @@ class WebSocketService extends EventEmitter {
     
     // WebSocket URL from environment or default
     this.wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
+    console.log('🔌 WebSocket URL:', this.wsUrl);
     
     // Bind methods to maintain context
     this.handleOpen = this.handleOpen.bind(this);

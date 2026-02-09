@@ -9,6 +9,7 @@
     position: sticky;
     top: 0;
     z-index: 40;
+    transition: padding 0.3s ease;
 }
 
 .page-title {
@@ -30,6 +31,7 @@
     border-radius: var(--radius-full);
     padding: 8px 16px;
     width: 300px;
+    transition: width 0.3s ease, padding 0.3s ease;
 }
 
 .search-icon {
@@ -65,7 +67,6 @@
     width: 8px;
     height: 8px;
     background-color: #ef4444;
-    /* Red */
     border-radius: 50%;
     border: 1px solid white;
 }
@@ -94,4 +95,115 @@
     font-size: 14px;
     font-weight: 500;
     color: var(--color-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 120px;
+}
+
+/* Tablet Responsive */
+@media (max-width: 1024px) {
+    .header {
+        padding: 0 24px;
+    }
+    
+    .search-bar {
+        width: 250px;
+    }
+    
+    .header-right {
+        gap: 16px;
+    }
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .header {
+        padding: 0 16px 0 60px;
+    }
+    
+    .header-left {
+        flex: 1;
+    }
+    
+    .page-title {
+        font-size: 18px;
+    }
+    
+    .header-right {
+        gap: 12px;
+    }
+    
+    .search-bar {
+        width: 200px;
+        padding: 6px 12px;
+    }
+    
+    .search-bar input {
+        font-size: 13px;
+    }
+    
+    .icon-button {
+        padding: 6px;
+    }
+    
+    .user-name {
+        max-width: 80px;
+        font-size: 13px;
+    }
+}
+
+/* Small Mobile */
+@media (max-width: 480px) {
+    .header {
+        padding: 0 12px 0 52px;
+        height: 56px;
+    }
+    
+    .page-title {
+        font-size: 16px;
+    }
+    
+    .header-right {
+        gap: 8px;
+    }
+    
+    .search-bar {
+        width: 150px;
+        padding: 4px 8px;
+    }
+    
+    .search-bar input {
+        font-size: 12px;
+    }
+    
+    .search-icon {
+        margin-right: 6px;
+    }
+    
+    .icon-button {
+        padding: 4px;
+    }
+    
+    .user-name {
+        display: none;
+    }
+    
+    .notification-dot {
+        width: 6px;
+        height: 6px;
+        top: 6px;
+        right: 6px;
+    }
+}
+
+/* Extra Small Mobile */
+@media (max-width: 360px) {
+    .search-bar {
+        width: 120px;
+    }
+    
+    .search-bar input::placeholder {
+        font-size: 11px;
+    }
 }

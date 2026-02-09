@@ -17,7 +17,7 @@
 }
 
 .email-automation .notification.success {
-  background-color: #10b981;
+  background-color: #2563eb;
 }
 
 .email-automation .notification.error {
@@ -39,7 +39,7 @@
 
 /* Header Styles - Scoped */
 .email-automation .automation-header {
-  background: linear-gradient(to right, #9333ea, #4f46e5);
+  background: linear-gradient(to right, #9333ea, #2563eb);
   color: white;
   padding: 1.5rem;
   display: flex;
@@ -163,7 +163,7 @@
 }
 
 .email-automation .stat-change.positive {
-  color: #10b981;
+  color: #2563eb;
 }
 
 .email-automation .stat-change.negative {
@@ -277,7 +277,7 @@
 }
 
 .email-automation .action-btn.primary {
-  background: linear-gradient(to right, #9333ea, #4f46e5);
+  background: linear-gradient(to right, #9333ea, #2563eb);
   color: white;
 }
 
