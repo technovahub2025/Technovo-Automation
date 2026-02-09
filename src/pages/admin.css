@@ -1,0 +1,387 @@
+:root {
+  --primary: #764ba2;
+  --secondary: #667eea;
+  --bg-gray: #f8f9fa;
+  --border: #e9ecef;
+  --text: #333;
+  --shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+  --radius: 12px;
+}
+
+.admin-multistep-page {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  padding: 2rem;
+  height: 100vh;
+  /* Fixed height */
+  overflow: hidden;
+  /* Prevent page scrolling */
+  display: flex;
+  gap: 2rem;
+  color: var(--text);
+  box-sizing: border-box;
+}
+
+.form-row {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+  margin-bottom: 0.8rem;
+  /* Compact row spacing */
+}
+
+.form-row label {
+  min-width: 130px;
+  /* Reduced from 160px */
+  font-weight: 600;
+  color: var(--primary);
+  text-align: left;
+}
+
+.form-row input,
+.form-row .password-field {
+  flex: 1;
+  margin-bottom: 0 !important;
+}
+
+/* Forms & Inputs */
+.login-box,
+.initial-screen,
+.user-list {
+  background: white;
+  border-radius: 16px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
+  padding: 1.2rem;
+  /* Streamlined for better fit */
+}
+
+.step-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 2rem;
+  justify-content: flex-start;
+  gap: 15px;
+}
+
+.back-icon {
+  cursor: pointer;
+  color: #666;
+  transition: 0.2s;
+  flex-shrink: 0;
+}
+
+.back-icon:hover {
+  color: var(--primary);
+  transform: translateX(-3px);
+}
+
+.login-box input,
+.password-field input {
+  width: 100%;
+  padding: 1rem;
+  margin-bottom: 1.2rem;
+  border: 2px solid var(--border);
+  border-radius: 10px;
+  transition: 0.3s;
+  box-sizing: border-box;
+}
+
+.login-box input:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(118, 75, 162, 0.1);
+}
+
+/* Modal Styling - Rectangular approach */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: white;
+  border-radius: 20px;
+  width: 95%;
+  max-width: 550px;
+  /* Narrower for better content fit */
+  padding: 1.5rem;
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.3);
+  max-height: 90vh;
+  overflow-y: hidden;
+  /* Removed scroll bar */
+  position: relative;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.2rem;
+  /* Reduced margin */
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--bg-gray);
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: var(--primary);
+}
+
+.modal-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #999;
+  transition: 0.2s;
+}
+
+.modal-close:hover {
+  color: #333;
+  transform: rotate(90deg);
+}
+
+.modal-actions {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 15px;
+  margin-top: 1.5rem;
+  width: 100%;
+}
+
+.btn-submit {
+  background: linear-gradient(135deg, var(--secondary), var(--primary));
+  color: white;
+  min-width: 160px;
+}
+
+.btn-cancel {
+  background: #f1f1f1;
+  color: #666;
+  min-width: 100px;
+}
+
+.modal-content .login-box {
+  padding: 0 !important;
+  box-shadow: none !important;
+  width: 100% !important;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Center the form contents */
+}
+
+.form-row {
+  width: 100%;
+  /* Ensure rows take full width for centering to work */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* Center row content */
+  gap: 15px;
+  margin-bottom: 0.8rem;
+}
+
+/* Password Field */
+.password-field {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.password-field input {
+  width: 100%;
+  padding-right: 42px;
+  margin-bottom: 0 !important;
+  /* Center icon relative to input box */
+}
+
+/* Add margin to the field container instead */
+.login-box .password-field,
+.form-row .password-field {
+  margin-bottom: 1.2rem;
+}
+
+.eye-icon {
+  position: absolute;
+  right: 12px;
+  top: 60%;
+  transform: translateY(-50%);
+  cursor: pointer;
+  color: #555;
+  display: flex;
+  align-items: center;
+}
+
+/* User Cards */
+.user-list {
+  flex: 0 0 450px;
+  max-height: calc(100vh - 100px);
+  /* Fit within viewport */
+  overflow-y: auto;
+  /* Enable scrolling */
+}
+
+.user-card {
+  background: var(--bg-gray);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  margin-bottom: 1rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: 0.3s;
+}
+
+.user-card:hover {
+  transform: translateY(-3px);
+  box-shadow: var(--shadow);
+  border-color: var(--primary);
+}
+
+.user-card strong {
+  color: var(--primary);
+  font-size: 1.1rem;
+}
+
+/* Buttons */
+button {
+  padding: 0.6rem 1.2rem;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  transition: 0.2s;
+}
+
+.login-box button[type="submit"],
+.initial-screen button {
+  background: linear-gradient(135deg, var(--secondary), var(--primary));
+  color: white;
+  width: 100%;
+}
+
+.user-card-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.edit-btn {
+  background: #4dabf7;
+  color: white;
+}
+
+.delete-btn {
+  background: #ff6b6b;
+  color: white;
+}
+
+/* Read Only Header */
+.user-header-display {
+  margin-bottom: 20px;
+  padding: 12px 16px;
+  background: #f8f6ff;
+  border-radius: 10px;
+  border-left: 4px solid var(--primary);
+}
+
+.display-username {
+  font-weight: 700;
+  color: var(--primary);
+}
+
+.display-email {
+  color: #666;
+  font-size: 0.9rem;
+  font-style: italic;
+}
+
+/* Scrollbar */
+.user-list::-webkit-scrollbar {
+  width: 8px;
+}
+
+.user-list::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.user-list::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 4px;
+}
+
+.user-list::-webkit-scrollbar-thumb:hover {
+  background: var(--secondary);
+}
+
+/* Responsive */
+@media (max-width: 992px) {
+  .admin-multistep-page {
+    flex-direction: column;
+    padding: 1rem;
+  }
+
+  .user-list {
+    width: 100%;
+    flex: none;
+  }
+}
+
+@media (max-width: 576px) {
+  .user-card {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .user-card-actions {
+    margin-top: 10px;
+    width: 100%;
+    justify-content: flex-start;
+  }
+}
+
+/* ========== WELCOME SCREEN ENHANCEMENTS ========== */
+.admin-welcome-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.welcome-icon-box {
+  background: var(--bg-gray);
+  color: var(--primary);
+  width: 100px;
+  height: 100px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 1.5rem;
+  border: 3px solid var(--border);
+}
+
+.admin-welcome-container h3 {
+  color: var(--primary);
+  margin-bottom: 0.5rem;
+  font-size: 1.5rem;
+}
+
+.admin-welcome-container p {
+  color: #666;
+  margin-bottom: 2rem;
+  max-width: 250px;
+  line-height: 1.4;
+}

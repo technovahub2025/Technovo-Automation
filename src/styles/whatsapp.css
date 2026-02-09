@@ -1,0 +1,317 @@
+/* WhatsApp Integration Styles */
+
+/* Broadcast Page Styles */
+.broadcast-page .message-type-options {
+    display: flex;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+.broadcast-page .radio-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 10px 15px;
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    transition: all 0.2s;
+}
+
+.broadcast-page .radio-option:hover {
+    border-color: #25D366;
+    background: #f8fff9;
+}
+
+.broadcast-page .radio-option input[type="radio"]:checked + span {
+    color: #25D366;
+    font-weight: 600;
+}
+
+.broadcast-page .radio-option input[type="radio"]:checked ~ .radio-option {
+    border-color: #25D366;
+    background: #f8fff9;
+}
+
+.broadcast-page .file-info {
+    background: #f8f9fa;
+    padding: 15px;
+    border-radius: 8px;
+    margin: 15px 0;
+}
+
+.broadcast-page .file-info p {
+    margin: 5px 0;
+    font-size: 14px;
+}
+
+.broadcast-page .results-section {
+    margin-top: 20px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #25D366;
+}
+
+.broadcast-page .result-stats {
+    display: flex;
+    gap: 30px;
+    margin-top: 15px;
+}
+
+.broadcast-page .result-stats .stat {
+    display: flex;
+    flex-direction: column;
+}
+
+.broadcast-page .result-stats .label {
+    font-size: 12px;
+    color: #666;
+    text-transform: uppercase;
+}
+
+.broadcast-page .result-stats .value {
+    font-size: 24px;
+    font-weight: bold;
+}
+
+.broadcast-page .result-stats .value.success {
+    color: #25D366;
+}
+
+.broadcast-page .result-stats .value.failed {
+    color: #dc3545;
+}
+
+.broadcast-page .animate-spin {
+    animation: spin 1s linear infinite;
+}
+
+/* Preview Section */
+.broadcast-page .preview-info {
+    margin-top: 15px;
+    text-align: center;
+}
+
+.broadcast-page .info-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.broadcast-page .info-badge.official {
+    background: #64748b;
+    color: #ffffff;
+    border: 1px solid #64748b;
+}
+
+.broadcast-page .info-badge.custom {
+    background: #d1ecf1;
+    color: #0c5460;
+    border: 1px solid #bee5eb;
+}
+
+.broadcast-page .phone-mockup .message-bubble p {
+    margin: 0;
+    line-height: 1.4;
+}
+
+.broadcast-page .phone-mockup .message-bubble small {
+    opacity: 0.7;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+/* Templates Page Styles */
+.templates-page .template-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 30px;
+    border-bottom: 2px solid #e9ecef;
+}
+
+.templates-page .tab-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 20px;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.2s;
+}
+
+.templates-page .tab-btn:hover {
+    color: #333;
+    background: #f8f9fa;
+}
+
+.templates-page .tab-btn.active {
+    color: #25D366;
+    border-bottom-color: #25D366;
+}
+
+.templates-page .create-template-form {
+    background: #f8f9fa;
+    padding: 25px;
+    border-radius: 12px;
+    margin-bottom: 30px;
+    border: 1px solid #e9ecef;
+}
+
+.templates-page .create-template-form h3 {
+    margin: 0 0 20px 0;
+    color: #333;
+}
+
+.templates-page .form-group {
+    margin-bottom: 20px;
+}
+
+.templates-page .form-group label {
+    display: block;
+    margin-bottom: 8px;
+    font-weight: 600;
+    color: #333;
+}
+
+.templates-page .form-group input,
+.templates-page .form-group textarea {
+    width: 100%;
+    padding: 12px;
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    font-size: 14px;
+}
+
+.templates-page .form-group textarea {
+    resize: vertical;
+    min-height: 100px;
+}
+
+.templates-page .form-group small {
+    display: block;
+    margin-top: 5px;
+    color: #666;
+    font-size: 12px;
+}
+
+.templates-page .form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.templates-page .template-actions {
+    margin-left: auto;
+}
+
+.templates-page .icon-btn {
+    background: none;
+    border: none;
+    padding: 5px;
+    cursor: pointer;
+    color: #666;
+    border-radius: 4px;
+    transition: all 0.2s;
+}
+
+.templates-page .icon-btn:hover {
+    background: #f0f0f0;
+    color: #dc3545;
+}
+
+.templates-page .no-templates {
+    text-align: center;
+    padding: 60px 20px;
+    color: #666;
+}
+
+.templates-page .no-templates svg {
+    margin-bottom: 20px;
+    opacity: 0.3;
+}
+
+.templates-page .no-templates h3 {
+    margin: 0 0 10px 0;
+    color: #333;
+}
+
+.templates-page .no-templates p {
+    margin: 0;
+    font-size: 14px;
+}
+
+/* Template Card Distinctions */
+.templates-page .template-card.local {
+    border-left: 4px solid #17a2b8;
+}
+
+.templates-page .template-card.official {
+    border-left: 4px solid #64748b;
+}
+
+.templates-page .status-badge.local {
+    background: #d1ecf1;
+    color: #0c5460;
+}
+
+.templates-page .official-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 8px;
+    background: #64748b;
+    color: #ffffff;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+/* WhatsApp brand colors */
+.whatsapp-green {
+    color: #25D366;
+}
+
+.whatsapp-bg {
+    background: #25D366;
+}
+
+.whatsapp-border {
+    border-color: #25D366;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .broadcast-page .message-type-options {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .broadcast-page .result-stats {
+        flex-direction: column;
+        gap: 15px;
+    }
+    
+    .templates-page .form-actions {
+        flex-direction: column;
+    }
+    
+    .templates-page .template-card .card-footer {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+    }
+}

@@ -1,0 +1,366 @@
+/* Industry Selection Styles */
+.industry-selection {
+  padding: 24px;
+  background: #f8f9fa;
+  min-height: 100vh;
+}
+
+/* Header */
+.industry-header {
+  margin-bottom: 32px;
+}
+
+.header-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.back-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: white;
+  border: 1px solid #dee2e6;
+  border-radius: 8px;
+  padding: 8px 16px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  font-size: 14px;
+  color: #495057;
+}
+
+.back-btn:hover {
+  background: #f8f9fa;
+  transform: translateY(-1px);
+}
+
+.header-text h2 {
+  margin: 0 0 8px 0;
+  color: #2c3e50;
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.header-text p {
+  margin: 0;
+  color: #6c757d;
+  font-size: 16px;
+}
+
+/* Industry Grid */
+.industry-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+  gap: 24px;
+  margin-bottom: 48px;
+}
+
+.industry-card {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  border: 1px solid #dee2e6;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  position: relative;
+  overflow: hidden;
+}
+
+.industry-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  border-color: #007bff;
+}
+
+.industry-card.custom {
+  border-style: dashed;
+  border-color: #6f42c1;
+  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+}
+
+.industry-card.custom:hover {
+  border-color: #6f42c1;
+  background: linear-gradient(135deg, #ffffff 0%, #f8f9fa 100%);
+}
+
+.industry-icon {
+  font-size: 48px;
+  background: #f8f9fa;
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid #dee2e6;
+  flex-shrink: 0;
+}
+
+.industry-content {
+  flex: 1;
+}
+
+.industry-content h3 {
+  margin: 0 0 8px 0;
+  color: #2c3e50;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.industry-content p {
+  margin: 0 0 16px 0;
+  color: #6c757d;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.industry-stats {
+  display: flex;
+  gap: 12px;
+}
+
+.node-count,
+.connection-count {
+  background: #e9ecef;
+  padding: 4px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  color: #495057;
+  font-weight: 500;
+}
+
+.industry-arrow {
+  color: #6c757d;
+  transition: all 0.3s ease;
+}
+
+.industry-card:hover .industry-arrow {
+  color: #007bff;
+  transform: translateX(4px);
+}
+
+/* Custom Industry Input */
+.custom-input {
+  width: 100%;
+}
+
+.custom-industry-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid #dee2e6;
+  border-radius: 6px;
+  font-size: 14px;
+  margin-bottom: 12px;
+  transition: border-color 0.2s ease;
+}
+
+.custom-industry-input:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+
+.custom-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.btn {
+  border: none;
+  border-radius: 6px;
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.btn-primary {
+  background: #007bff;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: #0056b3;
+}
+
+.btn-primary:disabled {
+  background: #6c757d;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: #6c757d;
+  color: white;
+}
+
+.btn-secondary:hover {
+  background: #545b62;
+}
+
+.btn-outline {
+  background: transparent;
+  border: 1px solid #6f42c1;
+  color: #6f42c1;
+}
+
+.btn-outline:hover {
+  background: #6f42c1;
+  color: white;
+}
+
+/* Features Section */
+.industry-features {
+  background: white;
+  border-radius: 12px;
+  padding: 32px;
+  border: 1px solid #dee2e6;
+}
+
+.industry-features h3 {
+  margin: 0 0 24px 0;
+  color: #2c3e50;
+  font-size: 24px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.features-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 24px;
+}
+
+.feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.feature-icon {
+  font-size: 24px;
+  flex-shrink: 0;
+}
+
+.feature-content h4 {
+  margin: 0 0 8px 0;
+  color: #2c3e50;
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.feature-content p {
+  margin: 0;
+  color: #6c757d;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .industry-selection {
+    padding: 16px;
+  }
+  
+  .header-content {
+    flex-direction: column;
+    gap: 12px;
+  }
+  
+  .industry-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .industry-card {
+    padding: 20px;
+  }
+  
+  .industry-icon {
+    font-size: 40px;
+    padding: 12px;
+  }
+  
+  .features-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  
+  .industry-features {
+    padding: 24px 20px;
+  }
+}
+
+/* Animation for card selection */
+.industry-card {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.industry-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, #007bff, #0056b3);
+  transform: scaleX(0);
+  transition: transform 0.3s ease;
+}
+
+.industry-card:hover::before {
+  transform: scaleX(1);
+}
+
+/* Industry-specific hover colors */
+.industry-card:hover {
+  border-color: #007bff;
+}
+
+.industry-card[data-industry="hotel"]:hover {
+  border-color: #007bff;
+}
+
+.industry-card[data-industry="insurance"]:hover {
+  border-color: #dc3545;
+}
+
+.industry-card[data-industry="healthcare"]:hover {
+  border-color: #28a745;
+}
+
+.industry-card[data-industry="retail"]:hover {
+  border-color: #fd7e14;
+}
+
+/* Loading state */
+.industry-card.loading {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.industry-card.loading::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 20px;
+  height: 20px;
+  margin: -10px 0 0 -10px;
+  border: 2px solid #f3f3f3;
+  border-top: 2px solid #007bff;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}

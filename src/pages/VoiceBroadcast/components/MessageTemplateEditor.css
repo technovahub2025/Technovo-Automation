@@ -1,0 +1,82 @@
+/* Import Tamil font */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil:wght@400;500;600;700&display=swap');
+
+.template-editor {
+  position: relative;
+}
+
+.editor-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 8px;
+}
+
+.preview-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  color: #64748b;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.preview-btn:hover {
+  background: #e2e8f0;
+  color: #2563eb;
+}
+
+.template-preview {
+  padding: 16px;
+  background: #f8fafc;
+  border: 2px solid #e2e8f0;
+  border-radius: 8px;
+  min-height: 120px;
+  font-family: inherit;
+  line-height: 1.6;
+}
+
+.template-preview p {
+  margin: 0;
+  color: #334155;
+  white-space: pre-wrap;
+}
+
+.template-info {
+  margin-top: 12px !important;
+  padding: 12px !important;
+  background: #fef3c7 !important;
+  border: 1px solid #eedf96 !important;
+  border-radius: 6px !important;
+  display: block !important;
+}
+
+.template-info small {
+  color: #78350f !important;
+  font-size: 13px !important;
+  line-height: 1.4 !important;
+  display: block !important;
+}
+
+/* Tamil language specific styles */
+textarea[lang="ta"] {
+  font-family: 'Noto Sans Tamil', 'Lohit Tamil', 'Arial Unicode MS', sans-serif !important;
+  font-size: 15px;
+  line-height: 1.8;
+}
+
+/* Tamil placeholder styling */
+textarea[lang="ta"]::placeholder {
+  color: #94a3b8;
+  font-family: 'Noto Sans Tamil', 'Lohit Tamil', 'Arial Unicode MS', sans-serif;
+}
+
+/* Focus styles for Tamil input */
+textarea[lang="ta"]:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
