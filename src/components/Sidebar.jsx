@@ -169,10 +169,10 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
 
                     {/* Bulk Message Icon - Opens submenu */}
                     <div
-                        className={`icon-item ${openMenu === 'bulkMessage' || isRouteActive('/broadcastdashboard') ? 'active' : ''}`}
+                        className={`icon-item ${openMenu === 'bulkMessage' || isRouteActive('/broadcast-dashboard') ? 'active' : ''}`}
                         onClick={() => {
                             toggleMenu('bulkMessage');
-                            navigate('/broadcastdashboard');
+                            navigate('/broadcast-dashboard');
                         }}
                         title="Bulk Message"
                     >
@@ -281,7 +281,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                             </div>
                             <nav className="panel-menu">
                                 <NavLink
-                                    to="/broadcastdashboard"
+                                    to="/broadcast-dashboard"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                     onClick={() => isMobile && toggleOverlay()}
                                 >
@@ -354,17 +354,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         </>
                     )}
                 </div>
-            )}
-
-            {/* Mobile Toggle Button */}
-            {isMobile && openMenu && (
-                <button 
-                    className="sidebar-toggle-btn" 
-                    onClick={toggleOverlay}
-                >
-                    {isOverlayOpen ? <X size={16} /> : <Menu size={16} />}
-                    <span>{isOverlayOpen ? 'Close' : 'Menu'}</span>
-                </button>
             )}
         </div>
     );

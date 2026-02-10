@@ -16,9 +16,7 @@ const AllCampaignsPopup = ({
   onClose,
   getReadPercentage,
   getStatusClass,
-  onPauseBroadcast,
-  onResumeBroadcast,
-  onCancelBroadcast,
+  onStopBroadcast,
   onDeleteClick
 }) => {
   if (!showAllCampaignsPopup) return null;
@@ -118,7 +116,7 @@ const AllCampaignsPopup = ({
                     <td>
                       <div className="action-buttons">
                         <button className="action-btn" title="View Analytics">
-                          <LineChart size={16} />
+                          <BarChart size={14} />
                         </button>
                         
                         <div className="eye-icon-container">
@@ -126,7 +124,7 @@ const AllCampaignsPopup = ({
                             className="action-btn" 
                             title={`${broadcast.stats?.read || 0} members read this message`}
                           >
-                            <Eye size={16} />
+                            <Eye size={14} />
                           </button>
                           <div className="read-count-tooltip">
                             <div className="tooltip-content">
@@ -154,46 +152,21 @@ const AllCampaignsPopup = ({
                         
                         {broadcast.status === 'scheduled' && (
                           <>
-                            <button className="action-btn pause-btn" title="Pause Schedule" onClick={() => {
-                              onPauseBroadcast?.(broadcast._id);
+                            <button className="action-btn stop-btn" title="Stop Campaign" onClick={() => {
+                              onStopBroadcast(broadcast._id);
                               onClose();
                             }}>
-                              <PauseCircle size={16} />
+                              <Square size={14} />
                             </button>
-
-                            <button className="action-btn cancel-btn" title="Cancel Schedule" onClick={() => {
-                              onCancelBroadcast?.(broadcast._id);
+                            
+                            <button className="action-btn delete-btn" title="Delete Campaign" onClick={() => {
+                              onDeleteClick(broadcast);
                               onClose();
                             }}>
-                              <X size={16} />
-                            </button>
-                          </>
-                        )}
-
-                        {broadcast.status === 'paused' && (
-                          <>
-                            <button className="action-btn resume-btn" title="Resume Schedule" onClick={() => {
-                              onResumeBroadcast?.(broadcast._id);
-                              onClose();
-                            }}>
-                              <PlayCircle size={16} />
-                            </button>
-
-                            <button className="action-btn cancel-btn" title="Cancel Schedule" onClick={() => {
-                              onCancelBroadcast?.(broadcast._id);
-                              onClose();
-                            }}>
-                              <X size={16} />
+                              <Trash2 size={14} />
                             </button>
                           </>
                         )}
-
-                        <button className="action-btn delete-btn" title="Delete Campaign" onClick={() => {
-                          onDeleteClick(broadcast);
-                          onClose();
-                        }}>
-                          <Trash size={16} />
-                        </button>
                       </div>
                     </td>
                   </tr>

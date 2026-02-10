@@ -32,51 +32,53 @@ const BroadcastTable = ({
   }
 
   return (
-    <table className="data-table">
-      <thead>
-        <tr>
-          {selectionMode && (
-            <th className="checkbox-column">
-              <input
-                type="checkbox"
-                onChange={onSelectAll}
-                checked={broadcasts.length > 0 && selectedCampaigns.length === broadcasts.length}
-              />
-            </th>
-          )}
-          <th>Campaign Name</th>
-          <th>Scheduled Time</th>
-          <th>Successful</th>
-          <th>Read</th>
-          <th>Replied</th>
-          <th>Recipients</th>
-          <th>Failed</th>
-          <th>Status</th>
-          <th>Actions</th>
-        </tr>
-      </thead>
+    <div className="table-container">
+      <table className="data-table">
+        <thead>
+          <tr>
+            {selectionMode && (
+              <th className="checkbox-column">
+                <input
+                  type="checkbox"
+                  onChange={onSelectAll}
+                  checked={broadcasts.length > 0 && selectedCampaigns.length === broadcasts.length}
+                />
+              </th>
+            )}
+            <th>Campaign Name</th>
+            <th>Scheduled Time</th>
+            <th>Successful</th>
+            <th>Read</th>
+            <th>Replied</th>
+            <th>Recipients</th>
+            <th>Failed</th>
+            <th>Status</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
 
-      <tbody>
-        {broadcasts.map((broadcast) => (
-          <BroadcastCard
-            key={broadcast._id}
-            broadcast={broadcast}
-            selectionMode={selectionMode}
-            selectedCampaigns={selectedCampaigns}
-            onCheckboxChange={onCheckboxChange}
-            getSuccessPercentage={getSuccessPercentage}
-            getReadPercentage={getReadPercentage}
-            getRepliedPercentage={getRepliedPercentage}
-            getStatusClass={getStatusClass}
-            onPauseBroadcast={onPauseBroadcast}
-            onResumeBroadcast={onResumeBroadcast}
-            onCancelBroadcast={onCancelBroadcast}
-            onDeleteClick={onDeleteClick}
-            onViewAnalytics={onViewAnalytics}
-          />
-        ))}
-      </tbody>
-    </table>
+        <tbody>
+          {broadcasts.map((broadcast) => (
+            <BroadcastCard
+              key={broadcast._id}
+              broadcast={broadcast}
+              selectionMode={selectionMode}
+              selectedCampaigns={selectedCampaigns}
+              onCheckboxChange={onCheckboxChange}
+              getSuccessPercentage={getSuccessPercentage}
+              getReadPercentage={getReadPercentage}
+              getRepliedPercentage={getRepliedPercentage}
+              getStatusClass={getStatusClass}
+              onPauseBroadcast={onPauseBroadcast}
+              onResumeBroadcast={onResumeBroadcast}
+              onCancelBroadcast={onCancelBroadcast}
+              onDeleteClick={onDeleteClick}
+              onViewAnalytics={onViewAnalytics}
+            />
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 };
 

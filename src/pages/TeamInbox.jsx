@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 
 import { useLocation } from 'react-router-dom';
 
-import { Search, Filter, Paperclip, Send, Smile, Phone, MoreVertical, Check, CheckCheck } from 'lucide-react';
+import { Search, Filter, Paperclip, Send, Smile, Phone, MoreVertical, Check, CheckCheck, ArrowLeft } from 'lucide-react';
 
 import './TeamInbox.css';
 
@@ -42,7 +42,37 @@ const TeamInbox = () => {
 
   const [selectedMessagesForDeletion, setSelectedMessagesForDeletion] = useState([]);
 
+  const [isMobileView, setIsMobileView] = useState(false);
+
+  const [showChatList, setShowChatList] = useState(true);
+
   const messagesEndRef = useRef(null);
+
+
+
+  // Detect mobile view
+
+  useEffect(() => {
+
+    const checkMobileView = () => {
+
+      setIsMobileView(window.innerWidth <= 768);
+
+    };
+
+    
+
+    checkMobileView();
+
+    
+
+    window.addEventListener('resize', checkMobileView);
+
+    
+
+    return () => window.removeEventListener('resize', checkMobileView);
+
+  }, []);
 
 
 
@@ -624,7 +654,7 @@ const TeamInbox = () => {
 
     <div className="inbox-container">
 
-      <div className="inbox-sidebar">
+      <div className={`inbox-sidebar ${isMobileView && !showChatList ? 'mobile-hidden' : ''}`}>
 
         <div className="inbox-header">
 
@@ -762,6 +792,16 @@ const TeamInbox = () => {
 
                       }
 
+                      
+
+                      // Mobile navigation logic
+
+                      if (isMobileView) {
+
+                        setShowChatList(false);
+
+                      }
+
                     }
 
                   }}
@@ -840,13 +880,23 @@ const TeamInbox = () => {
 
 
 
-      <div className="chat-area">
+      <div className={`chat-area ${isMobileView && showChatList ? 'mobile-hidden' : ''}`}>
 
         {selectedConversation ? (
 
           <>
 
             <div className="chat-header">
+
+              {isMobileView && (
+
+                <button className="back-btn" onClick={() => setShowChatList(true)}>
+
+                  <ArrowLeft size={20} />
+
+                </button>
+
+              )}
 
               <div className="avatar">
 

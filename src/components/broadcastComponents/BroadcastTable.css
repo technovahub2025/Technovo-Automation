@@ -16,6 +16,13 @@
     background: #ffffff;
     padding: 20px 24px;
     border-radius: 12px;
+    overflow: hidden;
+}
+
+/* Table Container for Horizontal Scrolling */
+.table-container {
+    overflow-x: auto;
+    width: 100%;
 }
 
 /* Broadcast List Header - Title Row */
@@ -376,9 +383,11 @@
 /* Data Table */
 .data-table {
     width: 100%;
+    min-width: 1200px;
     border-collapse: collapse;
     background: white;
     border: none;
+    table-layout: fixed;
 }
 
 .data-table,
@@ -441,6 +450,7 @@
 /* Campaign Name Column */
 .data-table th:nth-child(1),
 .data-table td:nth-child(1) {
+    width: 200px;
     min-width: 200px;
     max-width: 350px;
     font-weight: 500;
@@ -459,6 +469,7 @@
 /* Scheduled Time Column */
 .data-table th:nth-child(2),
 .data-table td:nth-child(2) {
+    width: 140px;
     min-width: 140px;
     color: #1f2937;
     font-size: 14px;
@@ -478,8 +489,9 @@
 .data-table td:nth-child(3),
 .data-table td:nth-child(4),
 .data-table td:nth-child(5) {
-    text-align: center;
+    width: 110px;
     min-width: 110px;
+    text-align: center;
 }
 
 .data-table.selection-active th:nth-child(4),
@@ -497,6 +509,7 @@
 .data-table th:nth-child(7),
 .data-table td:nth-child(6),
 .data-table td:nth-child(7) {
+    width: 120px;
     min-width: 120px;
     text-align: left;
 }
@@ -512,6 +525,7 @@
 /* Status Column */
 .data-table th:nth-child(8),
 .data-table td:nth-child(8) {
+    width: 120px;
     min-width: 120px;
 }
 
@@ -523,14 +537,17 @@
 /* Actions Column */
 .data-table th:nth-child(9),
 .data-table td:nth-child(9) {
-    min-width: 120px;
+    width: 200px;
+    min-width: 200px !important;
     text-align: center;
+    white-space: nowrap !important;
 }
 
 .data-table.selection-active th:nth-child(10),
 .data-table.selection-active td:nth-child(10) {
-    min-width: 120px;
+    min-width: 200px !important;
     text-align: center;
+    white-space: nowrap !important;
 }
 
 /* Status Badge */
@@ -576,7 +593,7 @@
 
 /* Action Buttons Container */
 .action-buttons {
-    display: flex;
+    display: flex !important;
     gap: 10px;
     align-items: center;
     justify-content: center;
@@ -589,7 +606,7 @@
     padding: 6px;
     cursor: pointer;
     transition: all 0.2s ease;
-    display: flex;
+    display: inline-flex !important;
     align-items: center;
     justify-content: center;
     color: #6b7280;
@@ -825,6 +842,14 @@
 }
 
 @media (max-width: 1200px) {
+    .table-container {
+        overflow-x: auto;
+    }
+
+    .data-table {
+        min-width: 1000px;
+    }
+
     .data-table th,
     .data-table td {
         padding: 16px 12px;
@@ -832,18 +857,25 @@
 
     .data-table th:nth-child(1),
     .data-table td:nth-child(1) {
+        width: 160px;
         min-width: 160px;
     }
 
     .data-table th:nth-child(2),
     .data-table td:nth-child(2) {
+        width: 130px;
         min-width: 130px;
     }
 }
 
 @media (max-width: 992px) {
+    .table-container {
+        overflow-x: auto;
+    }
+
     .data-table {
         font-size: 13px;
+        min-width: 900px;
     }
 
     .action-buttons {
@@ -870,10 +902,8 @@
 }
 
 @media (max-width: 768px) {
-    .section-header {
-        flex-direction: column;
-        align-items: flex-start;
-        gap: 12px;
+    .table-container {
+        overflow-x: auto;
     }
 
     .broadcast-list-section {
@@ -882,6 +912,13 @@
 
     .data-table {
         font-size: 12px;
+        min-width: 800px;
+    }
+
+    .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
     }
 
     .data-table th,
