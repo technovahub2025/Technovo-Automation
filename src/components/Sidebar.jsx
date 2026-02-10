@@ -1,19 +1,23 @@
-import React, { useContext } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import React, { useContext, useEffect, useState } from 'react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import axios from "axios";
 import { AuthContext } from '../pages/authcontext';
 import {
-  LayoutDashboard,
-  MessageSquare,
-  Radio,
-  Users,
-  Zap,
-  LogOut,
-  FileText,
-  Phone,
-  PhoneMissed,
-  Mail,
-  LogIn
+    LayoutDashboard,
+    MessageSquare,
+    Radio,
+    Users,
+    Zap,
+    LogOut,
+    FileText,
+    Phone,
+    PhoneMissed,
+    Mail,
+    LogIn,
+    MessageCircle,
+    Settings,
+    Menu,
+    X
 } from 'lucide-react';
 import logo from '../../src/assets/logo.png';
 import './Sidebar.css';
@@ -365,3 +369,5 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         </div>
     );
 };
+
+export default Sidebar;
