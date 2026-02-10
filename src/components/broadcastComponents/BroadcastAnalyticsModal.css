@@ -97,30 +97,39 @@
 }
 
 .analytics-tabs {
-  display: flex;
+  display: flex !important;
   padding: 0 24px;
   border-bottom: 1px solid #e5e7eb;
+  gap: 0;
 }
 
-.tab-btn {
-  background: none;
-  border: none;
-  padding: 16px 20px;
+.analytics-tabs .tab-btn {
+  background: none !important;
+  border: none !important;
+  padding: 16px 20px !important;
   cursor: pointer;
   font-size: 14px;
   font-weight: 500;
   color: #6b7280;
   border-bottom: 2px solid transparent;
   transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: inline-block !important;
+  border-radius: 0 !important;
+  margin: 0 !important;
+  line-height: 1.2 !important;
 }
 
-.tab-btn:hover {
+.analytics-tabs .tab-btn:hover {
   color: #374151;
+  background: #f9fafb;
 }
 
-.tab-btn.active {
+.analytics-tabs .tab-btn.active {
   color: #3b82f6;
   border-bottom-color: #3b82f6;
+  background: #f8fafc;
 }
 
 .analytics-content {

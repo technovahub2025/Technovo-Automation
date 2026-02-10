@@ -662,7 +662,9 @@ const Broadcast = () => {
 
         } : { customMessage }),
 
-        ...(scheduledTime ? { scheduledAt: scheduledTime } : {}),
+        ...(scheduledTime ? { 
+          scheduledAt: new Date(scheduledTime).toISOString() 
+        } : {}),
 
       };
 

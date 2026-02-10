@@ -95,13 +95,14 @@ const AllCampaignsPopup = ({
                     </td>
                     <td>
                       {broadcast.scheduledAt ? 
-                        `${broadcast.name} (${new Date(broadcast.scheduledAt).toLocaleString('en-US', {
+                        `${broadcast.name} (${new Date(broadcast.scheduledAt + 'Z').toLocaleString('en-US', {
                           year: 'numeric',
                           month: '2-digit',
                           day: '2-digit',
                           hour: '2-digit',
                           minute: '2-digit',
-                          hour12: true
+                          hour12: true,
+                          timeZone: 'UTC'
                         })})` : `${broadcast.name} (Immediate)`
                       }
                     </td>

@@ -87,14 +87,7 @@ const BroadcastCard = ({
 
       <td>
         {broadcast.scheduledAt ? 
-          new Date(broadcast.scheduledAt).toLocaleString('en-US', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            hour12: true
-          }) : 'Immediate'
+          new Date(broadcast.scheduledAt).toLocaleString() : 'Immediate'
         }
       </td>
 

@@ -27,9 +27,21 @@ const CampaignCreationForm = ({ onSuccess, onCancel }) => {
   const handleChange = useCallback((e) => {
     const { name, value, type } = e.target;
     
+    let processedValue = value;
+    
+    // Handle datetime-local input properly
+    if (type === 'datetime-local' && value) {
+      // Convert datetime-local to proper Date object for consistent handling
+      processedValue = new Date(value);
+      console.log(' Frontend datetime-local input:', value);
+      console.log(' Frontend processed Date:', processedValue);
+    } else if (type === 'number') {
+      processedValue = parseInt(value, 10) || 0;
+    }
+    
     setFormData(prev => ({
       ...prev,
-      [name]: type === 'number' ? parseInt(value, 10) || 0 : value,
+      [name]: processedValue,
     }));
 
     // Clear validation error for this field

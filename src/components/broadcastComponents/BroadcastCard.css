@@ -88,12 +88,14 @@
 
 /* Action Buttons */
 .action-buttons {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    justify-content: center;
-    flex-direction: row;
-    flex-wrap: nowrap;
+    display: flex !important;
+    gap: 8px !important;
+    align-items: center !important;
+    justify-content: center !important;
+    flex-direction: row !important;
+    flex-wrap: nowrap !important;
+    width: 100% !important;
+    min-width: 120px !important;
 }
 
 .action-btn {
