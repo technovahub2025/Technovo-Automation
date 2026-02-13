@@ -22,7 +22,7 @@ import {
 import logo from '../../src/assets/logo.png';
 import './Sidebar.css';
 
-const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
+const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLastBulkMessageItem }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const { user, logout } = useContext(AuthContext);
@@ -167,12 +167,18 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         <span className="icon-label">Dashboard</span>
                     </div>
 
-                    {/* Bulk Message Icon - Opens submenu */}
+                            {/* Bulk Message Icon - Opens submenu */}
                     <div
-                        className={`icon-item ${openMenu === 'bulkMessage' || isRouteActive('/broadcast-dashboard') ? 'active' : ''}`}
+                        className={`icon-item ${openMenu === 'bulkMessage' || isRouteActive('/broadcast-dashboard') || isRouteActive('/broadcast') || isRouteActive('/templates') || isRouteActive('/contacts') ? 'active' : ''}`}
                         onClick={() => {
-                            toggleMenu('bulkMessage');
-                            navigate('/broadcast-dashboard');
+                            if (openMenu === 'bulkMessage') {
+                                // If already open, navigate to last active item
+                                navigate(lastBulkMessageItem);
+                            } else {
+                                // If closed, open and navigate to last active item
+                                setOpenMenu('bulkMessage');
+                                navigate(lastBulkMessageItem);
+                            }
                         }}
                         title="Bulk Message"
                     >
@@ -283,7 +289,14 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 <NavLink
                                     to="/broadcast-dashboard"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={() => isMobile && toggleOverlay()}
+                                    onClick={() => {
+                                        setLastBulkMessageItem('/broadcast-dashboard');
+                                        isMobile && toggleOverlay();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        setOpenMenu(null);
+                                    }}
                                 >
                                     <LayoutDashboard size={20} />
                                     <span>Broadcast Dashboard</span>
@@ -291,7 +304,14 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 <NavLink
                                     to="/inbox"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={() => isMobile && toggleOverlay()}
+                                    onClick={() => {
+                                        setLastBulkMessageItem('/inbox');
+                                        isMobile && toggleOverlay();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        setOpenMenu(null);
+                                    }}
                                 >
                                     <MessageSquare size={20} />
                                     <span>Team Inbox</span>
@@ -300,7 +320,14 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 <NavLink
                                     to="/broadcast"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={() => isMobile && toggleOverlay()}
+                                    onClick={() => {
+                                        setLastBulkMessageItem('/broadcast');
+                                        isMobile && toggleOverlay();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        setOpenMenu(null);
+                                    }}
                                 >
                                     <Radio size={20} />
                                     <span>Broadcast</span>
@@ -309,7 +336,14 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 <NavLink
                                     to="/templates"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={() => isMobile && toggleOverlay()}
+                                    onClick={() => {
+                                        setLastBulkMessageItem('/templates');
+                                        isMobile && toggleOverlay();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        setOpenMenu(null);
+                                    }}
                                 >
                                     <FileText size={20} />
                                     <span>Templates</span>
@@ -318,7 +352,14 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 <NavLink
                                     to="/contacts"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={() => isMobile && toggleOverlay()}
+                                    onClick={() => {
+                                        setLastBulkMessageItem('/contacts');
+                                        isMobile && toggleOverlay();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        setOpenMenu(null);
+                                    }}
                                 >
                                     <Users size={20} />
                                     <span>Contacts</span>

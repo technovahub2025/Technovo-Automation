@@ -27,6 +27,7 @@ export const useBroadcast = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
+  const [wsUpdateInProgress, setWsUpdateInProgress] = useState(false); // Track WebSocket updates
 
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -63,14 +64,26 @@ export const useBroadcast = () => {
 
   const loadBroadcasts = useCallback(async () => {
     try {
+      console.log('📡 Loading broadcasts from backend...');
       const result = await apiClient.getBroadcasts();
       const responseData = result?.data?.data ?? result?.data ?? [];
-      setBroadcasts(Array.isArray(responseData) ? responseData : []);
-      setLastUpdated(new Date());
+      const broadcastsData = Array.isArray(responseData) ? responseData : [];
+      
+      console.log('📡 Backend returned broadcasts:', broadcastsData.length);
+      console.log('📡 Broadcast data sample:', broadcastsData.slice(0, 2));
+      
+      // Only update if WebSocket update is not in progress, or if this is initial load
+      if (!wsUpdateInProgress || broadcasts.length === 0) {
+        setBroadcasts(broadcastsData);
+        setLastUpdated(new Date());
+        console.log('✅ Broadcasts updated from backend');
+      } else {
+        console.log('🛡️  Protected WebSocket updates - not updating from backend');
+      }
     } catch (error) {
       console.error('Failed to load broadcasts:', error);
     }
-  }, []);
+  }, [broadcasts.length, wsUpdateInProgress]);
 
   const syncTemplates = useCallback(async () => {
     try {
@@ -107,6 +120,9 @@ export const useBroadcast = () => {
     console.log('Broadcast stats updated via WebSocket:', data);
 
     if (data.broadcastId && data.stats) {
+      // Set flag to indicate WebSocket update is in progress
+      setWsUpdateInProgress(true);
+      
       console.log('Looking for broadcast with ID:', data.broadcastId);
 
       // Ensure we have a string ID for comparison
@@ -169,6 +185,11 @@ export const useBroadcast = () => {
 
         return updatedBroadcasts;
       });
+      
+      // Clear the flag after a short delay to allow backend reload protection
+      setTimeout(() => {
+        setWsUpdateInProgress(false);
+      }, 5000); // 5 seconds protection window
     }
   }, []);
 
@@ -176,14 +197,26 @@ export const useBroadcast = () => {
   const handleMessageStatusUpdate = useCallback((data) => {
     console.log('Message status update via WebSocket:', data);
 
-    // When message status changes, reload broadcasts to get updated stats
+    // Only reload broadcasts for significant status changes and with longer delay
+    // BUT don't reload if WebSocket updates are in progress (to prevent overwriting correct data)
     if (data.status === 'delivered' || data.status === 'read') {
-      console.log('Reloading broadcasts due to message status change...');
+      if (wsUpdateInProgress) {
+        console.log('🛡️  Skipping backend reload - WebSocket update in progress');
+        return;
+      }
+      
+      console.log('Scheduling broadcast reload due to message status change...');
+      // Increased delay from 1 second to 3 seconds to allow WebSocket updates to settle
       setTimeout(() => {
-        loadBroadcasts();
-      }, 1000);
+        if (!wsUpdateInProgress) {
+          console.log('Reloading broadcasts after message status change...');
+          loadBroadcasts();
+        } else {
+          console.log('🛡️  Cancelled backend reload - WebSocket update still in progress');
+        }
+      }, 3000);
     }
-  }, [loadBroadcasts]);
+  }, [loadBroadcasts, wsUpdateInProgress]);
 
   const parseDateValue = (value) => {
     if (!value) return null;
@@ -265,13 +298,14 @@ export const useBroadcast = () => {
     };
   }, [handleBroadcastStatsUpdate, handleMessageStatusUpdate, handleWebSocketMessage, loadBroadcasts, loadTemplates]);
 
-// Auto-refresh broadcast stats every 30 seconds
+// Auto-refresh broadcast stats every 2 minutes (reduced frequency to prevent fluctuations)
   useEffect(() => {
     const interval = setInterval(() => {
       if (activeTab === 'overview') {
+        console.log('� Auto-refreshing broadcasts (2-minute interval)');
         loadBroadcasts();
       }
-    }, 30000);
+    }, 120000); // Changed from 30000 to 120000 (2 minutes)
 
     return () => clearInterval(interval);
   }, [activeTab, loadBroadcasts]);
@@ -442,15 +476,44 @@ export const useBroadcast = () => {
   };
 
   const getOverviewStats = () => {
+    console.log('🔍 getOverviewStats called with broadcasts:', broadcasts);
+    console.log('🔍 Broadcast sample:', broadcasts[0]);
+    
     const stats = broadcasts.reduce((acc, broadcast) => {
       const broadcastStats = broadcast.stats || {};
+      console.log(`🔍 Processing broadcast "${broadcast.name}":`, {
+        stats: broadcastStats,
+        delivered: broadcastStats.delivered,
+        sent: broadcastStats.sent,
+        read: broadcastStats.read
+      });
+      
+      const sent = broadcastStats.sent || 0;
+      const delivered = broadcastStats.delivered || 0;
+      const read = broadcastStats.read || 0;
+      const replied = broadcastStats.replied || 0;
+      const failed = broadcastStats.failed || 0;
+      
+      // Fix logical inconsistency: delivered should never be less than read
+      // If read > delivered, it means delivered count is underreported
+      const correctedDelivered = Math.max(delivered, read);
+      
+      if (correctedDelivered !== delivered) {
+        console.log(`🔧 Fixing delivery inconsistency for "${broadcast.name}":`, {
+          originalDelivered: delivered,
+          read: read,
+          correctedDelivered: correctedDelivered,
+          reason: 'Read count cannot exceed delivered count'
+        });
+      }
+      
       return {
-        sent: acc.sent + (broadcastStats.sent || 0),
-        delivered: acc.delivered + (broadcastStats.delivered || 0),
-        read: acc.read + (broadcastStats.read || 0),
-        replied: acc.replied + (broadcastStats.replied || 0),
+        sent: acc.sent + sent,
+        delivered: acc.delivered + correctedDelivered,
+        read: acc.read + read,
+        replied: acc.replied + replied,
         sending: acc.sending + (broadcast.status === 'sending' ? broadcast.recipientCount || 0 : 0),
-        failed: acc.failed + (broadcastStats.failed || 0),
+        failed: acc.failed + failed,
         processing: acc.processing + (broadcast.status === 'processing' ? 1 : 0),
         queued: acc.queued + (broadcast.status === 'scheduled' ? 1 : 0),
       };
@@ -465,6 +528,7 @@ export const useBroadcast = () => {
       queued: 0,
     });
 
+    console.log('🔍 Final overview stats:', stats);
     return stats;
   };
 

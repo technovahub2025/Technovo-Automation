@@ -16,6 +16,8 @@ import DateRangeFilter from '../components/broadcastComponents/DateRangeFilter';
 
 import OverviewStats from '../components/broadcastComponents/OverviewStats';
 
+import { getCachedOverviewStats, clearStatsCache } from '../utils/stableBroadcastStats';
+
 import BroadcastListControls from '../components/broadcastComponents/BroadcastListControls';
 
 import BroadcastTable from '../components/broadcastComponents/BroadcastTable';
@@ -152,8 +154,6 @@ const Broadcast = () => {
 
     getRepliedPercentage,
 
-    getOverviewStats,
-
     getSortByLabel,
 
     getStatusClass,
@@ -205,7 +205,13 @@ const Broadcast = () => {
 
 
 
-  const stats = getOverviewStats();
+  const handleManualRefresh = () => {
+    console.log('🔄 Manual refresh triggered by user');
+    clearStatsCache(); // Clear the cache to force fresh calculation
+    loadBroadcasts(); // Reload broadcasts from backend
+  };
+
+  const stats = getCachedOverviewStats(broadcasts);
 
 
 
@@ -1098,7 +1104,7 @@ const Broadcast = () => {
 
 
 
-          <OverviewStats stats={stats} />
+          <OverviewStats stats={stats} onManualRefresh={handleManualRefresh} />
 
 
 

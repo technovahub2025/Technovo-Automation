@@ -6,61 +6,65 @@ import {
   Send,
   X,
   RefreshCw,
-  Clock
+  Clock,
+  RotateCcw
 } from 'lucide-react';
 import './OverviewStats.css';
 
-const OverviewStats = ({ stats }) => {
+const OverviewStats = ({ stats, onManualRefresh }) => {
   const iconColor = '#6b7280'; // Simple light black color
   const bgColor = '#f3f4f6'; // Light gray background
   
   const iconProps = { size: 16, color: iconColor, strokeWidth: 2 };
   
+  // Ensure stats is defined to prevent undefined errors
+  const safeStats = stats || {};
+  
   const statCards = [
     {
-      value: stats.sent || 0,
+      value: safeStats.sent || 0,
       label: 'Sent',
       icon: Check,
       bgColor: bgColor
     },
     {
-      value: stats.delivered || 0,
+      value: safeStats.delivered || 0,
       label: 'Delivered',
       icon: Check,
       bgColor: bgColor
     },
     {
-      value: stats.read || 0,
+      value: safeStats.read || 0,
       label: 'Read',
       icon: Eye,
       bgColor: bgColor
     },
     {
-      value: stats.replied || 0,
+      value: safeStats.replied || 0,
       label: 'Replied',
       icon: MessageSquare,
       bgColor: bgColor
     },
     {
-      value: stats.sending || 0,
+      value: safeStats.sending || 0,
       label: 'Sending',
       icon: Send,
       bgColor: bgColor
     },
     {
-      value: stats.failed || 0,
+      value: safeStats.failed || 0,
       label: 'Failed',
       icon: X,
       bgColor: '#fef2f2'
     },
     {
-      value: stats.processing || 0,
+      value: safeStats.processing || 0,
       label: 'Processing',
       icon: RefreshCw,
       bgColor: bgColor
     },
     {
-      value: stats.queued || 0,
+      value: safeStats.queued || 0,
       label: 'Queued',
       icon: Clock,
       bgColor: bgColor
@@ -69,7 +73,18 @@ const OverviewStats = ({ stats }) => {
 
   return (
     <div className="overview-section">
-      <h3 className="overview-title">Overview</h3>
+      <div className="overview-header">
+        <h3 className="overview-title">Overview</h3>
+        {onManualRefresh && (
+          <button 
+            className="manual-refresh-btn"
+            onClick={onManualRefresh}
+            title="Manually refresh statistics"
+          >
+            <RotateCcw size={16} color={iconColor} />
+          </button>
+        )}
+      </div>
       <div className="overview-stats-grid">
         {statCards.map((stat, index) => (
           <div key={index} className="stat-card">

@@ -5,12 +5,41 @@
     margin-bottom: 32px;
 }
 
+.overview-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
 .overview-title {
     font-size: 18px;
     font-weight: 600;
     color: #111827;
-    margin: 0 0 20px 0;
+    margin: 0;
     letter-spacing: -0.01em;
+}
+
+.manual-refresh-btn {
+    background: none;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.manual-refresh-btn:hover {
+    background: #f3f4f6;
+    border-color: #d1d5db;
+    transform: rotate(90deg);
+}
+
+.manual-refresh-btn:active {
+    transform: rotate(180deg);
 }
 
 /* Stats Grid */
