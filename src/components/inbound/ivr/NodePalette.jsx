@@ -2,7 +2,6 @@ import React from 'react';
 import { Plus } from 'lucide-react';
 
 const NODE_TYPES = [
-    { type: 'greeting', label: 'Greeting', icon: '👋', description: 'Play a message' },
     { type: 'input', label: 'User Input', icon: '⌨️', description: 'Collect keypad press' },
     { type: 'condition', label: 'Condition', icon: '🔀', description: 'Logic & Branching' },
     { type: 'run_api', label: 'API Call', icon: '⚡', description: 'External HTTP Request' },

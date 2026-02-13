@@ -6,6 +6,7 @@
  *   apiService.getActiveCalls() // helper
  */
 import axios from "axios";
+import socketService from "./socketService";
 
 // Base URL from environment variable
 const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
@@ -13,7 +14,7 @@ const API_BASE_URL = import.meta.env.VITE_API_URL || "/api";
 // Create Axios instance
 const apiService = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 10000,
+  timeout: 30000, // Increase default timeout to 30 seconds
   headers: {
     "Content-Type": "application/json",
   },
@@ -102,17 +103,13 @@ apiService.checkAIHealth = () => apiService.get("/ai/health");
 // Inbound and IVR methods
 apiService.getInboundAnalytics = (period = 'today') => apiService.get(`/inbound/analytics?period=${period}`);
 
-// IVR Configuration Management
-apiService.getIVRConfigs = () => apiService.get('/inbound/ivr/configs');
-apiService.updateIVRConfig = (menuName, config) => apiService.post('/inbound/ivr/configs', { menuName, config });
-apiService.deleteIVRConfig = (menuName) => apiService.delete(`/inbound/ivr/configs/${encodeURIComponent(menuName)}`);
-
 // IVR Audio Management (using existing /ivr routes)
 apiService.getIVRPrompts = () => apiService.get('/ivr/prompts');
 apiService.getIVRPrompt = (promptKey) => apiService.get(`/ivr/prompts/${promptKey}`);
-apiService.generateIVRAudio = (promptKey, text, language, forceRegenerate = false) => 
+apiService.generateIVRAudio = (promptKey, text, language, forceRegenerate = false) =>
   apiService.post('/ivr/generate-audio', { promptKey, text, language, forceRegenerate });
 apiService.deleteIVRAudio = (promptKey, language) => apiService.delete(`/ivr/audio/${promptKey}/${language}`);
+apiService.deleteCustomAudio = (publicId) => apiService.delete(`/ivr/audio/${encodeURIComponent(publicId)}`);
 
 // Queue and Routing
 apiService.getQueueStatus = (queueName) =>
@@ -129,6 +126,9 @@ apiService.exportAnalytics = (period, format) =>
     `/inbound/analytics/export?period=${period}&format=${format}`,
     { responseType: "blob" }
   );
+
+// WebSocket helper used by analytics and live dashboards
+apiService.initializeSocket = () => socketService.connect();
 
 // ------------------------
 // EXPORT

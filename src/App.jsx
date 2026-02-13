@@ -9,6 +9,10 @@ import Broadcast from "./pages/Broadcast";
 import Templates from "./pages/Templates";
 import Contacts from "./pages/Contacts";
 import VoiceAutomation from "./pages/VoiceAutomation";
+import InboundCalls from "./components/inbound/InboundCalls";
+import OutboundCall from "./pages/OutboundCall";
+import CallHistory from "./pages/CallHistory";
+import VoiceBroadcast from "./pages/VoiceBroadcast/VoiceBroadcast";
 import MissedCalls from "./pages/MissedCalls";
 import EmailAutomation from "./pages/EmailAutomation";
 import PDFExtractor from "./pages/PDFExtractor";
@@ -38,6 +42,10 @@ function App() {
           <Route path="templates" element={<Templates />} />
           <Route path="contacts" element={<Contacts />} />
           <Route path="voice-automation" element={<VoiceAutomation />} />
+          <Route path="voice-automation/inbound" element={<InboundCalls />} />
+          <Route path="voice-automation/outbound" element={<OutboundCall />} />
+          <Route path="voice-automation/history" element={<CallHistory />} />
+          <Route path="voice-broadcast" element={<VoiceBroadcast />} />
           <Route path="missedcalls" element={<MissedCalls />} />
           <Route path="email-automation" element={<EmailAutomation />} />
           <Route path="pdf-extractor" element={<PDFExtractor />} />

@@ -416,16 +416,6 @@
   padding: 0 20px 20px 20px;
 }
 
-.greeting-text {
-  font-size: 14px;
-  color: #64748b;
-  line-height: 1.6;
-  margin-bottom: 12px;
-}
-
-.greeting-text strong {
-  color: #475569;
-}
 
 .options-summary {
   margin-bottom: 20px;

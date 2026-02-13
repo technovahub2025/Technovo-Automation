@@ -18,6 +18,33 @@ const useIVRWorkflowSocket = (workflowId) => {
     }
   }, [socket, connected, workflowId]);
 
+  // Listen for TTS audio generation progress
+  const onTTSProgress = useCallback((callback) => {
+    if (socket && connected) {
+      const eventName = `workflow-${workflowId}-progress`;
+      socket.on(eventName, callback);
+      return () => socket.off(eventName, callback);
+    }
+  }, [socket, connected, workflowId]);
+
+  // Listen for TTS audio generation completion
+  const onTTSCompleted = useCallback((callback) => {
+    if (socket && connected) {
+      const eventName = `workflow-${workflowId}-completed`;
+      socket.on(eventName, callback);
+      return () => socket.off(eventName, callback);
+    }
+  }, [socket, connected, workflowId]);
+
+  // Listen for TTS audio generation failure
+  const onTTSFailed = useCallback((callback) => {
+    if (socket && connected) {
+      const eventName = `workflow-${workflowId}-failed`;
+      socket.on(eventName, callback);
+      return () => socket.off(eventName, callback);
+    }
+  }, [socket, connected, workflowId]);
+
   // Add node with real-time sync
   const addNode = useCallback((node, position) => {
     if (socket && connected) {
@@ -109,6 +136,9 @@ const useIVRWorkflowSocket = (workflowId) => {
   return {
     joinWorkflow,
     leaveWorkflow,
+    onTTSProgress,
+    onTTSCompleted,
+    onTTSFailed,
     addNode,
     moveNode,
     connectNodes,

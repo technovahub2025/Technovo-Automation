@@ -13,7 +13,7 @@ const IVRManagement = () => {
   const [newPrompt, setNewPrompt] = useState({
     promptKey: '',
     text: '',
-    languages: ['en-US']
+    languages: ['en-GB']
   });
 
   useEffect(() => {
@@ -92,7 +92,7 @@ const IVRManagement = () => {
         true
       );
       setShowCreateModal(false);
-      setNewPrompt({ promptKey: '', text: '', languages: ['en-US'] });
+      setNewPrompt({ promptKey: '', text: '', languages: ['en-GB'] });
       await loadData();
     } catch (error) {
       console.error('Failed to create prompt:', error);
@@ -106,7 +106,7 @@ const IVRManagement = () => {
 
   const getLanguageIcon = (code) => {
     const icons = {
-      'en-US': '🇺🇸',
+      'en-GB': '��',
       'ta-IN': '🇮🇳',
       'hi-IN': '🇮🇳'
     };
@@ -226,7 +226,7 @@ const IVRManagement = () => {
 
               {/* Language Audio Files */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {['en-US', 'ta-IN', 'hi-IN'].map((language) => {
+                {['en-GB', 'ta-IN', 'hi-IN'].map((language) => {
                   const audioFile = prompt.audioFiles?.find(af => af.language === language);
                   const isGenerating = generatingAudio[`${prompt.promptKey}-${language}`];
                   
@@ -339,7 +339,7 @@ const IVRManagement = () => {
                   Languages
                 </label>
                 <div className="space-y-2">
-                  {['en-US', 'ta-IN', 'hi-IN'].map((lang) => (
+                  {['en-GB', 'ta-IN', 'hi-IN'].map((lang) => (
                     <label key={lang} className="flex items-center gap-2">
                       <input
                         type="checkbox"

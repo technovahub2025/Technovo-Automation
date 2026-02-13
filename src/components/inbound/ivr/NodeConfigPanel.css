@@ -215,6 +215,62 @@
   background: #2563eb;
 }
 
+/* Audio Upload and Player Styles */
+.upload-container {
+  position: relative;
+}
+
+.audio-preview {
+  margin-top: 12px;
+}
+
+.audio-player-container {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.audio-player-container audio {
+  width: 100%;
+  height: 40px;
+  border-radius: 6px;
+}
+
+.delete-audio-btn {
+  align-self: flex-end;
+  padding: 6px 12px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 6px;
+  color: #dc2626;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.2s ease;
+}
+
+.delete-audio-btn:hover:not(:disabled) {
+  background: #fee2e2;
+  border-color: #fca5a5;
+}
+
+.delete-audio-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.upload-spinner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px;
+  color: #6b7280;
+  font-size: 12px;
+}
+
 /* Responsive adjustments */
 @media (max-width: 768px) {
   .node-config-panel {

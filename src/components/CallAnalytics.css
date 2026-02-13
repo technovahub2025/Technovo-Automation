@@ -43,6 +43,32 @@
   gap: 24px;
 }
 
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.connection-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.connection-indicator .connected {
+  color: #10b981;
+}
+
+.connection-indicator .disconnected {
+  color: #ef4444;
+}
+
 .analytics-header h2 {
   font-size: 24px;
   font-weight: 600;
@@ -176,6 +202,42 @@
   font-weight: 600;
   color: #1e293b;
   margin-bottom: 20px;
+}
+
+.real-time-status {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.status-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.status-label {
+  font-size: 14px;
+  color: #64748b;
+  font-weight: 500;
+}
+
+.status-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.status-value.connected {
+  color: #10b981;
+}
+
+.status-value.disconnected {
+  color: #ef4444;
 }
 
 .analytics-details {

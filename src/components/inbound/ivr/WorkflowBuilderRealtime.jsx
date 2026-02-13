@@ -274,7 +274,7 @@ const WorkflowBuilderRealtime = ({ workflowId, initialData, industry, onSave }) 
 
 function getDefaultNodeData(nodeType, industry) {
     const templates = {
-        greeting: { label: 'Greeting', text: `Welcome to our ${industry} service`, voice: 'en-US-AriaNeural', language: 'en-US' },
+        audio: { label: 'Audio Message', mode: 'tts', messageText: `Welcome to our ${industry} service`, voice: 'en-GB-SoniaNeural', language: 'en-GB', afterPlayback: 'next' },
         input: { label: 'Keypad Input', text: 'Please enter an option.', numDigits: 1, timeout: 10 },
         transfer: { label: 'Transfer', text: 'Connecting you now.', destination: '' },
         voicemail: { label: 'Voicemail', text: 'Please leave a message.' },

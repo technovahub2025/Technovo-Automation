@@ -1,34 +1,45 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Save } from 'lucide-react';
+import { X, Save, Trash2 } from 'lucide-react';
+import apiService from '../../../services/api';
 import './NodeConfigPanel.css';
 
 const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices }) => {
   const [config, setConfig] = useState({
-    text: node?.data?.text || '',
-    message: node?.data?.message || '',
-    voice: node?.data?.voice || 'en-GB-SoniaNeural',
-    language: node?.data?.language || 'en-GB',
+    // Audio node fields
+    mode: node?.data?.mode || 'tts',
+    messageText: node?.data?.messageText || '',
+    afterPlayback: node?.data?.afterPlayback || 'next',
+    maxRetries: node?.data?.maxRetries || 3,
+    timeoutSeconds: node?.data?.timeoutSeconds || 10,
+    fallbackAudioNodeId: node?.data?.fallbackAudioNodeId || '',
+
+    // Logic node fields (no audio)
     digit: node?.data?.digit || '1',
     label: node?.data?.label || '',
     action: node?.data?.action || 'transfer',
     destination: node?.data?.destination || '',
-    timeout: node?.data?.timeout || 10,
-    maxRetries: node?.data?.maxRetries || 3,
+    maxAttempts: node?.data?.maxAttempts || 3,
+
     invalidInputMessage: node?.data?.invalidInputMessage || '',
+
+    // Audio node references for logic nodes
+    promptAudioNodeId: node?.data?.promptAudioNodeId || '',
+    invalidAudioNodeId: node?.data?.invalidAudioNodeId || '',
+    timeoutAudioNodeId: node?.data?.timeoutAudioNodeId || '',
+    greetingAudioNodeId: node?.data?.greetingAudioNodeId || '',
+
+    // Conditional and transfer fields
     condition: node?.data?.condition || 'business_hours',
     truePath: node?.data?.truePath || '',
     falsePath: node?.data?.falsePath || '',
-    audioUrl: node?.data?.audioUrl || '',
-    audioAssetId: node?.data?.audioAssetId || '',
+
+    // Voicemail fields
     maxLength: node?.data?.maxLength || 60,
     transcribe: node?.data?.transcribe || true,
     storageRoute: node?.data?.storageRoute || '',
-    fallbackNodeId: node?.data?.fallbackNodeId || '',
-    repeatType: node?.data?.repeatType || 'prompt',
-    customRepeatMessage: node?.data?.customRepeatMessage || '',
-    maxRepeats: node?.data?.maxRepeats || 3,
-    repeatTrigger: node?.data?.repeatTrigger || 'any',
-    repeatMessage: node?.data?.repeatMessage || '',
+    mailbox: node?.data?.mailbox || 'general',
+
+    // End node fields
     terminationType: node?.data?.terminationType || 'hangup',
     transferNumber: node?.data?.transferNumber || '',
     voicemailBox: node?.data?.voicemailBox || '',
@@ -38,12 +49,54 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
     logCall: node?.data?.logCall || false,
     sendReceipt: node?.data?.sendReceipt || false,
     contactMethod: node?.data?.contactMethod || 'sms',
+
+    // Legacy audio fields (for backward compatibility)
+    voice: node?.data?.voice || 'en-GB-SoniaNeural',
+    language: node?.data?.language || 'en-GB',
+    audioUrl: node?.data?.audioUrl || '',
+    audioAssetId: node?.data?.audioAssetId || '',
+
     // Preserve promptKey from node data
     promptKey: node?.data?.promptKey || ''
   });
+  const [isUploading, setIsUploading] = useState(false);
+  const isInitialRender = React.useRef(true);
+  const configRef = React.useRef(config);
+
+  // Keep ref in sync for debounced saves
+  useEffect(() => {
+    configRef.current = config;
+  }, [config]);
+
+  // Debounced auto-save effect
+  useEffect(() => {
+    // Skip initial render and only sync if something changed
+    if (isInitialRender.current) {
+      isInitialRender.current = false;
+      return;
+    }
+
+    const timer = setTimeout(() => {
+      if (onAutoSave && node?.id) {
+        // Only save if the config has actually changed from the last saved state
+        // (This is a simplified check, parent should also handle deduplication)
+        onAutoSave(node.id, configRef.current);
+      }
+    }, 1500); // 1.5s debounce for production stability
+
+    return () => clearTimeout(timer);
+  }, [config, node?.id, onAutoSave]);
 
   const handleChange = (field, value) => {
+    // Only update local state instantly
     setConfig(prev => ({ ...prev, [field]: value }));
+  };
+
+  // Save on blur - prevents excessive socket emissions
+  const handleBlur = (field) => {
+    if (onAutoSave && node?.id) {
+      onAutoSave(node.id, { [field]: config[field] });
+    }
   };
 
   const handleSave = () => {
@@ -52,41 +105,43 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
   };
 
   useEffect(() => {
-    if (!onAutoSave || !node?.id) return;
-    const timer = setTimeout(() => {
-      onAutoSave(node.id, config);
-    }, 800);
-    return () => clearTimeout(timer);
-  }, [config, node?.id, onAutoSave]);
-
-  useEffect(() => {
-    // Reset config when node changes
+    // Reset config only when switching to a different node (not when node.data changes during editing)
     setConfig({
-      text: node?.data?.text || '',
-      message: node?.data?.message || '',
-      voice: node?.data?.voice || 'en-GB-SoniaNeural',
-      language: node?.data?.language || 'en-GB',
+      // Audio node fields
+      mode: node?.data?.mode || 'tts',
+      messageText: node?.data?.messageText || '',
+      afterPlayback: node?.data?.afterPlayback || 'next',
+      maxRetries: node?.data?.maxRetries || 3,
+      timeoutSeconds: node?.data?.timeoutSeconds || 10,
+      fallbackAudioNodeId: node?.data?.fallbackAudioNodeId || '',
+
+      // Logic node fields (no audio)
       digit: node?.data?.digit || '1',
       label: node?.data?.label || '',
       action: node?.data?.action || 'transfer',
       destination: node?.data?.destination || '',
-      timeout: node?.data?.timeout || 10,
-      maxRetries: node?.data?.maxRetries || 3,
+      maxAttempts: node?.data?.maxAttempts || 3,
+
       invalidInputMessage: node?.data?.invalidInputMessage || '',
+
+      // Audio node references for logic nodes
+      promptAudioNodeId: node?.data?.promptAudioNodeId || '',
+      invalidAudioNodeId: node?.data?.invalidAudioNodeId || '',
+      timeoutAudioNodeId: node?.data?.timeoutAudioNodeId || '',
+      greetingAudioNodeId: node?.data?.greetingAudioNodeId || '',
+
+      // Conditional and transfer fields
       condition: node?.data?.condition || 'business_hours',
       truePath: node?.data?.truePath || '',
       falsePath: node?.data?.falsePath || '',
-      audioUrl: node?.data?.audioUrl || '',
-      audioAssetId: node?.data?.audioAssetId || '',
+
+      // Voicemail fields
       maxLength: node?.data?.maxLength || 60,
       transcribe: node?.data?.transcribe || true,
       storageRoute: node?.data?.storageRoute || '',
-      fallbackNodeId: node?.data?.fallbackNodeId || '',
-      repeatType: node?.data?.repeatType || 'prompt',
-      customRepeatMessage: node?.data?.customRepeatMessage || '',
-      maxRepeats: node?.data?.maxRepeats || 3,
-      repeatTrigger: node?.data?.repeatTrigger || 'any',
-      repeatMessage: node?.data?.repeatMessage || '',
+      mailbox: node?.data?.mailbox || 'general',
+
+      // End node fields
       terminationType: node?.data?.terminationType || 'hangup',
       transferNumber: node?.data?.transferNumber || '',
       voicemailBox: node?.data?.voicemailBox || '',
@@ -96,35 +151,17 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
       logCall: node?.data?.logCall || false,
       sendReceipt: node?.data?.sendReceipt || false,
       contactMethod: node?.data?.contactMethod || 'sms',
+
+      // Legacy audio fields (for backward compatibility)
+      voice: node?.data?.voice || 'en-GB-SoniaNeural',
+      language: node?.data?.language || 'en-GB',
+      audioUrl: node?.data?.audioUrl || '',
+      audioAssetId: node?.data?.audioAssetId || '',
+
       // Preserve promptKey from node data
       promptKey: node?.data?.promptKey || ''
     });
-  }, [node?.id, node?.data]);
-
-  const renderVoiceSettings = (textField = 'text') => (
-    <div className="voice-settings-group">
-      <div className="form-group">
-        <label>Voice ID</label>
-        <select
-          value={config.voice}
-          onChange={(e) => {
-            const nextVoice = e.target.value;
-            const selected = voiceOptions.find(v => v.id === nextVoice);
-            handleChange('voice', nextVoice);
-            if (selected) {
-              handleChange('language', selected.language);
-            }
-          }}
-        >
-          {voiceOptions.map(voice => (
-            <option key={voice.id} value={voice.id}>
-              {voice.name}
-            </option>
-          ))}
-        </select>
-      </div>
-    </div>
-  );
+  }, [node?.id]); // Only reset when node ID changes, not when node.data changes
 
   const voiceOptions = useMemo(() => ([
     { id: 'ta-IN-PallaviNeural', name: 'PallaviNeural (Female, Tamil)', language: 'ta-IN' },
@@ -134,25 +171,266 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
     { id: 'en-GB-SoniaNeural', name: 'SoniaNeural (Female, English UK)', language: 'en-GB' },
     { id: 'en-GB-RyanNeural', name: 'RyanNeural (Male, English UK)', language: 'en-GB' },
     { id: 'en-GB-LibbyNeural', name: 'LibbyNeural (Female, English UK)', language: 'en-GB' },
-    { id: 'en-GB-ThomasNeural', name: 'ThomasNeural (Male, English UK)', language: 'en-GB' },
-    { id: 'en-US-AriaNeural', name: 'AriaNeural (Female, English US)', language: 'en-US' },
-    { id: 'en-US-GuyNeural', name: 'GuyNeural (Male, English US)', language: 'en-US' }
+    { id: 'en-GB-ThomasNeural', name: 'ThomasNeural (Male, English UK)', language: 'en-GB' }
   ]), []);
 
-  const renderGreetingConfig = () => (
+  const renderAudioConfig = () => (
     <div className="config-section">
-      <h4>Greeting Message</h4>
+      <h4>Audio / Play Message Configuration</h4>
+
       <div className="form-group">
-        <label>Message Text</label>
-        <textarea
-          value={config.text}
-          onChange={(e) => handleChange('text', e.target.value)}
-          placeholder="Enter greeting message..."
-          rows={3}
-        />
-        <small className="form-help">This message will be played when callers first reach your IVR system.</small>
+        <label>Mode</label>
+        <div className="radio-group">
+          <label className="radio-label">
+            <input
+              type="radio"
+              name="audio-mode"
+              value="tts"
+              checked={config.mode === 'tts'}
+              onChange={(e) => handleChange('mode', e.target.value)}
+            />
+            Text to Speech (TTS)
+          </label>
+          <label className="radio-label">
+            <input
+              type="radio"
+              name="audio-mode"
+              value="upload"
+              checked={config.mode === 'upload'}
+              onChange={(e) => handleChange('mode', e.target.value)}
+            />
+            Upload Audio File
+          </label>
+        </div>
       </div>
-      {renderVoiceSettings('text')}
+
+      {config.mode === 'tts' && (
+        <>
+          <div className="form-group">
+            <label>Message Text</label>
+            <textarea
+              value={config.messageText}
+              onChange={(e) => handleChange('messageText', e.target.value)}
+              onBlur={() => handleBlur('messageText')}
+              placeholder="Enter message to be converted to speech..."
+              rows={3}
+            />
+            <small className="form-help">This message will be converted to speech using the selected voice.</small>
+          </div>
+
+          <div className="form-group">
+            <label>Voice</label>
+            <select
+              className="full-width"
+              value={config.voice}
+              onChange={(e) => {
+                const nextVoice = e.target.value;
+                const selected = voiceOptions.find(v => v.id === nextVoice);
+                handleChange('voice', nextVoice);
+                if (selected) {
+                  handleChange('language', selected.language);
+                }
+              }}
+              onBlur={() => handleBlur('voice')}
+            >
+              {voiceOptions.map(voice => (
+                <option key={voice.id} value={voice.id}>
+                  {voice.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        </>
+      )}
+
+      {config.mode === 'upload' && (
+        <div className="form-group">
+          <label>Audio File</label>
+          <div className="upload-container">
+            <input
+              type="file"
+              accept="audio/*"
+              className="file-input"
+              id="audio-upload-input"
+              onChange={async (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                  // Validate file size (max 10MB)
+                  const maxSize = 10 * 1024 * 1024; // 10MB in bytes
+                  if (file.size > maxSize) {
+                    alert('Audio file is too large. Please choose a file smaller than 10MB.');
+                    e.target.value = ''; // Clear the input
+                    return;
+                  }
+
+                  // Validate file type
+                  if (!file.type.startsWith('audio/')) {
+                    alert('Please select a valid audio file.');
+                    e.target.value = ''; // Clear the input
+                    return;
+                  }
+
+                  try {
+                    // Set loading state
+                    setIsUploading(true);
+
+                    // Create form data for upload
+                    const formData = new FormData();
+                    formData.append('audio', file);
+                    formData.append('language', config.language || 'en-GB');
+
+                    // Perform upload to backend with increased timeout
+                    const response = await apiService.post('/ivr/audio/upload', formData, {
+                      headers: { 'Content-Type': 'multipart/form-data' },
+                      timeout: 120000 // Increase timeout to 120 seconds for large audio files
+                    });
+
+                    if (response.data.success) {
+                      // Update config with permanent URL (this will trigger a debounced auto-save)
+                      const updates = {
+                        audioUrl: response.data.audioUrl,
+                        audioAssetId: response.data.publicId
+                      };
+                      setConfig(prev => ({ ...prev, ...updates }));
+
+                      // Explicitly save immediately after successful upload
+                      if (onAutoSave) {
+                        onAutoSave(node.id, updates);
+                      }
+
+                      console.log('✅ Audio uploaded and state updated:', response.data.audioUrl);
+                    } else {
+                      throw new Error(response.data.message || 'Upload failed');
+                    }
+                  } catch (error) {
+                    console.error('❌ Audio upload failed:', error);
+                    alert(`Failed to upload audio: ${error.message}`);
+                  } finally {
+                    setIsUploading(false);
+                  }
+                }
+              }}
+            />
+            {isUploading && <div className="upload-spinner">Uploading...</div>}
+            {config.audioUrl && (
+              <div className="audio-preview">
+                <div className="audio-player-container">
+                  <audio controls src={config.audioUrl} />
+                  <button
+                    type="button"
+                    className="delete-audio-btn"
+                    onClick={async () => {
+                      if (window.confirm('Are you sure you want to delete this audio file? This action cannot be undone.')) {
+                        try {
+                          setIsUploading(true);
+                          
+                          // Delete from Cloudinary/backend
+                          if (config.audioAssetId) {
+                            await apiService.deleteCustomAudio(config.audioAssetId);
+                            console.log('✅ Audio deleted from Cloudinary:', config.audioAssetId);
+                          }
+                          
+                          // Update local state to remove audio
+                          const updates = {
+                            audioUrl: null,
+                            audioAssetId: null
+                          };
+                          setConfig(prev => ({ ...prev, ...updates }));
+                          
+                          // Save the changes immediately
+                          if (onAutoSave) {
+                            onAutoSave(node.id, updates);
+                          }
+                          
+                          console.log('✅ Audio file removed from node configuration');
+                        } catch (error) {
+                          console.error('❌ Failed to delete audio:', error);
+                          alert(`Failed to delete audio: ${error.message}`);
+                        } finally {
+                          setIsUploading(false);
+                        }
+                      }
+                    }}
+                    disabled={isUploading}
+                    title="Delete audio file"
+                  >
+                    <Trash2 size={14} />
+                    Delete Audio
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          <small className="form-help">Upload an audio file (MP3, WAV, etc.) to use instead of TTS.</small>
+        </div>
+      )}
+
+      <div className="form-group">
+        <label>After Playback</label>
+        <div className="radio-group">
+          <label className="radio-label">
+            <input
+              type="radio"
+              name="after-playback"
+              value="next"
+              checked={config.afterPlayback === 'next'}
+              onChange={(e) => handleChange('afterPlayback', e.target.value)}
+              onBlur={() => handleBlur('afterPlayback')}
+            />
+            Go to next node
+          </label>
+          <label className="radio-label">
+            <input
+              type="radio"
+              name="after-playback"
+              value="wait"
+              checked={config.afterPlayback === 'wait'}
+              onChange={(e) => handleChange('afterPlayback', e.target.value)}
+              onBlur={() => handleBlur('afterPlayback')}
+            />
+            Wait for input
+          </label>
+        </div>
+      </div>
+
+      <div className="form-row">
+        <div className="form-group">
+          <label>Max Retries</label>
+          <input
+            type="number"
+            value={config.maxRetries}
+            onChange={(e) => handleChange('maxRetries', parseInt(e.target.value))}
+            min={0}
+            max={10}
+          />
+          <small className="form-help">Maximum retry attempts on failure.</small>
+        </div>
+
+        <div className="form-group">
+          <label>Timeout (seconds)</label>
+          <input
+            type="number"
+            value={config.timeoutSeconds}
+            onChange={(e) => handleChange('timeoutSeconds', parseInt(e.target.value))}
+            onBlur={() => handleBlur('timeoutSeconds')}
+            min={1}
+            max={60}
+          />
+          <small className="form-help">Timeout duration for audio playback.</small>
+        </div>
+      </div>
+
+      <div className="form-group">
+        <label>Fallback Audio Node</label>
+        <select
+          value={config.fallbackAudioNodeId}
+          onChange={(e) => handleChange('fallbackAudioNodeId', e.target.value)}
+        >
+          <option value="">Select fallback audio node...</option>
+          {/* This should be populated with available audio nodes */}
+        </select>
+        <small className="form-help">Audio node to play on error or timeout.</small>
+      </div>
     </div>
   );
 
@@ -164,6 +442,7 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
         <textarea
           value={config.text || ''}
           onChange={(e) => handleChange('text', e.target.value)}
+          onBlur={() => handleBlur('text')}
           placeholder="e.g., Press 1 for Sales, 2 for Support..."
           rows={3}
         />
@@ -178,6 +457,7 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
             type="text"
             value={config.digit}
             onChange={(e) => handleChange('digit', e.target.value)}
+            onBlur={() => handleBlur('digit')}
             placeholder="1-9, 0, *, #"
             maxLength={1}
           />
@@ -190,6 +470,7 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
             type="text"
             value={config.label}
             onChange={(e) => handleChange('label', e.target.value)}
+            onBlur={() => handleBlur('label')}
             placeholder="e.g., Customer Support"
           />
           <small className="form-help">Display name for this menu option.</small>
@@ -217,6 +498,7 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
           type="text"
           value={config.destination}
           onChange={(e) => handleChange('destination', e.target.value)}
+          onBlur={() => handleBlur('destination')}
           placeholder="Phone number, queue ID, or node ID"
         />
         <small className="form-help">Where the call should be routed based on the action selected.</small>
@@ -229,6 +511,7 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
             type="number"
             value={config.timeout}
             onChange={(e) => handleChange('timeout', parseInt(e.target.value))}
+            onBlur={() => handleBlur('timeout')}
             min={5}
             max={30}
           />
@@ -241,6 +524,7 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
             type="number"
             value={config.maxRetries}
             onChange={(e) => handleChange('maxRetries', parseInt(e.target.value))}
+            onBlur={() => handleBlur('maxRetries')}
             min={1}
             max={5}
           />
@@ -254,6 +538,7 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
           type="text"
           value={config.invalidInputMessage}
           onChange={(e) => handleChange('invalidInputMessage', e.target.value)}
+          onBlur={() => handleBlur('invalidInputMessage')}
           placeholder="Invalid input. Please try again."
         />
       </div>
@@ -269,6 +554,7 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
           type="tel"
           value={config.destination}
           onChange={(e) => handleChange('destination', e.target.value)}
+          onBlur={() => handleBlur('destination')}
           placeholder="+1234567890"
         />
       </div>
@@ -279,6 +565,7 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
           type="text"
           value={config.label}
           onChange={(e) => handleChange('label', e.target.value)}
+          onBlur={() => handleBlur('label')}
           placeholder="e.g., Sales, Support"
         />
       </div>
@@ -308,6 +595,7 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
             type="text"
             value={config.truePath}
             onChange={(e) => handleChange('truePath', e.target.value)}
+            onBlur={() => handleBlur('truePath')}
             placeholder="node_id_true"
           />
         </div>
@@ -318,6 +606,7 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
             type="text"
             value={config.falsePath}
             onChange={(e) => handleChange('falsePath', e.target.value)}
+            onBlur={() => handleBlur('falsePath')}
             placeholder="node_id_false"
           />
         </div>
@@ -327,28 +616,212 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
 
   const renderConfigByNodeType = () => {
     switch (node?.type) {
-      case 'greeting':
-        return renderGreetingConfig();
+      case 'audio':
+        return renderAudioConfig();
       case 'input':
-        return renderInputConfig();
+        return (
+          <div className="config-section">
+            <h4>Input Configuration</h4>
+
+            <div className="form-group">
+              <label>Prompt Audio Node</label>
+              <select
+                value={config.promptAudioNodeId}
+                onChange={(e) => handleChange('promptAudioNodeId', e.target.value)}
+              >
+                <option value="">Select audio node for prompt...</option>
+                {/* This should be populated with available audio nodes */}
+              </select>
+              <small className="form-help">Audio node to play for main prompt.</small>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label>Digit</label>
+                <input
+                  type="text"
+                  value={config.digit}
+                  onChange={(e) => handleChange('digit', e.target.value)}
+                  onBlur={() => handleBlur('digit')}
+                  placeholder="1-9, 0, *, #"
+                  maxLength={1}
+                />
+                <small className="form-help">The digit callers should press to select this option.</small>
+              </div>
+
+              <div className="form-group">
+                <label>Label</label>
+                <input
+                  type="text"
+                  value={config.label}
+                  onChange={(e) => handleChange('label', e.target.value)}
+                  onBlur={() => handleBlur('label')}
+                  placeholder="e.g., Customer Support"
+                />
+                <small className="form-help">Display name for this menu option.</small>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Action</label>
+              <select
+                value={config.action}
+                onChange={(e) => handleChange('action', e.target.value)}
+              >
+                <option value="transfer">Transfer Call</option>
+                <option value="queue">Add to Queue</option>
+                <option value="voicemail">Send to Voicemail</option>
+                <option value="submenu">Go to Sub-Menu</option>
+                <option value="ai-assistant">Connect to AI Assistant</option>
+              </select>
+              <small className="form-help">What happens when caller selects this option.</small>
+            </div>
+
+            <div className="form-group">
+              <label>Destination</label>
+              <input
+                type="text"
+                value={config.destination}
+                onChange={(e) => handleChange('destination', e.target.value)}
+                onBlur={() => handleBlur('destination')}
+                placeholder="Phone number, queue ID, or node ID"
+              />
+              <small className="form-help">Where call should be routed based on action selected.</small>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label>Timeout (seconds)</label>
+                <input
+                  type="number"
+                  value={config.timeoutSeconds}
+                  onChange={(e) => handleChange('timeoutSeconds', parseInt(e.target.value))}
+                  min={5}
+                  max={30}
+                />
+                <small className="form-help">Time to wait for input.</small>
+              </div>
+
+              <div className="form-group">
+                <label>Max Attempts</label>
+                <input
+                  type="number"
+                  value={config.maxAttempts}
+                  onChange={(e) => handleChange('maxAttempts', parseInt(e.target.value))}
+                  min={1}
+                  max={5}
+                />
+                <small className="form-help">How many times to retry on invalid input.</small>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label>Invalid Input Audio Node</label>
+              <select
+                value={config.invalidAudioNodeId}
+                onChange={(e) => handleChange('invalidAudioNodeId', e.target.value)}
+              >
+                <option value="">Select audio node for invalid input...</option>
+                {/* This should be populated with available audio nodes */}
+              </select>
+              <small className="form-help">Audio node to play on invalid input.</small>
+            </div>
+
+            <div className="form-group">
+              <label>Timeout Audio Node</label>
+              <select
+                value={config.timeoutAudioNodeId}
+                onChange={(e) => handleChange('timeoutAudioNodeId', e.target.value)}
+              >
+                <option value="">Select audio node for timeout...</option>
+                {/* This should be populated with available audio nodes */}
+              </select>
+              <small className="form-help">Audio node to play on timeout.</small>
+            </div>
+          </div>
+        );
       case 'transfer':
-        return renderTransferConfig();
+        return (
+          <div className="config-section">
+            <h4>Transfer Configuration</h4>
+            <div className="form-group">
+              <label>Phone Number</label>
+              <input
+                type="tel"
+                value={config.destination}
+                onChange={(e) => handleChange('destination', e.target.value)}
+                placeholder="+1234567890"
+              />
+            </div>
+
+            <div className="form-group">
+              <label>Department/Label</label>
+              <input
+                type="text"
+                value={config.label}
+                onChange={(e) => handleChange('label', e.target.value)}
+                placeholder="e.g., Sales, Support"
+              />
+            </div>
+          </div>
+        );
       case 'conditional':
-        return renderConditionalConfig();
+        return (
+          <div className="config-section">
+            <h4>Conditional Logic</h4>
+            <div className="form-group">
+              <label>Condition</label>
+              <select
+                value={config.condition}
+                onChange={(e) => handleChange('condition', e.target.value)}
+              >
+                <option value="business_hours">Business Hours</option>
+                <option value="caller_id_known">Known Caller ID</option>
+                <option value="premium_customer">Premium Customer</option>
+                <option value="custom">Custom Expression</option>
+              </select>
+            </div>
+
+            <div className="form-row">
+              <div className="form-group">
+                <label>If True (Node ID)</label>
+                <input
+                  type="text"
+                  value={config.truePath}
+                  onChange={(e) => handleChange('truePath', e.target.value)}
+                  placeholder="node_id_true"
+                />
+              </div>
+
+              <div className="form-group">
+                <label>If False (Node ID)</label>
+                <input
+                  type="text"
+                  value={config.falsePath}
+                  onChange={(e) => handleChange('falsePath', e.target.value)}
+                  placeholder="node_id_false"
+                />
+              </div>
+            </div>
+          </div>
+        );
       case 'voicemail':
         return (
           <div className="config-section">
             <h4>Voicemail Configuration</h4>
+
             <div className="form-group">
-              <label>Message Text</label>
-              <textarea
-                value={config.text || ''}
-                onChange={(e) => handleChange('text', e.target.value)}
-                placeholder="Leave a message after the tone."
-                rows={3}
-              />
+              <label>Greeting Audio Node</label>
+              <select
+                value={config.greetingAudioNodeId}
+                onChange={(e) => handleChange('greetingAudioNodeId', e.target.value)}
+              >
+                <option value="">Select audio node for greeting...</option>
+                {/* This should be populated with available audio nodes */}
+              </select>
+              <small className="form-help">Audio node to play before recording.</small>
             </div>
-            {renderVoiceSettings('text')}
+
             <div className="form-row">
               <div className="form-group">
                 <label>Max Recording (seconds)</label>
@@ -393,215 +866,10 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
             </div>
           </div>
         );
-      case 'repeat':
-        return (
-          <div className="config-section">
-            <h4>Repeat Configuration</h4>
-
-            <div className="form-group">
-              <label>Repeat Type</label>
-              <select
-                value={config.repeatType || 'prompt'}
-                onChange={(e) => handleChange('repeatType', e.target.value)}
-              >
-                <option value="prompt">Replay Last Prompt</option>
-                <option value="menu">Repeat Entire Menu</option>
-                <option value="custom">Custom Message</option>
-                <option value="none">No Repeat</option>
-              </select>
-              <small className="form-help">What should be repeated when caller requests repetition.</small>
-            </div>
-
-            {config.repeatType === 'custom' && (
-              <div className="form-group">
-                <label>Custom Repeat Message</label>
-                <textarea
-                  value={config.customRepeatMessage || ''}
-                  onChange={(e) => handleChange('customRepeatMessage', e.target.value)}
-                  placeholder="Let me repeat that for you..."
-                  rows={2}
-                />
-                {renderVoiceSettings('customRepeatMessage')}
-              </div>
-            )}
-
-            {config.repeatType !== 'none' && (
-              <>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Max Repeats</label>
-                    <input
-                      type="number"
-                      value={config.maxRepeats || 3}
-                      onChange={(e) => handleChange('maxRepeats', parseInt(e.target.value))}
-                      min={1}
-                      max={10}
-                    />
-                    <small className="form-help">Maximum times to repeat before fallback.</small>
-                  </div>
-                  <div className="form-group">
-                    <label>Repeat Trigger</label>
-                    <select
-                      value={config.repeatTrigger || 'any'}
-                      onChange={(e) => handleChange('repeatTrigger', e.target.value)}
-                    >
-                      <option value="any">Any Invalid Input</option>
-                      <option value="timeout">Timeout Only</option>
-                      <option value="digit">Specific Digit (*)</option>
-                      <option value="voice">Voice Command</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div className="form-row">
-                  <div className="form-group">
-                    <label>Timeout (seconds)</label>
-                    <input
-                      type="number"
-                      value={config.timeout || 10}
-                      onChange={(e) => handleChange('timeout', parseInt(e.target.value))}
-                      min={5}
-                      max={30}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>Repeat Interval (seconds)</label>
-                    <input
-                      type="number"
-                      value={config.repeatInterval || 2}
-                      onChange={(e) => handleChange('repeatInterval', parseInt(e.target.value))}
-                      min={1}
-                      max={10}
-                    />
-                    <small className="form-help">Pause between repeats.</small>
-                  </div>
-                </div>
-
-                <div className="form-group">
-                  <label>Repeat Message</label>
-                  <textarea
-                    value={config.repeatMessage || ''}
-                    onChange={(e) => handleChange('repeatMessage', e.target.value)}
-                    placeholder="Please listen carefully or press 0 for assistance."
-                    rows={2}
-                  />
-                  <small className="form-help">Message played before each repetition.</small>
-                  {renderVoiceSettings('repeatMessage')}
-                </div>
-              </>
-            )}
-
-            <div className="form-group">
-              <label>Fallback Action</label>
-              <select
-                value={config.fallbackAction || 'node'}
-                onChange={(e) => handleChange('fallbackAction', e.target.value)}
-              >
-                <option value="node">Go to Node</option>
-                <option value="transfer">Transfer Call</option>
-                <option value="voicemail">Send to Voicemail</option>
-                <option value="agent">Connect to Agent</option>
-                <option value="end">End Call</option>
-              </select>
-              <small className="form-help">What happens when max repeats are reached.</small>
-            </div>
-
-            {config.fallbackAction === 'node' && (
-              <div className="form-group">
-                <label>Fallback Node ID</label>
-                <input
-                  type="text"
-                  value={config.fallbackNodeId || ''}
-                  onChange={(e) => handleChange('fallbackNodeId', e.target.value)}
-                  placeholder="node_id_fallback"
-                />
-              </div>
-            )}
-
-            {config.fallbackAction === 'transfer' && (
-              <div className="form-group">
-                <label>Transfer Number</label>
-                <input
-                  type="tel"
-                  value={config.transferNumber || ''}
-                  onChange={(e) => handleChange('transferNumber', e.target.value)}
-                  placeholder="+1234567890"
-                />
-              </div>
-            )}
-
-            {config.fallbackAction === 'voicemail' && (
-              <div className="form-group">
-                <label>Voicemail Box</label>
-                <input
-                  type="text"
-                  value={config.voicemailBox || ''}
-                  onChange={(e) => handleChange('voicemailBox', e.target.value)}
-                  placeholder="general"
-                />
-              </div>
-            )}
-
-            <div className="form-group">
-              <label>Advanced Options</label>
-              <div className="checkbox-group">
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={config.countRepeats || false}
-                    onChange={(e) => handleChange('countRepeats', e.target.checked)}
-                  />
-                  Count Repeat Attempts
-                </label>
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={config.logRepeats || false}
-                    onChange={(e) => handleChange('logRepeats', e.target.checked)}
-                  />
-                  Log Repeat Events
-                </label>
-                <label className="checkbox-label">
-                  <input
-                    type="checkbox"
-                    checked={config.progressiveTimeout || false}
-                    onChange={(e) => handleChange('progressiveTimeout', e.target.checked)}
-                  />
-                  Progressive Timeout
-                </label>
-              </div>
-            </div>
-
-            {config.progressiveTimeout && (
-              <div className="form-group">
-                <label>Timeout Progression</label>
-                <input
-                  type="text"
-                  value={config.timeoutProgression || '10,15,20,25'}
-                  onChange={(e) => handleChange('timeoutProgression', e.target.value)}
-                  placeholder="10,15,20,25"
-                />
-                <small className="form-help">Comma-separated timeout values for each repeat attempt.</small>
-              </div>
-            )}
-          </div>
-        );
       case 'end':
         return (
           <div className="config-section">
             <h4>End Call Configuration</h4>
-            <div className="form-group">
-              <label>Goodbye Message</label>
-              <textarea
-                value={config.message || ''}
-                onChange={(e) => handleChange('message', e.target.value)}
-                placeholder="Thank you for calling. Goodbye!"
-                rows={3}
-              />
-              <small className="form-help">This message will be played before ending the call.</small>
-            </div>
-            {renderVoiceSettings('message')}
-
             <div className="form-group">
               <label>Call Termination</label>
               <select
@@ -613,7 +881,7 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
                 <option value="voicemail">Send to Voicemail</option>
                 <option value="callback">Schedule Callback</option>
               </select>
-              <small className="form-help">What happens after the goodbye message.</small>
+              <small className="form-help">What happens after workflow ends.</small>
             </div>
 
             {config.terminationType === 'transfer' && (

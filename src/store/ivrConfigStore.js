@@ -7,7 +7,7 @@ export const IVR_CONFIG_DEFAULTS = {
     text: '',
     audioUrl: null,
     audioAssetId: null,
-    voice: 'en-US-AriaNeural'
+    voice: 'en-GB-SoniaNeural'
   },
   menuOptions: [
     {
@@ -103,7 +103,7 @@ export const createIVRConfig = (name) => {
     ivrName: name,
     greeting: {
       text: `Welcome to ${name}. Please choose an option.`,
-      voice: 'en-US-AriaNeural'
+      voice: 'en-GB-SoniaNeural'
     },
     menuOptions: [
       {

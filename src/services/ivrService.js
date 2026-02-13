@@ -146,12 +146,9 @@ export const ivrService = {
   /**
    * Test IVR flow (simulate call)
    */
-  async testIVRFlow(promptKey, language = 'en-US') {
+  async testIVRFlow(promptKey, language = 'en-GB') {
     try {
-      const response = await apiService.post('/ivr/test-flow', {
-        promptKey,
-        language
-      });
+      const response = await apiService.post(`/ivr/menus/${promptKey}/test`, { language });
       return response.data;
     } catch (error) {
       console.error('Failed to test IVR flow:', error);
@@ -165,9 +162,7 @@ export const ivrService = {
   async getCallLogs(filters = {}) {
     console.log('[Frontend] Helper getCallLogs filters:', filters);
     try {
-      // Use helper method from apiService if available or direct get
-      // Since apiService has getCallLogs but for /ivr/call-logs we use this
-      const response = await apiService.get('/ivr/call-logs', { params: filters });
+      const response = await apiService.get('/call-logs', { params: filters });
       return response.data;
     } catch (error) {
       console.error('Failed to get call logs:', error);
@@ -195,10 +190,23 @@ export const ivrService = {
    */
   async updateWorkflowStatus(workflowId, status) {
     try {
-      const response = await apiService.put(`/api/workflow/${workflowId}/status`, { status });
+      const response = await apiService.put(`/workflow/${workflowId}/status`, { status });
       return response.data;
     } catch (error) {
       console.error('Failed to update workflow status:', error);
+      throw error;
+    }
+  },
+
+  /**
+   * Get workflow by ID with nodes and edges
+   */
+  async getWorkflow(workflowId) {
+    try {
+      const response = await apiService.get(`/workflow/${workflowId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get workflow:', error);
       throw error;
     }
   },
@@ -208,7 +216,7 @@ export const ivrService = {
    */
   async getWorkflowStatus(workflowId) {
     try {
-      const response = await apiService.get(`/api/workflow/${workflowId}/status`);
+      const response = await apiService.get(`/workflow/${workflowId}/status`);
       return response.data;
     } catch (error) {
       console.error('Failed to get workflow status:', error);
@@ -241,7 +249,7 @@ export const ivrService = {
    */
   async generateIVRAudio(workflowId, forceRegenerate = false) {
     try {
-      const response = await apiService.post('/api/workflow/generate-audio', {
+      const response = await apiService.post('/workflow/generate-audio', {
         workflowId,
         forceRegenerate
       });

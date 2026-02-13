@@ -15,8 +15,8 @@ export const INDUSTRY_TEMPLATES = {
           position: { x: 100, y: 50 },
           data: {
             text: "Welcome to our hotel. How can I help you today?",
-            voice: "en-US-AriaNeural",
-            language: "en-US"
+            voice: "en-GB-SoniaNeural",
+            language: "en-GB"
           }
         },
         {
@@ -153,8 +153,8 @@ export const INDUSTRY_TEMPLATES = {
           position: { x: 100, y: 50 },
           data: {
             text: "Welcome to our insurance services. How can I assist you today?",
-            voice: "en-US-AriaNeural",
-            language: "en-US"
+            voice: "en-GB-SoniaNeural",
+            language: "en-GB"
           }
         },
         {
@@ -271,8 +271,8 @@ export const INDUSTRY_TEMPLATES = {
           position: { x: 100, y: 50 },
           data: {
             text: "Welcome to our healthcare center. Please select an option.",
-            voice: "en-US-AriaNeural",
-            language: "en-US",
+            voice: "en-GB-SoniaNeural",
+            language: "en-GB",
             hipaa_compliant: true
           }
         },
@@ -409,8 +409,8 @@ export const INDUSTRY_TEMPLATES = {
           position: { x: 100, y: 50 },
           data: {
             text: "Welcome to our store. How can I help you today?",
-            voice: "en-US-AriaNeural",
-            language: "en-US"
+            voice: "en-GB-SoniaNeural",
+            language: "en-GB"
           }
         },
         {
@@ -430,8 +430,8 @@ export const INDUSTRY_TEMPLATES = {
           position: { x: 300, y: 100 },
           data: {
             text: "We are open Monday through Friday from 9 AM to 9 PM, Saturday from 10 AM to 8 PM, and Sunday from 11 AM to 6 PM.",
-            voice: "en-US-AriaNeural",
-            language: "en-US"
+            voice: "en-GB-SoniaNeural",
+            language: "en-GB"
           }
         },
         {

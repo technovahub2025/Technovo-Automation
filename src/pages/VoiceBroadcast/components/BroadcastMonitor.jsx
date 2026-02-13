@@ -149,8 +149,9 @@ const BroadcastMonitor = ({ broadcastId }) => {
   };
 
   const calculateProgress = () => {
-    if (!broadcast) return 0;
+    if (!broadcast || !broadcast.stats) return 0;
     const { total, completed, failed } = broadcast.stats;
+    if (!total || total === 0) return 0;
     return ((completed + failed) / total) * 100;
   };
 

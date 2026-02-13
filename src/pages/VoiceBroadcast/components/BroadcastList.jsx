@@ -25,7 +25,8 @@ const BroadcastList = ({ broadcasts, loading, onMonitor, onStop, onDelete }) => 
   };
 
   const calculateSuccessRate = (stats) => {
-    const total = stats.completed + stats.failed;
+    if (!stats) return 0;
+    const total = (stats.completed || 0) + (stats.failed || 0);
     if (total === 0) return 0;
     return Math.round((stats.completed / total) * 100);
   };
@@ -94,7 +95,7 @@ const BroadcastList = ({ broadcasts, loading, onMonitor, onStop, onDelete }) => 
                 <div
                   className="progress-fill-mini"
                   style={{
-                    width: `${((broadcast.stats.completed + broadcast.stats.failed) / broadcast.stats.total) * 100}%`
+                    width: `${broadcast.stats.total > 0 ? ((broadcast.stats.completed + broadcast.stats.failed) / broadcast.stats.total) * 100 : 0}%`
                   }}
                 />
               </div>

@@ -113,12 +113,12 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
       setSubmitResult({
         success: true,
         message: `Broadcast "${formData.name}" started successfully!`,
-        broadcastId: response.broadcast.id
+        broadcastId: response.data.broadcast.id
       });
 
       // Notify parent component
       if (onBroadcastCreated) {
-        onBroadcastCreated(response.broadcast.id);
+        onBroadcastCreated(response.data.broadcast.id);
       }
 
       // Reset form after delay

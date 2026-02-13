@@ -152,18 +152,6 @@ const VoiceAutomation = () => {
         </div>
 
         <div className="voice-card">
-          <Bot size={28} />
-          <h4>Voice Bot Flow</h4>
-          <p style={{ height: "40px" }}>Create voice conversation flows with AI logic.</p>
-          <button
-            className="card-button"
-            onClick={() => navigate('/voice-automation/flows')}
-          >
-            Create Flow
-          </button>
-        </div>
-
-        <div className="voice-card">
           <PhoneCall size={28} />
           <h4>Voice Broadcast</h4>
           <p style={{ height: "40px" }}>Send bulk voice messages to multiple contacts.</p>
@@ -186,18 +174,6 @@ const VoiceAutomation = () => {
             View Logs
           </button>
         </div>
-
-        <div className="voice-card">
-          <FileText size={28} />
-          <h4>Outbound Config</h4>
-          <p style={{ height: "40px" }}>Manage campaign templates and contact scripts.</p>
-          <button
-            className="card-button"
-            onClick={() => navigate('/voice-automation/outbound-config')}
-          >
-            Manage
-          </button>
-        </div>
       </div>
 
       {/* Active Calls Section */}
@@ -205,8 +181,8 @@ const VoiceAutomation = () => {
         <div className="active-calls-section">
           <h3>Active Calls</h3>
           <div className="calls-list">
-            {activeCalls.map((call) => (
-              <div key={call.call_sid} className="call-item">
+            {activeCalls.map((call, index) => (
+              <div key={call.call_sid || `call-${index}`} className="call-item">
                 <div className="call-info">
                   <span className="call-sid">{call.call_sid}</span>
                   <span className="call-status">

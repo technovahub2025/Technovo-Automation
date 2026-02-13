@@ -1,57 +1,31 @@
 import React, { useState } from 'react';
-
-import { MessageSquare } from 'lucide-react';
-
 import { apiClient } from '../services/whatsappapi';
-
 import { useBroadcast } from '../hooks/useBroadcast';
 
-
-
 // Import components
-
 import BroadcastHeader from '../components/broadcastComponents/BroadcastHeader';
-
 import DateRangeFilter from '../components/broadcastComponents/DateRangeFilter';
-
 import OverviewStats from '../components/broadcastComponents/OverviewStats';
 
 import { getCachedOverviewStats, clearStatsCache } from '../utils/stableBroadcastStats';
 
 import BroadcastListControls from '../components/broadcastComponents/BroadcastListControls';
-
 import BroadcastTable from '../components/broadcastComponents/BroadcastTable';
-
 import ScheduleForm from '../components/broadcastComponents/ScheduleForm';
-
 import DeleteModal from '../components/broadcastComponents/DeleteModal';
-
 import BroadcastTypeChoice from '../components/broadcastComponents/BroadcastTypeChoice';
-
 import NewBroadcastPopup from '../components/broadcastComponents/NewBroadcastPopup';
-
 import CsvPreviewPopup from '../components/broadcastComponents/CsvPreviewPopup';
-
 import AllCampaignsPopup from '../components/broadcastComponents/AllCampaignsPopup';
 
-
-
 // Import existing components
-
 import CampaignResultsModal from '../components/broadcastComponents/CampaignResultsModal';
-
 import BroadcastResultsPopup from '../components/broadcastComponents/BroadcastResultsPopup';
-
 import BroadcastAnalyticsModal from '../components/broadcastComponents/BroadcastAnalyticsModal';
 
-
-
 // Import styles
-
 import '../styles/whatsapp.css';
-
 import '../styles/message-preview.css';
-
 import '../styles/broadcast-list-controls.css';
 
 
@@ -63,15 +37,10 @@ const Broadcast = () => {
     // State
 
     activeTab, setActiveTab,
-
     messageType, setMessageType,
-
     officialTemplates,
-
     templates,
-
     templateName, setTemplateName,
-
     language, setLanguage,
 
     templateFilter, setTemplateFilter,
@@ -117,8 +86,6 @@ const Broadcast = () => {
     sortOrder, setSortOrder,
 
     showFilterDropdown, setShowFilterDropdown,
-
-    showSortDropdown, setShowSortDropdown,
 
     dateFilter, setDateFilter,
 
@@ -183,13 +150,13 @@ const Broadcast = () => {
 
   const filteredBroadcasts = getFilteredAndSortedBroadcasts();
 
-  
+
 
   // Show only 5 recent campaigns by default
 
   const displayBroadcasts = filteredBroadcasts.slice(0, 5);
 
-  
+
 
   const indexOfLastItem = currentPage * itemsPerPage;
 
@@ -217,7 +184,7 @@ const Broadcast = () => {
 
   // Filter templates by category
 
-  const filteredTemplates = officialTemplates.filter(template => 
+  const filteredTemplates = officialTemplates.filter(template =>
 
     templateFilter === 'all' || template.category?.toLowerCase() === templateFilter.toLowerCase()
 
@@ -361,7 +328,7 @@ const Broadcast = () => {
 
     setSelectedLocalTemplate(templateName);
 
-    
+
 
     if (templateName) {
 
@@ -391,7 +358,7 @@ const Broadcast = () => {
 
         }
 
-        
+
 
         setCustomMessage(contentString);
 
@@ -417,7 +384,7 @@ const Broadcast = () => {
 
     setTemplateName(selectedTemplateName);
 
-    
+
 
     const selectedTemplate = officialTemplates.find(t => t.name === selectedTemplateName);
 
@@ -425,7 +392,7 @@ const Broadcast = () => {
 
       setLanguage(selectedTemplate.language || 'en_US');
 
-      
+
 
       if (selectedTemplate.content?.body) {
 
@@ -507,7 +474,7 @@ const Broadcast = () => {
 
             setFileVariables(fileVarKeys);
 
-            
+
 
             setShowCsvPreview(true);
 
@@ -545,7 +512,7 @@ const Broadcast = () => {
 
     setShowCsvPreview(false);
 
-    
+
 
     const fileInput = document.getElementById('csv-file-popup');
 
@@ -652,9 +619,9 @@ const Broadcast = () => {
 
         recipients,
 
-        ...(messageType === 'template' ? { 
+        ...(messageType === 'template' ? {
 
-          templateName, 
+          templateName,
 
           language,
 
@@ -774,7 +741,7 @@ const Broadcast = () => {
 
       const selectedTemplate = officialTemplates.find(t => t.name === templateName);
 
-      
+
 
       if (!selectedTemplate) {
 
@@ -824,11 +791,11 @@ const Broadcast = () => {
 
         };
 
-        
+
 
         processedRecipient.data = recipient.data || recipient;
 
-        
+
 
         return processedRecipient;
 
@@ -870,7 +837,7 @@ const Broadcast = () => {
 
         setShowNewBroadcastPopup(false);
 
-        
+
 
         setBroadcastName('');
 
@@ -1350,8 +1317,6 @@ const Broadcast = () => {
 
       />
 
-
-
       <CsvPreviewPopup
 
         showCsvPreview={showCsvPreview}
@@ -1366,38 +1331,21 @@ const Broadcast = () => {
 
       />
 
-
-
       <AllCampaignsPopup
-
         showAllCampaignsPopup={false}
-
         broadcasts={broadcasts}
-
         filteredBroadcasts={filteredBroadcasts}
-
         searchTerm={searchTerm}
-
         onSearchChange={(e) => setSearchTerm(e.target.value)}
-
         statusFilter={statusFilter}
-
         onStatusFilterChange={(value) => setStatusFilter(value)}
-
         showFilterDropdown={showFilterDropdown}
-
         onFilterDropdownToggle={() => setShowFilterDropdown(!showFilterDropdown)}
-
-        onClose={() => {}}
-
+        onClose={() => { }}
         getReadPercentage={getReadPercentage}
-
         getStatusClass={getStatusClass}
-
         onStopBroadcast={stopBroadcast}
-
         onDeleteClick={handleDeleteClick}
-
       />
 
       <BroadcastAnalyticsModal
@@ -1407,12 +1355,7 @@ const Broadcast = () => {
       />
 
     </div>
-
   );
-
 };
 
-
-
 export default Broadcast;
-
