@@ -35,10 +35,12 @@
 
 /* Progress Text - Consistent color */
 .progress-text {
-    fill: #374151;
-    font-size: 10px;
-    font-weight: 600;
+    fill: #5b5e61 !important;
+    font-size: 9.9px !important;
+    font-weight: 900 !important;
+    letter-spacing: -0.15px;
 }
+
 
 /* Progress animation */
 .progress-fill {
@@ -376,3 +378,4 @@
         height: 14px;
     }
 }
+

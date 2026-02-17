@@ -73,8 +73,8 @@ const BroadcastCard = ({
             textAnchor="middle"
             dy="0.3em"
             className="progress-text"
-            fontSize="10"
-            fontWeight="600"
+            fontSize="6"
+            fontWeight="400"
           >
             {percentage}%
           </text>
@@ -134,3 +134,4 @@ const BroadcastCard = ({
 };
 
 export default BroadcastCard;
+
