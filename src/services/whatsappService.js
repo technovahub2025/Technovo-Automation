@@ -2,6 +2,15 @@
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 
+const getAuthHeaders = (includeJson = true) => {
+  const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
+  const token = localStorage.getItem(tokenKey) || localStorage.getItem("authToken");
+  const headers = {};
+  if (includeJson) headers['Content-Type'] = 'application/json';
+  if (token) headers.Authorization = `Bearer ${token}`;
+  return headers;
+};
+
 
 
 export const whatsappService = {
@@ -54,11 +63,7 @@ export const whatsappService = {
 
         method: 'POST',
 
-        headers: {
-
-          'Content-Type': 'application/json'
-
-        },
+        headers: getAuthHeaders(),
 
         body: JSON.stringify({ to, text, conversationId })
 
@@ -88,11 +93,7 @@ export const whatsappService = {
 
         method: 'POST',
 
-        headers: {
-
-          'Content-Type': 'application/json'
-
-        },
+        headers: getAuthHeaders(),
 
         body: JSON.stringify({ to, mediaType, mediaUrl, text, conversationId })
 
@@ -124,11 +125,13 @@ export const whatsappService = {
 
       const queryParams = new URLSearchParams(filters).toString();
 
-      const response = await fetch(`${API_BASE_URL}/api/conversations${queryParams ? '?' + queryParams : ''}`);
+      const response = await fetch(`${API_BASE_URL}/api/conversations${queryParams ? '?' + queryParams : ''}`, {
+        headers: getAuthHeaders(false)
+      });
 
       const data = await response.json();
-
-      return data.data || data || [];
+      const result = data?.data || data;
+      return Array.isArray(result) ? result : [];
 
     } catch (error) {
 
@@ -148,7 +151,9 @@ export const whatsappService = {
 
     try {
 
-      const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}`);
+      const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}`, {
+        headers: getAuthHeaders(false)
+      });
 
       return await response.json();
 
@@ -174,11 +179,7 @@ export const whatsappService = {
 
         method: 'POST',
 
-        headers: {
-
-          'Content-Type': 'application/json'
-
-        },
+        headers: getAuthHeaders(),
 
         body: JSON.stringify(conversationData)
 
@@ -208,11 +209,7 @@ export const whatsappService = {
 
         method: 'PUT',
 
-        headers: {
-
-          'Content-Type': 'application/json'
-
-        },
+        headers: getAuthHeaders(),
 
         body: JSON.stringify(updateData)
 
@@ -240,7 +237,8 @@ export const whatsappService = {
 
       const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}/read`, {
 
-        method: 'PUT'
+        method: 'PUT',
+        headers: getAuthHeaders(false)
 
       });
 
@@ -255,8 +253,50 @@ export const whatsappService = {
     }
 
   },
+  // Delete single conversation
+  async deleteConversation(conversationId) {
 
+    try {
 
+      const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(false)
+      });
+
+      return await response.json();
+
+    } catch (error) {
+
+      console.error('Failed to delete conversation:', error);
+
+      return { success: false, error: error.message };
+
+    }
+
+  },
+
+  // Delete selected conversations
+  async deleteSelectedConversations(conversationIds = []) {
+
+    try {
+
+      const response = await fetch(`${API_BASE_URL}/api/conversations/delete-selected`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ conversationIds })
+      });
+
+      return await response.json();
+
+    } catch (error) {
+
+      console.error('Failed to delete selected conversations:', error);
+
+      return { success: false, error: error.message };
+
+    }
+
+  },
 
   // Get messages for conversation
 
@@ -264,11 +304,13 @@ export const whatsappService = {
 
     try {
 
-      const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}/messages`);
+      const response = await fetch(`${API_BASE_URL}/api/conversations/${conversationId}/messages`, {
+        headers: getAuthHeaders(false)
+      });
 
       const data = await response.json();
-
-      return data.data || data || [];
+      const result = data?.data || data;
+      return Array.isArray(result) ? result : [];
 
     } catch (error) {
 
@@ -279,8 +321,28 @@ export const whatsappService = {
     }
 
   },
+  // Delete selected messages
+  async deleteSelectedMessages(messageIds = []) {
 
+    try {
 
+      const response = await fetch(`${API_BASE_URL}/api/messages/delete-selected`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ messageIds })
+      });
+
+      return await response.json();
+
+    } catch (error) {
+
+      console.error('Failed to delete selected messages:', error);
+
+      return { success: false, error: error.message };
+
+    }
+
+  },
 
   // ============ CONTACT ENDPOINTS ============
 
@@ -294,11 +356,13 @@ export const whatsappService = {
 
       const queryParams = new URLSearchParams(filters).toString();
 
-      const response = await fetch(`${API_BASE_URL}/api/contacts${queryParams ? '?' + queryParams : ''}`);
+      const response = await fetch(`${API_BASE_URL}/api/contacts${queryParams ? '?' + queryParams : ''}`, {
+        headers: getAuthHeaders(false)
+      });
 
       const data = await response.json();
-
-      return data.data || data || [];
+      const result = data?.data || data;
+      return Array.isArray(result) ? result : [];
 
     } catch (error) {
 
@@ -322,11 +386,7 @@ export const whatsappService = {
 
         method: 'POST',
 
-        headers: {
-
-          'Content-Type': 'application/json'
-
-        },
+        headers: getAuthHeaders(),
 
         body: JSON.stringify(contactData)
 
@@ -356,11 +416,7 @@ export const whatsappService = {
 
         method: 'PUT',
 
-        headers: {
-
-          'Content-Type': 'application/json'
-
-        },
+        headers: getAuthHeaders(),
 
         body: JSON.stringify(updateData)
 
@@ -399,6 +455,7 @@ export const whatsappService = {
       const response = await fetch(`${API_BASE_URL}/api/bulk/upload`, {
 
         method: 'POST',
+        headers: getAuthHeaders(false),
 
         body: formData
 
@@ -428,11 +485,7 @@ export const whatsappService = {
 
         method: 'POST',
 
-        headers: {
-
-          'Content-Type': 'application/json'
-
-        },
+        headers: getAuthHeaders(),
 
         body: JSON.stringify(bulkData)
 
@@ -459,14 +512,24 @@ export const whatsappService = {
   // Get all templates from Meta WhatsApp Business API
   async getTemplates() {
     try {
-      const response = await fetch(`${API_BASE_URL}/api/templates/meta`);
+      const response = await fetch(`${API_BASE_URL}/api/templates/meta`, {
+        headers: getAuthHeaders(false)
+      });
       const data = await response.json();
+
+      if (!response.ok) {
+        const backendMessage =
+          data?.error ||
+          data?.message ||
+          `HTTP ${response.status}: ${response.statusText}`;
+        throw new Error(backendMessage);
+      }
       
       // Return the templates array from Meta API response
       return data.data || data || [];
     } catch (error) {
       console.error('Failed to fetch templates from Meta:', error);
-      return [];
+      throw error;
     }
   },
 
@@ -477,18 +540,44 @@ export const whatsappService = {
     try {
       const response = await fetch(`${API_BASE_URL}/api/templates/meta/sync`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        }
+        headers: getAuthHeaders()
       });
 
+      const data = await response.json();
+
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        const backendMessage =
+          data?.error ||
+          data?.message ||
+          `HTTP ${response.status}: ${response.statusText}`;
+        throw new Error(backendMessage);
       }
 
-      return await response.json();
+      return data;
     } catch (error) {
       console.error('Failed to sync templates from Meta:', error);
+      throw error;
+    }
+  },
+
+  // Create template via Meta-backed backend endpoint
+  async createTemplate(templateData) {
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/templates`, {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify(templateData)
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data?.error || data?.message || `HTTP ${response.status}: ${response.statusText}`
+        };
+      }
+      return data;
+    } catch (error) {
+      console.error('Failed to create template:', error);
       return { success: false, error: error.message };
     }
   },
@@ -505,11 +594,13 @@ export const whatsappService = {
 
     try {
 
-      const response = await fetch(`${API_BASE_URL}/api/broadcasts`);
+      const response = await fetch(`${API_BASE_URL}/api/broadcasts`, {
+        headers: getAuthHeaders(false)
+      });
 
       const data = await response.json();
-
-      return data.data || data || [];
+      const result = data?.data || data;
+      return Array.isArray(result) ? result : [];
 
     } catch (error) {
 
@@ -533,11 +624,7 @@ export const whatsappService = {
 
         method: 'POST',
 
-        headers: {
-
-          'Content-Type': 'application/json'
-
-        },
+        headers: getAuthHeaders(),
 
         body: JSON.stringify(broadcastData)
 
@@ -565,7 +652,8 @@ export const whatsappService = {
 
       const response = await fetch(`${API_BASE_URL}/api/broadcasts/${broadcastId}/send`, {
 
-        method: 'POST'
+        method: 'POST',
+        headers: getAuthHeaders(false)
 
       });
 
@@ -593,7 +681,9 @@ export const whatsappService = {
 
     try {
 
-      const response = await fetch(`${API_BASE_URL}/api/analytics`);
+      const response = await fetch(`${API_BASE_URL}/api/analytics`, {
+        headers: getAuthHeaders(false)
+      });
 
       const data = await response.json();
 
@@ -625,11 +715,7 @@ export const whatsappService = {
 
         method: 'POST',
 
-        headers: {
-
-          'Content-Type': 'application/json'
-
-        },
+        headers: getAuthHeaders(),
 
         body: JSON.stringify({ 
 
@@ -669,7 +755,8 @@ export const whatsappService = {
 
       const response = await fetch(`${API_BASE_URL}/api/templates/${templateId}`, {
 
-        method: 'DELETE'
+        method: 'DELETE',
+        headers: getAuthHeaders(false)
 
       });
 
@@ -683,7 +770,29 @@ export const whatsappService = {
 
     }
 
+  },
+
+  async deleteTemplateFromMeta(templateName) {
+    try {
+      const encodedName = encodeURIComponent(String(templateName || '').trim());
+      const response = await fetch(`${API_BASE_URL}/api/templates/meta/${encodedName}`, {
+        method: 'DELETE',
+        headers: getAuthHeaders(false)
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        return {
+          success: false,
+          error: data?.error || data?.message || `HTTP ${response.status}: ${response.statusText}`
+        };
+      }
+      return data;
+    } catch (error) {
+      console.error('Failed to delete template from Meta:', error);
+      return { success: false, error: error.message };
+    }
   }
 
 };
+
 

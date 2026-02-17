@@ -11,8 +11,9 @@ const MainLayout = () => {
 
   // Track last active bulk message item when navigating to bulk message routes
   useEffect(() => {
-    const bulkMessageRoutes = ['/broadcast-dashboard', '/inbox', '/broadcast', '/templates', '/contacts'];
-    if (bulkMessageRoutes.includes(location.pathname)) {
+    const bulkMessageRoutes = ['/broadcast-dashboard', '/broadcast', '/broadcast/new', '/broadcast/new/template', '/broadcast/new/message', '/templates', '/contacts'];
+    const isInboxRoute = location.pathname.startsWith('/inbox');
+    if (bulkMessageRoutes.includes(location.pathname) || isInboxRoute) {
       setLastBulkMessageItem(location.pathname);
     }
   }, [location.pathname]);

@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
+
 import { apiClient } from '../services/whatsappapi';
 import { useBroadcast } from '../hooks/useBroadcast';
 
@@ -15,7 +17,8 @@ import ScheduleForm from '../components/broadcastComponents/ScheduleForm';
 import DeleteModal from '../components/broadcastComponents/DeleteModal';
 import BroadcastTypeChoice from '../components/broadcastComponents/BroadcastTypeChoice';
 import NewBroadcastPopup from '../components/broadcastComponents/NewBroadcastPopup';
-import CsvPreviewPopup from '../components/broadcastComponents/CsvPreviewPopup';
+
+
 import AllCampaignsPopup from '../components/broadcastComponents/AllCampaignsPopup';
 
 // Import existing components
@@ -30,7 +33,9 @@ import '../styles/broadcast-list-controls.css';
 
 
 
-const Broadcast = () => {
+const Broadcast = ({ composerMode = false, composerType = null, chooserMode = false }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
 
   const {
 
@@ -61,7 +66,6 @@ const Broadcast = () => {
 
     showBroadcastTypeChoice, setShowBroadcastTypeChoice,
 
-    showCsvPreview, setShowCsvPreview,
 
     customMessage, setCustomMessage,
 
@@ -111,8 +115,6 @@ const Broadcast = () => {
 
     loadBroadcasts,
 
-    syncTemplates,
-
     formatLastUpdated,
 
     getSuccessPercentage,
@@ -133,6 +135,38 @@ const Broadcast = () => {
 
   } = useBroadcast();
 
+  useEffect(() => {
+    if (composerMode) {
+      setActiveTab('schedule');
+    }
+  }, [composerMode, setActiveTab]);
+
+  useEffect(() => {
+    if (chooserMode) {
+      setShowBroadcastTypeChoice(true);
+      setActiveTab('overview');
+    }
+  }, [chooserMode, setShowBroadcastTypeChoice, setActiveTab]);
+
+  useEffect(() => {
+    if (!composerMode) return;
+    if (composerType === 'custom') {
+      setMessageType('text');
+      return;
+    }
+    if (composerType === 'template') {
+      setMessageType('template');
+    }
+  }, [composerMode, composerType, setMessageType]);
+
+  useEffect(() => {
+    if (location.pathname === '/broadcast') {
+      setActiveTab('overview');
+      setShowBroadcastTypeChoice(false);
+      setShowNewBroadcastPopup(false);
+    }
+  }, [location.pathname, setActiveTab, setShowBroadcastTypeChoice, setShowNewBroadcastPopup]);
+
 
 
   // Additional state for pagination
@@ -143,6 +177,39 @@ const Broadcast = () => {
 
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState(null);
+
+  const extractTemplateBody = (template) => {
+    if (!template || typeof template !== 'object') return '';
+
+    if (typeof template.templateContent === 'string' && template.templateContent.trim()) {
+      return template.templateContent.trim();
+    }
+
+    if (typeof template.content === 'string' && template.content.trim()) {
+      return template.content.trim();
+    }
+
+    if (template.content && typeof template.content === 'object') {
+      if (typeof template.content.body === 'string' && template.content.body.trim()) {
+        return template.content.body.trim();
+      }
+      if (typeof template.content.text === 'string' && template.content.text.trim()) {
+        return template.content.text.trim();
+      }
+    }
+
+    if (Array.isArray(template.components)) {
+      const bodyComponent = template.components.find((comp) => {
+        const type = String(comp?.type || '').toUpperCase();
+        return type === 'BODY' || type === 'body';
+      });
+      if (typeof bodyComponent?.text === 'string' && bodyComponent.text.trim()) {
+        return bodyComponent.text.trim();
+      }
+    }
+
+    return '';
+  };
 
 
 
@@ -172,10 +239,25 @@ const Broadcast = () => {
 
 
 
-  const handleManualRefresh = () => {
+  const handleManualRefresh = async () => {
     console.log('🔄 Manual refresh triggered by user');
     clearStatsCache(); // Clear the cache to force fresh calculation
-    loadBroadcasts(); // Reload broadcasts from backend
+
+    const recentBroadcasts = [...broadcasts]
+      .filter((broadcast) => Boolean(broadcast?._id))
+      .slice(0, 15);
+
+    if (recentBroadcasts.length > 0) {
+      await Promise.all(
+        recentBroadcasts.map((broadcast) =>
+          apiClient
+            .syncBroadcastStats(broadcast._id)
+            .catch((error) => console.warn(`Failed to sync stats for ${broadcast._id}`, error))
+        )
+      );
+    }
+
+    await loadBroadcasts(); // Reload broadcasts from backend
   };
 
   const stats = getCachedOverviewStats(broadcasts);
@@ -476,7 +558,6 @@ const Broadcast = () => {
 
 
 
-            setShowCsvPreview(true);
 
           }
 
@@ -510,7 +591,6 @@ const Broadcast = () => {
 
     setFileVariables([]);
 
-    setShowCsvPreview(false);
 
 
 
@@ -563,6 +643,8 @@ const Broadcast = () => {
 
 
 
+    let templateContent = '';
+
     if (messageType === 'template') {
 
       if (!templateName) {
@@ -584,6 +666,9 @@ const Broadcast = () => {
         return;
 
       }
+
+      // Extract template content for storing in broadcast
+      templateContent = extractTemplateBody(selectedTemplate);
 
 
 
@@ -624,6 +709,8 @@ const Broadcast = () => {
           templateName,
 
           language,
+
+          templateContent,
 
           templateParameters: templateVariables.map((variable, index) => ({
 
@@ -677,7 +764,11 @@ const Broadcast = () => {
 
         setShowNewBroadcastPopup(false);
 
-        setActiveTab('overview');
+        if (composerMode) {
+          navigate('/broadcast');
+        } else {
+          setActiveTab('overview');
+        }
 
       } else {
 
@@ -698,6 +789,14 @@ const Broadcast = () => {
 
 
   const handleSendBroadcast = async () => {
+
+    if (!broadcastName || !broadcastName.trim()) {
+
+      alert('Please provide a campaign name');
+
+      return;
+
+    }
 
     if (!recipients.length) {
 
@@ -727,6 +826,9 @@ const Broadcast = () => {
 
 
 
+    // Initialize templateContent with default value
+    let templateContent = '';
+
     if (messageType === 'template') {
 
       if (!templateName) {
@@ -751,6 +853,8 @@ const Broadcast = () => {
 
       }
 
+      // Extract template content for storing in broadcast
+      templateContent = extractTemplateBody(selectedTemplate);
 
 
       const approvedStatuses = ['APPROVED', 'approved', 'ACTIVE', 'active'];
@@ -805,11 +909,17 @@ const Broadcast = () => {
 
       const payload = {
 
+        broadcast_name: broadcastName.trim(),
+
         messageType,
 
         recipients: processedRecipients,
 
-        ...(messageType === 'template' ? { templateName, language } : { customMessage }),
+        ...(messageType === 'template' ? { 
+          templateName, 
+          language,
+          templateContent 
+        } : { customMessage }),
 
       };
 
@@ -848,6 +958,10 @@ const Broadcast = () => {
         setScheduledTime('');
 
         setMessageType('template');
+
+        if (composerMode) {
+          navigate('/broadcast');
+        }
 
       } else {
 
@@ -965,7 +1079,7 @@ const Broadcast = () => {
 
     setShowBroadcastTypeChoice(false);
 
-    setShowNewBroadcastPopup(true);
+    navigate('/broadcast/new/template');
 
   };
 
@@ -977,7 +1091,7 @@ const Broadcast = () => {
 
     setShowBroadcastTypeChoice(false);
 
-    setShowNewBroadcastPopup(true);
+    navigate('/broadcast/new/message');
 
   };
 
@@ -1001,24 +1115,6 @@ const Broadcast = () => {
 
 
 
-  const handleReplaceCsv = () => {
-
-    setShowCsvPreview(false);
-
-    const fileInput = document.getElementById('csv-file-popup');
-
-    if (fileInput) {
-
-      fileInput.value = '';
-
-      fileInput.click();
-
-    }
-
-  };
-
-
-
   const handleViewAnalytics = (broadcast) => {
 
     console.log('📊 View Analytics for broadcast:', broadcast.name);
@@ -1028,6 +1124,72 @@ const Broadcast = () => {
     setShowAnalyticsModal(true);
 
   };
+
+  const handleBackToOverview = () => {
+    if (composerMode) {
+      navigate('/broadcast');
+      return;
+    }
+    setActiveTab('overview');
+  };
+
+  const resetComposerForm = () => {
+    setBroadcastName('');
+    setTemplateName('');
+    setCustomMessage('');
+    setScheduledTime('');
+    setUploadedFile(null);
+    setRecipients([]);
+    setFileVariables([]);
+    setTemplateVariables([]);
+    setSelectedLocalTemplate('');
+    setMessageType('template');
+  };
+
+  if (composerMode) {
+    return (
+      <div className="broadcast-page">
+        <div className="page-header">
+          <div>
+            <h2>Create Broadcast Campaign</h2>
+            <p>Compose, preview and send your WhatsApp broadcast from one page.</p>
+          </div>
+        </div>
+
+        <ScheduleForm
+          messageType={messageType}
+          broadcastName={broadcastName}
+          onBroadcastNameChange={(e) => setBroadcastName(e.target.value)}
+          templateName={templateName}
+          onTemplateNameChange={handleTemplateNameChange}
+          templateFilter={templateFilter}
+          onTemplateFilterChange={(value) => setTemplateFilter(value)}
+          officialTemplates={officialTemplates}
+          filteredTemplates={filteredTemplates}
+          customMessage={customMessage}
+          onCustomMessageChange={(e) => {
+            if (e.target.value.length <= 1000) setCustomMessage(e.target.value);
+          }}
+          selectedLocalTemplate={selectedLocalTemplate}
+          onLocalTemplateSelect={handleLocalTemplateSelect}
+          templates={templates}
+          onFileUpload={handleFileUpload}
+          uploadedFile={uploadedFile}
+          recipients={recipients}
+          fileVariables={fileVariables}
+          onClearUpload={handleClearUpload}
+          scheduledTime={scheduledTime}
+          onScheduledTimeChange={(e) => setScheduledTime(e.target.value)}
+          isSending={isSending}
+          onCreateBroadcast={createBroadcast}
+          onSendBroadcast={handleSendBroadcast}
+          sendResults={sendResults}
+          onBackToOverview={handleBackToOverview}
+          onResetForm={resetComposerForm}
+        />
+      </div>
+    );
+  }
 
 
 
@@ -1039,7 +1201,7 @@ const Broadcast = () => {
 
         activeTab={activeTab}
 
-        onShowBroadcastTypeChoice={() => setShowBroadcastTypeChoice(true)}
+        onShowBroadcastTypeChoice={() => navigate('/broadcast/new')}
 
       />
 
@@ -1153,13 +1315,9 @@ const Broadcast = () => {
 
           onBroadcastNameChange={(e) => setBroadcastName(e.target.value)}
 
-          onMessageTypeChange={(e) => setMessageType(e.target.value)}
-
           templateName={templateName}
 
           onTemplateNameChange={handleTemplateNameChange}
-
-          language={language}
 
           templateFilter={templateFilter}
 
@@ -1168,10 +1326,6 @@ const Broadcast = () => {
           officialTemplates={officialTemplates}
 
           filteredTemplates={filteredTemplates}
-
-          onSyncTemplates={syncTemplates}
-
-          templateVariables={templateVariables}
 
           customMessage={customMessage}
 
@@ -1208,6 +1362,10 @@ const Broadcast = () => {
           onSendBroadcast={handleSendBroadcast}
 
           sendResults={sendResults}
+
+          onBackToOverview={handleBackToOverview}
+
+          onResetForm={resetComposerForm}
 
         />
 
@@ -1251,7 +1409,10 @@ const Broadcast = () => {
 
         showBroadcastTypeChoice={showBroadcastTypeChoice}
 
-        onClose={() => setShowBroadcastTypeChoice(false)}
+        onClose={() => {
+          setShowBroadcastTypeChoice(false);
+          if (chooserMode) navigate('/broadcast');
+        }}
 
         onChooseTemplate={handleChooseTemplate}
 
@@ -1309,27 +1470,11 @@ const Broadcast = () => {
 
         }}
 
-        showCsvPreview={showCsvPreview}
-
-        onShowCsvPreview={() => setShowCsvPreview(true)}
-
         getCurrentTime={getCurrentTime}
 
       />
 
-      <CsvPreviewPopup
 
-        showCsvPreview={showCsvPreview}
-
-        uploadedFile={uploadedFile}
-
-        recipients={recipients}
-
-        onClose={() => setShowCsvPreview(false)}
-
-        onReplaceCsv={handleReplaceCsv}
-
-      />
 
       <AllCampaignsPopup
         showAllCampaignsPopup={false}
@@ -1359,3 +1504,5 @@ const Broadcast = () => {
 };
 
 export default Broadcast;
+
+

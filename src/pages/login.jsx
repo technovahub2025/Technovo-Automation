@@ -70,6 +70,7 @@ const Login = () => {
 
       // ✅ Save token using ENV token key (optional)
       localStorage.setItem(TOKEN_KEY, token);
+      localStorage.setItem("authToken", token);
 
       // ✅ Update state using context
       loginUser(user, token);

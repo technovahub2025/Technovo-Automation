@@ -33,10 +33,11 @@ export const validateBroadcastStats = (broadcasts) => {
     const stats = broadcast.stats || {};
     const recipientCount = broadcast.recipientCount || broadcast.recipients?.length || 0;
     
-    // Use backend stats directly but ensure logical consistency
-    // Don't use Math.min() which can cause decreases
-    let sent = Math.min(stats.sent || 0, recipientCount);
-    let delivered = Math.min(stats.delivered || 0, sent);
+    // Keep stats monotonic and logically consistent.
+    // read implies delivered; delivered/read should not exceed sent/recipients.
+    const maxPossible = recipientCount > 0 ? recipientCount : (stats.sent || 0);
+    let sent = Math.min(stats.sent || 0, maxPossible);
+    let delivered = Math.min(Math.max(stats.delivered || 0, stats.read || 0), sent);
     let read = Math.min(stats.read || 0, delivered);
     let replied = Math.min(stats.replied || 0, read);
     let failed = Math.min(stats.failed || 0, sent);

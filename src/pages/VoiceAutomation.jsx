@@ -39,21 +39,32 @@ const VoiceAutomation = () => {
 
   // Check system health
   const checkHealth = async () => {
-    try {
-      const [backendHealth, aiHealth] = await Promise.all([
-        apiService.checkBackendHealth(),
-        apiService.checkAIHealth()
-      ]);
+    const [backendHealth, aiHealth] = await Promise.allSettled([
+      apiService.checkBackendHealth(),
+      apiService.checkAIHealth()
+    ]);
 
-      setHealthStatus({
-        backend: backendHealth.data.status === 'online',
-        ai: aiHealth.data.status === 'healthy'
-      });
-    } catch (error) {
-      console.error('Health check failed:', error);
-    } finally {
-      setLoading(false);
+    const backendOk =
+      backendHealth.status === 'fulfilled' &&
+      (backendHealth.value?.data?.status === 'online' ||
+        backendHealth.value?.data?.status === 'ok');
+
+    const aiOk =
+      aiHealth.status === 'fulfilled' &&
+      aiHealth.value?.data?.status === 'healthy';
+
+    if (backendHealth.status === 'rejected') {
+      console.warn('Backend health check failed:', backendHealth.reason?.message || backendHealth.reason);
     }
+    if (aiHealth.status === 'rejected') {
+      console.warn('AI health check failed:', aiHealth.reason?.message || aiHealth.reason);
+    }
+
+    setHealthStatus({
+      backend: backendOk,
+      ai: aiOk
+    });
+    setLoading(false);
   };
 
   // WebSocket connection for real-time updates

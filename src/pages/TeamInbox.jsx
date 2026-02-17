@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef, useContext } from 'react';
 
 
 
-import { useLocation } from 'react-router-dom';
+import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 
 
@@ -19,6 +19,7 @@ import { whatsappService } from '../services/whatsappService';
 
 
 import webSocketService from '../services/websocketService';
+import { AuthContext } from './authcontext';
 
 
 
@@ -31,6 +32,9 @@ const TeamInbox = () => {
 
 
   const location = useLocation();
+  const navigate = useNavigate();
+  const { conversationId } = useParams();
+  const { user } = useContext(AuthContext);
 
 
 
@@ -47,6 +51,7 @@ const TeamInbox = () => {
 
 
   const [messageInput, setMessageInput] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
 
 
 
@@ -83,16 +88,68 @@ const TeamInbox = () => {
 
 
   const [selectedMessagesForDeletion, setSelectedMessagesForDeletion] = useState([]);
-
-
-
+  const [showContactInfo, setShowContactInfo] = useState(false);
   const messagesEndRef = useRef(null);
+  const chatMessagesRef = useRef(null);
+  const isConversationSwitchRef = useRef(false);
+  const selectedConversationRef = useRef(null);
+  const storedUser = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; } })();
+  const currentUserId = user?.id || user?._id || storedUser?.id || storedUser?._id || localStorage.getItem('userId') || null;
+
+
+
+    const appendMessageUnique = (incomingMessage) => {
+
+    if (!incomingMessage) return;
+
+    setMessages(prev => {
+
+      const exists = prev.some(msg => {
+
+        if (incomingMessage._id && msg._id) return msg._id === incomingMessage._id;
+
+        if (incomingMessage.whatsappMessageId && msg.whatsappMessageId) {
+
+          return msg.whatsappMessageId === incomingMessage.whatsappMessageId;
+
+        }
+
+        return false;
+
+      });
+
+      return exists ? prev : [...prev, incomingMessage];
+
+    });
+
+  };
+
+  const getUnreadCount = (conversation) => {
+    const value =
+      conversation?.unreadCount ??
+      conversation?.unread_count ??
+      conversation?.unreadMessages ??
+      0;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+  };
+  const normalizeConversation = (conversation) => ({
+    ...conversation,
+    unreadCount: getUnreadCount(conversation)
+  });
 
 
 
 
 
 
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation;
+  }, [selectedConversation]);
+
+  useEffect(() => {
+    setShowContactInfo(false);
+  }, [selectedConversation?._id]);
 
   // Initialize WebSocket connection
 
@@ -107,10 +164,11 @@ const TeamInbox = () => {
 
 
       setWsConnected(true);
+      loadConversations({ silent: true });
 
 
 
-      console.log('✅ WebSocket connected in TeamInbox');
+      console.log('âœ… WebSocket connected in TeamInbox');
 
 
 
@@ -130,7 +188,7 @@ const TeamInbox = () => {
 
 
 
-      console.log('❌ WebSocket disconnected in TeamInbox');
+      console.log('âŒ WebSocket disconnected in TeamInbox');
 
 
 
@@ -146,7 +204,7 @@ const TeamInbox = () => {
 
 
 
-      console.log('📨 New message received:', data);
+      console.log('ðŸ“¨ New message received:', data);
 
 
 
@@ -159,57 +217,43 @@ const TeamInbox = () => {
 
 
       setConversations(prev => {
+        const incomingConversation = normalizeConversation(data?.conversation || {});
+        const activeConversation = selectedConversationRef.current;
+        const isSelectedConversation =
+          activeConversation && activeConversation._id === incomingConversation._id;
+        const isIncomingContactMessage = data?.message?.sender === 'contact';
 
+        let found = false;
+        const updated = prev.map(conv => {
+          if (conv._id !== incomingConversation._id) return conv;
 
+          found = true;
+          const mergedConversation = normalizeConversation({ ...conv, ...incomingConversation });
 
-        const updated = prev.map(conv => 
+          if (isSelectedConversation && isIncomingContactMessage) {
+            mergedConversation.unreadCount = 0;
+          } else if (isIncomingContactMessage) {
+            mergedConversation.unreadCount = Math.max(
+              getUnreadCount(incomingConversation),
+              getUnreadCount(conv) + 1,
+              1
+            );
+          }
 
+          return mergedConversation;
+        });
 
-
-          conv._id === data.conversation._id ? data.conversation : conv
-
-
-
-        );
-
-
-
-        
-
-
-
-        // If conversation doesn't exist, add it
-
-
-
-        if (!updated.find(conv => conv._id === data.conversation._id)) {
-
-
-
-          updated.unshift(data.conversation);
-
-
-
+        if (!found && incomingConversation._id) {
+          updated.unshift(normalizeConversation({
+            ...incomingConversation,
+            unreadCount:
+              isSelectedConversation && isIncomingContactMessage
+                ? 0
+                : Math.max(getUnreadCount(incomingConversation), isIncomingContactMessage ? 1 : 0)
+          }));
         }
 
-
-
-        
-
-
-
-        return updated.sort((a, b) => 
-
-
-
-          new Date(b.lastMessageTime) - new Date(a.lastMessageTime)
-
-
-
-        );
-
-
-
+        return updated.sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
       });
 
 
@@ -222,11 +266,15 @@ const TeamInbox = () => {
 
 
 
-      if (selectedConversation && selectedConversation._id === data.conversation._id) {
+      const activeConversation = selectedConversationRef.current;
+      if (activeConversation && activeConversation._id === data?.conversation?._id) {
 
 
 
-        setMessages(prev => [...prev, data.message]);
+        appendMessageUnique(data.message);
+        if (data?.message?.sender === 'contact') {
+          markAsRead(activeConversation._id);
+        }
 
 
 
@@ -246,7 +294,7 @@ const TeamInbox = () => {
 
 
 
-      console.log('📤 Message sent confirmation:', data);
+      console.log('ðŸ“¤ Message sent confirmation:', data);
 
 
 
@@ -254,11 +302,12 @@ const TeamInbox = () => {
 
 
 
-      if (selectedConversation && selectedConversation._id === data.message.conversationId) {
+      const activeConversation = selectedConversationRef.current;
+      if (activeConversation && activeConversation._id === data.message.conversationId) {
 
 
 
-        setMessages(prev => [...prev, data.message]);
+        appendMessageUnique(data.message);
 
 
 
@@ -278,7 +327,7 @@ const TeamInbox = () => {
 
 
 
-      console.log('📊 Message status update:', data);
+      console.log('ðŸ“Š Message status update:', data);
 
 
 
@@ -330,7 +379,7 @@ const TeamInbox = () => {
 
 
 
-    webSocketService.connect();
+    webSocketService.connect(currentUserId);
 
 
 
@@ -343,14 +392,17 @@ const TeamInbox = () => {
 
 
     webSocketService.on('newMessage', handleNewMessage);
+    webSocketService.on('new_message', handleNewMessage);
 
 
 
     webSocketService.on('messageSent', handleMessageSent);
+    webSocketService.on('message_sent', handleMessageSent);
 
 
 
     webSocketService.on('messageStatus', handleMessageStatus);
+    webSocketService.on('message_status', handleMessageStatus);
 
 
 
@@ -371,14 +423,17 @@ const TeamInbox = () => {
 
 
       webSocketService.off('newMessage', handleNewMessage);
+      webSocketService.off('new_message', handleNewMessage);
 
 
 
       webSocketService.off('messageSent', handleMessageSent);
+      webSocketService.off('message_sent', handleMessageSent);
 
 
 
       webSocketService.off('messageStatus', handleMessageStatus);
+      webSocketService.off('message_status', handleMessageStatus);
 
 
 
@@ -386,15 +441,7 @@ const TeamInbox = () => {
 
 
 
-  }, [selectedConversation]);
-
-
-
-
-
-
-
-  // Load conversations on component mount
+  }, [currentUserId]);
 
 
 
@@ -406,6 +453,18 @@ const TeamInbox = () => {
 
 
 
+  }, []);
+  useEffect(() => {
+    const onFocusRefresh = () => {
+      if (document.visibilityState && document.visibilityState !== 'visible') return;
+      loadConversations({ silent: true });
+    };
+    window.addEventListener('focus', onFocusRefresh);
+    document.addEventListener('visibilitychange', onFocusRefresh);
+    return () => {
+      window.removeEventListener('focus', onFocusRefresh);
+      document.removeEventListener('visibilitychange', onFocusRefresh);
+    };
   }, []);
 
 
@@ -487,22 +546,24 @@ const TeamInbox = () => {
 
 
   useEffect(() => {
-
-
-
     if (selectedConversation) {
-
-
-
+      isConversationSwitchRef.current = true;
       loadMessages(selectedConversation._id);
-
-
-
     }
-
-
-
   }, [selectedConversation]);
+
+  useEffect(() => {
+    if (!conversationId || !conversations.length) return;
+    const targetConversation = conversations.find(
+      (conv) => String(conv._id) === String(conversationId)
+    );
+    if (targetConversation && selectedConversation?._id !== targetConversation._id) {
+      setSelectedConversation(targetConversation);
+      if (getUnreadCount(targetConversation) > 0) {
+        markAsRead(targetConversation._id);
+      }
+    }
+  }, [conversationId, conversations, selectedConversation?._id]);
 
 
 
@@ -515,13 +576,12 @@ const TeamInbox = () => {
 
 
   useEffect(() => {
-
-
-
-    scrollToBottom();
-
-
-
+    if (isConversationSwitchRef.current) {
+      scrollToBottom('auto');
+      isConversationSwitchRef.current = false;
+      return;
+    }
+    scrollToBottom('smooth');
   }, [messages]);
 
 
@@ -530,7 +590,7 @@ const TeamInbox = () => {
 
 
 
-  const loadConversations = async () => {
+  const loadConversations = async ({ silent = false } = {}) => {
 
 
 
@@ -538,7 +598,7 @@ const TeamInbox = () => {
 
 
 
-      setLoading(true);
+      if (!silent) setLoading(true);
 
 
 
@@ -546,7 +606,7 @@ const TeamInbox = () => {
 
 
 
-      setConversations(data);
+      setConversations(Array.isArray(data) ? data.map(normalizeConversation) : []);
 
 
 
@@ -562,7 +622,7 @@ const TeamInbox = () => {
 
 
 
-      setLoading(false);
+      if (!silent) setLoading(false);
 
 
 
@@ -590,7 +650,7 @@ const TeamInbox = () => {
 
 
 
-      setMessages(data);
+      setMessages(Array.isArray(data) ? data : []);
 
 
 
@@ -618,7 +678,7 @@ const TeamInbox = () => {
 
 
 
-    if (!messageInput.trim() || !selectedConversation) return;
+    if (!messageInput.trim() || !selectedConversation || sendingMessage) return;
 
 
 
@@ -627,6 +687,9 @@ const TeamInbox = () => {
 
 
     try {
+      setSendingMessage(true);
+      const activeConversationId = selectedConversation?._id || conversationId;
+      const textToSend = messageInput.trim();
 
 
 
@@ -638,11 +701,11 @@ const TeamInbox = () => {
 
 
 
-        messageInput,
+        textToSend,
 
 
 
-        selectedConversation._id
+        activeConversationId
 
 
 
@@ -654,23 +717,64 @@ const TeamInbox = () => {
 
 
 
-      if (result.success) {
+            if (result?.success) {
 
+        const sentMessage = result.message || result.data?.message;
 
+        if (sentMessage) {
+
+          appendMessageUnique(sentMessage);
+
+        } else {
+
+          appendMessageUnique({
+
+            _id: `temp-${Date.now()}`,
+
+            sender: 'agent',
+
+            text: textToSend,
+
+            status: 'sent',
+
+            timestamp: new Date().toISOString()
+
+          });
+
+        }
+
+        setConversations(prev =>
+
+          prev.map(conv =>
+
+            conv._id === selectedConversation._id
+
+              ? {
+
+                  ...conv,
+
+                  lastMessage: textToSend,
+
+                  lastMessageTime: new Date().toISOString(),
+
+                  lastMessageFrom: 'agent'
+
+                }
+
+              : conv
+
+          )
+
+        );
 
         setMessageInput('');
-
-
-
-        // Message will be added via WebSocket event
-
-
 
       } else {
 
 
 
-        console.error('Failed to send message:', result.error);
+        console.error('Failed to send message:', result?.error);
+        alert(result?.error || 'Message send failed');
 
 
 
@@ -683,9 +787,12 @@ const TeamInbox = () => {
 
 
       console.error('Error sending message:', error);
+      alert(error?.message || 'Unable to send message');
 
 
 
+    } finally {
+      setSendingMessage(false);
     }
 
 
@@ -766,14 +873,19 @@ const TeamInbox = () => {
 
 
 
-  const scrollToBottom = () => {
+  const scrollToBottom = (behavior = 'smooth') => {
+    const chatContainer = chatMessagesRef.current;
+    if (!chatContainer) return;
 
+    if (behavior === 'auto') {
+      chatContainer.scrollTop = chatContainer.scrollHeight;
+      return;
+    }
 
-
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-
-
-
+    chatContainer.scrollTo({
+      top: chatContainer.scrollHeight,
+      behavior
+    });
   };
 
 
@@ -815,6 +927,7 @@ const TeamInbox = () => {
 
 
         setMessages([]);
+        navigate('/inbox');
 
 
 
@@ -947,6 +1060,7 @@ const TeamInbox = () => {
 
 
           setMessages([]);
+          navigate('/inbox');
 
 
 
@@ -1078,11 +1192,17 @@ const TeamInbox = () => {
 
 
 
-        await whatsappService.deleteSelectedMessages(selectedMessagesForDeletion);
+        const selectedSet = new Set(selectedMessagesForDeletion);
+        const persistedMessageIds = messages
+          .map((msg, idx) => ({ msg, key: getMessageKey(msg, idx) }))
+          .filter(item => selectedSet.has(item.key) && item.msg?._id)
+          .map(item => item.msg._id);
 
+        if (persistedMessageIds.length > 0) {
+          await whatsappService.deleteSelectedMessages(persistedMessageIds);
+        }
 
-
-        setMessages(prev => prev.filter(msg => !selectedMessagesForDeletion.includes(msg._id)));
+        setMessages(prev => prev.filter((msg, idx) => !selectedSet.has(getMessageKey(msg, idx))));
 
 
 
@@ -1162,7 +1282,7 @@ const TeamInbox = () => {
 
 
 
-        return <span className="text-red-500">✗</span>;
+        return <span className="text-red-500">âœ—</span>;
 
 
 
@@ -1212,13 +1332,38 @@ const TeamInbox = () => {
 
   };
 
+  const formatDateLabel = (timestamp) => {
+    if (!timestamp) return '';
+    const date = new Date(timestamp);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+
+    const isSameDay = (a, b) =>
+      a.getFullYear() === b.getFullYear() &&
+      a.getMonth() === b.getMonth() &&
+      a.getDate() === b.getDate();
+
+    if (isSameDay(date, today)) return 'Today';
+    if (isSameDay(date, yesterday)) return 'Yesterday';
+
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: 'short',
+      year: 'numeric'
+    });
+  };
 
 
 
 
 
 
-  const filteredConversations = conversations.filter(conv =>
+
+  const safeConversations = Array.isArray(conversations) ? conversations : [];
+  const getMessageKey = (message, index) => message._id || message.whatsappMessageId || `tmp-${index}`;
+
+  const filteredConversations = safeConversations.filter(conv =>
 
 
 
@@ -1235,6 +1380,23 @@ const TeamInbox = () => {
 
 
   );
+
+  const groupedMessages = [];
+  let lastDateKey = '';
+  messages.forEach((message, index) => {
+    const ts = message.timestamp || message.whatsappTimestamp || message.createdAt;
+    const d = new Date(ts);
+    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    if (key !== lastDateKey) {
+      groupedMessages.push({
+        type: 'separator',
+        key: `sep-${key}-${index}`,
+        label: formatDateLabel(ts)
+      });
+      lastDateKey = key;
+    }
+    groupedMessages.push({ type: 'message', key: message._id || `msg-${index}`, message, index });
+  });
 
 
 
@@ -1511,10 +1673,11 @@ const TeamInbox = () => {
 
 
                       setSelectedConversation(conversation);
+                      navigate(`/inbox/${conversation._id}`);
 
 
 
-                      if (conversation.unreadCount > 0) {
+                      if (getUnreadCount(conversation) > 0) {
 
 
 
@@ -1634,11 +1797,11 @@ const TeamInbox = () => {
 
 
 
-                      {conversation.unreadCount > 0 && (
+                      {getUnreadCount(conversation) > 0 && (
 
 
 
-                        <span className="unread-badge">{conversation.unreadCount}</span>
+                        <span className="unread-badge">{getUnreadCount(conversation)}</span>
 
 
 
@@ -1742,10 +1905,6 @@ const TeamInbox = () => {
 
 
 
-                <button className="resolve-btn" onClick={deleteCurrentConversation}>Resolve</button>
-
-
-
                 <div className="chat-header-menu">
 
 
@@ -1795,6 +1954,24 @@ const TeamInbox = () => {
 
 
                       </button>
+                      <button
+                        className="select-menu-item"
+                        onClick={() => {
+                          setShowMessageSelectMenu(false);
+                          deleteCurrentConversation();
+                        }}
+                      >
+                        Delete Chat
+                      </button>
+                      <button
+                        className="select-menu-item"
+                        onClick={() => {
+                          setShowMessageSelectMenu(false);
+                          setShowContactInfo(true);
+                        }}
+                      >
+                        Contact Information
+                      </button>
 
 
 
@@ -1822,207 +1999,63 @@ const TeamInbox = () => {
 
 
 
-            <div className="chat-messages">
+            <div className="chat-messages" ref={chatMessagesRef}>
 
 
 
-              {showMessageSelectMode && (
-
-
-
-                <div className="message-selection-actions">
-
-
-
-                  <button 
-
-
-
-                    className="delete-selected-btn" 
-
-
-
-                    onClick={deleteSelectedMessages}
-
-
-
-                    disabled={selectedMessagesForDeletion.length === 0}
-
-
-
-                    style={{ opacity: selectedMessagesForDeletion.length === 0 ? 0.5 : 1 }}
-
-
-
-                  >
-
-
-
-                    Delete Selected ({selectedMessagesForDeletion.length})
-
-
-
-                  </button>
-
-
-
-                </div>
-
-
-
-              )}
-
-
-
-              {messages.map((message, index) => (
-
-
-
-                <div
-
-
-
-                  key={message._id || index}
-
-
-
-                  className={`message ${message.sender === 'agent' ? 'outgoing' : 'incoming'} ${showMessageSelectMode ? 'select-mode' : ''}`}
-
-
-
-                  onClick={() => {
-
-
-
-                    if (showMessageSelectMode) {
-
-
-
-                      toggleMessageSelection(message._id || index);
-
-
-
-                    }
-
-
-
-                  }}
-
-
-
-                >
-
-
-
-                  {showMessageSelectMode && (
-
-
-
-                    <div className="message-select-checkbox">
-
-
-
-                      <input
-
-
-
-                        type="checkbox"
-
-
-
-                        checked={selectedMessagesForDeletion.includes(message._id || index)}
-
-
-
-                        onChange={() => toggleMessageSelection(message._id || index)}
-
-
-
-                        onClick={(e) => e.stopPropagation()}
-
-
-
-                      />
-
-
-
+              {groupedMessages.map((item) => {
+                if (item.type === 'separator') {
+                  return (
+                    <div key={item.key} className="message-date-separator">
+                      <span>{item.label}</span>
                     </div>
+                  );
+                }
 
+                const message = item.message;
+                const messageKey = getMessageKey(message, item.index);
 
-
-                  )}
-
-
-
-                  <div className="bubble">
-
-
-
-                    {message.text}
-
-
-
-                    {message.mediaUrl && (
-
-
-
-                      <div className="media-attachment">
-
-
-
-                        <a href={message.mediaUrl} target="_blank" rel="noopener noreferrer">
-
-
-
-                          View Media
-
-
-
-                        </a>
-
-
-
+                return (
+                  <div
+                    key={messageKey}
+                    className={`message ${message.sender === 'agent' ? 'outgoing' : 'incoming'} ${showMessageSelectMode ? 'select-mode' : ''}`}
+                    onClick={() => {
+                      if (showMessageSelectMode) {
+                        toggleMessageSelection(messageKey);
+                      }
+                    }}
+                  >
+                    {showMessageSelectMode && (
+                      <div className="message-select-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={selectedMessagesForDeletion.includes(messageKey)}
+                          onChange={() => toggleMessageSelection(messageKey)}
+                          onClick={(e) => e.stopPropagation()}
+                        />
                       </div>
-
-
-
                     )}
 
+                    <div className="bubble">
+                      {message.text}
+                      {message.mediaUrl && (
+                        <div className="media-attachment">
+                          <a href={message.mediaUrl} target="_blank" rel="noopener noreferrer">
+                            View Media
+                          </a>
+                        </div>
+                      )}
+                    </div>
 
-
+                    <div className="message-info">
+                      <span className="timestamp">
+                        {formatTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
+                      </span>
+                      {message.sender === 'agent' && getStatusIcon(message.status)}
+                    </div>
                   </div>
-
-
-
-                  <div className="message-info">
-
-
-
-                    <span className="timestamp">
-
-
-
-                      {formatTime(message.timestamp)}
-
-
-
-                    </span>
-
-
-
-                    {message.sender === 'agent' && getStatusIcon(message.status)}
-
-
-
-                  </div>
-
-
-
-                </div>
-
-
-
-              ))}
+                );
+              })}
 
 
 
@@ -2039,6 +2072,18 @@ const TeamInbox = () => {
 
 
             <div className="chat-input-area">
+              {showMessageSelectMode && (
+                <div className="message-selection-actions sticky-bottom-actions">
+                  <button
+                    className="delete-selected-btn"
+                    onClick={deleteSelectedMessages}
+                    disabled={selectedMessagesForDeletion.length === 0}
+                    style={{ opacity: selectedMessagesForDeletion.length === 0 ? 0.5 : 1 }}
+                  >
+                    Delete Selected ({selectedMessagesForDeletion.length})
+                  </button>
+                </div>
+              )}
 
 
 
@@ -2066,7 +2111,12 @@ const TeamInbox = () => {
 
 
 
-                onKeyPress={(e) => e.key === 'Enter' && sendMessage()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    sendMessage();
+                  }
+                }}
 
 
 
@@ -2090,7 +2140,7 @@ const TeamInbox = () => {
 
 
 
-                disabled={!messageInput.trim()}
+                disabled={!messageInput.trim() || sendingMessage}
 
 
 
@@ -2144,6 +2194,43 @@ const TeamInbox = () => {
 
         )}
 
+        {selectedConversation && showContactInfo && (
+          <div className="contact-info-modal-overlay" onClick={() => setShowContactInfo(false)}>
+            <div className="contact-info-modal" onClick={(e) => e.stopPropagation()}>
+              <div className="contact-info-modal-header">
+                <h3>Contact Information</h3>
+                <button className="icon-btn" onClick={() => setShowContactInfo(false)}>
+                  <MoreVertical size={16} />
+                </button>
+              </div>
+              <div className="contact-info-row">
+                <span>Name</span>
+                <strong>{selectedConversation.contactId?.name || '-'}</strong>
+              </div>
+              <div className="contact-info-row">
+                <span>Phone</span>
+                <strong>{selectedConversation.contactPhone || '-'}</strong>
+              </div>
+              <div className="contact-info-row">
+                <span>Email</span>
+                <strong>{selectedConversation.contactId?.email || '-'}</strong>
+              </div>
+              <div className="contact-info-row">
+                <span>Tags</span>
+                <strong>
+                  {Array.isArray(selectedConversation.contactId?.tags) && selectedConversation.contactId.tags.length > 0
+                    ? selectedConversation.contactId.tags.join(', ')
+                    : '-'}
+                </strong>
+              </div>
+              <div className="contact-info-row">
+                <span>Notes</span>
+                <strong>{selectedConversation.contactId?.notes || '-'}</strong>
+              </div>
+            </div>
+          </div>
+        )}
+
 
 
       </div>
@@ -2167,6 +2254,13 @@ const TeamInbox = () => {
 
 
 export default TeamInbox;
+
+
+
+
+
+
+
 
 
 

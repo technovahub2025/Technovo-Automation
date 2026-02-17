@@ -7,6 +7,7 @@ import Dashboard from "./pages/Dashboard";
 import TeamInbox from "./pages/TeamInbox";
 import Broadcast from "./pages/Broadcast";
 import Templates from "./pages/Templates";
+import CreateTemplate from "./pages/CreateTemplate";
 import Contacts from "./pages/Contacts";
 import VoiceAutomation from "./pages/VoiceAutomation";
 import InboundCalls from "./components/inbound/InboundCalls";
@@ -37,9 +38,14 @@ function App() {
         <Route path="/" element={<MainLayout />}>
           <Route index element={<Dashboard />} />
           <Route path="inbox" element={<TeamInbox />} />
+          <Route path="inbox/:conversationId" element={<TeamInbox />} />
           <Route path="broadcast-dashboard" element={<BroadcastDashboard />} />
           <Route path="broadcast" element={<Broadcast />} />
+          <Route path="broadcast/new" element={<Broadcast chooserMode />} />
+          <Route path="broadcast/new/template" element={<Broadcast composerMode composerType="template" />} />
+          <Route path="broadcast/new/message" element={<Broadcast composerMode composerType="custom" />} />
           <Route path="templates" element={<Templates />} />
+          <Route path="templates/create" element={<CreateTemplate />} />
           <Route path="contacts" element={<Contacts />} />
           <Route path="voice-automation" element={<VoiceAutomation />} />
           <Route path="voice-automation/inbound" element={<InboundCalls />} />

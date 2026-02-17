@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Upload, Calendar, Send, Clock, ArrowLeft, FileText, RefreshCw, Trash2 } from 'lucide-react';
+import { X, Upload, Calendar, Send, Clock, ArrowLeft, RefreshCw, Trash2 } from 'lucide-react';
 import MessagePreview from './MessagePreview';
 import './Modal.css';
 
@@ -24,8 +24,6 @@ const NewBroadcastPopup = ({
   onCreateBroadcast,
   onClose,
   onBackToChoice,
-  showCsvPreview,
-  onShowCsvPreview,
   getCurrentTime
 }) => {
   if (!showNewBroadcastPopup) return null;
@@ -120,14 +118,6 @@ const NewBroadcastPopup = ({
             
             {uploadedFile && (
               <div className="file-action-buttons">
-                <button 
-                  type="button"
-                  className="preview-btn"
-                  onClick={onShowCsvPreview}
-                >
-                  <FileText size={16} />
-                  Preview
-                </button>
                 <button 
                   type="button"
                   className="replace-upload-btn"

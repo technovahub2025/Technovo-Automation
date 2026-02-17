@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, LineChart, Eye, PauseCircle, PlayCircle, X, Trash } from 'lucide-react';
+import { LineChart, Trash } from 'lucide-react';
 import './BroadcastCard.css';
 
 const BroadcastCard = ({
@@ -22,6 +22,18 @@ const BroadcastCard = ({
     if (percentage >= 80) return 'high';
     if (percentage >= 40) return 'medium';
     return 'low';
+  };
+
+  const getDisplayDateTime = (currentBroadcast) => {
+    const dateValue =
+      currentBroadcast.scheduledAt ||
+      currentBroadcast.startedAt ||
+      currentBroadcast.createdAt;
+
+    if (!dateValue) return '-';
+    const parsed = new Date(dateValue);
+    if (Number.isNaN(parsed.getTime())) return '-';
+    return parsed.toLocaleString();
   };
 
   const renderProgressCircle = (percentage) => {
@@ -85,11 +97,7 @@ const BroadcastCard = ({
 
       <td>{broadcast.name}</td>
 
-      <td>
-        {broadcast.scheduledAt ? 
-          new Date(broadcast.scheduledAt).toLocaleString() : 'Immediate'
-        }
-      </td>
+      <td>{getDisplayDateTime(broadcast)}</td>
 
       <td>{renderProgressCircle(getSuccessPercentage(broadcast))}</td>
 
@@ -111,10 +119,6 @@ const BroadcastCard = ({
 
       <td>
         <div className="action-buttons">
-          <button className="action-btn" title="View Campaign Details" onClick={() => onViewAnalytics?.(broadcast)}>
-            <Eye size={10} />
-          </button>
-
           <button className="action-btn" title="View Analytics" onClick={() => onViewAnalytics?.(broadcast)}>
             <LineChart size={10} />
           </button>

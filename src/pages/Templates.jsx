@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { FileText, CheckCircle, Clock, AlertCircle, RefreshCw, Search, Plus } from 'lucide-react';
+import { FileText, CheckCircle, Clock, AlertCircle, RefreshCw, Search, Plus, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { whatsappService } from '../services/whatsappService';
 import './Templates.css';
@@ -12,6 +12,7 @@ const Templates = () => {
   const [query, setQuery] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [deletingTemplateName, setDeletingTemplateName] = useState('');
   const [error, setError] = useState(null);
 
   useEffect(() => {
@@ -85,6 +86,41 @@ const Templates = () => {
     }
   };
 
+  const getTemplateBody = (template) => {
+    if (template?.content?.body) return template.content.body;
+    if (template?.message) return template.message;
+    if (Array.isArray(template?.components)) {
+      const bodyComponent = template.components.find((comp) => comp?.type === 'BODY');
+      if (bodyComponent?.text) return bodyComponent.text;
+    }
+    return '';
+  };
+
+  const handleDeleteTemplate = async (template) => {
+    const templateName = template?.name?.trim();
+    if (!templateName) {
+      alert('Template name is missing');
+      return;
+    }
+
+    const confirmed = window.confirm(`Delete template "${templateName}" from Meta and local DB?`);
+    if (!confirmed) return;
+
+    setDeletingTemplateName(templateName);
+    try {
+      const result = await whatsappService.deleteTemplateFromMeta(templateName);
+      if (!result?.success) {
+        alert(result?.error || 'Failed to delete template');
+        return;
+      }
+      await loadTemplates();
+    } catch (err) {
+      alert(extractErrorMessage(err, 'Failed to delete template'));
+    } finally {
+      setDeletingTemplateName('');
+    }
+  };
+
   const filteredTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return officialTemplates.filter((template) => {
@@ -93,11 +129,11 @@ const Templates = () => {
       if (!matchesFilter) return false;
       if (!normalizedQuery) return true;
 
-      const haystack = [
+        const haystack = [
         template.name,
         template.language,
         template.category,
-        template.content?.body,
+        getTemplateBody(template),
         template.message
       ]
         .filter(Boolean)
@@ -201,11 +237,22 @@ const Templates = () => {
                 </span>
               </div>
               <div className="template-content">
-                {template.content?.body || template.message || 'No content available'}
+                {getTemplateBody(template) || 'No content available'}
               </div>
               <div className="card-footer">
                 <span className="lang-tag">{template.language}</span>
                 <span className="category-tag">{template.category}</span>
+                <div className="template-actions">
+                  <button
+                    type="button"
+                    className="icon-btn delete-btn"
+                    onClick={() => handleDeleteTemplate(template)}
+                    disabled={deletingTemplateName === template.name}
+                    title="Delete template"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
               </div>
             </div>
           ))}

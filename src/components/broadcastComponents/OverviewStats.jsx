@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   Check,
-  Eye,
+  CheckCheck,
   MessageSquare,
   Send,
   X,
@@ -15,7 +15,7 @@ const OverviewStats = ({ stats, onManualRefresh }) => {
   const iconColor = '#6b7280'; // Simple light black color
   const bgColor = '#f3f4f6'; // Light gray background
   
-  const iconProps = { size: 16, color: iconColor, strokeWidth: 2 };
+  const getIconProps = (color = iconColor) => ({ size: 16, color, strokeWidth: 2 });
   
   // Ensure stats is defined to prevent undefined errors
   const safeStats = stats || {};
@@ -31,13 +31,15 @@ const OverviewStats = ({ stats, onManualRefresh }) => {
       value: safeStats.delivered || 0,
       label: 'Delivered',
       icon: Check,
-      bgColor: bgColor
+      bgColor: bgColor,
+      iconColor: '#6b7280'
     },
     {
       value: safeStats.read || 0,
       label: 'Read',
-      icon: Eye,
-      bgColor: bgColor
+      icon: CheckCheck,
+      bgColor: bgColor,
+      iconColor: '#3b82f6'
     },
     {
       value: safeStats.replied || 0,
@@ -90,7 +92,7 @@ const OverviewStats = ({ stats, onManualRefresh }) => {
           <div key={index} className="stat-card">
             <div className="stat-content">
               <div className="stat-icon-wrapper">
-                <stat.icon {...iconProps} />
+                <stat.icon {...getIconProps(stat.iconColor)} />
               </div>
               <div className="stat-value">
                 {stat.value.toLocaleString()}

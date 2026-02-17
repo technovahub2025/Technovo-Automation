@@ -54,7 +54,7 @@
     text-transform: uppercase;
     letter-spacing: 0.12em;
     color: var(--color-primary);
-    background: rgba(37, 211, 102, 0.1);
+    /* background: rgba(37, 211, 102, 0.1); */
     padding: 4px 10px;
     border-radius: 999px;
     margin-bottom: 8px;
@@ -480,5 +480,41 @@
 
     .hero-actions {
         align-items: flex-start;
+        flex-wrap: wrap;
+        width: 100%;
+    }
+
+    .hero-hint {
+        white-space: normal;
+    }
+}
+
+@media (max-width: 480px) {
+    .templates-page {
+        padding: 6px 0 24px;
+    }
+
+    .templates-hero {
+        padding: 16px;
+        gap: 14px;
+    }
+
+    .hero-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .primary-btn,
+    .secondary-btn {
+        width: 100%;
+        justify-content: center;
+        padding: 10px 12px;
+        font-size: 13px;
+    }
+
+    .hero-hint {
+        display: none;
     }
 }

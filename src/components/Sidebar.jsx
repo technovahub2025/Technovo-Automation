@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useState } from 'react';
+import React, { useContext, useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import axios from "axios";
 import { AuthContext } from '../pages/authcontext';
@@ -16,6 +16,8 @@ import {
     LogIn,
     MessageCircle,
     Settings,
+    ChevronLeft,
+    ChevronRight,
     Menu,
     X
 } from 'lucide-react';
@@ -33,6 +35,10 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
     // Responsive state
     const [isMobile, setIsMobile] = useState(false);
     const [isOverlayOpen, setIsOverlayOpen] = useState(false);
+    const [isCompactMobile, setIsCompactMobile] = useState(false);
+    const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+    const [flyoutTop, setFlyoutTop] = useState(120);
+    const closeTimerRef = useRef(null);
 
     // Wrapper to handle closing logic if needed
     const setOpenMenu = (menuName) => {
@@ -46,10 +52,15 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         const checkScreenSize = () => {
             const width = window.innerWidth;
             const wasMobile = isMobile;
-            setIsMobile(width <= 1024);
+            const wasCompactMobile = isCompactMobile;
+            const mobile = width <= 1024;
+            const compactMobile = width <= 1024;
+
+            setIsMobile(mobile);
+            setIsCompactMobile(compactMobile);
             
             // Handle mobile overlay behavior
-            if (width <= 1024) {
+            if (mobile) {
                 if (!wasMobile && openMenu) {
                     // Switch to overlay mode
                     setIsOverlayOpen(true);
@@ -57,6 +68,16 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
             } else {
                 // Desktop mode - close overlay
                 setIsOverlayOpen(false);
+                setIsMobileSidebarOpen(false);
+            }
+
+            // Compact mobile: collapse only when entering compact mode
+            if (!wasCompactMobile && compactMobile) {
+                setIsMobileSidebarOpen(false);
+                setIsOverlayOpen(false);
+                if (openMenu && setExpandedPanel) {
+                    setExpandedPanel(null);
+                }
             }
         };
 
@@ -68,7 +89,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
 
         // Cleanup
         return () => window.removeEventListener('resize', checkScreenSize);
-    }, [openMenu, isMobile]);
+    }, [openMenu, isMobile, isCompactMobile, setExpandedPanel]);
 
     const isLoggedIn = !!user;
     const userName = user?.username || user?.name || "Guest";
@@ -104,6 +125,9 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
 
     const toggleMenu = (menuName) => {
         if (isMobile) {
+            if (isCompactMobile) {
+                setIsMobileSidebarOpen(true);
+            }
             // On mobile, toggle overlay
             if (openMenu === menuName && isOverlayOpen) {
                 setIsOverlayOpen(false);
@@ -118,10 +142,58 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         }
     };
 
+    const openDesktopFlyout = (menuName, event) => {
+        if (isMobile) return;
+        if (closeTimerRef.current) {
+            clearTimeout(closeTimerRef.current);
+            closeTimerRef.current = null;
+        }
+        if (event?.currentTarget) {
+            const rect = event.currentTarget.getBoundingClientRect();
+            setFlyoutTop(Math.max(12, rect.top - 8));
+        }
+        setOpenMenu(menuName);
+    };
+
+    const scheduleDesktopFlyoutClose = () => {
+        if (isMobile) return;
+        if (closeTimerRef.current) {
+            clearTimeout(closeTimerRef.current);
+        }
+        closeTimerRef.current = setTimeout(() => {
+            setOpenMenu(null);
+            closeTimerRef.current = null;
+        }, 220);
+    };
+
+    const cancelDesktopFlyoutClose = () => {
+        if (closeTimerRef.current) {
+            clearTimeout(closeTimerRef.current);
+            closeTimerRef.current = null;
+        }
+    };
+
     const toggleOverlay = () => {
         setIsOverlayOpen(!isOverlayOpen);
         if (isOverlayOpen) {
             setOpenMenu(null);
+        }
+    };
+
+    const closeCompactSidebar = () => {
+        if (isCompactMobile) {
+            setIsMobileSidebarOpen(false);
+            setIsOverlayOpen(false);
+            setOpenMenu(null);
+        }
+    };
+
+    const closeMobileMenusAfterNavigate = () => {
+        if (!isMobile) return;
+        setIsOverlayOpen(false);
+        setOpenMenu(null);
+        if (isCompactMobile) {
+            setIsMobileSidebarOpen(false);
         }
     };
 
@@ -131,9 +203,35 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
     };
 
     return (
-        <div className="sidebar-container">
+        <div className={`sidebar-container ${isCompactMobile ? 'compact-mobile' : ''}`}>
+            {isCompactMobile && (
+                <>
+                    <button
+                        className="mobile-sidebar-toggle"
+                        onClick={() => setIsMobileSidebarOpen((prev) => !prev)}
+                        aria-label={isMobileSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
+                    >
+                        {isMobileSidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+                    </button>
+                    {isMobileSidebarOpen && (
+                        <div className="mobile-sidebar-backdrop" onClick={closeCompactSidebar} />
+                    )}
+                </>
+            )}
             {/* Dark Left Panel with Icons */}
-            <aside className="sidebar-dark">
+            <aside
+                className={`sidebar-dark ${isCompactMobile ? (isMobileSidebarOpen ? 'open' : 'closed') : ''}`}
+                onMouseLeave={() => {
+                    if (!isMobile && (openMenu === 'bulkMessage' || openMenu === 'settings')) {
+                        scheduleDesktopFlyoutClose();
+                    }
+                }}
+                onMouseEnter={() => {
+                    if (!isMobile) {
+                        cancelDesktopFlyoutClose();
+                    }
+                }}
+            >
                 <div className="logo-icon-container">
                     <img src={logo} alt="Logo" />
                 </div>
@@ -169,21 +267,51 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
 
                             {/* Bulk Message Icon - Opens submenu */}
                     <div
-                        className={`icon-item ${openMenu === 'bulkMessage' || isRouteActive('/broadcast-dashboard') || isRouteActive('/broadcast') || isRouteActive('/templates') || isRouteActive('/contacts') ? 'active' : ''}`}
-                        onClick={() => {
+                        className={`icon-item ${openMenu === 'bulkMessage' || isRouteActive('/broadcast-dashboard') || isRouteActive('/broadcast') || isRouteActive('/templates') || isRouteActive('/contacts') || location.pathname.startsWith('/inbox') ? 'active' : ''}`}
+                        onMouseEnter={(e) => {
+                            if (!isMobile) {
+                                cancelDesktopFlyoutClose();
+                                openDesktopFlyout('bulkMessage', e);
+                            }
+                        }}
+                        onClick={(e) => {
+                            if (isMobile) {
+                                if (openMenu === 'bulkMessage' && isOverlayOpen) {
+                                    setIsOverlayOpen(false);
+                                    setOpenMenu(null);
+                                } else {
+                                    setOpenMenu('bulkMessage');
+                                    setIsOverlayOpen(true);
+                                    if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                }
+                                return;
+                            }
+                            if (isCompactMobile) setIsMobileSidebarOpen(true);
                             if (openMenu === 'bulkMessage') {
+                                if (isMobile) setIsOverlayOpen(true);
                                 // If already open, navigate to last active item
                                 navigate(lastBulkMessageItem);
                             } else {
                                 // If closed, open and navigate to last active item
-                                setOpenMenu('bulkMessage');
+                                if (!isMobile) {
+                                    openDesktopFlyout('bulkMessage', e);
+                                } else {
+                                    setOpenMenu('bulkMessage');
+                                    setIsOverlayOpen(true);
+                                }
                                 navigate(lastBulkMessageItem);
                             }
                         }}
                         title="Bulk Message"
                     >
                         <MessageCircle size={24} />
-                        <span className="icon-label">Bulk Message</span>
+                        <span className="icon-label icon-label-multiline">
+                            <span>Bulk</span>
+                            <span>Message</span>
+                        </span>
+                        <span className="submenu-arrow-indicator" aria-hidden="true">
+                            {openMenu === 'bulkMessage' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+                        </span>
                     </div>
 
                     {/* Other Icons */}
@@ -241,14 +369,40 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
 
                     <div
                         className={`icon-item ${openMenu === 'settings' ? 'active' : ''}`}
-                        onClick={() => {
-                            toggleMenu('settings');
+                        onMouseEnter={(e) => {
+                            if (!isMobile) {
+                                cancelDesktopFlyoutClose();
+                                openDesktopFlyout('settings', e);
+                            }
+                        }}
+                        onClick={(e) => {
+                            if (isMobile) {
+                                if (openMenu === 'settings' && isOverlayOpen) {
+                                    setIsOverlayOpen(false);
+                                    setOpenMenu(null);
+                                } else {
+                                    setOpenMenu('settings');
+                                    setIsOverlayOpen(true);
+                                    if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                }
+                                return;
+                            }
+                            if (isCompactMobile) setIsMobileSidebarOpen(true);
+                            if (!isMobile) {
+                                openDesktopFlyout('settings', e);
+                            } else {
+                                toggleMenu('settings');
+                                setIsOverlayOpen(true);
+                            }
                             navigate('/settings');
                         }}
                         title="Manage"
                     >
                         <Settings size={24} />
                         <span className="icon-label">Manage</span>
+                        <span className="submenu-arrow-indicator" aria-hidden="true">
+                            {openMenu === 'settings' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+                        </span>
                     </div>
                 </nav>
 
@@ -269,8 +423,21 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
             </aside>
 
             {/* White Expandable Panel */}
-            {openMenu && (
-                <div className={`sidebar-expand-panel ${isMobile && isOverlayOpen ? 'open' : ''}`}>
+            {openMenu && (!isMobile || isOverlayOpen) && (
+                <div
+                    className={`sidebar-expand-panel ${!isMobile ? 'flyout' : ''} ${isMobile && isOverlayOpen ? 'open' : ''}`}
+                    style={!isMobile ? { top: `${flyoutTop}px` } : undefined}
+                    onMouseEnter={() => {
+                        if (!isMobile) {
+                            cancelDesktopFlyoutClose();
+                        }
+                    }}
+                    onMouseLeave={() => {
+                        if (!isMobile) {
+                            scheduleDesktopFlyoutClose();
+                        }
+                    }}
+                >
                     {openMenu === 'bulkMessage' && (
                         <>
                             <div className="panel-header">
@@ -291,7 +458,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                     onClick={() => {
                                         setLastBulkMessageItem('/broadcast-dashboard');
-                                        isMobile && toggleOverlay();
+                                        closeMobileMenusAfterNavigate();
                                     }}
                                     onDoubleClick={(e) => {
                                         e.preventDefault();
@@ -303,10 +470,10 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 </NavLink>
                                 <NavLink
                                     to="/inbox"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    className={() => `panel-item ${location.pathname.startsWith('/inbox') ? 'active' : ''}`}
                                     onClick={() => {
                                         setLastBulkMessageItem('/inbox');
-                                        isMobile && toggleOverlay();
+                                        closeMobileMenusAfterNavigate();
                                     }}
                                     onDoubleClick={(e) => {
                                         e.preventDefault();
@@ -322,7 +489,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                     onClick={() => {
                                         setLastBulkMessageItem('/broadcast');
-                                        isMobile && toggleOverlay();
+                                        closeMobileMenusAfterNavigate();
                                     }}
                                     onDoubleClick={(e) => {
                                         e.preventDefault();
@@ -338,7 +505,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                     onClick={() => {
                                         setLastBulkMessageItem('/templates');
-                                        isMobile && toggleOverlay();
+                                        closeMobileMenusAfterNavigate();
                                     }}
                                     onDoubleClick={(e) => {
                                         e.preventDefault();
@@ -354,7 +521,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                     onClick={() => {
                                         setLastBulkMessageItem('/contacts');
-                                        isMobile && toggleOverlay();
+                                        closeMobileMenusAfterNavigate();
                                     }}
                                     onDoubleClick={(e) => {
                                         e.preventDefault();

@@ -1,5 +1,5 @@
 import React from 'react';
-import { FileText, BarChart, Eye, Square, Trash2 } from 'lucide-react';
+import { FileText } from 'lucide-react';
 import BroadcastCard from './BroadcastCard';
 import './BroadcastTable.css';
 

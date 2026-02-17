@@ -357,6 +357,11 @@ export const useBroadcast = () => {
   }, [showFilterDropdown, showSortDropdown]);
 
   // Utility functions
+  const toNonNegative = (value) => {
+    const parsed = Number(value || 0);
+    if (!Number.isFinite(parsed)) return 0;
+    return Math.max(0, parsed);
+  };
   const formatLastUpdated = () => {
     const now = new Date();
     const diff = now - lastUpdated;
@@ -371,10 +376,10 @@ export const useBroadcast = () => {
   };
 
   const getSuccessPercentage = (broadcast) => {
-    const deliveredRaw = broadcast.stats?.delivered || 0;
-    const read = broadcast.stats?.read || 0;
+    const deliveredRaw = toNonNegative(broadcast.stats?.delivered);
+    const read = toNonNegative(broadcast.stats?.read);
     const delivered = Math.max(deliveredRaw, read);
-    const sent = broadcast.stats?.sent || 0;
+    const sent = toNonNegative(broadcast.stats?.sent);
 
     console.log(`???? Success Rate Calculation for "${broadcast.name}":`, {
       delivered,
@@ -404,10 +409,10 @@ export const useBroadcast = () => {
   };
 
   const getReadPercentage = (broadcast) => {
-    const read = broadcast.stats?.read || 0;
-    const sent = broadcast.stats?.sent || 0;
+    const read = toNonNegative(broadcast.stats?.read);
+    const sent = toNonNegative(broadcast.stats?.sent);
     const totalRecipients = broadcast.recipientCount || broadcast.recipients?.length || 0;
-    const delivered = broadcast.stats?.delivered || 0;
+    const delivered = toNonNegative(broadcast.stats?.delivered);
 
     console.log(`???? Read Rate Calculation for "${broadcast.name}":`, {
       read,
@@ -443,8 +448,8 @@ export const useBroadcast = () => {
   };
 
   const getRepliedPercentage = (broadcast) => {
-    const sent = broadcast.stats?.sent || 0;
-    const replied = broadcast.stats?.replied || 0;
+    const sent = toNonNegative(broadcast.stats?.sent);
+    const replied = toNonNegative(broadcast.stats?.replied);
     const totalRecipients = broadcast.recipientCount || broadcast.recipients?.length || 0;
 
     console.log(`???? Replied Rate Calculation for "${broadcast.name}":`, {
@@ -487,11 +492,11 @@ export const useBroadcast = () => {
         read: broadcastStats.read
       });
       
-      const sent = broadcastStats.sent || 0;
-      const delivered = broadcastStats.delivered || 0;
-      const read = broadcastStats.read || 0;
-      const replied = broadcastStats.replied || 0;
-      const failed = broadcastStats.failed || 0;
+      const sent = toNonNegative(broadcastStats.sent);
+      const delivered = toNonNegative(broadcastStats.delivered);
+      const read = toNonNegative(broadcastStats.read);
+      const replied = toNonNegative(broadcastStats.replied);
+      const failed = toNonNegative(broadcastStats.failed);
       
       // Fix logical inconsistency: delivered should never be less than read
       // If read > delivered, it means delivered count is underreported
@@ -756,3 +761,5 @@ export const useBroadcast = () => {
     downloadAllCampaigns
   };
 };
+
+

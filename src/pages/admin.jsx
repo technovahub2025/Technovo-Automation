@@ -31,7 +31,7 @@ const AdminMultiStep = () => {
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
 
-  const backendUrl = import.meta.env.VITE_API_ADMIN_URL;
+  const backendUrl = import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_API_URL || "";
 
   // ------------------- FETCH USERS -------------------
   const fetchUsers = async () => {
@@ -77,29 +77,41 @@ const AdminMultiStep = () => {
       }
 
       if (editingUserId) {
-        // Update admin + Twilio info
-        await apiService.put(`${backendUrl}/api/edit/${editingUserId}`, {
-          ...payload,
-          twilioData: { twilioId, whatsappId, whatsappToken, whatsappBusiness },
+        // 1) Update basic admin profile
+        await apiService.put(`${backendUrl}/api/edit/${editingUserId}`, payload);
+
+        // 2) Update Twilio/WhatsApp credentials via dedicated backend API
+        await apiService.post(`${backendUrl}/api/nexionadmin/admindata`, {
+          adminId: editingUserId,
+          twilioId: String(twilioId || "").trim(),
+          whatsappId: String(whatsappId || "").trim(),
+          whatsappToken: String(whatsappToken || "").trim(),
+          whatsappBusiness: String(whatsappBusiness || "").trim(),
         });
+
         alert("Admin info updated successfully!");
+
+        // Reset fields after edit flow
+        setUsername(""); setEmail(""); setPassword(""); setShowPassword(false);
+        setTwilioId(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness("");
+        setEditingUserId(null);
+        setResettingPassword(false);
+        setErrors({});
+        setShowEditModal(false);
+        fetchUsers();
       } else {
         // New admin registration
         const res = await apiService.post(`${backendUrl}/registeradmin`, payload);
-        if (res.data.token) {
-          localStorage.setItem("token", res.data.token);
+        const createdAdminId = res?.data?.user?.id || res?.data?.user?._id;
+        if (!createdAdminId) {
+          throw new Error("Admin created but user id is missing in response");
         }
+        setEditingUserId(createdAdminId);
+        setPassword("");
+        setShowPassword(false);
+        setErrors({});
         setStep(2); // Move to Twilio step for new admin
       }
-
-      // Reset all fields
-      setUsername(""); setEmail(""); setPassword(""); setShowPassword(false);
-      setTwilioId(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness("");
-      setEditingUserId(null);
-      setResettingPassword(false);
-      setErrors({});
-      setShowEditModal(false);
-      fetchUsers();
     } catch (err) {
       setErrors({ register: err.response?.data?.message || "Submission failed" });
     } finally {
@@ -110,6 +122,10 @@ const AdminMultiStep = () => {
   // ------------------- TWILIO FORM FOR NEW ADMIN -------------------
   const handleTwilioSubmit = async (e) => {
     e.preventDefault();
+    if (!editingUserId) {
+      setErrors({ twilio: "Admin ID missing. Please create/edit admin again." });
+      return;
+    }
     if (!twilioId || !whatsappId || !whatsappToken || !whatsappBusiness) {
       setErrors({ twilio: "All fields are required" });
       return;
@@ -117,11 +133,15 @@ const AdminMultiStep = () => {
 
     setLoading(true);
     try {
-      const token = localStorage.getItem("token");
       const res = await apiService.post(
         `${backendUrl}/api/nexionadmin/admindata`,
-        { twilioId, whatsappId, whatsappToken, whatsappBusiness },
-        { headers: { Authorization: `Bearer ${token}` } }
+        {
+          adminId: editingUserId,
+          twilioId: String(twilioId || "").trim(),
+          whatsappId: String(whatsappId || "").trim(),
+          whatsappToken: String(whatsappToken || "").trim(),
+          whatsappBusiness: String(whatsappBusiness || "").trim(),
+        }
       );
 
       console.log("Twilio Info Saved:", res.data);
@@ -134,6 +154,7 @@ const AdminMultiStep = () => {
       setStep(0);
       setTwilioId(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness("");
       setErrors({});
+      fetchUsers();
     } catch (err) {
       setErrors({ twilio: err.response?.data?.message || "Twilio submission failed" });
     } finally {

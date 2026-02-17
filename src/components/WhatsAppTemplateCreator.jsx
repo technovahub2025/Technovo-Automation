@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { Upload, X, Plus, Phone, Globe, Eye, Send, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import React, { useState, useRef, useMemo } from 'react';
+import { Upload, X, Plus, Send, CheckCircle, AlertCircle, Clock } from 'lucide-react';
 import { whatsappService } from '../services/whatsappService';
+import whatsappLogo from '../assets/WhatsApp.svg.webp';
 import './WhatsAppTemplateCreator.css';
 
 const WhatsAppTemplateCreator = () => {
@@ -24,16 +25,10 @@ const WhatsAppTemplateCreator = () => {
   const [imagePreview, setImagePreview] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState(null);
-  const [variableExamples, setVariableExamples] = useState({
-    1: 'Ravi',
-    2: 'ORD1234',
-    3: '10 Feb 2026',
-    4: '',
-    5: ''
-  });
+  const [submitError, setSubmitError] = useState('');
+  const [variableType, setVariableType] = useState('number');
+  const [variableExamples, setVariableExamples] = useState({});
 
-  // Initialize with empty strings to avoid undefined issues
-  const [initializedExamples, setInitializedExamples] = useState(false);
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
 
@@ -67,20 +62,27 @@ const WhatsAppTemplateCreator = () => {
     { value: 'phone_number', label: 'Phone Number' }
   ];
 
+  const normalizeTemplateName = (value) =>
+    String(value || '')
+      .toLowerCase()
+      .replace(/\s+/g, '_')
+      .replace(/[^a-z0-9_]/g, '');
+
   const handleInputChange = (field, value) => {
+    const normalizedValue = field === 'name' ? normalizeTemplateName(value) : value;
     if (field.includes('.')) {
       const [parent, child] = field.split('.');
       setTemplateData(prev => ({
         ...prev,
         [parent]: {
           ...prev[parent],
-          [child]: value
+          [child]: normalizedValue
         }
       }));
     } else {
       setTemplateData(prev => ({
         ...prev,
-        [field]: value
+        [field]: normalizedValue
       }));
     }
   };
@@ -136,7 +138,7 @@ const WhatsAppTemplateCreator = () => {
   };
 
   const addButton = () => {
-    if (templateData.content.buttons.length < 2) {
+    if (templateData.content.buttons.length < 10) {
       const newButton = {
         type: 'quick_reply',
         text: '',
@@ -175,19 +177,6 @@ const WhatsAppTemplateCreator = () => {
     }));
   };
 
-  const validateTemplate = () => {
-    if (!templateData.name.trim()) {
-      return 'Template name is required';
-    }
-    if (!templateData.content.body.trim()) {
-      return 'Body content is required';
-    }
-    if (templateData.content.header.type === 'image' && !templateData.content.header.mediaUrl) {
-      return 'Header image is required when image type is selected';
-    }
-    return null;
-  };
-
   const extractVariableNumbers = (text) => {
     const matches = text.match(/\{\{(\d+)\}\}/g);
     if (!matches) return [];
@@ -201,10 +190,22 @@ const WhatsAppTemplateCreator = () => {
     return [...new Set(numbers)].sort((a, b) => a - b);
   };
 
+  const detectedVariables = useMemo(
+    () => extractVariableNumbers(templateData.content.body || ''),
+    [templateData.content.body]
+  );
+
   const updateVariableExample = (varNumber, value) => {
     setVariableExamples(prev => ({
       ...prev,
       [varNumber]: value
+    }));
+  };
+
+  const ensureVariableExample = (varNumber) => {
+    setVariableExamples((prev) => ({
+      ...prev,
+      [varNumber]: prev[varNumber] ?? ''
     }));
   };
 
@@ -226,15 +227,158 @@ const WhatsAppTemplateCreator = () => {
     }
   };
 
+  const insertNextVariable = () => {
+    const current = detectedVariables;
+    const nextNumber = current.length > 0 ? Math.max(...current) + 1 : 1;
+    ensureVariableExample(nextNumber);
+    insertVariable(`{{${nextNumber}}}`);
+  };
+
+  const applyInlineFormatting = (wrapper) => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = templateData.content.body || '';
+    const selected = text.substring(start, end) || 'text';
+    const formatted = `${wrapper}${selected}${wrapper}`;
+    const newText = text.substring(0, start) + formatted + text.substring(end);
+    handleContentChange('body', newText);
+    setTimeout(() => {
+      textarea.focus();
+      const cursor = start + formatted.length;
+      textarea.setSelectionRange(cursor, cursor);
+    }, 0);
+  };
+
+  const insertEmoji = () => {
+    insertVariable('🙂');
+  };
+
+  const insertEmojiNormalized = () => {
+    insertVariable('🙂');
+  };
+
+  const renderPreviewText = (rawText) => {
+    if (!rawText) return '';
+    return rawText.replace(/\{\{(\d+)\}\}/g, (_, number) => {
+      const value = variableExamples[Number(number)];
+      return value && String(value).trim() ? String(value).trim() : `{{${number}}}`;
+    });
+  };
+
+  const getSequentialMissingNumbers = (numbers) => {
+    if (!numbers.length) return [];
+    const max = Math.max(...numbers);
+    const missing = [];
+    for (let i = 1; i <= max; i += 1) {
+      if (!numbers.includes(i)) missing.push(i);
+    }
+    return missing;
+  };
+
+  const containsInvalidBraceVariable = (text) => {
+    if (!text) return false;
+    const doubleBraceTokens = text.match(/\{\{[^}]+\}\}/g) || [];
+    const hasInvalidDoubleBrace = doubleBraceTokens.some((token) => !/^\{\{\d+\}\}$/.test(token));
+    if (hasInvalidDoubleBrace) return true;
+
+    // Remove valid placeholders, then any leftover brace means malformed token exists
+    const textWithoutValidPlaceholders = text.replace(/\{\{\d+\}\}/g, '');
+    return /[{}]/.test(textWithoutValidPlaceholders);
+  };
+
+  const validateTemplateRules = () => {
+    const errors = {};
+    const body = (templateData.content.body || '').trim();
+    const footer = (templateData.content.footer || '').trim();
+    const headerText = (templateData.content.header.text || '').trim();
+    const vars = detectedVariables;
+    const missingNumbers = getSequentialMissingNumbers(vars);
+
+    if (!templateData.name.trim()) {
+      errors.name = 'Template name is required.';
+    } else if (!/^[a-z0-9_]+$/.test(templateData.name)) {
+      errors.name = 'Use lowercase letters, numbers and underscore only.';
+    }
+    if (!templateData.category) {
+      errors.category = 'Category is required.';
+    }
+    if (!templateData.language) {
+      errors.language = 'Language is required.';
+    }
+
+    if (!body) {
+      errors.body = 'Body content is required.';
+    } else if (containsInvalidBraceVariable(body)) {
+      errors.body = 'Variables must use numeric format: {{1}}, {{2}}.';
+    } else if (/^\s*\{\{\d+\}\}/.test(body)) {
+      errors.body = 'Variable cannot be at the start of body.';
+    } else if (/\{\{\d+\}\}\s*$/.test(body)) {
+      errors.body = 'Variable cannot be at the end of body.';
+    } else if (missingNumbers.length > 0) {
+      errors.body = `Variables must be sequential. Missing ${missingNumbers.map((n) => `{{${n}}}`).join(', ')}.`;
+    }
+
+    if (vars.length > 0) {
+      const firstMissingSample = vars.find((num) => !String(variableExamples[num] || '').trim());
+      if (firstMissingSample) {
+        errors.variableSamples = `Sample value is required for {{${firstMissingSample}}}.`;
+      }
+    }
+
+    if (templateData.content.header.type === 'image' && !templateData.content.header.mediaUrl) {
+      errors.header = 'Header image is required when image type is image.';
+    } else if (templateData.content.header.type === 'text' && headerText) {
+      if (headerText.length > 60) {
+        errors.header = 'Header text must be 60 characters or fewer.';
+      } else if (containsInvalidBraceVariable(headerText)) {
+        errors.header = 'Header variables must use {{1}} format.';
+      }
+    }
+
+    if (footer.length > 60) {
+      errors.footer = 'Footer must be 60 characters or fewer.';
+    } else if (/\{\{(\d+)\}\}/.test(footer)) {
+      errors.footer = 'Footer cannot contain variables.';
+    }
+
+    const quickReplyCount = templateData.content.buttons.filter((btn) => btn.type === 'quick_reply').length;
+    if (quickReplyCount > 3) {
+      errors.buttons = 'Maximum 3 quick reply buttons are allowed.';
+    } else {
+      const invalidButton = templateData.content.buttons.find((btn) => {
+        if (!btn.text?.trim()) return true;
+        if (btn.type === 'url' && !btn.url?.trim()) return true;
+        if (btn.type === 'phone_number' && !btn.phoneNumber?.trim()) return true;
+        return false;
+      });
+      if (invalidButton) {
+        errors.buttons = 'Complete all button fields (text and URL/phone where applicable).';
+      }
+    }
+
+    return errors;
+  };
+
+  const validationErrors = useMemo(
+    () => validateTemplateRules(),
+    [templateData, variableExamples, detectedVariables]
+  );
+
+  const hasValidationErrors = Object.keys(validationErrors).length > 0;
+
   const handleSubmit = async () => {
-    const validationError = validateTemplate();
-    if (validationError) {
-      alert(validationError);
+    const errors = validateTemplateRules();
+    if (Object.keys(errors).length > 0) {
+      setSubmitStatus('error');
+      setSubmitError(Object.values(errors)[0]);
       return;
     }
 
     setIsSubmitting(true);
     setSubmitStatus(null);
+    setSubmitError('');
 
     try {
       // Convert to Meta API format for consistency
@@ -294,7 +438,12 @@ const WhatsAppTemplateCreator = () => {
       // Add buttons component if present
       if (templateData.content.buttons.length > 0) {
         const buttons = templateData.content.buttons.map(button => ({
-          type: button.type === 'quick_reply' ? 'QUICK_REPLY' : 'URL',
+          type:
+            button.type === 'quick_reply'
+              ? 'QUICK_REPLY'
+              : button.type === 'phone_number'
+              ? 'PHONE_NUMBER'
+              : 'URL',
           text: button.text,
           ...(button.type === 'url' && { url: button.url }),
           ...(button.type === 'phone_number' && { phone_number: button.phoneNumber })
@@ -331,68 +480,123 @@ const WhatsAppTemplateCreator = () => {
           });
           setImagePreview('');
           setHeaderImage(null);
-          setVariableExamples({
-            1: 'Ravi',
-            2: 'ORD1234',
-            3: '10 Feb 2026',
-            4: '',
-            5: ''
-          });
+          setVariableExamples({});
           setSubmitStatus(null);
         }, 3000);
       } else {
         setSubmitStatus('error');
-        alert(response.error || 'Failed to submit template');
+        const backendMessage = response.error || response.message || 'Failed to submit template';
+        setSubmitError(backendMessage);
       }
     } catch (error) {
       console.error('Failed to submit template:', error);
       setSubmitStatus('error');
-      alert('Failed to submit template. Please try again.');
+      const errorMessage =
+        error?.response?.data?.error ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to submit template. Please try again.';
+      setSubmitError(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const renderPreview = () => {
+    const phoneTime = new Date().toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: false
+    });
+    const msgTime = new Date().toLocaleTimeString('en-US', {
+      hour: 'numeric',
+      minute: '2-digit',
+      hour12: true
+    });
+
     return (
-      <div className="template-preview">
-        <div className="preview-header">
+      <div className="template-preview-card">
+        <div className="template-preview-title">
           <h3>Template Preview</h3>
         </div>
-        <div className="preview-content">
-          <div className="whatsapp-message">
-            {templateData.content.header.type !== 'none' && (
-              <div className="message-header">
-                {templateData.content.header.type === 'image' && imagePreview && (
-                  <img src={imagePreview} alt="Header" className="header-image" />
+        <div className="template-preview-content">
+          <div className="template-phone-mockup">
+            <div className="template-phone-header">
+              <span className="template-phone-time">{phoneTime}</span>
+              <div className="template-phone-icons">
+                <span>📶</span>
+                <span>📶</span>
+                <span>🔋</span>
+              </div>
+            </div>
+
+            <div className="template-chat-header">
+              <div className="template-chat-header-left">
+                <span className="template-back-arrow">←</span>
+                <div className="template-contact-info">
+                  <div className="template-contact-avatar">
+                    <img src={whatsappLogo} alt="WhatsApp Business" className="template-contact-avatar-img" />
+                  </div>
+                  <div className="template-contact-details">
+                    <div className="template-contact-name">WhatsApp Business <span>✓</span></div>
+                    <div className="template-contact-status">Online</div>
+                  </div>
+                </div>
+              </div>
+              <div className="template-chat-header-right">⋮</div>
+            </div>
+
+            <div className="template-chat-container">
+              <div className="template-date-separator">
+                <span>Today</span>
+              </div>
+
+              <div className="template-message-bubble sent">
+                {templateData.content.header.type !== 'none' && (
+                  <div className="template-msg-header">
+                    {templateData.content.header.type === 'image' && imagePreview && (
+                      <img src={imagePreview} alt="Header" className="template-header-image" />
+                    )}
+                    {templateData.content.header.type === 'text' && templateData.content.header.text && (
+                      <div className="template-header-text">{renderPreviewText(templateData.content.header.text)}</div>
+                    )}
+                  </div>
                 )}
-                {templateData.content.header.type === 'text' && templateData.content.header.text && (
-                  <div className="header-text">{templateData.content.header.text}</div>
+
+                <div className="template-msg-body">
+                  {templateData.content.body
+                    ? renderPreviewText(templateData.content.body)
+                    : 'Type message body to preview'}
+                </div>
+
+                {templateData.content.footer && (
+                  <div className="template-msg-footer">{renderPreviewText(templateData.content.footer)}</div>
                 )}
+
+                {templateData.content.buttons.length > 0 && (
+                  <div className="template-msg-buttons">
+                    {templateData.content.buttons.map((button, index) => (
+                      <button key={index} className="template-msg-button" type="button">
+                        {renderPreviewText(button.text) || `Button ${index + 1}`}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="template-msg-meta">
+                  <span>{msgTime}</span>
+                  <span>✓✓</span>
+                </div>
               </div>
-            )}
-            
-            {templateData.content.body && (
-              <div className="message-body">
-                {templateData.content.body}
-              </div>
-            )}
-            
-            {templateData.content.footer && (
-              <div className="message-footer">
-                {templateData.content.footer}
-              </div>
-            )}
-            
-            {templateData.content.buttons.length > 0 && (
-              <div className="message-buttons">
-                {templateData.content.buttons.map((button, index) => (
-                  <button key={index} className="message-button">
-                    {button.text || `Button ${index + 1}`}
-                  </button>
-                ))}
-              </div>
-            )}
+            </div>
+
+            <div className="template-chat-input">
+              <span>😊</span>
+              <input type="text" placeholder="Type a message" readOnly />
+              <span>📎</span>
+              <span>📷</span>
+              <span>🎤</span>
+            </div>
           </div>
         </div>
       </div>
@@ -421,6 +625,7 @@ const WhatsAppTemplateCreator = () => {
                   placeholder="Enter template name"
                   maxLength="512"
                 />
+                {validationErrors.name && <p className="field-error">{validationErrors.name}</p>}
               </div>
               
               <div className="form-group">
@@ -435,6 +640,7 @@ const WhatsAppTemplateCreator = () => {
                     </option>
                   ))}
                 </select>
+                {validationErrors.category && <p className="field-error">{validationErrors.category}</p>}
               </div>
               
               <div className="form-group">
@@ -449,6 +655,7 @@ const WhatsAppTemplateCreator = () => {
                     </option>
                   ))}
                 </select>
+                {validationErrors.language && <p className="field-error">{validationErrors.language}</p>}
               </div>
             </div>
           </div>
@@ -468,6 +675,7 @@ const WhatsAppTemplateCreator = () => {
                   </option>
                 ))}
               </select>
+              {validationErrors.header && <p className="field-error">{validationErrors.header}</p>}
             </div>
 
             {templateData.content.header.type === 'text' && (
@@ -525,6 +733,20 @@ const WhatsAppTemplateCreator = () => {
           <div className="form-section">
             <h3>Body Content *</h3>
             <div className="body-content-wrapper">
+              <div className="variable-top-row">
+                <div className="form-group variable-type-group">
+                  <label>Type of variable</label>
+                  <select value={variableType} onChange={(e) => setVariableType(e.target.value)}>
+                    <option value="number">Number</option>
+                    <option value="name">Name</option>
+                  </select>
+                </div>
+                <button type="button" className="add-variable-link" onClick={insertNextVariable}>
+                  <Plus size={14} />
+                  Add variable
+                </button>
+              </div>
+
               <div className="form-group">
                 <textarea
                   ref={textareaRef}
@@ -537,98 +759,43 @@ const WhatsAppTemplateCreator = () => {
                 <div className="char-count">
                   {templateData.content.body.length}/1024 characters
                 </div>
+                {validationErrors.body && <p className="field-error">{validationErrors.body}</p>}
+                <div className="formatting-toolbar">
+                  <button type="button" onClick={insertEmojiNormalized} title="Emoji">🙂</button>
+                  <button type="button" onClick={() => applyInlineFormatting('*')} title="Bold"><strong>B</strong></button>
+                  <button type="button" onClick={() => applyInlineFormatting('_')} title="Italic"><em>I</em></button>
+                  <button type="button" onClick={() => applyInlineFormatting('~')} title="Strikethrough"><span style={{ textDecoration: 'line-through' }}>S</span></button>
+                  <button type="button" onClick={() => applyInlineFormatting('`')} title="Monospace"><code>{'</>'}</code></button>
+                  <button type="button" className="inline-add-variable" onClick={insertNextVariable}>
+                    <Plus size={14} /> Add variable
+                  </button>
+                </div>
               </div>
               
-              {/* Variable Adding Section */}
               <div className="variables-section">
-                <h4>Variables</h4>
+                <h4>Variable samples</h4>
                 <p className="variables-hint">
-                  Add variables to personalize your messages. Use {'{{1}}'}, {'{{2}}'}, etc. in your message.
+                  Variables are detected from body placeholders and sent to Meta for review.
                 </p>
-                <div className="variables-grid">
-                  <div className="variable-item">
-                    <label>Variable 1:</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., Customer Name"
-                      value={variableExamples[1] || ''}
-                      onChange={(e) => updateVariableExample(1, e.target.value)}
-                    />
+                {detectedVariables.length === 0 && (
+                  <div className="no-variables">No variables detected in body yet.</div>
+                )}
+                {detectedVariables.length > 0 && (
+                  <div className="variables-grid">
+                    {detectedVariables.map((num) => (
+                      <div className="variable-item" key={num}>
+                        <label>{`{{${num}}}`}</label>
+                        <input
+                          type="text"
+                          placeholder={variableType === 'name' ? 'Sample name' : `Sample value ${num}`}
+                          value={variableExamples[num] || ''}
+                          onChange={(e) => updateVariableExample(num, e.target.value)}
+                        />
+                      </div>
+                    ))}
                   </div>
-                  <div className="variable-item">
-                    <label>Variable 2:</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., Order ID"
-                      value={variableExamples[2] || ''}
-                      onChange={(e) => updateVariableExample(2, e.target.value)}
-                    />
-                  </div>
-                  <div className="variable-item">
-                    <label>Variable 3:</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., Delivery Date"
-                      value={variableExamples[3] || ''}
-                      onChange={(e) => updateVariableExample(3, e.target.value)}
-                    />
-                  </div>
-                  <div className="variable-item">
-                    <label>Variable 4:</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., Product Name"
-                      value={variableExamples[4] || ''}
-                      onChange={(e) => updateVariableExample(4, e.target.value)}
-                    />
-                  </div>
-                  <div className="variable-item">
-                    <label>Variable 5:</label>
-                    <input
-                      type="text"
-                      placeholder="e.g., Amount"
-                      value={variableExamples[5] || ''}
-                      onChange={(e) => updateVariableExample(5, e.target.value)}
-                    />
-                  </div>
-                </div>
-                <div className="quick-insert-buttons">
-                  <button 
-                    type="button" 
-                    className="variable-btn"
-                    onClick={() => insertVariable('{{1}}')}
-                  >
-                    Insert {'{{1}}'}
-                  </button>
-                  <button 
-                    type="button" 
-                    className="variable-btn"
-                    onClick={() => insertVariable('{{2}}')}
-                  >
-                    Insert {'{{2}}'}
-                  </button>
-                  <button 
-                    type="button" 
-                    className="variable-btn"
-                    onClick={() => insertVariable('{{3}}')}
-                  >
-                    Insert {'{{3}}'}
-                  </button>
-                  <button 
-                    type="button" 
-                    className="variable-btn"
-                    onClick={() => insertVariable('{{4}}')}
-                  >
-                    Insert {'{{4}}'}
-                  </button>
-                  <button 
-                    type="button" 
-                    className="variable-btn"
-                    onClick={() => insertVariable('{{5}}')}
-                  >
-                    Insert {'{{5}}'}
-                  </button>
-                </div>
+                )}
+                {validationErrors.variableSamples && <p className="field-error">{validationErrors.variableSamples}</p>}
               </div>
             </div>
           </div>
@@ -644,6 +811,7 @@ const WhatsAppTemplateCreator = () => {
                 placeholder="Enter footer text"
                 maxLength="60"
               />
+              {validationErrors.footer && <p className="field-error">{validationErrors.footer}</p>}
             </div>
           </div>
 
@@ -717,12 +885,13 @@ const WhatsAppTemplateCreator = () => {
                 </div>
               ))}
               
-              {templateData.content.buttons.length < 2 && (
+              {templateData.content.buttons.length < 10 && (
                 <button type="button" className="add-button" onClick={addButton}>
                   <Plus size={16} />
                   Add Button
                 </button>
               )}
+              {validationErrors.buttons && <p className="field-error">{validationErrors.buttons}</p>}
             </div>
           </div>
 
@@ -733,7 +902,7 @@ const WhatsAppTemplateCreator = () => {
                 type="button"
                 className="submit-button"
                 onClick={handleSubmit}
-                disabled={isSubmitting}
+                disabled={isSubmitting || hasValidationErrors}
               >
                 {isSubmitting ? (
                   <>
@@ -758,7 +927,7 @@ const WhatsAppTemplateCreator = () => {
               {submitStatus === 'error' && (
                 <div className="status-message error">
                   <AlertCircle size={20} />
-                  Failed to submit template. Please try again.
+                  {submitError || 'Failed to submit template. Please try again.'}
                 </div>
               )}
             </div>

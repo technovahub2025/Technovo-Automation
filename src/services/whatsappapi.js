@@ -18,7 +18,8 @@ const api = axios.create({
 // Request interceptor for authentication and logging
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("authToken");
+    const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
+    const token = localStorage.getItem(tokenKey) || localStorage.getItem("authToken");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -270,7 +271,7 @@ export const apiClient = {
   /**
    * Sync broadcast stats from team inbox messages
    */
-  syncBroadcastStats: (id) => api.post(`/broadcasts/${id}/sync`),
+  syncBroadcastStats: (id) => api.post(`/broadcasts/${id}/sync-stats`),
 
   /**
    * Delete broadcast campaign
