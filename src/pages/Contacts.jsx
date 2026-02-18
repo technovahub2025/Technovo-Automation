@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, UserPlus, Filter, MoreHorizontal, Edit, Trash2, Phone, MessageCircle, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X } from 'lucide-react';
+import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X } from 'lucide-react';
 import { apiClient } from '../services/whatsappapi';
 import './Contacts.css';
 
@@ -14,8 +14,7 @@ const Contacts = () => {
     const [showEditModal, setShowEditModal] = useState(false);
     const [editingContact, setEditingContact] = useState(null);
     const [selectedContacts, setSelectedContacts] = useState(new Set());
-    const [newContact, setNewContact] = useState({ name: '', phone: '', email: '', tags: '' });
-    const [openActionMenu, setOpenActionMenu] = useState(null);
+    const [newContact, setNewContact] = useState({ name: '', phone: '', email: '', tags: '', status: 'Opted-in' });
     const [selectionMode, setSelectionMode] = useState(false);
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
     const [showSortDropdown, setShowSortDropdown] = useState(false);
@@ -39,9 +38,6 @@ const Contacts = () => {
 
     useEffect(() => {
         const handleClickOutside = (event) => {
-            if (openActionMenu && !event.target.closest('.action-dropdown')) {
-                setOpenActionMenu(null);
-            }
             if (showFilterDropdown && !event.target.closest('.filter-dropdown')) {
                 setShowFilterDropdown(false);
             }
@@ -54,7 +50,7 @@ const Contacts = () => {
         return () => {
             document.removeEventListener('click', handleClickOutside);
         };
-    }, [openActionMenu, showFilterDropdown, showSortDropdown]);
+    }, [showFilterDropdown, showSortDropdown]);
 
 const loadContacts = async () => {
     try {
@@ -102,12 +98,14 @@ const loadContacts = async () => {
             };
             
             const result = await apiClient.createContact(contactData);
-            if (result.data.success) {
-                await loadContacts();
-                setNewContact({ name: '', phone: '', email: '', tags: '' });
-                setShowAddModal(false);
-                alert('Contact added successfully!');
+            if (result?.data?.success === false) {
+                throw new Error(result?.data?.error || 'Failed to add contact');
             }
+
+            await loadContacts();
+            setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Opted-in' });
+            setShowAddModal(false);
+            alert('Contact added successfully!');
         } catch (error) {
             alert('Failed to add contact: ' + error.message);
         }
@@ -117,7 +115,9 @@ const loadContacts = async () => {
         setEditingContact(contact);
         setNewContact({
             name: contact.name || '',
-            phone: contact.phone || ''
+            phone: contact.phone || '',
+            tags: Array.isArray(contact.tags) ? contact.tags.join(', ') : '',
+            status: contact.isBlocked ? 'Opted-out' : 'Opted-in'
         });
         setShowEditModal(true);
     };
@@ -128,17 +128,23 @@ const loadContacts = async () => {
         try {
             const contactData = {
                 name: newContact.name,
-                phone: newContact.phone
+                phone: newContact.phone,
+                tags: newContact.tags
+                    ? newContact.tags.split(',').map(tag => tag.trim()).filter(Boolean)
+                    : [],
+                isBlocked: newContact.status === 'Opted-out'
             };
             
             const result = await apiClient.updateContact(editingContact._id, contactData);
-            if (result.data.success) {
-                await loadContacts();
-                setEditingContact(null);
-                setNewContact({ name: '', phone: '' });
-                setShowEditModal(false);
-                alert('Contact updated successfully!');
+            if (result?.data?.success === false) {
+                throw new Error(result?.data?.error || 'Failed to update contact');
             }
+
+            await loadContacts();
+            setEditingContact(null);
+            setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Opted-in' });
+            setShowEditModal(false);
+            alert('Contact updated successfully!');
         } catch (error) {
             alert('Failed to update contact: ' + error.message);
         }
@@ -147,7 +153,7 @@ const loadContacts = async () => {
     const handleCloseEditModal = () => {
         setShowEditModal(false);
         setEditingContact(null);
-        setNewContact({ name: '', phone: '' });
+        setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Opted-in' });
     };
 
     const handleDeleteContact = async (contact) => {
@@ -157,10 +163,12 @@ const loadContacts = async () => {
 
         try {
             const result = await apiClient.deleteContact(contact._id);
-            if (result.data.success) {
-                await loadContacts();
-                alert('Contact deleted successfully!');
+            if (result?.data?.success === false) {
+                throw new Error(result?.data?.error || 'Failed to delete contact');
             }
+
+            await loadContacts();
+            alert('Contact deleted successfully!');
         } catch (error) {
             alert('Failed to delete contact: ' + error.message);
         }
@@ -212,17 +220,6 @@ const loadContacts = async () => {
     const handleMessage = (contact) => {
         // Navigate to team inbox with the contact's phone number
         navigate('/inbox', { state: { phoneNumber: contact.phone, contactName: contact.name } });
-        setOpenActionMenu(null); // Close menu after action
-    };
-
-    const handleActionMenuClick = (contactId, event) => {
-        event.stopPropagation();
-        setOpenActionMenu(openActionMenu === contactId ? null : contactId);
-    };
-
-    const handleActionClick = (action, contact) => {
-        action(contact);
-        setOpenActionMenu(null);
     };
 
     const formatLastActive = (timestamp) => {
@@ -237,6 +234,19 @@ const loadContacts = async () => {
         if (diffMins < 60) return `${diffMins} mins ago`;
         if (diffHours < 24) return `${diffHours} hours ago`;
         return `${diffDays} days ago`;
+    };
+
+    const normalizeSourceType = (contact) => {
+        const raw = (contact?.sourceType || contact?.source || '').toString().toLowerCase();
+        if (raw === 'incoming_message' || raw === 'message' || raw === 'conversation') return 'incoming_message';
+        if (raw === 'imported' || raw === 'import') return 'imported';
+        return 'manual';
+    };
+
+    const sourceLabelMap = {
+        manual: 'User Created',
+        imported: 'CSV Import',
+        incoming_message: 'Message'
     };
 
     // Import functions
@@ -401,7 +411,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
         // Show only database contacts
         let allContacts = contacts.map(c => ({
             ...c,
-            source: 'database',
+            sourceType: normalizeSourceType(c),
             status: c.isBlocked ? 'Opted-out' : 'Opted-in',
             lastActive: c.lastContact
         }));
@@ -681,8 +691,9 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                 <th>Phone Number</th>
                                 <th>Tags</th>
                                 <th>Status</th>
+                                <th>Source</th>
                                 <th>Last Active</th>
-                                {!selectionMode && <th>Actions</th>}
+                                {!selectionMode && <th className="actions-col">Actions</th>}
                             </tr>
                         </thead>
                         <tbody>
@@ -718,51 +729,36 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                             {contact.status}
                                         </span>
                                     </td>
+                                    <td>
+                                        <span className={`source-badge ${contact.sourceType || 'manual'}`}>
+                                            {sourceLabelMap[contact.sourceType || 'manual'] || 'Manual'}
+                                        </span>
+                                    </td>
                                     <td>{formatLastActive(contact.lastActive)}</td>
                                     {!selectionMode && (
-                                        <td>
+                                        <td className="actions-col">
                                             <div className="action-buttons">
-                                                <div className="action-dropdown">
-                                                    <button 
-                                                        className="action-btn" 
-                                                        title="More"
-                                                        onClick={(e) => handleActionMenuClick(contact._id, e)}
-                                                    >
-                                                        <MoreHorizontal size={16} />
-                                                    </button>
-                                                    {openActionMenu === contact._id && (
-                                                        <div className="dropdown-menu">
-                                                            <button 
-                                                                className="dropdown-item" 
-                                                                onClick={() => handleActionClick(handleEditContact, contact)}
-                                                            >
-                                                                <Edit size={14} />
-                                                                Edit
-                                                            </button>
-                                                            <button 
-                                                                className="dropdown-item delete" 
-                                                                onClick={() => handleActionClick(handleDeleteContact, contact)}
-                                                            >
-                                                                <Trash2 size={14} />
-                                                                Delete
-                                                            </button>
-                                                            <button 
-                                                                className="dropdown-item" 
-                                                                onClick={() => handleActionClick(() => {}, contact)}
-                                                            >
-                                                                <Phone size={14} />
-                                                                Call
-                                                            </button>
-                                                            <button 
-                                                                className="dropdown-item" 
-                                                                onClick={() => handleActionClick(handleMessage, contact)}
-                                                            >
-                                                                <MessageCircle size={14} />
-                                                                Message
-                                                            </button>
-                                                        </div>
-                                                    )}
-                                                </div>
+                                                <button
+                                                    className="action-btn"
+                                                    title="Message"
+                                                    onClick={() => handleMessage(contact)}
+                                                >
+                                                    <MessageCircle size={16} />
+                                                </button>
+                                                <button
+                                                    className="action-btn"
+                                                    title="Edit"
+                                                    onClick={() => handleEditContact(contact)}
+                                                >
+                                                    <Edit size={16} />
+                                                </button>
+                                                <button
+                                                    className="action-btn delete"
+                                                    title="Delete"
+                                                    onClick={() => handleDeleteContact(contact)}
+                                                >
+                                                    <Trash2 size={16} />
+                                                </button>
                                             </div>
                                         </td>
                                     )}
@@ -873,6 +869,25 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                     onChange={(e) => setNewContact({...newContact, phone: e.target.value})}
                                     placeholder="+1234567890"
                                 />
+                            </div>
+                            <div className="form-group">
+                                <label>Tags</label>
+                                <input
+                                    type="text"
+                                    value={newContact.tags}
+                                    onChange={(e) => setNewContact({...newContact, tags: e.target.value})}
+                                    placeholder="VIP, Lead, Support (comma separated)"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Status</label>
+                                <select
+                                    value={newContact.status || 'Opted-in'}
+                                    onChange={(e) => setNewContact({...newContact, status: e.target.value})}
+                                >
+                                    <option value="Opted-in">Opted-in</option>
+                                    <option value="Opted-out">Opted-out</option>
+                                </select>
                             </div>
                         </div>
                         <div className="modal-footer">

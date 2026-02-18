@@ -17,6 +17,7 @@ export const AuthProvider = ({ children }) => {
     const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
     localStorage.setItem(tokenKey, token);
     localStorage.setItem("authToken", token);
+    localStorage.setItem("token", token); // Legacy key used in some modules
     localStorage.setItem("user", JSON.stringify(userData));
     setUser(userData);
   };
@@ -25,6 +26,7 @@ export const AuthProvider = ({ children }) => {
     const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
     localStorage.removeItem(tokenKey);
     localStorage.removeItem("authToken"); // Legacy key cleanup
+    localStorage.removeItem("token"); // Legacy key cleanup
     localStorage.removeItem("user");
     localStorage.removeItem("username");
     setUser(null);

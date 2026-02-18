@@ -44,15 +44,77 @@ const ScheduleForm = ({
 }) => {
   const scheduleInputRef = React.useRef(null);
 
-  const sampleCsvRows = [
-    'phone,name,var1,var2,var3',
-    '919876543210,Rahul,Rahul,ORD1001,10-Feb-2026',
-    '919876543211,Priya,Priya,ORD1002,11-Feb-2026',
-    '919876543212,Amit,Amit,ORD1003,12-Feb-2026'
-  ];
+  const extractTemplateBody = (template) => {
+    if (!template || typeof template !== 'object') return '';
+
+    if (typeof template.templateContent === 'string' && template.templateContent.trim()) {
+      return template.templateContent.trim();
+    }
+
+    if (typeof template.content === 'string' && template.content.trim()) {
+      return template.content.trim();
+    }
+
+    if (template.content && typeof template.content === 'object') {
+      if (typeof template.content.body === 'string' && template.content.body.trim()) {
+        return template.content.body.trim();
+      }
+      if (typeof template.content.text === 'string' && template.content.text.trim()) {
+        return template.content.text.trim();
+      }
+    }
+
+    if (Array.isArray(template.components)) {
+      const bodyComponent = template.components.find((comp) => String(comp?.type || '').toUpperCase() === 'BODY');
+      if (typeof bodyComponent?.text === 'string' && bodyComponent.text.trim()) {
+        return bodyComponent.text.trim();
+      }
+    }
+
+    return '';
+  };
+
+  const getTemplateVariableCount = React.useCallback((template) => {
+    const bodyText = extractTemplateBody(template);
+    if (!bodyText) return 0;
+
+    const matches = bodyText.match(/\{\{(\d+)\}\}/g) || [];
+    const numbers = matches
+      .map((token) => Number(token.replace(/[{}]/g, '')))
+      .filter((value) => Number.isFinite(value) && value > 0);
+
+    return numbers.length > 0 ? Math.max(...numbers) : 0;
+  }, []);
+
+  const buildSampleCsvRows = React.useCallback(() => {
+    const selectedTemplate = (officialTemplates || []).find((t) => t.name === templateName);
+    const variableCount = messageType === 'template' ? getTemplateVariableCount(selectedTemplate) : 0;
+
+    const headers = ['phone'];
+    for (let i = 1; i <= variableCount; i += 1) {
+      headers.push(`var${i}`);
+    }
+
+    const firstDataRow = [''];
+    for (let i = 1; i <= variableCount; i += 1) {
+      firstDataRow.push('');
+    }
+
+    const secondDataRow = [''];
+    for (let i = 1; i <= variableCount; i += 1) {
+      secondDataRow.push('');
+    }
+
+    return [
+      headers.join(','),
+      firstDataRow.join(','),
+      secondDataRow.join(',')
+    ];
+  }, [officialTemplates, templateName, messageType, getTemplateVariableCount]);
 
   const downloadSampleCsv = () => {
-    const blob = new Blob([sampleCsvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const csvRows = buildSampleCsvRows();
+    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -92,6 +154,35 @@ const ScheduleForm = ({
   };
 
   const contactRows = getContactRows();
+
+  const requiredColumnsLabel = React.useMemo(() => {
+    const selectedTemplate = (officialTemplates || []).find((t) => t.name === templateName);
+    const variableCount = messageType === 'template' ? getTemplateVariableCount(selectedTemplate) : 0;
+    const columns = ['phone'];
+    for (let i = 1; i <= variableCount; i += 1) {
+      columns.push(`var${i}`);
+    }
+    return columns.join(', ');
+  }, [officialTemplates, templateName, messageType, getTemplateVariableCount]);
+
+  const getSelectedTemplatePreview = () => {
+    if (!templateName) return 'Select a template';
+    const selectedTemplate = (officialTemplates || []).find((t) => t.name === templateName);
+    if (!selectedTemplate) return `Template: ${templateName}`;
+
+    let text = extractTemplateBody(selectedTemplate) || `Template: ${templateName}`;
+
+    const firstRecipient = recipients?.[0];
+    const replacementVars = firstRecipient?.variables || firstRecipient?.data?.variables || [];
+    if (Array.isArray(replacementVars) && replacementVars.length > 0) {
+      text = text.replace(/\{\{(\d+)\}\}/g, (_, n) => {
+        const index = Number(n) - 1;
+        return replacementVars[index] ?? `{{${n}}}`;
+      });
+    }
+
+    return text;
+  };
 
   return (
     <div className="schedule-form-container">
@@ -314,7 +405,7 @@ const ScheduleForm = ({
 
             <div className="upload-format-info">
               <small>
-                <strong>Supported format:</strong> CSV with columns: phone/mobile, name (optional), and custom fields.
+                <strong>Supported format:</strong> CSV columns: {requiredColumnsLabel}.
               </small>
             </div>
           </div>
@@ -425,15 +516,7 @@ const ScheduleForm = ({
             templateName={templateName}
             customMessage={customMessage}
             recipients={recipients}
-            getTemplatePreview={() => {
-              if (!templateName) return 'Select a template';
-              const templateMessages = {
-                hello_world: 'Hello World! This is a sample template message.',
-                welcome_message: 'Welcome {{1}}! Thank you for joining our service.',
-                promotion: 'Hi {{1}}, get {{2}} off on your next purchase! Use code: {{3}}'
-              };
-              return templateMessages[templateName] || `Template: ${templateName}`;
-            }}
+            getTemplatePreview={getSelectedTemplatePreview}
             getMessagePreview={() => {
               if (!customMessage) return 'Enter your custom message';
               return customMessage;

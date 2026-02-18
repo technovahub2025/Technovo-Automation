@@ -105,7 +105,11 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
     };
 
     const handleLogout = async () => {
-        const token = localStorage.getItem("token");
+        const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
+        const token =
+            localStorage.getItem(tokenKey) ||
+            localStorage.getItem("authToken") ||
+            localStorage.getItem("token");
 
         if (token) {
             try {
@@ -202,6 +206,13 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         return location.pathname === route;
     };
 
+    const isBulkRouteActive =
+        isRouteActive('/broadcast-dashboard') ||
+        isRouteActive('/broadcast') ||
+        isRouteActive('/templates') ||
+        isRouteActive('/contacts') ||
+        location.pathname.startsWith('/inbox');
+
     return (
         <div className={`sidebar-container ${isCompactMobile ? 'compact-mobile' : ''}`}>
             {isCompactMobile && (
@@ -267,7 +278,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
 
                             {/* Bulk Message Icon - Opens submenu */}
                     <div
-                        className={`icon-item ${openMenu === 'bulkMessage' || isRouteActive('/broadcast-dashboard') || isRouteActive('/broadcast') || isRouteActive('/templates') || isRouteActive('/contacts') || location.pathname.startsWith('/inbox') ? 'active' : ''}`}
+                        className={`icon-item ${isBulkRouteActive ? 'active' : ''} ${openMenu === 'bulkMessage' ? 'expanded' : ''}`}
                         onMouseEnter={(e) => {
                             if (!isMobile) {
                                 cancelDesktopFlyoutClose();
@@ -329,11 +340,16 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 <span className="icon-label">Automation</span>
                             </div> */}
 
-                            <div
-                                className={`icon-item ${isRouteActive('/voice-automation') ? 'active' : ''}`}
-                                onClick={() => {
-                                    setOpenMenu(null); // Close any open panel
-                                    navigate('/voice-automation');
+                    <div
+                        className={`icon-item ${isRouteActive('/voice-automation') ? 'active' : ''}`}
+                        onMouseEnter={() => {
+                            if (!isMobile) {
+                                setOpenMenu(null);
+                            }
+                        }}
+                        onClick={() => {
+                            setOpenMenu(null); // Close any open panel
+                            navigate('/voice-automation');
                                 }}
                                 title="Voice Automation"
                             >
@@ -341,11 +357,16 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 <span className="icon-label">Voice</span>
                             </div>
 
-                            <div
-                                className={`icon-item ${isRouteActive('/missedcalls') ? 'active' : ''}`}
-                                onClick={() => {
-                                    setOpenMenu(null); // Close any open panel
-                                    navigate('/missedcalls');
+                    <div
+                        className={`icon-item ${isRouteActive('/missedcalls') ? 'active' : ''}`}
+                        onMouseEnter={() => {
+                            if (!isMobile) {
+                                setOpenMenu(null);
+                            }
+                        }}
+                        onClick={() => {
+                            setOpenMenu(null); // Close any open panel
+                            navigate('/missedcalls');
                                 }}
                                 title="Missed Calls"
                             >
@@ -353,11 +374,16 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 <span className="icon-label">Missed</span>
                             </div>
 
-                            <div
-                                className={`icon-item ${isRouteActive('/email-automation') ? 'active' : ''}`}
-                                onClick={() => {
-                                    setOpenMenu(null); // Close any open panel
-                                    navigate('/email-automation');
+                    <div
+                        className={`icon-item ${isRouteActive('/email-automation') ? 'active' : ''}`}
+                        onMouseEnter={() => {
+                            if (!isMobile) {
+                                setOpenMenu(null);
+                            }
+                        }}
+                        onClick={() => {
+                            setOpenMenu(null); // Close any open panel
+                            navigate('/email-automation');
                                 }}
                                 title="Email Automation"
                             >

@@ -79,77 +79,60 @@
 }
 
 .source-badge {
+    display: inline-flex;
+    align-items: center;
     padding: 4px 8px;
-    border-radius: 4px;
+    border-radius: 999px;
     font-size: 12px;
-    font-weight: 500;
+    font-weight: 600;
+    border: 1px solid transparent;
 }
 
-.source-badge.conversation {
-    background-color: #f0f9ff;
-    color: #0369a1;
+.source-badge.manual {
+    background-color: #eff6ff;
+    color: #1d4ed8;
+    border-color: #bfdbfe;
 }
 
-.source-badge.database {
-    background-color: #f0fdf4;
-    color: #166534;
+.source-badge.imported {
+    background-color: #fef3c7;
+    color: #92400e;
+    border-color: #fde68a;
+}
+
+.source-badge.incoming_message {
+    background-color: #ecfdf5;
+    color: #047857;
+    border-color: #a7f3d0;
 }
 
 .action-buttons {
     display: flex;
-    gap: 4px;
+    gap: 8px;
+    justify-content: center;
+    align-items: center;
 }
 
-.action-dropdown {
-    position: relative;
+.contacts-table th.actions-col,
+.contacts-table td.actions-col {
+    width: 150px;
+    text-align: center;
+    white-space: nowrap;
+    vertical-align: middle;
 }
 
-.dropdown-menu {
-    position: absolute;
-    top: 100%;
-    right: 0;
-    background-color: var(--color-bg-surface);
-    border: 1px solid var(--color-border);
-    border-radius: var(--radius-md);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    z-index: 1000;
-    min-width: 150px;
-    padding: 4px 0;
-    margin-top: 4px;
-    max-height: 200px;
-    overflow-y: auto;
+.contacts-table td.actions-col {
+    padding-top: 6px;
+    padding-bottom: 6px;
 }
 
 .contacts-table-container {
     background-color: var(--color-bg-surface);
     border: 1px solid var(--color-border);
     border-radius: var(--radius-lg);
-    overflow: visible;
+    overflow: visible !important;
     position: relative;
-}
-
-.dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    width: 100%;
-    padding: 8px 12px;
-    background: none;
-    border: none;
-    text-align: left;
-    font-size: 14px;
-    color: var(--color-text-primary);
-    cursor: pointer;
-    transition: background-color 0.2s;
-}
-
-.dropdown-item:hover {
-    background-color: var(--color-bg-secondary);
-}
-
-.dropdown-item.delete:hover {
-    background-color: #fef2f2;
-    color: #dc2626;
+    z-index: 1;
 }
 
 .loading {
@@ -366,6 +349,15 @@
 .contacts-table {
     width: 100%;
     border-collapse: collapse;
+    overflow: visible;
+}
+
+.contacts-table thead,
+.contacts-table tbody,
+.contacts-table tr,
+.contacts-table th,
+.contacts-table td {
+    overflow: visible;
 }
 
 .contacts-table th,
@@ -428,23 +420,27 @@
 }
 
 .action-btn {
-    padding: 6px;
+    padding: 2px;
     background: none;
     border: none;
     border-radius: 4px;
     cursor: pointer;
     color: var(--color-text-secondary);
     transition: all 0.2s;
-    margin-right: 4px;
+    margin-right: 0;
+    line-height: 0;
+}
+
+.action-btn svg {
+    width: 15px;
+    height: 15px;
 }
 
 .action-btn:hover {
-    background-color: var(--color-bg-secondary);
     color: var(--color-text-primary);
 }
 
 .action-btn.delete:hover {
-    background-color: #fef2f2;
     color: #dc2626;
 }
 

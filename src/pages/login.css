@@ -32,6 +32,12 @@
     padding-right: 42px;
 }
 
+/* Hide browser default password reveal/clear icon (Edge/IE) */
+.password-group input::-ms-reveal,
+.password-group input::-ms-clear {
+    display: none;
+}
+
 .eye-icon {
     position: absolute;
     right: 15px;
@@ -40,6 +46,13 @@
     cursor: pointer;
     color: #777;
     z-index: 10;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 0;
+    background: transparent;
+    padding: 0;
+    line-height: 1;
 }
 
 .eye-icon:hover {

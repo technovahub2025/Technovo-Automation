@@ -68,6 +68,8 @@ const TeamInbox = () => {
 
 
   const [showSelectMenu, setShowSelectMenu] = useState(false);
+  const [showFilterMenu, setShowFilterMenu] = useState(false);
+  const [conversationFilter, setConversationFilter] = useState('all');
 
 
 
@@ -91,6 +93,9 @@ const TeamInbox = () => {
   const [showContactInfo, setShowContactInfo] = useState(false);
   const messagesEndRef = useRef(null);
   const chatMessagesRef = useRef(null);
+  const inboxMenuRef = useRef(null);
+  const messageMenuRef = useRef(null);
+  const filterMenuRef = useRef(null);
   const isConversationSwitchRef = useRef(false);
   const selectedConversationRef = useRef(null);
   const storedUser = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; } })();
@@ -150,6 +155,27 @@ const TeamInbox = () => {
   useEffect(() => {
     setShowContactInfo(false);
   }, [selectedConversation?._id]);
+
+  useEffect(() => {
+    const handleOutsideClick = (event) => {
+      if (inboxMenuRef.current && !inboxMenuRef.current.contains(event.target)) {
+        setShowSelectMenu(false);
+      }
+      if (messageMenuRef.current && !messageMenuRef.current.contains(event.target)) {
+        setShowMessageSelectMenu(false);
+      }
+      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target)) {
+        setShowFilterMenu(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick, { passive: true });
+    return () => {
+      document.removeEventListener('mousedown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, []);
 
   // Initialize WebSocket connection
 
@@ -268,16 +294,40 @@ const TeamInbox = () => {
 
       const activeConversation = selectedConversationRef.current;
       if (activeConversation && activeConversation._id === data?.conversation?._id) {
+        const incoming = data?.message || {};
+        if (incoming?.sender === 'agent') {
+          setMessages((prev) => {
+            const incomingId = incoming?._id ? String(incoming._id) : '';
+            const incomingWamid = incoming?.whatsappMessageId ? String(incoming.whatsappMessageId) : '';
 
+            // Already present -> refresh fields only.
+            const existingIndex = prev.findIndex((msg) => {
+              const msgId = msg?._id ? String(msg._id) : '';
+              const msgWamid = msg?.whatsappMessageId ? String(msg.whatsappMessageId) : '';
+              return (incomingId && msgId === incomingId) || (incomingWamid && msgWamid === incomingWamid);
+            });
+            if (existingIndex >= 0) {
+              return prev.map((msg, idx) => (idx === existingIndex ? { ...msg, ...incoming } : msg));
+            }
 
+            // Replace optimistic temp bubble with confirmed agent message.
+            const optimisticIndex = prev.findIndex(
+              (msg) =>
+                typeof msg?._id === 'string' &&
+                msg._id.startsWith('temp-') &&
+                msg.sender === 'agent' &&
+                msg.text === incoming.text
+            );
+            if (optimisticIndex >= 0) {
+              return prev.map((msg, idx) => (idx === optimisticIndex ? { ...msg, ...incoming } : msg));
+            }
 
-        appendMessageUnique(data.message);
-        if (data?.message?.sender === 'contact') {
+            return [...prev, incoming];
+          });
+        } else {
+          appendMessageUnique(incoming);
           markAsRead(activeConversation._id);
         }
-
-
-
       }
 
 
@@ -304,13 +354,35 @@ const TeamInbox = () => {
 
       const activeConversation = selectedConversationRef.current;
       if (activeConversation && activeConversation._id === data.message.conversationId) {
+        setMessages((prev) => {
+          const incoming = data.message || {};
+          const incomingId = incoming?._id ? String(incoming._id) : '';
+          const incomingWamid = incoming?.whatsappMessageId ? String(incoming.whatsappMessageId) : '';
 
+          // If already exists, only refresh fields/status.
+          const existingIndex = prev.findIndex((msg) => {
+            const msgId = msg?._id ? String(msg._id) : '';
+            const msgWamid = msg?.whatsappMessageId ? String(msg.whatsappMessageId) : '';
+            return (incomingId && msgId === incomingId) || (incomingWamid && msgWamid === incomingWamid);
+          });
+          if (existingIndex >= 0) {
+            return prev.map((msg, idx) => (idx === existingIndex ? { ...msg, ...incoming } : msg));
+          }
 
+          // Try replacing an optimistic pending message with same text.
+          const optimisticIndex = prev.findIndex(
+            (msg) =>
+              typeof msg?._id === 'string' &&
+              msg._id.startsWith('temp-') &&
+              msg.sender === 'agent' &&
+              msg.text === incoming.text
+          );
+          if (optimisticIndex >= 0) {
+            return prev.map((msg, idx) => (idx === optimisticIndex ? { ...msg, ...incoming } : msg));
+          }
 
-        appendMessageUnique(data.message);
-
-
-
+          return [...prev, incoming];
+        });
       }
 
 
@@ -324,49 +396,54 @@ const TeamInbox = () => {
 
 
     const handleMessageStatus = (data) => {
+      console.log('Message status update:', data);
 
-
-
-      console.log('ðŸ“Š Message status update:', data);
-
-
-
-      
-
-
-
-      // Update message status in the current conversation
-
-
-
-      setMessages(prev => 
-
-
-
-        prev.map(msg => 
-
-
-
-          msg.whatsappMessageId === data.messageId 
-
-
-
-            ? { ...msg, status: data.status }
-
-
-
-            : msg
-
-
-
-        )
-
-
-
+      const incomingStatus = String(data?.status || '').toLowerCase();
+      const incomingMessageIds = new Set(
+        [
+          data?.messageId,
+          data?.id,
+          data?.whatsappMessageId,
+          data?.message?._id,
+          data?.message?.messageId,
+          data?.message?.whatsappMessageId
+        ]
+          .filter(Boolean)
+          .map((v) => String(v))
       );
 
+      const statusRank = { sent: 1, delivered: 2, read: 3, failed: 4 };
+      let foundMatch = false;
 
+      setMessages((prev) =>
+        prev.map((msg) => {
+          const msgIds = [
+            msg?._id,
+            msg?.messageId,
+            msg?.whatsappMessageId
+          ]
+            .filter(Boolean)
+            .map((v) => String(v));
 
+          const matched = msgIds.some((id) => incomingMessageIds.has(id));
+          if (!matched) return msg;
+
+          foundMatch = true;
+          const currentStatus = String(msg?.status || '').toLowerCase();
+          const currentRank = statusRank[currentStatus] || 0;
+          const nextRank = statusRank[incomingStatus] || currentRank;
+
+          return nextRank >= currentRank
+            ? { ...msg, status: incomingStatus || currentStatus }
+            : msg;
+        })
+      );
+
+      const activeConversation = selectedConversationRef.current;
+      const eventConversationId = data?.conversationId ? String(data.conversationId) : '';
+      if (!foundMatch && activeConversation && eventConversationId && String(activeConversation._id) === eventConversationId) {
+        loadMessages(activeConversation._id);
+      }
     };
 
 
@@ -686,10 +763,37 @@ const TeamInbox = () => {
 
 
 
+    let optimisticId = null;
+    let textToSend = '';
     try {
       setSendingMessage(true);
       const activeConversationId = selectedConversation?._id || conversationId;
-      const textToSend = messageInput.trim();
+      textToSend = messageInput.trim();
+      optimisticId = `temp-${Date.now()}`;
+
+      // Optimistic UI: show outgoing message instantly.
+      setMessageInput('');
+      appendMessageUnique({
+        _id: optimisticId,
+        sender: 'agent',
+        text: textToSend,
+        status: 'sending',
+        timestamp: new Date().toISOString(),
+        conversationId: activeConversationId
+      });
+
+      setConversations(prev =>
+        prev.map(conv =>
+          conv._id === selectedConversation._id
+            ? {
+                ...conv,
+                lastMessage: textToSend,
+                lastMessageTime: new Date().toISOString(),
+                lastMessageFrom: 'agent'
+              }
+            : conv
+        )
+      );
 
 
 
@@ -722,57 +826,60 @@ const TeamInbox = () => {
         const sentMessage = result.message || result.data?.message;
 
         if (sentMessage) {
+          setMessages((prev) => {
+            const sentId = sentMessage?._id ? String(sentMessage._id) : '';
+            const sentWamid = sentMessage?.whatsappMessageId ? String(sentMessage.whatsappMessageId) : '';
 
-          appendMessageUnique(sentMessage);
+            // Replace optimistic temp bubble
+            let next = prev.map((msg) =>
+              msg._id === optimisticId
+                ? { ...msg, ...sentMessage, status: sentMessage.status || 'sent' }
+                : msg
+            );
+
+            // If temp wasn't found (already removed/replaced), ensure message exists once
+            const existsAfterReplace = next.some((msg) => {
+              const msgId = msg?._id ? String(msg._id) : '';
+              const msgWamid = msg?.whatsappMessageId ? String(msg.whatsappMessageId) : '';
+              return (sentId && msgId === sentId) || (sentWamid && msgWamid === sentWamid);
+            });
+            if (!existsAfterReplace) {
+              next = [...next, { ...sentMessage, status: sentMessage.status || 'sent' }];
+            }
+
+            // De-duplicate same real message (can happen due to websocket + API race)
+            const seen = new Set();
+            next = next.filter((msg) => {
+              const msgId = msg?._id ? String(msg._id) : '';
+              const msgWamid = msg?.whatsappMessageId ? String(msg.whatsappMessageId) : '';
+              const key = msgId || msgWamid;
+              if (!key) return true;
+              if (seen.has(key)) return false;
+              seen.add(key);
+              return true;
+            });
+
+            return next;
+          });
 
         } else {
 
-          appendMessageUnique({
-
-            _id: `temp-${Date.now()}`,
-
-            sender: 'agent',
-
-            text: textToSend,
-
-            status: 'sent',
-
-            timestamp: new Date().toISOString()
-
-          });
+          setMessages(prev =>
+            prev.map(msg =>
+              msg._id === optimisticId
+                ? { ...msg, status: 'sent' }
+                : msg
+            )
+          );
 
         }
-
-        setConversations(prev =>
-
-          prev.map(conv =>
-
-            conv._id === selectedConversation._id
-
-              ? {
-
-                  ...conv,
-
-                  lastMessage: textToSend,
-
-                  lastMessageTime: new Date().toISOString(),
-
-                  lastMessageFrom: 'agent'
-
-                }
-
-              : conv
-
-          )
-
-        );
-
-        setMessageInput('');
 
       } else {
 
 
 
+        setMessages(prev => prev.filter(msg => msg._id !== optimisticId));
+        setMessageInput(textToSend);
         console.error('Failed to send message:', result?.error);
         alert(result?.error || 'Message send failed');
 
@@ -786,6 +893,12 @@ const TeamInbox = () => {
 
 
 
+      if (optimisticId) {
+        setMessages(prev => prev.filter(msg => msg._id !== optimisticId));
+      }
+      if (textToSend) {
+        setMessageInput((prev) => prev || textToSend);
+      }
       console.error('Error sending message:', error);
       alert(error?.message || 'Unable to send message');
 
@@ -1247,57 +1360,24 @@ const TeamInbox = () => {
 
 
   const getStatusIcon = (status) => {
+    const normalizedStatus = String(status || '').toLowerCase();
 
-
-
-    switch (status) {
-
-
-
+    switch (normalizedStatus) {
       case 'sent':
-
-
-
-        return <Check size={16} className="text-gray-400" />;
-
-
+        return <Check size={16} className="message-status-icon status-sent" />;
 
       case 'delivered':
-
-
-
-        return <CheckCheck size={16} className="text-gray-400" />;
-
-
+        return <CheckCheck size={16} className="message-status-icon status-delivered" />;
 
       case 'read':
-
-
-
-        return <CheckCheck size={16} className="text-blue-500" />;
-
-
+        return <CheckCheck size={16} className="message-status-icon status-read" />;
 
       case 'failed':
-
-
-
-        return <span className="text-red-500">âœ—</span>;
-
-
+        return <span className="message-status-icon status-failed">x</span>;
 
       default:
-
-
-
         return null;
-
-
-
     }
-
-
-
   };
 
 
@@ -1363,23 +1443,17 @@ const TeamInbox = () => {
   const safeConversations = Array.isArray(conversations) ? conversations : [];
   const getMessageKey = (message, index) => message._id || message.whatsappMessageId || `tmp-${index}`;
 
-  const filteredConversations = safeConversations.filter(conv =>
-
-
-
-    conv.contactId?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-
-
-
-    conv.contactPhone?.includes(searchTerm) ||
-
-
-
-    conv.lastMessage?.toLowerCase().includes(searchTerm.toLowerCase())
-
-
-
-  );
+  const filteredConversations = safeConversations
+    .filter(conv =>
+      conv.contactId?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      conv.contactPhone?.includes(searchTerm) ||
+      conv.lastMessage?.toLowerCase().includes(searchTerm.toLowerCase())
+    )
+    .filter(conv => {
+      if (conversationFilter === 'unread') return getUnreadCount(conv) > 0;
+      if (conversationFilter === 'read') return getUnreadCount(conv) === 0;
+      return true;
+    });
 
   const groupedMessages = [];
   let lastDateKey = '';
@@ -1432,15 +1506,64 @@ const TeamInbox = () => {
 
 
 
-            <button className="icon-btn"><Filter size={18} /></button>
+            <div className="inbox-header-menu" ref={filterMenuRef}>
+              <button
+                className="icon-btn"
+                onClick={() => {
+                  setShowFilterMenu(!showFilterMenu);
+                  setShowSelectMenu(false);
+                  setShowMessageSelectMenu(false);
+                }}
+              >
+                <Filter size={18} />
+              </button>
+              {showFilterMenu && (
+                <div className="inbox-select-menu">
+                  <button
+                    className="select-menu-item"
+                    onClick={() => {
+                      setConversationFilter('all');
+                      setShowFilterMenu(false);
+                    }}
+                  >
+                    All Chats
+                  </button>
+                  <button
+                    className="select-menu-item"
+                    onClick={() => {
+                      setConversationFilter('unread');
+                      setShowFilterMenu(false);
+                    }}
+                  >
+                    Unread
+                  </button>
+                  <button
+                    className="select-menu-item"
+                    onClick={() => {
+                      setConversationFilter('read');
+                      setShowFilterMenu(false);
+                    }}
+                  >
+                    Read
+                  </button>
+                </div>
+              )}
+            </div>
 
 
 
-            <div className="inbox-header-menu">
+            <div className="inbox-header-menu" ref={inboxMenuRef}>
 
 
 
-              <button className="icon-btn" onClick={() => setShowSelectMenu(!showSelectMenu)}><MoreVertical size={18} /></button>
+              <button
+                className="icon-btn"
+                onClick={() => {
+                  setShowSelectMenu(!showSelectMenu);
+                  setShowFilterMenu(false);
+                  setShowMessageSelectMenu(false);
+                }}
+              ><MoreVertical size={18} /></button>
 
 
 
@@ -1905,11 +2028,18 @@ const TeamInbox = () => {
 
 
 
-                <div className="chat-header-menu">
+                <div className="chat-header-menu" ref={messageMenuRef}>
 
 
 
-                  <button className="icon-btn text-white" onClick={() => setShowMessageSelectMenu(!showMessageSelectMenu)}><MoreVertical size={18} /></button>
+                  <button
+                    className="icon-btn text-white"
+                    onClick={() => {
+                      setShowMessageSelectMenu(!showMessageSelectMenu);
+                      setShowSelectMenu(false);
+                      setShowFilterMenu(false);
+                    }}
+                  ><MoreVertical size={18} /></button>
 
 
 

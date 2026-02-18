@@ -30,7 +30,7 @@ const OverviewStats = ({ stats, onManualRefresh }) => {
     {
       value: safeStats.delivered || 0,
       label: 'Delivered',
-      icon: Check,
+      icon: CheckCheck,
       bgColor: bgColor,
       iconColor: '#6b7280'
     },
