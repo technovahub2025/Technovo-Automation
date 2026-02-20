@@ -6,12 +6,11 @@ import {
   Send,
   X,
   RefreshCw,
-  Clock,
-  RotateCcw
+  Clock
 } from 'lucide-react';
 import './OverviewStats.css';
 
-const OverviewStats = ({ stats, onManualRefresh }) => {
+const OverviewStats = ({ stats }) => {
   const iconColor = '#6b7280'; // Simple light black color
   const bgColor = '#f3f4f6'; // Light gray background
   
@@ -77,15 +76,6 @@ const OverviewStats = ({ stats, onManualRefresh }) => {
     <div className="overview-section">
       <div className="overview-header">
         <h3 className="overview-title">Overview</h3>
-        {onManualRefresh && (
-          <button 
-            className="manual-refresh-btn"
-            onClick={onManualRefresh}
-            title="Manually refresh statistics"
-          >
-            <RotateCcw size={16} color={iconColor} />
-          </button>
-        )}
       </div>
       <div className="overview-stats-grid">
         {statCards.map((stat, index) => (

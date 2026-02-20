@@ -9,6 +9,45 @@ missedcall.css
   min-height: 100vh;
 }
 
+.missed-calls-sections-nav {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.missed-calls-section-tab {
+  padding: 10px 14px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.missed-calls-section-tab:hover:not(:disabled) {
+  border-color: #94a3b8;
+  color: #1f2937;
+}
+
+.missed-calls-section-tab.active {
+  background: #1d4ed8;
+  border-color: #1d4ed8;
+  color: #ffffff;
+}
+
+.missed-calls-section-tab:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.missed-calls-section-card {
+  margin-bottom: 18px;
+}
+
 /* Header */
 .page-header {
   display: flex;
@@ -1059,6 +1098,15 @@ missedcall.css
 }
 
 @media (max-width: 768px) {
+  .missed-calls-sections-nav {
+    gap: 8px;
+  }
+
+  .missed-calls-section-tab {
+    flex: 1 1 calc(50% - 8px);
+    text-align: center;
+  }
+
   .automation-settings-grid {
     grid-template-columns: 1fr;
   }
@@ -1144,6 +1192,10 @@ missedcall.css
 }
 
 @media (max-width: 480px) {
+  .missed-calls-section-tab {
+    flex: 1 1 100%;
+  }
+
   .stats-container {
     grid-template-columns: 1fr;
   }

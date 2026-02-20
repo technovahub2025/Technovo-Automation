@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '../services/whatsappapi';
 import webSocketService from '../services/websocketService';
 
@@ -28,6 +28,8 @@ export const useBroadcast = () => {
   const [selectionMode, setSelectionMode] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [wsUpdateInProgress, setWsUpdateInProgress] = useState(false); // Track WebSocket updates
+  const loadRequestSeqRef = useRef(0);
+  const latestAppliedSeqRef = useRef(0);
 
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -63,27 +65,22 @@ export const useBroadcast = () => {
   }, []);
 
   const loadBroadcasts = useCallback(async () => {
+    const requestSeq = ++loadRequestSeqRef.current;
     try {
-      console.log('📡 Loading broadcasts from backend...');
       const result = await apiClient.getBroadcasts();
       const responseData = result?.data?.data ?? result?.data ?? [];
       const broadcastsData = Array.isArray(responseData) ? responseData : [];
-      
-      console.log('📡 Backend returned broadcasts:', broadcastsData.length);
-      console.log('📡 Broadcast data sample:', broadcastsData.slice(0, 2));
-      
-      // Only update if WebSocket update is not in progress, or if this is initial load
-      if (!wsUpdateInProgress || broadcasts.length === 0) {
-        setBroadcasts(broadcastsData);
-        setLastUpdated(new Date());
-        console.log('✅ Broadcasts updated from backend');
-      } else {
-        console.log('🛡️  Protected WebSocket updates - not updating from backend');
+      // Ignore stale responses that arrive after a newer request already updated UI
+      if (requestSeq < latestAppliedSeqRef.current) {
+        return;
       }
+      latestAppliedSeqRef.current = requestSeq;
+      setBroadcasts(broadcastsData);
+      setLastUpdated(new Date());
     } catch (error) {
       console.error('Failed to load broadcasts:', error);
     }
-  }, [broadcasts.length, wsUpdateInProgress]);
+  }, []);
 
   const syncTemplates = useCallback(async () => {
     try {
@@ -189,7 +186,7 @@ export const useBroadcast = () => {
       // Clear the flag after a short delay to allow backend reload protection
       setTimeout(() => {
         setWsUpdateInProgress(false);
-      }, 5000); // 5 seconds protection window
+      }, 1200);
     }
   }, []);
 
@@ -214,7 +211,7 @@ export const useBroadcast = () => {
         } else {
           console.log('🛡️  Cancelled backend reload - WebSocket update still in progress');
         }
-      }, 3000);
+      }, 450);
     }
   }, [loadBroadcasts, wsUpdateInProgress]);
 
@@ -298,17 +295,43 @@ export const useBroadcast = () => {
     };
   }, [handleBroadcastStatsUpdate, handleMessageStatusUpdate, handleWebSocketMessage, loadBroadcasts, loadTemplates]);
 
-// Auto-refresh broadcast stats every 2 minutes (reduced frequency to prevent fluctuations)
+  // Auto-refresh broadcasts smoothly while user is on overview
+  // Faster polling when there are active broadcasts (scheduled/sending/processing)
   useEffect(() => {
+    const hasActiveBroadcasts = broadcasts.some((b) =>
+      ['scheduled', 'sending', 'processing'].includes(String(b?.status || '').toLowerCase())
+    );
+
+    const intervalMs = hasActiveBroadcasts ? 2000 : 4500;
+
     const interval = setInterval(() => {
-      if (activeTab === 'overview') {
-        console.log('� Auto-refreshing broadcasts (2-minute interval)');
+      if (activeTab !== 'overview') return;
+      if (document.hidden) return;
+      loadBroadcasts();
+    }, intervalMs);
+
+    // Refresh immediately when tab becomes visible/focused
+    const handleVisibility = () => {
+      if (!document.hidden && activeTab === 'overview') {
         loadBroadcasts();
       }
-    }, 120000); // Changed from 30000 to 120000 (2 minutes)
+    };
 
-    return () => clearInterval(interval);
-  }, [activeTab, loadBroadcasts]);
+    const handleFocus = () => {
+      if (activeTab === 'overview') {
+        loadBroadcasts();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('focus', handleFocus);
+    };
+  }, [activeTab, broadcasts, loadBroadcasts]);
 
   // Fetch official templates when template mode is selected
   useEffect(() => {
@@ -762,6 +785,9 @@ export const useBroadcast = () => {
     downloadAllCampaigns
   };
 };
+
+
+
 
 
 

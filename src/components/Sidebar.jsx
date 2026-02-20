@@ -95,6 +95,12 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
     const userName = user?.username || user?.name || "Guest";
     const userRole = user?.role || "guest";
 
+    useEffect(() => {
+        if (!isLoggedIn && openMenu === 'bulkMessage') {
+            setOpenMenu(null);
+        }
+    }, [isLoggedIn, openMenu]);
+
     const API_URL = import.meta.env.VITE_API_ADMIN_URL;
 
     const getInitials = (name) => {
@@ -279,54 +285,56 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                         <span className="icon-label">Dashboard</span>
                     </div>
 
-                            {/* Bulk Message Icon - Opens submenu */}
-                    <div
-                        className={`icon-item ${isBulkRouteActive ? 'active' : ''} ${openMenu === 'bulkMessage' ? 'expanded' : ''}`}
-                        onMouseEnter={(e) => {
-                            if (!isMobile) {
-                                cancelDesktopFlyoutClose();
-                                openDesktopFlyout('bulkMessage', e);
-                            }
-                        }}
-                        onClick={(e) => {
-                            if (isMobile) {
-                                if (openMenu === 'bulkMessage' && isOverlayOpen) {
-                                    setIsOverlayOpen(false);
-                                    setOpenMenu(null);
-                                } else {
-                                    setOpenMenu('bulkMessage');
-                                    setIsOverlayOpen(true);
-                                    if (isCompactMobile) setIsMobileSidebarOpen(true);
-                                }
-                                return;
-                            }
-                            if (isCompactMobile) setIsMobileSidebarOpen(true);
-                            if (openMenu === 'bulkMessage') {
-                                if (isMobile) setIsOverlayOpen(true);
-                                // If already open, navigate to last active item
-                                navigate(lastBulkMessageItem);
-                            } else {
-                                // If closed, open and navigate to last active item
+                    {/* Bulk Message Icon - Opens submenu */}
+                    {isLoggedIn && (
+                        <div
+                            className={`icon-item ${isBulkRouteActive ? 'active' : ''} ${openMenu === 'bulkMessage' ? 'expanded' : ''}`}
+                            onMouseEnter={(e) => {
                                 if (!isMobile) {
+                                    cancelDesktopFlyoutClose();
                                     openDesktopFlyout('bulkMessage', e);
-                                } else {
-                                    setOpenMenu('bulkMessage');
-                                    setIsOverlayOpen(true);
                                 }
-                                navigate(lastBulkMessageItem);
-                            }
-                        }}
-                        title="Bulk Message"
-                    >
-                        <MessageCircle size={24} />
-                        <span className="icon-label icon-label-multiline">
-                            <span>Bulk</span>
-                            <span>Message</span>
-                        </span>
-                        <span className="submenu-arrow-indicator" aria-hidden="true">
-                            {openMenu === 'bulkMessage' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
-                        </span>
-                    </div>
+                            }}
+                            onClick={(e) => {
+                                if (isMobile) {
+                                    if (openMenu === 'bulkMessage' && isOverlayOpen) {
+                                        setIsOverlayOpen(false);
+                                        setOpenMenu(null);
+                                    } else {
+                                        setOpenMenu('bulkMessage');
+                                        setIsOverlayOpen(true);
+                                        if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                    }
+                                    return;
+                                }
+                                if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                if (openMenu === 'bulkMessage') {
+                                    if (isMobile) setIsOverlayOpen(true);
+                                    // If already open, navigate to last active item
+                                    navigate(lastBulkMessageItem);
+                                } else {
+                                    // If closed, open and navigate to last active item
+                                    if (!isMobile) {
+                                        openDesktopFlyout('bulkMessage', e);
+                                    } else {
+                                        setOpenMenu('bulkMessage');
+                                        setIsOverlayOpen(true);
+                                    }
+                                    navigate(lastBulkMessageItem);
+                                }
+                            }}
+                            title="Bulk Message"
+                        >
+                            <MessageCircle size={24} />
+                            <span className="icon-label icon-label-multiline">
+                                <span>Bulk</span>
+                                <span>Message</span>
+                            </span>
+                            <span className="submenu-arrow-indicator" aria-hidden="true">
+                                {openMenu === 'bulkMessage' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+                            </span>
+                        </div>
+                    )}
 
                     {/* Other Icons */}
                     {(userRole === "admin" || userRole === "superadmin") && (

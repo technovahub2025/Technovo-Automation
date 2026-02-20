@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { apiClient } from '../services/whatsappapi';
@@ -9,7 +9,7 @@ import BroadcastHeader from '../components/broadcastComponents/BroadcastHeader';
 import DateRangeFilter from '../components/broadcastComponents/DateRangeFilter';
 import OverviewStats from '../components/broadcastComponents/OverviewStats';
 
-import { getCachedOverviewStats, clearStatsCache } from '../utils/stableBroadcastStats';
+import { getCachedOverviewStats } from '../utils/stableBroadcastStats';
 
 import BroadcastListControls from '../components/broadcastComponents/BroadcastListControls';
 import BroadcastTable from '../components/broadcastComponents/BroadcastTable';
@@ -177,6 +177,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState(null);
+  const broadcastSubmitInFlightRef = useRef(false);
 
   const extractTemplateBody = (template) => {
     if (!template || typeof template !== 'object') return '';
@@ -236,30 +237,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
-
-
-
-  const handleManualRefresh = async () => {
-    console.log('🔄 Manual refresh triggered by user');
-    clearStatsCache(); // Clear the cache to force fresh calculation
-
-    const recentBroadcasts = [...broadcasts]
-      .filter((broadcast) => Boolean(broadcast?._id))
-      .slice(0, 15);
-
-    if (recentBroadcasts.length > 0) {
-      await Promise.all(
-        recentBroadcasts.map((broadcast) =>
-          apiClient
-            .syncBroadcastStats(broadcast._id)
-            .catch((error) => console.warn(`Failed to sync stats for ${broadcast._id}`, error))
-        )
-      );
-    }
-
-    await loadBroadcasts(); // Reload broadcasts from backend
-  };
-
   const stats = getCachedOverviewStats(broadcasts);
 
 
@@ -607,6 +584,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
   const createBroadcast = async () => {
+    if (broadcastSubmitInFlightRef.current) {
+      console.warn('Duplicate schedule click blocked (request already in flight)');
+      return;
+    }
 
     console.log('🔍 createBroadcast called');
     console.log('🔍 broadcastName:', broadcastName);
@@ -695,6 +676,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
     try {
+      broadcastSubmitInFlightRef.current = true;
+      setIsSending(true);
 
       const payload = {
 
@@ -782,6 +765,9 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
       alert('Failed to create broadcast: ' + error.message);
 
+    } finally {
+      broadcastSubmitInFlightRef.current = false;
+      setIsSending(false);
     }
 
   };
@@ -789,6 +775,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
   const handleSendBroadcast = async () => {
+    if (broadcastSubmitInFlightRef.current) {
+      console.warn('Duplicate send click blocked (request already in flight)');
+      return;
+    }
 
     if (!broadcastName || !broadcastName.trim()) {
 
@@ -879,6 +869,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
 
+    broadcastSubmitInFlightRef.current = true;
     setIsSending(true);
 
 
@@ -977,6 +968,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
     } finally {
 
+      broadcastSubmitInFlightRef.current = false;
       setIsSending(false);
 
     }
@@ -1233,7 +1225,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
 
-          <OverviewStats stats={stats} onManualRefresh={handleManualRefresh} />
+          <OverviewStats stats={stats} />
 
 
 

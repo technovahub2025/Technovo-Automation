@@ -39,6 +39,7 @@ const MissedCalls = () => {
   const [showForm, setShowForm] = useState(false);
   const [selectedCall, setSelectedCall] = useState(null);
   const [viewMode, setViewMode] = useState("list");
+  const [activeSection, setActiveSection] = useState("calls");
   const [dateRange, setDateRange] = useState({
     startDate: "",
     endDate: ""
@@ -590,6 +591,7 @@ const MissedCalls = () => {
   const handleViewDetails = (call) => {
     setSelectedCall(call);
     setViewMode("details");
+    setActiveSection("details");
   };
 
   const stats = {
@@ -603,6 +605,16 @@ const MissedCalls = () => {
     processing: allCalls.filter(call => call.automationStatus === "processing").length,
     sent: allCalls.filter(call => call.automationStatus === "sent").length,
     failedAutomation: allCalls.filter(call => call.automationStatus === "failed").length
+  };
+
+  const handleSectionChange = (section) => {
+    if (section === "details" && !selectedCall) return;
+    setActiveSection(section);
+    if (section === "details") {
+      setViewMode("details");
+      return;
+    }
+    setViewMode("list");
   };
 
   return (
@@ -619,7 +631,41 @@ const MissedCalls = () => {
        
       </div>
 
-      <div className="automation-settings-card">
+      <div className="missed-calls-sections-nav">
+        <button
+          className={`missed-calls-section-tab ${activeSection === "automation" ? "active" : ""}`}
+          onClick={() => handleSectionChange("automation")}
+          type="button"
+        >
+          Automation Settings
+        </button>
+        <button
+          className={`missed-calls-section-tab ${activeSection === "overview" ? "active" : ""}`}
+          onClick={() => handleSectionChange("overview")}
+          type="button"
+        >
+          Overview
+        </button>
+        <button
+          className={`missed-calls-section-tab ${activeSection === "calls" ? "active" : ""}`}
+          onClick={() => handleSectionChange("calls")}
+          type="button"
+        >
+          Calls
+        </button>
+        <button
+          className={`missed-calls-section-tab ${activeSection === "details" ? "active" : ""}`}
+          onClick={() => handleSectionChange("details")}
+          type="button"
+          disabled={!selectedCall}
+          title={selectedCall ? "Open selected call details" : "Select a call to view details"}
+        >
+          Details
+        </button>
+      </div>
+
+      {activeSection === "automation" && (
+      <div className="automation-settings-card missed-calls-section-card">
         <div className="automation-settings-header">
           <h3>Missed Call Automation Settings</h3>
           {settingsLoading ? <span className="settings-muted">Loading...</span> : null}
@@ -788,9 +834,11 @@ const MissedCalls = () => {
           {settingsError ? <span className="settings-error">{settingsError}</span> : null}
         </div>
       </div>
+      )}
 
       {/* Stats */}
-      <div className="stats-container">
+      {activeSection === "overview" && (
+      <div className="stats-container missed-calls-section-card">
         <div className="stat-card">
           <div className="stat-icon total">
             <Phone size={20} />
@@ -841,9 +889,10 @@ const MissedCalls = () => {
           </div>
         </div>
       </div>
+      )}
 
       {/* Main Content (List/Grid View) */}
-      {viewMode !== "details" && (
+      {activeSection === "calls" && viewMode !== "details" && (
         <>
           {/* Controls */}
           <div className="controls-container">
@@ -1113,10 +1162,10 @@ const MissedCalls = () => {
       )}
 
       {/* Call Details View */}
-      {viewMode === "details" && selectedCall && (
+      {(activeSection === "details" || viewMode === "details") && selectedCall && (
         <div className="details-container">
           <div className="details-header">
-            <button className="back-btn" onClick={() => setViewMode("list")}>
+            <button className="back-btn" onClick={() => { setViewMode("list"); setActiveSection("calls"); }}>
               <ArrowLeft size={20} />
               Back to List
             </button>

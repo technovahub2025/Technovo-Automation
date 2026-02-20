@@ -463,9 +463,9 @@ const ScheduleForm = ({
             </button>
 
             {scheduledTime ? (
-              <button className="primary-btn" onClick={onCreateBroadcast} disabled={!recipients.length}>
+              <button className="primary-btn" onClick={onCreateBroadcast} disabled={isSending || !recipients.length}>
                 <Calendar size={16} />
-                Schedule Broadcast ({recipients.length} contacts)
+                {isSending ? 'Scheduling...' : `Schedule Broadcast (${recipients.length} contacts)`}
               </button>
             ) : (
               <button className="primary-btn" onClick={onSendBroadcast} disabled={isSending || !recipients.length}>
