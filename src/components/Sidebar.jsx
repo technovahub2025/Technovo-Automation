@@ -223,6 +223,9 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                         aria-label={isMobileSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
                     >
                         {isMobileSidebarOpen ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
+                        <span className="mobile-toggle-arrow-fallback" aria-hidden="true">
+                            {isMobileSidebarOpen ? '‹' : '›'}
+                        </span>
                     </button>
                     {isMobileSidebarOpen && (
                         <div className="mobile-sidebar-backdrop" onClick={closeCompactSidebar} />

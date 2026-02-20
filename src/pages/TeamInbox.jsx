@@ -97,6 +97,7 @@ const TeamInbox = () => {
   const messageMenuRef = useRef(null);
   const filterMenuRef = useRef(null);
   const isConversationSwitchRef = useRef(false);
+  const realtimeResyncTimerRef = useRef(null);
   const selectedConversationRef = useRef(null);
   const storedUser = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; } })();
   const currentUserId = user?.id || user?._id || storedUser?.id || storedUser?._id || localStorage.getItem('userId') || null;
@@ -176,6 +177,21 @@ const TeamInbox = () => {
       document.removeEventListener('touchstart', handleOutsideClick);
     };
   }, []);
+
+  const scheduleRealtimeResync = (targetConversationId) => {
+    if (!targetConversationId) return;
+    if (realtimeResyncTimerRef.current) {
+      clearTimeout(realtimeResyncTimerRef.current);
+      realtimeResyncTimerRef.current = null;
+    }
+
+    realtimeResyncTimerRef.current = setTimeout(() => {
+      const activeConversation = selectedConversationRef.current;
+      if (!activeConversation) return;
+      if (String(activeConversation._id) !== String(targetConversationId)) return;
+      loadMessages(activeConversation._id);
+    }, 180);
+  };
 
   // Initialize WebSocket connection
 
@@ -328,6 +344,7 @@ const TeamInbox = () => {
           appendMessageUnique(incoming);
           markAsRead(activeConversation._id);
         }
+        scheduleRealtimeResync(activeConversation._id);
       }
 
 
@@ -444,6 +461,9 @@ const TeamInbox = () => {
       if (!foundMatch && activeConversation && eventConversationId && String(activeConversation._id) === eventConversationId) {
         loadMessages(activeConversation._id);
       }
+      if (activeConversation && eventConversationId && String(activeConversation._id) === eventConversationId) {
+        scheduleRealtimeResync(activeConversation._id);
+      }
     };
 
 
@@ -519,6 +539,14 @@ const TeamInbox = () => {
 
 
   }, [currentUserId]);
+
+  useEffect(() => {
+    return () => {
+      if (realtimeResyncTimerRef.current) {
+        clearTimeout(realtimeResyncTimerRef.current);
+      }
+    };
+  }, []);
 
 
 

@@ -26,14 +26,20 @@
     cursor: pointer;
     z-index: 1400;
     box-shadow: 0 4px 10px rgba(15, 23, 42, 0.14);
+    font-size: 0;
 }
 
 .mobile-sidebar-toggle svg {
-    width: 18px;
-    height: 18px;
-    stroke: #4b5563;
-    stroke-width: 2.4;
+    display: none;
+}
+
+.mobile-toggle-arrow-fallback {
     display: block;
+    font-size: 19px;
+    font-weight: 700;
+    line-height: 1;
+    color: #4b5563;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
 }
 
 .mobile-sidebar-toggle:hover {
@@ -44,6 +50,10 @@
 
 .mobile-sidebar-toggle:hover svg {
     stroke: #34346B;
+}
+
+.mobile-sidebar-toggle:hover .mobile-toggle-arrow-fallback {
+    color: #34346B;
 }
 
 .mobile-sidebar-backdrop {
@@ -64,6 +74,7 @@
     padding: 16px 0;
     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
     border-right: 1px solid #e5e7eb;
+    overflow-x: hidden;
 }
 
 /* Logo Icon */
@@ -91,6 +102,7 @@
     flex-direction: column;
     gap: 8px;
     overflow-y: auto;
+    overflow-x: hidden;
 }
 
 /* Individual Icon Item */
@@ -106,6 +118,15 @@
     cursor: pointer;
     transition: all 0.2s ease;
     position: relative;
+    box-sizing: border-box;
+    padding: 0 2px;
+}
+
+.icon-item svg {
+    width: 20px;
+    height: 20px;
+    stroke-width: 2.1;
+    flex-shrink: 0;
 }
 
 .submenu-arrow-indicator {
@@ -435,12 +456,13 @@
     }
 
     .sidebar-dark {
-        width: 46px;
+        width: 42px;
         position: relative;
         left: 0;
         visibility: visible;
         transition: transform 0.22s ease;
         z-index: 1301;
+        overflow-x: hidden;
     }
 
     .sidebar-dark.closed {
@@ -452,16 +474,25 @@
     }
 
     .icon-item {
-        height: 44px;
+        height: 40px;
+        gap: 2px;
     }
 
     .icon-label {
-        font-size: 8px;
+        font-size: 7px;
+        font-weight: 600;
+        letter-spacing: 0;
+    }
+
+    .icon-item svg {
+        width: 16px;
+        height: 16px;
+        stroke-width: 2;
     }
 
     .sidebar-expand-panel {
         width: 206px;
-        left: 46px;
+        left: 42px;
         border-radius: 0 10px 10px 0;
         border-left: none;
     }
@@ -494,29 +525,77 @@
     }
 
     .sidebar-dark {
-        width: 42px;
+        width: 38px;
         position: relative;
         left: 0;
         visibility: visible;
+        overflow-x: hidden;
+    }
+
+    .mobile-sidebar-toggle {
+        width: 30px;
+        height: 30px;
+        top: 12px;
+        left: 8px;
     }
 
     .logo-icon-container {
-        width: 40px;
-        height: 40px;
+        width: 32px;
+        height: 32px;
+        margin-bottom: 12px;
     }
 
     .icon-item {
-        height: 40px;
+        height: 36px;
+        gap: 1px;
+        padding: 0 1px;
+    }
+
+    .icon-item svg {
+        width: 14px;
+        height: 14px;
+        stroke-width: 2;
+    }
+
+    .icon-label {
+        font-size: 6.5px;
+        font-weight: 600;
+        line-height: 1;
+    }
+
+    .icon-label-multiline {
+        line-height: 0.95;
+    }
+
+    .submenu-arrow-indicator {
+        right: 2px;
+        width: 10px;
+        height: 10px;
     }
 
     .sidebar-expand-panel {
         width: 192px;
-        left: 42px;
+        left: 38px;
     }
 
     .sidebar-toggle-btn {
         left: 71px;
         padding: 6px 10px;
         font-size: 11px;
+    }
+
+    .sidebar-dark-footer {
+        gap: 8px;
+        padding-top: 10px;
+    }
+
+    .avatar-icon {
+        width: 32px;
+        height: 32px;
+        font-size: 11px;
+    }
+
+    .logout-icon {
+        height: 38px;
     }
 }

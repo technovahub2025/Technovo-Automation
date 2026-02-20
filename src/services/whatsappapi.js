@@ -153,6 +153,13 @@ export const apiClient = {
    */
   deleteContact: (id) => api.delete(`/contacts/${id}`),
 
+  // ============ MISSED CALLS ============
+  getMissedCalls: (params = {}) => api.get('/missedcalls', { params }),
+  resolveMissedCall: (id, payload = {}) => api.put(`/missedcalls/${id}/resolve`, payload),
+  runMissedCallNow: (id) => api.post(`/missedcalls/${id}/run-now`),
+  getMissedCallSettings: () => api.get('/missedcalls/settings'),
+  updateMissedCallSettings: (data) => api.put('/missedcalls/settings', data),
+
   // ============ TEMPLATES ============
   
   /**
@@ -191,11 +198,6 @@ export const apiClient = {
    */
   deleteTemplate: (id) => api.delete(`/templates/${id}`),
   
-  /**
-   * Sync templates from WhatsApp Business
-   */
-  syncTemplates: () => api.get('/templates/sync'),
-
   // ============ BULK MESSAGING ============
   
   /**
@@ -334,6 +336,11 @@ export const apiService = {
   importContacts: apiClient.importContacts,
   updateContact: apiClient.updateContact,
   deleteContact: apiClient.deleteContact,
+  getMissedCalls: apiClient.getMissedCalls,
+  resolveMissedCall: apiClient.resolveMissedCall,
+  runMissedCallNow: apiClient.runMissedCallNow,
+  getMissedCallSettings: apiClient.getMissedCallSettings,
+  updateMissedCallSettings: apiClient.updateMissedCallSettings,
   getTemplates: apiClient.getTemplates,
   getTemplate: apiClient.getTemplate,
   createTemplate: apiClient.createTemplate,
@@ -362,3 +369,4 @@ export { api };
 
 // Export default API object
 export default apiClient;
+

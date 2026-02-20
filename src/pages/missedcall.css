@@ -61,6 +61,198 @@ missedcall.css
   box-shadow: 0 4px 6px rgba(37, 99, 235, 0.1);
 }
 
+.secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.secondary-btn:hover {
+  background: #e5e7eb;
+}
+
+.secondary-btn:disabled,
+.primary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.automation-settings-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+.automation-settings-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.automation-settings-header h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.settings-muted {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.automation-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+
+.settings-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  color: #1f2937;
+  font-size: 14px;
+}
+
+.settings-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings-field span {
+  color: #374151;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.settings-field input,
+.settings-field select {
+  height: 40px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 14px;
+  color: #111827;
+  background: #fff;
+}
+
+.settings-field input:focus,
+.settings-field select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.automation-settings-actions {
+  margin-top: 14px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.settings-variable-mapping {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+}
+
+.settings-variable-mapping h4 {
+  margin: 0 0 6px 0;
+  font-size: 15px;
+  color: #111827;
+  font-weight: 600;
+}
+
+.settings-variable-mapping p {
+  margin: 0 0 10px 0;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.settings-variable-list {
+  display: grid;
+  gap: 10px;
+}
+
+.settings-variable-row {
+  display: grid;
+  grid-template-columns: 90px minmax(180px, 220px) 1fr;
+  gap: 10px;
+  align-items: center;
+}
+
+.settings-variable-token {
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+  background: #ffffff;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 10px;
+}
+
+.settings-variable-row select,
+.settings-variable-row input {
+  height: 40px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 0 10px;
+  font-size: 14px;
+  color: #111827;
+  background: #fff;
+}
+
+.settings-variable-row select:focus,
+.settings-variable-row input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.settings-variable-row input:disabled {
+  background: #f3f4f6;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.settings-success {
+  color: #047857;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.settings-error {
+  color: #b91c1c;
+  font-size: 13px;
+  font-weight: 500;
+}
+
 /* Stats */
 .stats-container {
   display: grid;
@@ -401,6 +593,26 @@ missedcall.css
   color: #065f46;
 }
 
+.status-cell.pending {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-cell.processing {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.status-cell.sent {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.status-cell.failed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
 .duration-cell {
   color: #374151;
   font-weight: 500;
@@ -454,9 +666,37 @@ missedcall.css
   font-weight: 500;
 }
 
+.action-cell {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
 .action-cell .view-btn:hover {
   background: #e5e7eb;
   border-color: #9ca3af;
+}
+
+.action-cell .view-btn.warning {
+  background: #fff7ed;
+  border-color: #fed7aa;
+  color: #9a3412;
+}
+
+.action-cell .view-btn.warning:hover {
+  background: #ffedd5;
+  border-color: #fdba74;
+}
+
+.action-cell .view-btn.success {
+  background: #ecfdf5;
+  border-color: #a7f3d0;
+  color: #065f46;
+}
+
+.action-cell .view-btn.success:hover {
+  background: #d1fae5;
+  border-color: #6ee7b7;
 }
 
 /* Details View */
@@ -800,6 +1040,10 @@ missedcall.css
 
 /* Responsive Design */
 @media (max-width: 1024px) {
+  .automation-settings-grid {
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
   .details-grid {
     grid-template-columns: 1fr;
   }
@@ -815,6 +1059,19 @@ missedcall.css
 }
 
 @media (max-width: 768px) {
+  .automation-settings-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-variable-row {
+    grid-template-columns: 1fr;
+  }
+
+  .automation-settings-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
   .stats-container {
     grid-template-columns: repeat(2, 1fr);
   }

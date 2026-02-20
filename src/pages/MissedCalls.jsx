@@ -1,9 +1,9 @@
 
 import React, { useEffect, useState } from "react";
 import "./missedcall.css";
-import { 
+import {
   PhoneMissed, 
-  RefreshCcw, 
+  RefreshCcw,
   CheckCircle, 
   Clock, 
   Phone,
@@ -12,8 +12,6 @@ import {
   ChevronRight,
   Search,
   Filter,
-  Plus,
-  X,
   Mail,
   MapPin,
   FileText,
@@ -21,8 +19,18 @@ import {
   ArrowLeft,
   PhoneOutgoing
 } from "lucide-react";
+import { apiClient } from "../services/whatsappapi";
 
 const MissedCalls = () => {
+  const variableSourceOptions = [
+    { value: "callerName", label: "Caller Name" },
+    { value: "callerPhone", label: "Caller Phone" },
+    { value: "businessPhone", label: "Business Phone" },
+    { value: "callDate", label: "Call Date" },
+    { value: "callTime", label: "Call Time" },
+    { value: "static", label: "Static Value" }
+  ];
+
   const [allCalls, setAllCalls] = useState([]);
   const [filteredCalls, setFilteredCalls] = useState([]);
   const [activeFilter, setActiveFilter] = useState("all");
@@ -35,6 +43,22 @@ const MissedCalls = () => {
     startDate: "",
     endDate: ""
   });
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsMessage, setSettingsMessage] = useState("");
+  const [settingsError, setSettingsError] = useState("");
+  const [templateOptions, setTemplateOptions] = useState([]);
+  const [automationSettings, setAutomationSettings] = useState({
+    missedCallAutomationEnabled: true,
+    missedCallDelayMinutes: 5,
+    missedCallAutomationMode: "immediate",
+    missedCallNightHour: 21,
+    missedCallNightMinute: 0,
+    missedCallTimezone: "Asia/Kolkata",
+    missedCallTemplateName: "",
+    missedCallTemplateLanguage: "en_US",
+    missedCallTemplateVariables: []
+  });
   
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -42,6 +66,84 @@ const MissedCalls = () => {
       month: 'short',
       day: 'numeric',
       year: 'numeric'
+    });
+  };
+
+  const formatDateTime = (value) => {
+    if (!value) return "-";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "-";
+    return date.toLocaleString([], {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  };
+
+  const extractVariableIndexesFromText = (text) => {
+    if (!text) return [];
+    const regex = /\{\{(\d+)\}\}/g;
+    const found = new Set();
+    let match;
+    while ((match = regex.exec(String(text))) !== null) {
+      const idx = Number(match[1]);
+      if (Number.isFinite(idx) && idx > 0) found.add(idx);
+    }
+    return Array.from(found).sort((a, b) => a - b);
+  };
+
+  const resolveTemplateBodyText = (template) => {
+    if (!template) return "";
+    if (template.content?.body) return String(template.content.body);
+    if (Array.isArray(template.components)) {
+      const body = template.components.find((c) => String(c.type || "").toUpperCase() === "BODY");
+      if (body?.text) return String(body.text);
+    }
+    return String(template.text || "");
+  };
+
+  const normalizeTemplateVariables = (value) => {
+    if (!Array.isArray(value)) return [];
+    return value
+      .map((item, idx) => ({
+        index: Number.isFinite(Number(item?.index)) ? Number(item.index) : idx + 1,
+        source: String(item?.source || item?.sourceType || "callerName").trim() || "callerName",
+        value: String(item?.value || item?.staticValue || "").trim()
+      }))
+      .sort((a, b) => a.index - b.index);
+  };
+
+  const parseTemplateSelection = (rawValue) => {
+    const value = String(rawValue || "").trim();
+    if (!value) return { name: "", language: "" };
+    const separator = "||";
+    const splitAt = value.lastIndexOf(separator);
+    if (splitAt === -1) return { name: value, language: "" };
+    return {
+      name: value.slice(0, splitAt).trim(),
+      language: value.slice(splitAt + separator.length).trim()
+    };
+  };
+
+  const buildTemplateVariableMappings = (template, existingMappings = []) => {
+    const indexes = Array.isArray(template?.variableIndexes)
+      ? template.variableIndexes
+      : [];
+    if (!indexes.length) return [];
+
+    const existing = normalizeTemplateVariables(existingMappings);
+    return indexes.map((index) => {
+      const match = existing.find((item) => Number(item.index) === Number(index));
+      if (match) {
+        return {
+          index,
+          source: String(match.source || "callerName"),
+          value: String(match.value || "")
+        };
+      }
+      return { index, source: "callerName", value: "" };
     });
   };
   
@@ -60,117 +162,238 @@ const MissedCalls = () => {
     priority: "medium"
   });
 
-  const sampleCalls = [
-    {
-      id: 1,
-      phone: "+1 (555) 123-4567",
-      name: "John Smith",
-      date: new Date().toISOString().split('T')[0],
-      displayDate: formatDate(new Date().toISOString().split('T')[0]),
-      time: "09:30 AM",
-      status: "missed",
-      duration: "45s",
-      callType: "inbound",
-      location: "New York, NY",
-      notes: "Called about product inquiry",
-      email: "john.smith@email.com",
-      priority: "high"
-    },
-    {
-      id: 2,
-      phone: "+1 (555) 987-6543",
-      name: "Sarah Johnson",
-      date: new Date().toISOString().split('T')[0],
-      displayDate: formatDate(new Date().toISOString().split('T')[0]),
-      time: "10:15 AM",
-      status: "resolved",
-      duration: "1m 20s",
-      callType: "inbound",
-      location: "Los Angeles, CA",
-      notes: "Service complaint - resolved",
-      email: "sarah.j@email.com",
-      priority: "medium"
-    },
-    {
-      id: 3,
-      phone: "+1 (555) 456-7890",
-      name: "Michael Chen",
-      date: "2024-12-14",
-      displayDate: "Dec 14, 2024",
-      time: "02:45 PM",
-      status: "missed",
-      duration: "30s",
-      callType: "outbound",
-      location: "Chicago, IL",
-      notes: "Technical support follow-up",
-      email: "m.chen@email.com",
-      priority: "high"
-    },
-    {
-      id: 4,
-      phone: "+1 (555) 789-1234",
-      name: "Emma Wilson",
-      date: "2024-12-13",
-      displayDate: "Dec 13, 2024",
-      time: "11:30 AM",
-      status: "resolved",
-      duration: "2m 15s",
-      callType: "outbound",
-      location: "Miami, FL",
-      notes: "Sales call - interested",
-      email: "emma.w@email.com",
-      priority: "medium"
-    },
-    {
-      id: 5,
-      phone: "+1 (555) 321-6547",
-      name: "Robert Davis",
-      date: new Date().toISOString().split('T')[0],
-      displayDate: formatDate(new Date().toISOString().split('T')[0]),
-      time: "03:45 PM",
-      status: "missed",
-      duration: "50s",
-      callType: "inbound",
-      location: "Seattle, WA",
-      notes: "Customer support query",
-      email: "robert.d@email.com",
-      priority: "low"
-    },
-    {
-      id: 6,
-      phone: "+1 (555) 111-2222",
-      name: "Lisa Anderson",
-      date: new Date().toISOString().split('T')[0],
-      displayDate: formatDate(new Date().toISOString().split('T')[0]),
-      time: "11:00 AM",
-      status: "missed",
-      duration: "25s",
-      callType: "inbound",
-      location: "Boston, MA",
-      notes: "Urgent sales inquiry",
-      email: "lisa.a@email.com",
-      priority: "high"
-    }
-  ];
-
-  const fetchCalls = () => {
+  const fetchCalls = async () => {
     setLoading(true);
-    
-    setTimeout(() => {
-      const callsWithDisplayDate = sampleCalls.map(call => ({
-        ...call,
-        displayDate: formatDate(call.date)
-      }));
-      setAllCalls(callsWithDisplayDate);
-      setFilteredCalls(callsWithDisplayDate);
-      setActiveFilter("all");
+    try {
+      const params = {};
+      if (dateRange.startDate) params.startDate = dateRange.startDate;
+      if (dateRange.endDate) params.endDate = dateRange.endDate;
+      if (activeFilter === "missed" || activeFilter === "resolved") {
+        params.status = activeFilter;
+      }
+      if (searchQuery?.trim()) {
+        params.search = searchQuery.trim();
+      }
+
+      const response = await apiClient.getMissedCalls(params);
+      const rows = Array.isArray(response?.data?.data) ? response.data.data : [];
+
+      const mapped = rows.map((row) => {
+        const calledAt = row.calledAt || row.createdAt || new Date().toISOString();
+        const automation = row.automation || {};
+        return {
+          id: row._id,
+          phone: row.fromNumber || "",
+          name: row.callerName || row.fromNumber || "Unknown",
+          date: new Date(calledAt).toISOString().split('T')[0],
+          displayDate: formatDate(calledAt),
+          time: new Date(calledAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: row.status || "missed",
+          duration: row.payload?.duration || "-",
+          callType: row.direction || "inbound",
+          location: row.payload?.location || "",
+          notes: row.notes || row.payload?.notes || "",
+          email: row.payload?.email || "",
+          priority: row.payload?.priority || "medium",
+          automationEnabled: automation.enabled !== false,
+          automationStatus: automation.status || "pending",
+          automationTemplate: automation.templateName || "-",
+          automationLanguage: automation.templateLanguage || "en_US",
+          automationDelayMinutes: Number.isFinite(Number(automation.delayMinutes))
+            ? Number(automation.delayMinutes)
+            : 0,
+          automationNextRunAt: automation.nextRunAt || null,
+          automationSentAt: automation.sentAt || null,
+          automationAttempts: Number.isFinite(Number(automation.attempts))
+            ? Number(automation.attempts)
+            : 0,
+          automationLastError: automation.lastError || ""
+        };
+      });
+
+      setAllCalls(mapped);
+      setFilteredCalls(mapped);
+    } catch (error) {
+      setAllCalls([]);
+      setFilteredCalls([]);
+    } finally {
       setLoading(false);
-    }, 200);
+    }
+  };
+
+  const loadAutomationSettings = async () => {
+    setSettingsLoading(true);
+    setSettingsError("");
+    try {
+      const [settingsRes, templatesRes] = await Promise.all([
+        apiClient.getMissedCallSettings(),
+        apiClient.getTemplates({ status: 'approved' })
+      ]);
+
+      const settingsData = settingsRes?.data?.data || {};
+      const templates = Array.isArray(templatesRes?.data?.data) ? templatesRes.data.data : [];
+
+      const normalizedTemplates = templates
+        .map((tpl) => {
+          const bodyText = resolveTemplateBodyText(tpl);
+          return {
+            name: String(tpl.name || "").trim(),
+            language: String(tpl.language || tpl.languageCode || "en_US").trim() || "en_US",
+            bodyText,
+            variableIndexes: extractVariableIndexesFromText(bodyText)
+          };
+        })
+        .filter((tpl) => tpl.name);
+
+      setTemplateOptions(normalizedTemplates);
+      const savedVariables = normalizeTemplateVariables(settingsData.missedCallTemplateVariables);
+      const savedTemplateName = String(settingsData.missedCallTemplateName || '').trim();
+      const savedTemplateLanguage = String(settingsData.missedCallTemplateLanguage || 'en_US').trim() || 'en_US';
+      const selectedTemplate =
+        normalizedTemplates.find(
+          (tpl) =>
+            tpl.name === savedTemplateName &&
+            tpl.language === savedTemplateLanguage
+        ) ||
+        normalizedTemplates.find((tpl) => tpl.name === savedTemplateName);
+
+      setAutomationSettings({
+        missedCallAutomationEnabled: settingsData.missedCallAutomationEnabled !== false,
+        missedCallDelayMinutes: Number.isFinite(Number(settingsData.missedCallDelayMinutes))
+          ? Number(settingsData.missedCallDelayMinutes)
+          : 5,
+        missedCallAutomationMode:
+          String(settingsData.missedCallAutomationMode || "immediate").toLowerCase() === "night_batch"
+            ? "night_batch"
+            : "immediate",
+        missedCallNightHour: Number.isFinite(Number(settingsData.missedCallNightHour))
+          ? Math.max(0, Math.min(23, Number(settingsData.missedCallNightHour)))
+          : 21,
+        missedCallNightMinute: Number.isFinite(Number(settingsData.missedCallNightMinute))
+          ? Math.max(0, Math.min(59, Number(settingsData.missedCallNightMinute)))
+          : 0,
+        missedCallTimezone: String(settingsData.missedCallTimezone || "Asia/Kolkata").trim() || "Asia/Kolkata",
+        missedCallTemplateName: savedTemplateName,
+        missedCallTemplateLanguage: savedTemplateLanguage,
+        missedCallTemplateVariables: selectedTemplate
+          ? buildTemplateVariableMappings(selectedTemplate, savedVariables)
+          : savedVariables
+      });
+    } catch (error) {
+      setSettingsError(
+        error?.response?.data?.error || "Failed to load missed call automation settings"
+      );
+    } finally {
+      setSettingsLoading(false);
+    }
   };
 
   useEffect(() => {
     fetchCalls();
+    loadAutomationSettings();
   }, []);
+
+  const handleSettingsChange = (key, value) => {
+    setAutomationSettings((prev) => ({
+      ...prev,
+      [key]: value
+    }));
+  };
+
+  const handleTemplateChange = (templateName) => {
+    const parsed = parseTemplateSelection(templateName);
+    const selectedTemplate =
+      templateOptions.find(
+        (tpl) =>
+          tpl.name === parsed.name &&
+          tpl.language === parsed.language
+      ) || templateOptions.find((tpl) => tpl.name === parsed.name);
+
+    setAutomationSettings((prev) => ({
+      ...prev,
+      missedCallTemplateName: selectedTemplate?.name || parsed.name,
+      missedCallTemplateLanguage:
+        selectedTemplate?.language ||
+        parsed.language ||
+        prev.missedCallTemplateLanguage ||
+        "en_US",
+      missedCallTemplateVariables: buildTemplateVariableMappings(
+        selectedTemplate,
+        prev.missedCallTemplateVariables
+      )
+    }));
+  };
+
+  const handleVariableMappingChange = (index, key, value) => {
+    setAutomationSettings((prev) => ({
+      ...prev,
+      missedCallTemplateVariables: (prev.missedCallTemplateVariables || []).map((item) =>
+        Number(item.index) === Number(index)
+          ? {
+              ...item,
+              [key]: value,
+              ...(key === "source" && value !== "static" ? { value: "" } : {})
+            }
+          : item
+      )
+    }));
+  };
+
+  const saveAutomationSettings = async () => {
+    setSettingsSaving(true);
+    setSettingsMessage("");
+    setSettingsError("");
+    try {
+      const payload = {
+        missedCallAutomationEnabled: Boolean(automationSettings.missedCallAutomationEnabled),
+        missedCallDelayMinutes: Math.max(0, Number(automationSettings.missedCallDelayMinutes) || 0),
+        missedCallAutomationMode:
+          String(automationSettings.missedCallAutomationMode || "").toLowerCase() === "night_batch"
+            ? "night_batch"
+            : "immediate",
+        missedCallNightHour: Math.max(0, Math.min(23, Number(automationSettings.missedCallNightHour) || 0)),
+        missedCallNightMinute: Math.max(0, Math.min(59, Number(automationSettings.missedCallNightMinute) || 0)),
+        missedCallTimezone: String(automationSettings.missedCallTimezone || "Asia/Kolkata").trim() || "Asia/Kolkata",
+        missedCallTemplateName: String(automationSettings.missedCallTemplateName || '').trim(),
+        missedCallTemplateLanguage: String(automationSettings.missedCallTemplateLanguage || 'en_US').trim() || 'en_US',
+        missedCallTemplateVariables: normalizeTemplateVariables(automationSettings.missedCallTemplateVariables)
+      };
+
+      const res = await apiClient.updateMissedCallSettings(payload);
+      const updated = res?.data?.data || payload;
+      setAutomationSettings((prev) => ({
+        ...prev,
+        missedCallAutomationEnabled: updated.missedCallAutomationEnabled !== false,
+        missedCallDelayMinutes: Number.isFinite(Number(updated.missedCallDelayMinutes))
+          ? Number(updated.missedCallDelayMinutes)
+          : prev.missedCallDelayMinutes,
+        missedCallAutomationMode:
+          String(updated.missedCallAutomationMode || prev.missedCallAutomationMode || "immediate").toLowerCase() === "night_batch"
+            ? "night_batch"
+            : "immediate",
+        missedCallNightHour: Number.isFinite(Number(updated.missedCallNightHour))
+          ? Math.max(0, Math.min(23, Number(updated.missedCallNightHour)))
+          : prev.missedCallNightHour,
+        missedCallNightMinute: Number.isFinite(Number(updated.missedCallNightMinute))
+          ? Math.max(0, Math.min(59, Number(updated.missedCallNightMinute)))
+          : prev.missedCallNightMinute,
+        missedCallTimezone:
+          String(updated.missedCallTimezone || prev.missedCallTimezone || "Asia/Kolkata").trim() || "Asia/Kolkata",
+        missedCallTemplateName: String(updated.missedCallTemplateName || prev.missedCallTemplateName || '').trim(),
+        missedCallTemplateLanguage: String(updated.missedCallTemplateLanguage || prev.missedCallTemplateLanguage || 'en_US').trim() || 'en_US',
+        missedCallTemplateVariables: normalizeTemplateVariables(
+          updated.missedCallTemplateVariables || prev.missedCallTemplateVariables
+        )
+      }));
+      setSettingsMessage("Missed call automation settings updated");
+    } catch (error) {
+      setSettingsError(
+        error?.response?.data?.error || "Failed to update missed call automation settings"
+      );
+    } finally {
+      setSettingsSaving(false);
+    }
+  };
 
   const applyFilter = (filter) => {
     setActiveFilter(filter);
@@ -187,6 +410,14 @@ const MissedCalls = () => {
     } else if (filter === "today") {
       const today = new Date().toISOString().split('T')[0];
       filtered = filtered.filter(call => call.date === today);
+    } else if (filter === "pending") {
+      filtered = filtered.filter(call => call.automationStatus === "pending");
+    } else if (filter === "processing") {
+      filtered = filtered.filter(call => call.automationStatus === "processing");
+    } else if (filter === "sent") {
+      filtered = filtered.filter(call => call.automationStatus === "sent");
+    } else if (filter === "failed") {
+      filtered = filtered.filter(call => call.automationStatus === "failed");
     }
 
     // Apply date range filter
@@ -220,7 +451,7 @@ const MissedCalls = () => {
   };
 
   const applyDateFilter = () => {
-    applyFilter(activeFilter);
+    fetchCalls();
   };
 
   const clearDateFilter = () => {
@@ -228,8 +459,7 @@ const MissedCalls = () => {
       startDate: "",
       endDate: ""
     });
-    // Reset to show all calls
-    setFilteredCalls(allCalls);
+    fetchCalls();
   };
 
   const handleSearch = (e) => {
@@ -250,6 +480,14 @@ const MissedCalls = () => {
     } else if (activeFilter === "today") {
       const today = new Date().toISOString().split('T')[0];
       filtered = filtered.filter(call => call.date === today);
+    } else if (activeFilter === "pending") {
+      filtered = filtered.filter(call => call.automationStatus === "pending");
+    } else if (activeFilter === "processing") {
+      filtered = filtered.filter(call => call.automationStatus === "processing");
+    } else if (activeFilter === "sent") {
+      filtered = filtered.filter(call => call.automationStatus === "sent");
+    } else if (activeFilter === "failed") {
+      filtered = filtered.filter(call => call.automationStatus === "failed");
     }
     
     // Apply date range filter
@@ -273,6 +511,39 @@ const MissedCalls = () => {
     }
     
     setFilteredCalls(filtered);
+  };
+
+  const resolveCall = async (callId) => {
+    try {
+      await apiClient.resolveMissedCall(callId);
+      await fetchCalls();
+      if (selectedCall && selectedCall.id === callId) {
+        setSelectedCall((prev) => (prev ? { ...prev, status: "resolved" } : prev));
+      }
+    } catch (error) {
+      // no-op
+    }
+  };
+
+  const runNow = async (callId) => {
+    try {
+      await apiClient.runMissedCallNow(callId);
+      await fetchCalls();
+      if (selectedCall && selectedCall.id === callId) {
+        setSelectedCall((prev) =>
+          prev
+            ? {
+                ...prev,
+                automationStatus: "pending",
+                automationNextRunAt: new Date().toISOString(),
+                automationLastError: ""
+              }
+            : prev
+        );
+      }
+    } catch (error) {
+      // no-op
+    }
   };
 
   const handleInputChange = (e) => {
@@ -327,7 +598,11 @@ const MissedCalls = () => {
     resolved: allCalls.filter(call => call.status === "resolved").length,
     inbound: allCalls.filter(call => call.callType === "inbound").length,
     outbound: allCalls.filter(call => call.callType === "outbound").length,
-    today: allCalls.filter(call => call.date === new Date().toISOString().split('T')[0]).length
+    today: allCalls.filter(call => call.date === new Date().toISOString().split('T')[0]).length,
+    pending: allCalls.filter(call => call.automationStatus === "pending").length,
+    processing: allCalls.filter(call => call.automationStatus === "processing").length,
+    sent: allCalls.filter(call => call.automationStatus === "sent").length,
+    failedAutomation: allCalls.filter(call => call.automationStatus === "failed").length
   };
 
   return (
@@ -342,6 +617,176 @@ const MissedCalls = () => {
           <p>Track and manage all inbound and outbound calls</p>
         </div>
        
+      </div>
+
+      <div className="automation-settings-card">
+        <div className="automation-settings-header">
+          <h3>Missed Call Automation Settings</h3>
+          {settingsLoading ? <span className="settings-muted">Loading...</span> : null}
+        </div>
+        <div className="automation-settings-grid">
+          <label className="settings-checkbox">
+            <input
+              type="checkbox"
+              checked={automationSettings.missedCallAutomationEnabled}
+              onChange={(e) => handleSettingsChange("missedCallAutomationEnabled", e.target.checked)}
+            />
+            <span>Enable auto-reply for missed calls</span>
+          </label>
+
+          <label className="settings-field">
+            <span>Delay (minutes)</span>
+            <input
+              type="number"
+              min="0"
+              max="1440"
+              value={automationSettings.missedCallDelayMinutes}
+              onChange={(e) => handleSettingsChange("missedCallDelayMinutes", e.target.value)}
+            />
+          </label>
+
+          <label className="settings-field">
+            <span>Mode</span>
+            <select
+              value={automationSettings.missedCallAutomationMode}
+              onChange={(e) => handleSettingsChange("missedCallAutomationMode", e.target.value)}
+            >
+              <option value="immediate">Immediate (delay based)</option>
+              <option value="night_batch">Night Batch (fixed time)</option>
+            </select>
+          </label>
+
+          {automationSettings.missedCallAutomationMode === "night_batch" ? (
+            <>
+              <label className="settings-field">
+                <span>Night Hour (0-23)</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="23"
+                  value={automationSettings.missedCallNightHour}
+                  onChange={(e) => handleSettingsChange("missedCallNightHour", e.target.value)}
+                />
+              </label>
+
+              <label className="settings-field">
+                <span>Night Minute (0-59)</span>
+                <input
+                  type="number"
+                  min="0"
+                  max="59"
+                  value={automationSettings.missedCallNightMinute}
+                  onChange={(e) => handleSettingsChange("missedCallNightMinute", e.target.value)}
+                />
+              </label>
+
+              <label className="settings-field">
+                <span>Timezone</span>
+                <input
+                  type="text"
+                  value={automationSettings.missedCallTimezone}
+                  onChange={(e) => handleSettingsChange("missedCallTimezone", e.target.value)}
+                  placeholder="Asia/Kolkata"
+                />
+              </label>
+            </>
+          ) : null}
+
+          <label className="settings-field">
+            <span>Template</span>
+            <select
+              value={
+                automationSettings.missedCallTemplateName
+                  ? `${automationSettings.missedCallTemplateName}||${automationSettings.missedCallTemplateLanguage || "en_US"}`
+                  : ""
+              }
+              onChange={(e) => handleTemplateChange(e.target.value)}
+            >
+              <option value="">Select template</option>
+              {templateOptions.map((tpl, idx) => (
+                <option
+                  key={`${tpl.name}-${tpl.language}-${idx}`}
+                  value={`${tpl.name}||${tpl.language}`}
+                >
+                  {tpl.name} ({tpl.language})
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="settings-field">
+            <span>Language</span>
+            <input
+              type="text"
+              value={automationSettings.missedCallTemplateLanguage}
+              onChange={(e) => handleSettingsChange("missedCallTemplateLanguage", e.target.value)}
+              placeholder="en_US"
+            />
+          </label>
+        </div>
+
+        {(automationSettings.missedCallTemplateVariables || []).length > 0 ? (
+          <div className="settings-variable-mapping">
+            <h4>Template Variable Mapping</h4>
+            <p>
+              Map each template variable to missed call data. Static value only applies
+              when source is <code>Static Value</code>.
+            </p>
+            <div className="settings-variable-list">
+              {(automationSettings.missedCallTemplateVariables || []).map((variable) => (
+                <div key={`missed-call-var-${variable.index}`} className="settings-variable-row">
+                  <div className="settings-variable-token">{`{{${variable.index}}}`}</div>
+                  <select
+                    value={variable.source}
+                    onChange={(e) =>
+                      handleVariableMappingChange(variable.index, "source", e.target.value)
+                    }
+                  >
+                    {variableSourceOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="text"
+                    disabled={variable.source !== "static"}
+                    value={variable.value || ""}
+                    onChange={(e) =>
+                      handleVariableMappingChange(variable.index, "value", e.target.value)
+                    }
+                    placeholder={
+                      variable.source === "static"
+                        ? "Enter static value"
+                        : "Enabled only for Static Value"
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <div className="automation-settings-actions">
+          <button
+            type="button"
+            className="primary-btn"
+            onClick={saveAutomationSettings}
+            disabled={settingsSaving || settingsLoading}
+          >
+            {settingsSaving ? "Saving..." : "Save Settings"}
+          </button>
+          <button
+            type="button"
+            className="secondary-btn"
+            onClick={loadAutomationSettings}
+            disabled={settingsSaving}
+          >
+            Reload
+          </button>
+          {settingsMessage ? <span className="settings-success">{settingsMessage}</span> : null}
+          {settingsError ? <span className="settings-error">{settingsError}</span> : null}
+        </div>
       </div>
 
       {/* Stats */}
@@ -498,6 +943,30 @@ const MissedCalls = () => {
                 >
                   Today ({stats.today})
                 </button>
+                <button
+                  className={`filter-btn ${activeFilter === "pending" ? "active" : ""}`}
+                  onClick={() => applyFilter("pending")}
+                >
+                  Queue Pending ({stats.pending})
+                </button>
+                <button
+                  className={`filter-btn ${activeFilter === "processing" ? "active" : ""}`}
+                  onClick={() => applyFilter("processing")}
+                >
+                  Processing ({stats.processing})
+                </button>
+                <button
+                  className={`filter-btn ${activeFilter === "sent" ? "active" : ""}`}
+                  onClick={() => applyFilter("sent")}
+                >
+                  Sent ({stats.sent})
+                </button>
+                <button
+                  className={`filter-btn ${activeFilter === "failed" ? "active" : ""}`}
+                  onClick={() => applyFilter("failed")}
+                >
+                  Failed ({stats.failedAutomation})
+                </button>
               </div>
             </div>
           </div>
@@ -525,9 +994,10 @@ const MissedCalls = () => {
                       <th>Date & Time</th>
                       <th>Type</th>
                       <th>Status</th>
-                      <th>Duration</th>
-                      <th>Location</th>
-                      <th>Priority</th>
+                      <th>Automation</th>
+                      <th>Template</th>
+                      <th>Next Run</th>
+                      <th>Attempts</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
@@ -586,23 +1056,43 @@ const MissedCalls = () => {
                           </div>
                         </td>
                         <td>
+                          <div className={`status-cell ${call.automationStatus || "pending"}`}>
+                            {call.automationStatus || "pending"}
+                          </div>
+                        </td>
+                        <td>
                           <div className="duration-cell">
-                            {call.duration}
+                            {call.automationTemplate || "-"}
                           </div>
                         </td>
                         <td>
-                          <div className="location-cell">
-                            <MapPin size={12} />
-                            {call.location}
+                          <div className="datetime-cell">
+                            <div>{formatDateTime(call.automationNextRunAt)}</div>
                           </div>
                         </td>
                         <td>
-                          <div className={`priority-cell ${call.priority}`}>
-                            {call.priority}
+                          <div className="duration-cell">
+                            {call.automationAttempts ?? 0}
                           </div>
                         </td>
                         <td>
                           <div className="action-cell">
+                            {(call.automationStatus === "failed" || call.automationStatus === "pending") && (
+                              <button
+                                className="view-btn warning"
+                                onClick={() => runNow(call.id)}
+                              >
+                                Run Now
+                              </button>
+                            )}
+                            {call.status === "missed" && (
+                              <button
+                                className="view-btn success"
+                                onClick={() => resolveCall(call.id)}
+                              >
+                                Resolve
+                              </button>
+                            )}
                             <button 
                               className="view-btn"
                               onClick={() => handleViewDetails(call)}
@@ -715,11 +1205,61 @@ const MissedCalls = () => {
                 </div>
 
                 <div className="detail-section full-width">
+                  <h3><Clock size={18} /> Automation</h3>
+                  <div className="detail-row">
+                    <span className="detail-label">Automation Status:</span>
+                    <span className="detail-value capitalize">{selectedCall.automationStatus || "pending"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Template:</span>
+                    <span className="detail-value">{selectedCall.automationTemplate || "-"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Language:</span>
+                    <span className="detail-value">{selectedCall.automationLanguage || "en_US"}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Delay:</span>
+                    <span className="detail-value">{selectedCall.automationDelayMinutes ?? 0} min</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Next Run:</span>
+                    <span className="detail-value">{formatDateTime(selectedCall.automationNextRunAt)}</span>
+                  </div>
+                  <div className="detail-row">
+                    <span className="detail-label">Attempts:</span>
+                    <span className="detail-value">{selectedCall.automationAttempts ?? 0}</span>
+                  </div>
+                  {selectedCall.automationLastError ? (
+                    <div className="detail-row">
+                      <span className="detail-label">Last Error:</span>
+                      <span className="detail-value">{selectedCall.automationLastError}</span>
+                    </div>
+                  ) : null}
+                </div>
+
+                <div className="detail-section full-width">
                   <h3><MessageCircle size={18} /> Actions</h3>
                   <div className="action-buttons">
+                    {selectedCall.status === "missed" && (
+                      <button
+                        className="action-btn primary"
+                        onClick={() => resolveCall(selectedCall.id)}
+                      >
+                        <CheckCircle size={16} /> Mark Resolved
+                      </button>
+                    )}
                     <button className="action-btn primary">
                       <Phone size={16} /> Call Back
                     </button>
+                    {(selectedCall.automationStatus === "failed" || selectedCall.automationStatus === "pending") && (
+                      <button
+                        className="action-btn secondary"
+                        onClick={() => runNow(selectedCall.id)}
+                      >
+                        <RefreshCcw size={16} /> Run Automation Now
+                      </button>
+                    )}
                     <button className="action-btn secondary">
                       <MessageCircle size={16} /> Send SMS
                     </button>
