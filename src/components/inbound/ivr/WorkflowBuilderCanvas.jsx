@@ -246,12 +246,18 @@ const WorkflowBuilderCanvas = ({
     const handleCompleted = (data) => {
       console.log('✅ TTS Completed:', data);
 
-      // Reload workflow or merge nodes if data provided
-      // Since we don't have the full workflow in the event, we should re-fetch 
-      // or if we trust the idempotency, we could just trigger a reload if parent supports it.
-      // For now, let's assume parent might need to know, or we can try to fetch.
-      // Best approach: Notify user and trigger refresh.
-      // But user wants "THE AUDIO", implying auto-update.
+      // Only reload if we're not actively editing to prevent node disappearance
+      const isEditing = document.querySelector('.node-config-panel') !== null;
+      if (isEditing) {
+        console.log('⏸️ Skipping workflow reload - user is currently editing');
+        return;
+      }
+
+      // Only reload if there are actual audio URL updates
+      if (!data.audioUrls || Object.keys(data.audioUrls).length === 0) {
+        console.log('⏸️ No audio URL updates - skipping reload');
+        return;
+      }
 
       // Re-fetch workflow to get new audio URLs
       const fetchWorkflow = async () => {
@@ -259,12 +265,8 @@ const WorkflowBuilderCanvas = ({
           const response = await apiService.get(`/workflow/${workflowIdToUse}`);
           if (response.data.success) {
             console.log('📥 Reloaded workflow with generated audio');
-            // Merge new node data (audioUrl) while keeping local positions if user moved stuff
+            // Merge new node data (audioUrl) while preserving current user edits
             const remoteNodes = response.data.data.nodes || [];
-
-            // We need to be careful not to overwrite current user edits (positions, new text)
-            // if they edited while TTS was generating.
-            // Safer to only update audioUrl where missing.
 
             onChange((currentWorkflow) => {
               const currentNodes = currentWorkflow.nodes || [];

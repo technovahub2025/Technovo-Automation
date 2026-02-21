@@ -7,31 +7,34 @@ const useSocket = () => {
 
   useEffect(() => {
     const socket = socketService.connect();
+    if (!socket) return undefined;
 
-    // If socket is already connected, ensure state is synchronized
-    if (socket.connected && !connected) {
+    if (socket.connected) {
       setConnected(true);
       setError(null);
     }
 
-    socket.on('connect', () => {
-      console.log('Connected to WebSocket server');
+    const handleConnect = () => {
       setConnected(true);
       setError(null);
-    });
+    };
 
-    socket.on('disconnect', (reason) => {
-      console.log('Disconnected from WebSocket server:', reason);
+    const handleDisconnect = () => {
       setConnected(false);
-    });
+    };
 
-    socket.on('connect_error', (err) => {
-      console.error('WebSocket connection error:', err);
-      setError(err.message);
-    });
+    const handleConnectError = (err) => {
+      setError(err?.message || 'Socket connection error');
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
 
     return () => {
-      // Don't disconnect - let socketService manage the connection
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
     };
   }, []);
 
@@ -39,7 +42,6 @@ const useSocket = () => {
     socketService.emit(event, data);
   };
 
-  // Real backend room events
   const joinBroadcast = (broadcastId) => {
     emit('join_broadcast', broadcastId);
   };
@@ -48,7 +50,6 @@ const useSocket = () => {
     emit('leave_broadcast', broadcastId);
   };
 
-  // Real backend media events
   const startTwilioMedia = (callSid) => {
     emit('twilio_media_start', { callSid });
   };
@@ -58,7 +59,7 @@ const useSocket = () => {
   };
 
   return {
-    socket: socketService.socket,
+    socket: socketService.getSocket(),
     connected,
     error,
     emit,

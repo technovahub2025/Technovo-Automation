@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Play, Pause, Settings, Trash2, Users, Edit3, Phone, Clock, CheckCircle, Building, ShoppingCart, Stethoscope, PhoneCall, HeadphonesIcon, Briefcase, Edit, Save, X } from 'lucide-react';
+import { Play, Pause, Trash2, Users, Edit3, Phone, Clock, CheckCircle, Save, X, GitBranch, Workflow, AlertTriangle } from 'lucide-react';
 import useIVRWorkflowSocket from '../../../hooks/useIVRWorkflowSocket';
 import socketService from '../../../services/socketService';
 import WorkflowBuilderCanvas from './WorkflowBuilderCanvas';
@@ -10,8 +10,6 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
   const [isEditing, setIsEditing] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [activeUsers, setActiveUsers] = useState([]);
-  const [isEditingSettings, setIsEditingSettings] = useState(false);
-  const [editingData, setEditingData] = useState({});
   const [draftWorkflow, setDraftWorkflow] = useState(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isSavingWorkflow, setIsSavingWorkflow] = useState(false);
@@ -20,6 +18,11 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
   const [testRunIndex, setTestRunIndex] = useState(0);
   const [activePath, setActivePath] = useState({ nodeId: null, edgeIds: [] });
   const [currentStatus, setCurrentStatus] = useState(menu?.status || 'draft');
+  
+  // Track which node is being edited to prevent socket updates
+  const [editingNodeId, setEditingNodeId] = useState(null);
+  const [lastEditTimestamp, setLastEditTimestamp] = useState(0);
+
 
   const {
     joinWorkflow,
@@ -35,44 +38,8 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
     reattachEdge
   } = useIVRWorkflowSocket(menu?._id);
 
-  // Add socket listener for backend workflow updates
-  useEffect(() => {
-    const socket = socketService.connect();
-    if (socket) {
-      const handleWorkflowUpdated = (data) => {
-        if (data.workflowId === menu?._id) {
-          // Prevent useless re-renders - only update if data actually changed
-          const currentData = JSON.stringify(draftWorkflow || workflow);
-          const newData = JSON.stringify(data.workflowData);
-
-          if (currentData === newData) {
-            return;
-          }
-
-          // Update local workflow state with backend data
-          if (onUpdate) {
-            onUpdate(data.workflowId, data.workflowData);
-          }
-        }
-      };
-
-      socket.on('workflow_updated', handleWorkflowUpdated);
-      socket.on('workflow_error', (error) => {
-        console.error('❌ Workflow update error via socket:', error);
-        if (error.workflowId === menu?._id) {
-          // Could show error notification to user
-          setValidationErrors([`Update failed: ${error.error}`]);
-        }
-      });
-
-      return () => {
-        socket.off('workflow_updated', handleWorkflowUpdated);
-        socket.off('workflow_error');
-      };
-    }
-  }, [menu?._id, onUpdate]);
-
   const safeMenu = menu ?? {};
+
   const workflow = safeMenu.workflowConfig ?? safeMenu.workflow ?? {
     nodes: [],
     edges: [],
@@ -80,12 +47,39 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
   };
   const effectiveWorkflow = draftWorkflow ?? workflow;
 
+  const ensureUniqueNodeIds = (workflowData) => {
+    const nodes = workflowData?.nodes || [];
+    const edges = workflowData?.edges || [];
+    const seenIds = new Set();
+    const uniqueNodes = [];
+
+    for (const node of nodes) {
+      if (!node?.id) continue;
+      if (seenIds.has(node.id)) continue;
+      seenIds.add(node.id);
+      uniqueNodes.push(node);
+    }
+
+    if (uniqueNodes.length === nodes.length) {
+      return workflowData;
+    }
+
+    const validNodeIds = new Set(uniqueNodes.map((node) => node.id));
+    const uniqueEdges = edges.filter((edge) => validNodeIds.has(edge.source) && validNodeIds.has(edge.target));
+
+    return {
+      ...workflowData,
+      nodes: uniqueNodes,
+      edges: uniqueEdges
+    };
+  };
+
   // Migrate greeting nodes to audio nodes for backward compatibility
   const migratedWorkflow = useMemo(() => {
     if (!effectiveWorkflow.nodes) return effectiveWorkflow;
 
     const hasGreetingNodes = effectiveWorkflow.nodes.some(node => node.type === 'greeting');
-    if (!hasGreetingNodes) return effectiveWorkflow;
+    if (!hasGreetingNodes) return ensureUniqueNodeIds(effectiveWorkflow);
 
     const migratedNodes = effectiveWorkflow.nodes.map(node => {
       if (node.type === 'greeting') {
@@ -108,10 +102,10 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
       return node;
     });
 
-    return {
+    return ensureUniqueNodeIds({
       ...effectiveWorkflow,
       nodes: migratedNodes
-    };
+    });
   }, [effectiveWorkflow]);
 
   // Migration Effect - Only fires when necessary to persist structural changes
@@ -124,6 +118,70 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
       onUpdate(menu._id, migratedWorkflow);
     }
   }, [menu?._id, migratedWorkflow, effectiveWorkflow.nodes]);
+
+  // Add socket listener for backend workflow updates
+  useEffect(() => {
+    const socket = socketService.connect();
+    if (socket) {
+      const handleWorkflowUpdated = (data) => {
+        if (data.workflowId === menu?._id) {
+          // Handle different data structures from backend
+          // Backend may send workflowData or just updates (like audioUrls, ttsStatus)
+          const workflowData = data.workflowData || data;
+          
+          // Only update if we have actual workflow data with nodes
+          if (!workflowData.nodes && !data.audioUrls) {
+            // If no nodes and no audio updates, just update status
+            console.log('📡 Workflow status update:', data.ttsStatus || data.status);
+            return;
+          }
+
+
+          // Prevent useless re-renders - only update if data actually changed
+          const currentData = JSON.stringify(draftWorkflow || workflow);
+          const newData = JSON.stringify(workflowData);
+
+          if (currentData === newData) {
+            return;
+          }
+
+          // Update local workflow state with backend data (only when not editing)
+          if (onUpdate && workflowData.nodes) {
+            onUpdate(data.workflowId, workflowData);
+          } else if (data.audioUrls) {
+            // Handle audio URL updates separately
+            console.log('📡 Audio URLs updated:', data.audioUrls);
+            // Refresh the menu to get latest data
+            if (onUpdate) {
+              onUpdate(data.workflowId, {
+                ...migratedWorkflow,
+                audioProcessing: { 
+                  status: data.ttsStatus || 'completed', 
+                  audioUrls: data.audioUrls 
+                }
+              });
+            }
+          }
+        }
+      };
+
+      socket.on('workflow_updated', handleWorkflowUpdated);
+      socket.on('workflow_error', (error) => {
+        console.error('❌ Workflow update error via socket:', error);
+        if (error.workflowId === menu?._id) {
+          // Could show error notification to user
+          setValidationErrors([`Update failed: ${error.error}`]);
+        }
+      });
+
+      return () => {
+        socket.off('workflow_updated', handleWorkflowUpdated);
+        socket.off('workflow_error');
+      };
+    }
+  }, [menu?._id, onUpdate, migratedWorkflow, isEditing, draftWorkflow, workflow]);
+
+
 
   // Extract backend JSON fields
   const menuOptions = safeMenu.menuOptions ?? [];
@@ -160,6 +218,89 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
     const options = menuOptions || [];
     return options && options.length > 0;
   }, [menuOptions]);
+
+  const flowMetrics = useMemo(() => {
+    const nodes = migratedWorkflow?.nodes || [];
+    const edges = migratedWorkflow?.edges || [];
+
+    const nodeCount = nodes.length;
+    const edgeCount = edges.length;
+    const incoming = new Map();
+    const outgoing = new Map();
+
+    nodes.forEach((node) => {
+      incoming.set(node.id, 0);
+      outgoing.set(node.id, 0);
+    });
+
+    edges.forEach((edge) => {
+      outgoing.set(edge.source, (outgoing.get(edge.source) || 0) + 1);
+      incoming.set(edge.target, (incoming.get(edge.target) || 0) + 1);
+    });
+
+    const disconnectedCount = nodes.filter((node) => {
+      const inCount = incoming.get(node.id) || 0;
+      const outCount = outgoing.get(node.id) || 0;
+      return inCount === 0 && outCount === 0;
+    }).length;
+
+    const hasStartNode = nodes.some((node) => {
+      const nodeType = (node.type || '').toLowerCase();
+      return nodeType === 'start' || nodeType === 'audio' || nodeType === 'greeting';
+    });
+    const hasEndNode = nodes.some((node) => (node.type || '').toLowerCase() === 'end');
+    const audioNodeCount = nodes.filter((node) => {
+      const nodeType = (node.type || '').toLowerCase();
+      return nodeType === 'audio' || nodeType === 'greeting';
+    }).length;
+    const inputNodeCount = nodes.filter((node) => (node.type || '').toLowerCase() === 'input').length;
+
+    const connectedNodes = Math.max(0, nodeCount - disconnectedCount);
+    const connectivityRatio = nodeCount > 0 ? connectedNodes / nodeCount : 0;
+    const connectivityPercent = Math.round(connectivityRatio * 100);
+
+    const issues = [];
+    if (!hasStartNode) issues.push('No start node');
+    if (!hasEndNode) issues.push('No end node');
+    if (disconnectedCount > 0) issues.push(`${disconnectedCount} disconnected node${disconnectedCount > 1 ? 's' : ''}`);
+
+    let health = 'good';
+    if (issues.length > 0 || connectivityPercent < 60) {
+      health = 'warning';
+    }
+    if (nodeCount === 0) {
+      health = 'empty';
+    }
+
+    return {
+      nodeCount,
+      edgeCount,
+      audioNodeCount,
+      inputNodeCount,
+      connectivityPercent,
+      disconnectedCount,
+      hasStartNode,
+      hasEndNode,
+      issues,
+      health
+    };
+  }, [migratedWorkflow]);
+
+  const formatLastUpdated = (timestamp) => {
+    if (!timestamp) return 'Not available';
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return 'Not available';
+
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMinutes = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMinutes / 60);
+
+    if (diffMinutes < 1) return 'Just now';
+    if (diffMinutes < 60) return `${diffMinutes}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    return date.toLocaleDateString();
+  };
 
   useEffect(() => {
     setDraftWorkflow(migratedWorkflow);
@@ -288,6 +429,208 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
   const handleWorkflowChange = (workflowData) => {
     setDraftWorkflow(workflowData);
     setIsDirty(true);
+    // Track that user is actively editing
+    setLastEditTimestamp(Date.now());
+  };
+
+  // Track when user starts editing a specific node
+  const handleNodeEditStart = (nodeId) => {
+    setEditingNodeId(nodeId);
+    setLastEditTimestamp(Date.now());
+    console.log('📝 Started editing node:', nodeId);
+  };
+
+  // Track when user stops editing a node
+  const handleNodeEditEnd = () => {
+    setEditingNodeId(null);
+    console.log('📝 Finished editing node');
+  };
+
+
+  /**
+   * Transform frontend node data to backend format
+   * Maps field names and types for backend/Python compatibility
+   */
+  const transformNodeForBackend = (node) => {
+    // Deep clone to avoid mutating original
+    const transformedNode = JSON.parse(JSON.stringify(node));
+
+    // Handle audio node type conversion for backend
+    if (transformedNode.type === 'audio') {
+      transformedNode.type = 'greeting'; // Backend expects 'greeting' type
+      
+      // Map frontend field names to backend field names
+      if (transformedNode.data) {
+        // messageText -> text
+        if (transformedNode.data.messageText !== undefined) {
+          transformedNode.data.text = transformedNode.data.messageText;
+        }
+        
+        // timeoutSeconds -> timeout
+        if (transformedNode.data.timeoutSeconds !== undefined) {
+          transformedNode.data.timeout = transformedNode.data.timeoutSeconds;
+        }
+        
+        // maxRetries -> max_retries (for Python service)
+        if (transformedNode.data.maxRetries !== undefined) {
+          transformedNode.data.max_retries = transformedNode.data.maxRetries;
+        }
+        
+        // audioUrl -> audio_url (snake_case for Python)
+        if (transformedNode.data.audioUrl !== undefined) {
+          transformedNode.data.audio_url = transformedNode.data.audioUrl;
+        }
+        
+        // audioAssetId -> audio_asset_id (snake_case for Python)
+        if (transformedNode.data.audioAssetId !== undefined) {
+          transformedNode.data.audio_asset_id = transformedNode.data.audioAssetId;
+        }
+        
+        // Map voice to expected format
+        if (transformedNode.data.voice) {
+          transformedNode.data.voice = transformedNode.data.voice;
+        }
+        
+        // Map language to expected format
+        if (transformedNode.data.language) {
+          transformedNode.data.language = transformedNode.data.language;
+        }
+        
+        // Keep mode field for frontend reference, but backend may ignore it
+        // afterPlayback is frontend-only, backend uses workflow edges
+        
+        // Remove frontend-only fields that might confuse backend
+        delete transformedNode.data.mode;
+        delete transformedNode.data.afterPlayback;
+        delete transformedNode.data.fallbackAudioNodeId;
+      }
+    }
+
+    // Handle input node field mapping
+    if (transformedNode.type === 'input' && transformedNode.data) {
+      // timeoutSeconds -> timeout
+      if (transformedNode.data.timeoutSeconds !== undefined) {
+        transformedNode.data.timeout = transformedNode.data.timeoutSeconds;
+      }
+      
+      // maxAttempts -> max_attempts
+      if (transformedNode.data.maxAttempts !== undefined) {
+        transformedNode.data.max_attempts = transformedNode.data.maxAttempts;
+      }
+      
+      // promptAudioNodeId -> prompt_audio_node_id
+      if (transformedNode.data.promptAudioNodeId !== undefined) {
+        transformedNode.data.prompt_audio_node_id = transformedNode.data.promptAudioNodeId;
+      }
+      
+      // invalidAudioNodeId -> invalid_audio_node_id
+      if (transformedNode.data.invalidAudioNodeId !== undefined) {
+        transformedNode.data.invalid_audio_node_id = transformedNode.data.invalidAudioNodeId;
+      }
+      
+      // timeoutAudioNodeId -> timeout_audio_node_id
+      if (transformedNode.data.timeoutAudioNodeId !== undefined) {
+        transformedNode.data.timeout_audio_node_id = transformedNode.data.timeoutAudioNodeId;
+      }
+    }
+
+    // Handle voicemail node field mapping
+    if (transformedNode.type === 'voicemail' && transformedNode.data) {
+      // maxLength -> max_length
+      if (transformedNode.data.maxLength !== undefined) {
+        transformedNode.data.max_length = transformedNode.data.maxLength;
+      }
+      
+      // greetingAudioNodeId -> greeting_audio_node_id
+      if (transformedNode.data.greetingAudioNodeId !== undefined) {
+        transformedNode.data.greeting_audio_node_id = transformedNode.data.greetingAudioNodeId;
+      }
+    }
+
+    // Handle end node field mapping
+    if (transformedNode.type === 'end' && transformedNode.data) {
+      // terminationType -> reason
+      if (transformedNode.data.terminationType !== undefined) {
+        transformedNode.data.reason = transformedNode.data.terminationType;
+      }
+      
+      // transferNumber -> transfer_number
+      if (transformedNode.data.transferNumber !== undefined) {
+        transformedNode.data.transfer_number = transformedNode.data.transferNumber;
+      }
+      
+      // voicemailBox -> voicemail_box
+      if (transformedNode.data.voicemailBox !== undefined) {
+        transformedNode.data.voicemail_box = transformedNode.data.voicemailBox;
+      }
+      
+      // callbackDelay -> callback_delay
+      if (transformedNode.data.callbackDelay !== undefined) {
+        transformedNode.data.callback_delay = transformedNode.data.callbackDelay;
+      }
+      
+      // maxCallbackAttempts -> max_callback_attempts
+      if (transformedNode.data.maxCallbackAttempts !== undefined) {
+        transformedNode.data.max_callback_attempts = transformedNode.data.maxCallbackAttempts;
+      }
+      
+      // sendSurvey -> send_survey
+      if (transformedNode.data.sendSurvey !== undefined) {
+        transformedNode.data.send_survey = transformedNode.data.sendSurvey;
+      }
+      
+      // logCall -> log_data
+      if (transformedNode.data.logCall !== undefined) {
+        transformedNode.data.log_data = transformedNode.data.logCall;
+      }
+      
+      // sendReceipt -> send_receipt
+      if (transformedNode.data.sendReceipt !== undefined) {
+        transformedNode.data.send_receipt = transformedNode.data.sendReceipt;
+      }
+      
+      // contactMethod -> contact_method
+      if (transformedNode.data.contactMethod !== undefined) {
+        transformedNode.data.contact_method = transformedNode.data.contactMethod;
+      }
+    }
+
+    // Handle conditional node field mapping
+    if (transformedNode.type === 'conditional' && transformedNode.data) {
+      // truePath -> true_path
+      if (transformedNode.data.truePath !== undefined) {
+        transformedNode.data.true_path = transformedNode.data.truePath;
+      }
+      
+      // falsePath -> false_path
+      if (transformedNode.data.falsePath !== undefined) {
+        transformedNode.data.false_path = transformedNode.data.falsePath;
+      }
+    }
+
+    // Handle transfer node field mapping
+    if (transformedNode.type === 'transfer' && transformedNode.data) {
+      // announceText -> announce_text
+      if (transformedNode.data.announceText !== undefined) {
+        transformedNode.data.announce_text = transformedNode.data.announceText;
+      }
+    }
+
+    return transformedNode;
+  };
+
+  /**
+   * Transform entire workflow for backend compatibility
+   */
+  const transformWorkflowForBackend = (workflowData) => {
+    if (!workflowData || !workflowData.nodes) {
+      return workflowData;
+    }
+
+    return {
+      ...workflowData,
+      nodes: workflowData.nodes.map(transformNodeForBackend)
+    };
   };
 
   const handleWorkflowSave = async () => {
@@ -328,17 +671,21 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
 
     setIsSavingWorkflow(true);
     try {
+      // Transform workflow data for backend compatibility
+      const backendWorkflow = transformWorkflowForBackend(migratedWorkflow);
+      
       // Use socket for real-time workflow update
       const socket = socketService.connect();
       if (socket && socketService.isConnected()) {
         socket.emit('workflow_update', {
           workflowId: menu._id,
-          workflowData: migratedWorkflow
+          workflowData: backendWorkflow
         });
 
         console.log('📡 Workflow save sent via socket:', {
           workflowId: menu._id,
-          nodeCount: migratedWorkflow.nodes?.length || 0
+          nodeCount: backendWorkflow.nodes?.length || 0,
+          transformed: true
         });
       }
 
@@ -347,6 +694,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
       setIsSavingWorkflow(false);
     }
   };
+
 
   // Remove auto-save - only save when user explicitly clicks save button
   // useEffect(() => {
@@ -392,59 +740,6 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
     setTestRunIndex(nextIndex === -1 ? 0 : nextIndex);
   };
 
-  const handleSettingsSave = () => {
-    const updatedMenuOptions = editingData.menuOptions || menuOptions;
-
-    // Frontend validation: ensure menu has at least one option
-    if (!updatedMenuOptions || updatedMenuOptions.length === 0) {
-      alert("IVR menu must have at least one option before saving.");
-      return;
-    }
-
-    const updatedMenu = {
-      ...menu,
-      menuOptions: updatedMenuOptions,
-      settings: editingData.settings || settings
-    };
-
-    // Update audio nodes with message text and voice from settings
-    const updatedWorkflow = {
-      ...migratedWorkflow,
-      nodes: migratedWorkflow.nodes?.map(node => {
-        if (node.type === 'audio') {
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              messageText: editingData.messageText || node.data.messageText,
-              voice: editingData.voice || node.data.voice
-            }
-          };
-        }
-        return node;
-      }) || []
-    };
-
-    // Update both the menu and the workflow
-    onUpdate(menu._id, updatedMenu);
-
-    // Also update the workflow via socket to sync changes
-    const socket = socketService.connect();
-    if (socket && socketService.isConnected()) {
-      socket.emit('workflow_update', {
-        workflowId: menu._id,
-        workflowData: updatedWorkflow
-      });
-
-      console.log('📡 Workflow audio sync sent via socket:', {
-        workflowId: menu._id,
-        messageText: editingData.messageText
-      });
-    }
-
-    setIsEditingSettings(false);
-    setEditingData({});
-  };
 
   const startTestRun = () => {
     if (validationErrors.length > 0) return;
@@ -458,48 +753,10 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
     setActivePath({ nodeId: null, edgeIds: [] });
   };
 
-  const startEditingSettings = () => {
-    setEditingData({
-      messageText: '',
-      voice: 'en-GB-SoniaNeural',
-      menuOptions: [...menuOptions],
-      settings: { ...settings }
-    });
-    setIsEditingSettings(true);
-  };
-
-  const cancelEditing = () => {
-    setIsEditingSettings(false);
-    setEditingData({});
-  };
-
-  const getIndustryIcon = (industry) => {
-    const iconMap = {
-      hotel: Building,
-      insurance: Briefcase,
-      healthcare: Stethoscope,
-      retail: ShoppingCart,
-      custom: HeadphonesIcon
-    };
-    const IconComponent = iconMap[industry] || HeadphonesIcon;
-    return <IconComponent size={20} />;
-  };
-
-  const getStatusColor = (status) => {
-    const colors = {
-      draft: '#f59e0b',
-      testing: '#06b6d4',
-      active: '#10b981',
-      inactive: '#ef4444'
-    };
-    return colors[status] || '#6b757d';
-  };
-
   return (
     <div className={`menu-card ${isEditing ? 'editing' : ''}`}>
       <div className="menu-card-top">
         <div className="menu-card-title">
-          <div className="industry-icon">{getIndustryIcon(menu.workflowConfig?.industry)}</div>
           <div className="title-text">
             <h3>{menu.displayName || menu.ivrName || menu.name || 'Untitled IVR'}</h3>
             <span
@@ -532,14 +789,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
           >
             <Edit3 size={16} />
           </button>
-          <button
-            className="action-btn"
-            onClick={startEditingSettings}
-            title="Edit Settings"
-          >
-            <Edit size={16} />
-          </button>
-          <button
+                    <button
             className="action-btn delete-btn"
             onClick={() => onDelete(menu._id)}
             title="Delete Workflow"
@@ -610,9 +860,12 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
             onEdgeRemoved={handleEdgeRemoved}
             onEdgeReattached={handleEdgeReattached}
             onValidationChange={setValidationErrors}
+            onNodeEditStart={handleNodeEditStart}
+            onNodeEditEnd={handleNodeEditEnd}
             activeNodeId={activePath.nodeId}
             activeEdgeIds={activePath.edgeIds}
           />
+
           {testRunActive && (
             <div className="test-run-panel">
               <div className="test-run-header">Test Run</div>
@@ -626,168 +879,47 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
         </div>
       ) : (
         <div className="menu-card-body">
-          {isEditingSettings ? (
-            <div className="editable-settings">
-              <div className="edit-section">
-                <div className="edit-header">
-                  <strong>Audio Message</strong>
-                </div>
-                <textarea
-                  value={editingData.messageText || ''}
-                  onChange={(e) => setEditingData(prev => ({
-                    ...prev,
-                    messageText: e.target.value
-                  }))}
-                  placeholder="Enter audio message..."
-                  rows={2}
-                />
-                <input
-                  type="text"
-                  value={editingData.voice || ''}
-                  onChange={(e) => setEditingData(prev => ({
-                    ...prev,
-                    voice: e.target.value
-                  }))}
-                  placeholder="Voice type"
-                />
-              </div>
-
-              <div className="edit-section">
-                <div className="edit-header">
-                  <strong>Menu Options</strong>
-                </div>
-                {editingData.menuOptions?.map((option, index) => (
-                  <div key={index} className="option-edit-row">
-                    <input
-                      type="text"
-                      value={option.digit}
-                      onChange={(e) => {
-                        const newOptions = [...editingData.menuOptions];
-                        newOptions[index].digit = e.target.value;
-                        setEditingData(prev => ({ ...prev, menuOptions: newOptions }));
-                      }}
-                      placeholder="Digit"
-                      maxLength={1}
-                    />
-                    <input
-                      type="text"
-                      value={option.label}
-                      onChange={(e) => {
-                        const newOptions = [...editingData.menuOptions];
-                        newOptions[index].label = e.target.value;
-                        setEditingData(prev => ({ ...prev, menuOptions: newOptions }));
-                      }}
-                      placeholder="Label"
-                    />
-                    <input
-                      type="text"
-                      value={option.destination}
-                      onChange={(e) => {
-                        const newOptions = [...editingData.menuOptions];
-                        newOptions[index].destination = e.target.value;
-                        setEditingData(prev => ({ ...prev, menuOptions: newOptions }));
-                      }}
-                      placeholder="Destination"
-                    />
-                  </div>
-                ))}
-              </div>
-
-              <div className="edit-section">
-                <div className="edit-header">
-                  <strong>Settings</strong>
-                </div>
-                <div className="settings-edit-row">
-                  <input
-                    type="number"
-                    value={editingData.settings?.timeout || 10}
-                    onChange={(e) => setEditingData(prev => ({
-                      ...prev,
-                      settings: { ...prev.settings, timeout: parseInt(e.target.value) }
-                    }))}
-                    placeholder="Timeout"
-                  />
-                  <input
-                    type="number"
-                    value={editingData.settings?.maxAttempts || 3}
-                    onChange={(e) => setEditingData(prev => ({
-                      ...prev,
-                      settings: { ...prev.settings, maxAttempts: parseInt(e.target.value) }
-                    }))}
-                    placeholder="Max Attempts"
-                  />
-                </div>
-                <input
-                  type="text"
-                  value={editingData.settings?.invalidInputMessage || ''}
-                  onChange={(e) => setEditingData(prev => ({
-                    ...prev,
-                    settings: { ...prev.settings, invalidInputMessage: e.target.value }
-                  }))}
-                  placeholder="Invalid input message"
-                />
-              </div>
-
-              <div className="edit-actions">
-                <button
-                  className="btn btn-save"
-                  onClick={handleSettingsSave}
-                  disabled={!hasValidMenu}
-                >
-                  <Save size={16} />
-                  Save
-                </button>
-                <button className="btn btn-cancel" onClick={cancelEditing}>
-                  <X size={16} />
-                  Cancel
-                </button>
-              </div>
-            </div>
-          ) : (
             <>
-              <div className="audio-summary">
-                <strong>Audio Message</strong>
-                <div className="audio-text">
-                  {settings.audioMessage || 'No audio message set'}
+              <div className="workflow-summary">
+                <strong>Workflow Details</strong>
+                <div className="workflow-info">
+                  <span>Nodes: {flowMetrics.nodeCount}</span>
+                  <span>Edges: {flowMetrics.edgeCount}</span>
+                  <span>Contacts Used: {menu.contactsUsed || 0}</span>
+                  <span>Status: {currentStatus || 'draft'}</span>
                 </div>
               </div>
 
-              {menuOptions.length > 0 && (
-                <div className="menu-options-summary">
-                  <strong>Menu Options</strong>
-                  <div className="options-list">
-                    {menuOptions.slice(0, 3).map((option, index) => (
-                      <div key={option._id || index} className="option-item" data-digit={option.digit}>
-                        {option.label || option.action}
-                      </div>
-                    ))}
-                    {menuOptions.length > 3 && (
-                      <div className="option-item" data-digit="+">
-                        {menuOptions.length - 3} more options
-                      </div>
-                    )}
+              <div className={`flow-health-summary flow-${flowMetrics.health}`}>
+                <div className="flow-health-header">
+                  <strong>Flow Health</strong>
+                  <span className="flow-health-badge">
+                    {flowMetrics.health === 'good' ? <Workflow size={12} /> : <AlertTriangle size={12} />}
+                    {flowMetrics.health === 'good' ? 'Healthy' : flowMetrics.health === 'empty' ? 'No Flow' : 'Needs Attention'}
+                  </span>
+                </div>
+                <div className="flow-metrics-grid">
+                  <span><GitBranch size={12} /> Connectivity: {flowMetrics.connectivityPercent}%</span>
+                  <span>Audio Nodes: {flowMetrics.audioNodeCount}</span>
+                  <span>Input Nodes: {flowMetrics.inputNodeCount}</span>
+                  <span>Start/End: {flowMetrics.hasStartNode ? 'Yes' : 'No'}/{flowMetrics.hasEndNode ? 'Yes' : 'No'}</span>
+                </div>
+                {flowMetrics.issues.length > 0 && (
+                  <div className="flow-issues">
+                    {flowMetrics.issues.join(' • ')}
                   </div>
-                </div>
-              )}
-
-              <div className="settings-summary">
-                <strong>Call Settings</strong>
-                <div className="settings-grid">
-                  <span>Timeout: {settings.timeout}s</span>
-                  <span>Retries: {settings.maxAttempts}</span>
-                  <span>Voice: {settings.voice?.split('-')[0] || 'Default'}</span>
-                </div>
+                )}
               </div>
 
+              
               {menu.lastEditedBy && (
                 <div className="connection-status">
                   <span className="last-edited">
-                    Last edited: {new Date(menu.updatedAt).toLocaleDateString()}
+                    Last edited: {formatLastUpdated(menu.updatedAt)}
                   </span>
                 </div>
               )}
             </>
-          )}
         </div>
       )}
     </div>

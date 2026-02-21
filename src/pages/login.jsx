@@ -17,7 +17,6 @@ const Login = () => {
   const { login: loginUser } = useContext(AuthContext);
   const [showPassword, setShowPassword] = useState(false);
 
-  // ✅ ENV values
   const API_URL = import.meta.env.VITE_API_ADMIN_URL;
   const TOKEN_KEY = import.meta.env.VITE_TOKEN_KEY || "authToken";
 
@@ -46,7 +45,6 @@ const Login = () => {
       let token;
       let user;
 
-      // ✅ Try user/admin login first
       try {
         res = await axios.post(`${API_URL}/api/nexion/login`, {
           email,
@@ -55,9 +53,12 @@ const Login = () => {
         token = res.data.token;
         user = res.data.user;
       } catch (firstError) {
-        // ✅ If regular login fails, try superadmin login
-        console.log("Regular login failed, trying superadmin...");
+        const status = firstError?.response?.status;
+        if (status !== 401) {
+          throw firstError;
+        }
 
+        console.log("Regular login rejected, trying superadmin...");
         res = await axios.post(`${API_URL}/superadmin/login`, {
           email,
           password,
@@ -68,14 +69,12 @@ const Login = () => {
 
       if (!token) throw new Error("Login failed");
 
-      // ✅ Save token using ENV token key (optional)
       localStorage.setItem(TOKEN_KEY, token);
       localStorage.setItem("authToken", token);
 
       // ✅ Update state using context
       loginUser(user, token);
 
-      // ✅ Redirect based on role
       if (user.role === "superadmin") {
         navigate("/admin", { replace: true });
       } else {
@@ -94,7 +93,6 @@ const Login = () => {
   return (
     <div className="login-container">
       <form className="login-box" onSubmit={handleSubmit} autoComplete="off">
-        {/* Hidden fields */}
         <input
           type="text"
           name="fake-user"
@@ -118,7 +116,6 @@ const Login = () => {
 
         <h2>Login to Your Account</h2>
 
-        {/* Email */}
         <div className="input-group">
           <input
             type="email"
@@ -132,7 +129,6 @@ const Login = () => {
           {errors.email && <span className="error-text">{errors.email}</span>}
         </div>
 
-        {/* Password */}
         <div className="input-group password-group">
           <input
             type={showPassword ? "text" : "password"}
@@ -158,7 +154,6 @@ const Login = () => {
           )}
         </div>
 
-        {/* Remember + Forgot */}
         <div className="login-options">
           <label className="remember-me">
             <input

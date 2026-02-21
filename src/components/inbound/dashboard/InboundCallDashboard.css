@@ -397,3 +397,62 @@
     gap: var(--spacing-sm);
   }
 }
+/* Inbound dashboard fixes: scoped selectors + table/modal responsiveness */
+.inbound-call-dashboard .call-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.inbound-call-dashboard .status-indicator {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.inbound-call-dashboard .status-indicator.ringing {
+  background-color: var(--warning-color);
+  animation: pulse 1.5s infinite;
+}
+
+.inbound-call-dashboard .status-indicator.in-progress {
+  background-color: var(--success-color);
+}
+
+.queue-table-container,
+.history-table-container {
+  overflow-x: auto;
+}
+
+.queue-table,
+.history-table {
+  min-width: 640px;
+}
+
+.call-actions {
+  flex-wrap: wrap;
+}
+
+.modal {
+  width: min(92vw, 500px);
+}
+
+@media (max-width: 768px) {
+  .inbound-call-dashboard {
+    padding: var(--spacing-md);
+  }
+
+  .section-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-sm);
+  }
+
+  .modal {
+    width: 94vw;
+    max-height: 85vh;
+  }
+}

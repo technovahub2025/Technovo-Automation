@@ -21,11 +21,11 @@ const ProtectedRoute = ({ children, requiredRole, requireAuth = true }) => {
 
     if (requiredRole && isAuthenticated) {
         if (requiredRole === 'superadmin' && user?.role !== 'superadmin') {
-            return <Navigate to="/dashboard" replace />;
+            return <Navigate to="/" replace />;
         }
 
         if (requiredRole === 'admin' && !['admin', 'superadmin'].includes(user?.role)) {
-            return <Navigate to="/dashboard" replace />; // Redirect to dashboard instead of login if already logged in but unauthorized
+            return <Navigate to="/" replace />;
         }
     }
 

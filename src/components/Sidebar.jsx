@@ -115,7 +115,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         const token =
             localStorage.getItem(tokenKey) ||
             localStorage.getItem("authToken") ||
-            localStorage.getItem("token");
+            localStorage.getItem(tokenKey) || localStorage.getItem("authToken");
 
         if (token) {
             try {
@@ -607,4 +607,3 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
 };
 
 export default Sidebar;
-

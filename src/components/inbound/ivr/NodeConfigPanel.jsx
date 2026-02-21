@@ -68,38 +68,40 @@ const NodeConfigPanel = ({ node, onSave, onClose, onAutoSave, availableVoices })
     configRef.current = config;
   }, [config]);
 
-  // Debounced auto-save effect
-  useEffect(() => {
-    // Skip initial render and only sync if something changed
-    if (isInitialRender.current) {
-      isInitialRender.current = false;
-      return;
-    }
+  // Auto-save disabled - only save when user explicitly clicks Save Changes
+  // useEffect(() => {
+  //   // Skip initial render and only sync if something changed
+  //   if (isInitialRender.current) {
+  //     isInitialRender.current = false;
+  //     return;
+  //   }
 
-    const timer = setTimeout(() => {
-      if (onAutoSave && node?.id) {
-        // Only save if the config has actually changed from the last saved state
-        // (This is a simplified check, parent should also handle deduplication)
-        onAutoSave(node.id, configRef.current);
-      }
-    }, 1500); // 1.5s debounce for production stability
+  //   const timer = setTimeout(() => {
+  //     if (onAutoSave && node?.id) {
+  //       // Only save if the config has actually changed from the last saved state
+  //       // (This is a simplified check, parent should also handle deduplication)
+  //       onAutoSave(node.id, configRef.current);
+  //     }
+  //   }, 1500); // 1.5s debounce for production stability
 
-    return () => clearTimeout(timer);
-  }, [config, node?.id, onAutoSave]);
+  //   return () => clearTimeout(timer);
+  // }, [config, node?.id, onAutoSave]);
 
   const handleChange = (field, value) => {
-    // Only update local state instantly
+    // Only update local state instantly - no auto-save
     setConfig(prev => ({ ...prev, [field]: value }));
   };
 
-  // Save on blur - prevents excessive socket emissions
+  // Save on blur disabled - only save when user explicitly clicks Save Changes
   const handleBlur = (field) => {
-    if (onAutoSave && node?.id) {
-      onAutoSave(node.id, { [field]: config[field] });
-    }
+    // Disabled to prevent automatic backend hits when editing
+    // if (onAutoSave && node?.id) {
+    //   onAutoSave(node.id, { [field]: config[field] });
+    // }
   };
 
   const handleSave = () => {
+    // Save immediately using Socket.IO when Save button is clicked
     onSave(node.id, config);
     onClose();
   };

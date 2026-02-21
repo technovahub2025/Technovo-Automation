@@ -98,6 +98,15 @@
     gap: 12px;
 }
 
+.status-filter {
+    padding: 8px 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    background: white;
+    font-size: 14px;
+    color: #334155;
+}
+
 .btn-refresh,
 .btn-export {
     display: flex;
@@ -336,4 +345,12 @@
     .lead-details-panel {
         grid-template-columns: 1fr;
     }
+}
+
+.loading-state,
+.no-data,
+.error-state {
+    text-align: center;
+    padding: 16px;
+    color: #64748b;
 }

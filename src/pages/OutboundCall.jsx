@@ -59,13 +59,6 @@ const OutboundCall = () => {
       console.log('📞 Outbound call updated:', data);
       refreshCallHistory();
     });
-
-    // Listen for scheduled call updates
-    socket.on('scheduled_call_update', (data) => {
-      console.log('📅 Scheduled call updated:', data);
-      refreshScheduledCalls();
-    });
-
     // Listen for call status changes
     socket.on('call_status_update', (data) => {
       console.log('📊 Call status updated:', data);
@@ -85,12 +78,11 @@ const OutboundCall = () => {
     // Cleanup on unmount - only remove listeners, keep socket connected
     return () => {
       socket.off('outbound_call_update');
-      socket.off('scheduled_call_update');
       socket.off('call_status_update');
       socket.off('connect');
       socket.off('disconnect');
     };
-  }, [refreshCallHistory, refreshScheduledCalls, liveCallStatus]);
+  }, [refreshCallHistory, liveCallStatus]);
 
   // Load call settings from localStorage on mount
   useEffect(() => {
@@ -120,9 +112,11 @@ const OutboundCall = () => {
 
     try {
       const response = await apiService.makeOutboundCall(phoneNumber);
+      const payload = response.data?.data || response.data || {};
+      const callSid = payload.callSid || payload.call_sid;
       setResult(response.data);
       setLiveCallStatus({
-        callSid: response.data.call_sid,
+        callSid,
         status: 'initiated',
         phoneNumber: phoneNumber,
         startTime: new Date().toISOString()
@@ -571,7 +565,7 @@ const OutboundCall = () => {
           ))}
         </div>
 
-        <button className="refresh-btn" onClick={fetchCallHistory}>
+        <button className="refresh-btn" onClick={refreshCallHistory}>
           <RefreshCw size={16} />
           Refresh
         </button>
@@ -813,8 +807,8 @@ const OutboundCall = () => {
           <div className="status-content">
             <h3>Success</h3>
             <p>{result.message || 'Operation completed successfully'}</p>
-            {result.call_sid && (
-              <span className="sid-badge">SID: {result.call_sid}</span>
+            {(result.call_sid || result.data?.callSid || result.data?.call_sid) && (
+              <span className="sid-badge">SID: {result.call_sid || result.data?.callSid || result.data?.call_sid}</span>
             )}
           </div>
         </div>
@@ -836,3 +830,5 @@ const OutboundCall = () => {
 };
 
 export default OutboundCall;
+
+

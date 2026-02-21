@@ -19,7 +19,7 @@ export const useOutbound = () => {
             setError(null);
 
             const response = await apiService.getCallHistory(params);
-            setCallHistory(response.data.calls || []);
+            setCallHistory(response.data?.data || response.data?.calls || []);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to load call history');
             console.error('Refresh call history error:', err);
@@ -34,7 +34,7 @@ export const useOutbound = () => {
             setError(null);
 
             const response = await apiService.getScheduledCalls();
-            setScheduledCalls(response.data || []);
+            setScheduledCalls(response.data?.data || response.data || []);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to load scheduled calls');
             console.error('Refresh scheduled calls error:', err);
@@ -49,7 +49,7 @@ export const useOutbound = () => {
             setError(null);
 
             const response = await apiService.getCallTemplates();
-            setTemplates(response.data || []);
+            setTemplates(response.data?.data || response.data || []);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to load templates');
             console.error('Refresh templates error:', err);
@@ -65,7 +65,7 @@ export const useOutbound = () => {
             setError(null);
 
             const response = await apiService.getContacts();
-            setContacts(response.data || []);
+            setContacts(response.data?.data || response.data || []);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to load contacts');
             console.error('Refresh contacts error:', err);
@@ -85,10 +85,10 @@ export const useOutbound = () => {
                 apiService.getContacts()
             ]);
 
-            setCallHistory(historyRes.data.calls || []);
-            setScheduledCalls(scheduledRes.data || []);
-            setTemplates(templatesRes.data || []);
-            setContacts(contactsRes.data || []);
+            setCallHistory(historyRes.data?.data || historyRes.data?.calls || []);
+            setScheduledCalls(scheduledRes.data?.data || scheduledRes.data || []);
+            setTemplates(templatesRes.data?.data || templatesRes.data || []);
+            setContacts(contactsRes.data?.data || contactsRes.data || []);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to load outbound data');
             console.error('Refresh all error:', err);

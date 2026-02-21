@@ -1,14 +1,17 @@
-import React, { useState, useCallback, useEffect, Fragment } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Plus } from 'lucide-react';
 import useIVRMenus from '../../../hooks/useIVRMenus';
 import useSocket from '../../../hooks/useSocket';
+import apiService from '../../../services/api';
 import { VOICE_OPTIONS } from '../../../config/api.config';
 import IVRMenuCard from './IVRMenuCard';
 import './IVRMenuConfig.css';
 
+
+
 const IVRMenuConfig = () => {
   const {
-    ivrMenus, // ✅ CORRECT: Use ivrMenus from hook
+    ivrMenus,
     createMenu,
     updateMenu,
     deleteMenu,
@@ -16,17 +19,14 @@ const IVRMenuConfig = () => {
     error,
     socketConnected,
     setError,
-    // ❌ REMOVED refetch: fetchMenus - socket-only approach
   } = useIVRMenus();
 
-  // WebSocket connection for real-time IVR updates
   const { socket, connected } = useSocket();
 
-  const [editingMenu, setEditingMenu] = useState(null);
-  const [showCreateForm, setShowCreateForm] = useState(false);
   const [newIvrName, setNewIvrName] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+
   const [formData, setFormData] = useState({
+
     name: '',
     voiceId: VOICE_OPTIONS.BRITISH_ENGLISH[0].value,
     options: [
@@ -40,83 +40,77 @@ const IVRMenuConfig = () => {
     },
   });
 
-  // 
   useEffect(() => {
     if (socket && connected) {
-      console.log('');
+      const handleWorkflowCreated = (data) => {
+        console.log('Workflow created via socket:', data);
+      };
 
-      // Listen for workflow updates
-      socket.on('workflow_created', (data) => {
-        console.log(' Workflow created via socket:', data);
-        // 
-      });
+      const handleWorkflowUpdated = (data) => {
+        console.log('Workflow updated via socket:', data);
+      };
 
-      socket.on('workflow_updated', (data) => {
-        console.log(' Workflow updated via socket:', data);
-        // 
-      });
+      const handleWorkflowDeleted = (data) => {
+        console.log('Workflow deleted via socket:', data);
+      };
 
-      socket.on('workflow_deleted', (data) => {
-        console.log(' Workflow deleted via socket:', data);
-        // 
-      });
-
-      // Listen for IVR configuration updates (legacy)
-      socket.on('ivr_config_created', (data) => {
-        console.log(' IVR config created via socket:', data);
+      const handleIvrConfigCreated = (data) => {
+        console.log('IVR config created via socket:', data);
         setError(null);
-      });
+      };
 
-      socket.on('ivr_config_updated', (data) => {
-        console.log(' IVR config updated via socket:', data);
+      const handleIvrConfigUpdated = (data) => {
+        console.log('IVR config updated via socket:', data);
         setError(null);
-      });
+      };
 
-      // Listen for IVR menu deletions (legacy)
-      socket.on('ivr_config_deleted', (data) => {
-        console.log(' IVR config deleted via socket:', data);
+      const handleIvrConfigDeleted = (data) => {
+        console.log('IVR config deleted via socket:', data);
         setError(null);
-      });
+      };
 
-      // Listen for IVR test results
-      socket.on('ivr_test_result', (data) => {
-        console.log(' IVR test result via socket:', data);
+      const handleIvrTestResult = (data) => {
+        console.log('IVR test result via socket:', data);
         if (data.success) {
           setError(null);
         } else {
           setError(`Test failed: ${data.error || 'Unknown error'}`);
         }
-      });
+      };
 
-      // Listen for connection status changes
-      socket.on('connect', () => {
-        console.log(' IVR Socket connected');
-      });
+      const handleSocketConnect = () => {
+        console.log('IVR Socket connected');
+      };
 
-      socket.on('disconnect', () => {
-        console.log(' IVR Socket disconnected');
+      const handleSocketDisconnect = () => {
+        console.log('IVR Socket disconnected');
         setError('Connection lost. Some features may not work properly.');
-      });
+      };
+
+      socket.on('workflow_created', handleWorkflowCreated);
+      socket.on('workflow_updated', handleWorkflowUpdated);
+      socket.on('workflow_deleted', handleWorkflowDeleted);
+      socket.on('ivr_config_created', handleIvrConfigCreated);
+      socket.on('ivr_config_updated', handleIvrConfigUpdated);
+      socket.on('ivr_config_deleted', handleIvrConfigDeleted);
+      socket.on('ivr_test_result', handleIvrTestResult);
+      socket.on('connect', handleSocketConnect);
+      socket.on('disconnect', handleSocketDisconnect);
+
+      return () => {
+        socket.off('workflow_created', handleWorkflowCreated);
+        socket.off('workflow_updated', handleWorkflowUpdated);
+        socket.off('workflow_deleted', handleWorkflowDeleted);
+        socket.off('ivr_config_created', handleIvrConfigCreated);
+        socket.off('ivr_config_updated', handleIvrConfigUpdated);
+        socket.off('ivr_config_deleted', handleIvrConfigDeleted);
+        socket.off('ivr_test_result', handleIvrTestResult);
+        socket.off('connect', handleSocketConnect);
+        socket.off('disconnect', handleSocketDisconnect);
+      };
     }
+  }, [socket, connected, setError]);
 
-    return () => {
-      if (socket) {
-        socket.off('workflow_created');
-        socket.off('workflow_updated');
-        socket.off('workflow_deleted');
-        socket.off('ivr_config_created');
-        socket.off('ivr_config_updated');
-        socket.off('ivr_config_deleted');
-        socket.off('ivr_test_result');
-        socket.off('connect');
-        socket.off('disconnect');
-      }
-    };
-  }, [socket, connected, setError]); // 
-
-  /**
-   * Handle form input changes
-   */
   const handleChange = useCallback((field, value) => {
     setFormData(prev => ({
       ...prev,
@@ -124,9 +118,6 @@ const IVRMenuConfig = () => {
     }));
   }, []);
 
-  /**
-   * Handle menu option changes
-   */
   const handleOptionChange = useCallback((index, field, value) => {
     setFormData(prev => ({
       ...prev,
@@ -136,9 +127,6 @@ const IVRMenuConfig = () => {
     }));
   }, []);
 
-  /**
-   * Add new menu option
-   */
   const addOption = useCallback(() => {
     setFormData(prev => ({
       ...prev,
@@ -149,9 +137,6 @@ const IVRMenuConfig = () => {
     }));
   }, []);
 
-  /**
-   * Remove menu option
-   */
   const removeOption = useCallback((index) => {
     setFormData(prev => ({
       ...prev,
@@ -159,9 +144,6 @@ const IVRMenuConfig = () => {
     }));
   }, []);
 
-  /**
-   * Create IVR from inline name input
-   */
   const handleInlineCreate = useCallback(async () => {
     const trimmedName = newIvrName.trim();
     if (!trimmedName) {
@@ -207,7 +189,7 @@ const IVRMenuConfig = () => {
 
       const menuData = {
         name: trimmedName,
-        displayName: trimmedName, // Add displayName to show the correct name
+        displayName: trimmedName,
         promptKey: `ivr_${trimmedName.replace(/\s+/g, '_').toLowerCase()}_${now}`,
         voiceId: 'en-GB-SoniaNeural',
         language: 'en-GB',
@@ -219,7 +201,6 @@ const IVRMenuConfig = () => {
         },
         menuConfig: { type: 'workflow' },
         workflowConfig: {
-          industry: 'custom',
           nodes: starterNodes,
           edges: [],
           settings: {
@@ -248,9 +229,6 @@ const IVRMenuConfig = () => {
     }
   }, [newIvrName, createMenu, setError]);
 
-  /**
-   * Handle menu deletion
-   */
   const handleMenuDelete = useCallback(async (menuId) => {
     try {
       await deleteMenu(menuId);
@@ -261,17 +239,12 @@ const IVRMenuConfig = () => {
     }
   }, [deleteMenu, setError]);
 
-  /**
-   * Validate form data before submission
-   */
   const validateForm = useCallback(() => {
-    // Check menu name
     if (!formData.name.trim()) {
       setError('Menu name is required');
       return false;
     }
 
-    // Filter and validate options
     const validOptions = formData.options.filter(opt =>
       opt.digit && opt.digit.trim() &&
       opt.action && opt.action.trim() &&
@@ -283,7 +256,6 @@ const IVRMenuConfig = () => {
       return false;
     }
 
-    // Check for duplicate digits
     const digits = validOptions.map(opt => opt.digit);
     const duplicates = digits.filter((digit, index) => digits.indexOf(digit) !== index);
     if (duplicates.length > 0) {
@@ -294,9 +266,6 @@ const IVRMenuConfig = () => {
     return true;
   }, [formData]);
 
-  /**
-   * Reset form to initial state
-   */
   const resetForm = useCallback(() => {
     setFormData({
       name: '',
@@ -311,23 +280,16 @@ const IVRMenuConfig = () => {
         action: 'repeat',
       },
     });
-    setEditingMenu(null);
-    setShowCreateForm(false);
   }, []);
 
-  /**
-   * Handle workflow update
-   */
   const handleWorkflowUpdate = useCallback(async (menuId, workflowData) => {
     try {
-      // Sanitize workflow data before sending
       const sanitizedWorkflowData = {
         ...workflowData,
         nodes: workflowData.nodes?.map(node => ({
           ...node,
           data: {
             ...node.data,
-            // Ensure all required fields are present
             text: node.data.text || '',
             voice: node.data.voice || 'en-GB-SoniaNeural',
             language: node.data.language || 'en-GB'
@@ -338,7 +300,7 @@ const IVRMenuConfig = () => {
       await updateMenu(menuId, {
         workflowConfig: sanitizedWorkflowData,
         status: 'draft',
-        lastEditedBy: 'current_user' // TODO: Get actual user ID
+        lastEditedBy: 'current_user'
       });
       setError(null);
     } catch (error) {
@@ -347,23 +309,28 @@ const IVRMenuConfig = () => {
     }
   }, [updateMenu, setError]);
 
-  /**
-   * Handle workflow test
-   */
   const handleWorkflowTest = useCallback(async (menuId) => {
     try {
-      // TODO: Implement workflow testing logic
-      console.log('Testing workflow:', menuId);
-      setError(null);
+      const phoneNumber = prompt('Enter phone number to test the IVR workflow (or leave empty for simulation only):');
+      
+      console.log('Testing workflow:', menuId, 'Phone:', phoneNumber);
+      
+      const response = await apiService.testIVRMenu(menuId, phoneNumber || undefined);
+      
+      console.log('Test result:', response.data);
+      
+      if (response.data.success) {
+        setError(null);
+        alert(`Test ${phoneNumber ? 'call initiated' : 'simulation'} completed successfully!`);
+      } else {
+        setError(`Test failed: ${response.data.error || 'Unknown error'}`);
+      }
     } catch (error) {
       console.error('Error testing workflow:', error);
-      setError(`Failed to test workflow: ${error.message}`);
+      setError(`Failed to test workflow: ${error.response?.data?.error || error.message}`);
     }
-  }, []); // Added missing closing bracket here
+  }, []);
 
-  /**
-   * Handle delete menu with enhanced error handling
-   */
   const handleDelete = useCallback(async (menuId) => {
     if (!window.confirm('Are you sure you want to delete this IVR menu?')) {
       return;
@@ -381,7 +348,6 @@ const IVRMenuConfig = () => {
     } catch (err) {
       console.error('❌ Error deleting IVR menu:', err);
 
-      // Enhanced error handling
       let displayMsg = 'Failed to delete IVR menu';
 
       if (err.response) {
@@ -397,65 +363,61 @@ const IVRMenuConfig = () => {
   }, [deleteMenu]);
 
   return (
-    <>
-      <div className="ivr-menu-tab">
-        <div className="config-header">
-          <h2>IVR Configuration</h2>
-        </div>
-
-        <div className="ivr-inline-create">
-          <div className="inline-input">
-            <label htmlFor="ivr-name">IVR Name</label>
-            <input
-              id="ivr-name"
-              type="text"
-              value={newIvrName}
-              onChange={(e) => setNewIvrName(e.target.value)}
-              placeholder="Type IVR name..."
-              disabled={loading}
-            />
-          </div>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleInlineCreate}
-            disabled={loading || !newIvrName.trim()}
-          >
-            <Plus size={18} />
-            Create
-          </button>
-        </div>
-
-        {/* Error display removed */}
-
-        {showCreateForm && null}
-
-        <div className="menus-list-section">
-
-          {!Array.isArray(ivrMenus) || ivrMenus.length === 0 ? (
-            <div className="empty-state">
-              <div className="empty-state-content">
-                <h3>No IVR Configurations Yet</h3>
-                <p>Type an IVR name above to create your first workflow.</p>
-              </div>
-            </div>
-          ) : (
-            <div className="menus-grid">
-              {ivrMenus.map((menu, index) => (
-                <IVRMenuCard
-                  key={menu._id || menu.promptKey || menu.ivrName || menu.name || `menu-${index}`}
-                  menu={menu}
-                  onUpdate={handleWorkflowUpdate}
-                  onDelete={handleMenuDelete}
-                  onTest={handleWorkflowTest}
-                />
-              ))}
-            </div>
-          )}
-        </div>
+    <div className="ivr-menu-tab">
+      <div className="config-header">
+        <h2>IVR Configuration</h2>
       </div>
-    </>
+
+      <div className="ivr-inline-create">
+
+            <div className="inline-input">
+              <label htmlFor="ivr-name">IVR Name</label>
+              <input
+                id="ivr-name"
+                type="text"
+                value={newIvrName}
+                onChange={(e) => setNewIvrName(e.target.value)}
+                placeholder="Type IVR name..."
+                disabled={loading}
+              />
+            </div>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleInlineCreate}
+              disabled={loading || !newIvrName.trim()}
+            >
+              <Plus size={18} />
+              Create
+            </button>
+          </div>
+
+          <div className="menus-list-section">
+            {!Array.isArray(ivrMenus) || ivrMenus.length === 0 ? (
+              <div className="empty-state">
+                <div className="empty-state-content">
+                  <h3>No IVR Configurations Yet</h3>
+                  <p>Type an IVR name above to create your first workflow.</p>
+                </div>
+              </div>
+            ) : (
+              <div className="menus-grid">
+                {ivrMenus.map((menu, index) => (
+                  <IVRMenuCard
+                    key={menu._id || menu.promptKey || menu.ivrName || menu.name || `menu-${index}`}
+                    menu={menu}
+                    onUpdate={handleWorkflowUpdate}
+                    onDelete={handleMenuDelete}
+                    onTest={handleWorkflowTest}
+                  />
+                ))}
+              </div>
+            )}
+      </div>
+    </div>
   );
 };
+
+
 
 export default IVRMenuConfig;

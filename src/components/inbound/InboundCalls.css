@@ -53,12 +53,20 @@
   color: #10b981;
 }
 
+.connected-badge.disconnected {
+  color: #ef4444;
+}
+
 .pulse-dot {
   width: 10px;
   height: 10px;
   background-color: #10b981;
   border-radius: 50%;
   position: relative;
+}
+
+.connected-badge.disconnected .pulse-dot {
+  background-color: #ef4444;
 }
 
 .pulse-dot::after {
@@ -307,5 +315,139 @@
 @media (max-width: 1024px) {
   .overview-grid {
     grid-template-columns: 1fr;
+  }
+}/* Inbound page fixes: responsive layout + scoped UI elements */
+.inbound-calls,
+.inbound-calls * {
+  box-sizing: border-box;
+}
+
+.inbound-calls {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
+  min-height: calc(100vh - 72px);
+}
+
+.inbound-tabs-new {
+  flex-wrap: wrap;
+  row-gap: 12px;
+  column-gap: 20px;
+}
+
+.tab-link {
+  white-space: nowrap;
+}
+
+.inbound-calls .status-indicator {
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.call-item {
+  gap: 12px;
+}
+
+.call-info,
+.queue-info {
+  min-width: 0;
+}
+
+.phone-number,
+.call-status,
+.queue-info h4 {
+  overflow-wrap: anywhere;
+}
+
+.call-meta {
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.queue-list:empty::before,
+.call-list:empty::before {
+  content: 'No data available';
+  display: block;
+  padding: 12px 0;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.inbound-calls.loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+}
+
+.inbound-calls .loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid #f1f5f9;
+  border-top: 3px solid #3b82f6;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@media (max-width: 768px) {
+  .inbound-calls {
+    padding: 16px;
+  }
+
+  .inbound-header-new h1 {
+    font-size: 24px;
+  }
+
+  .stats-grid-inbound {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .stat-card {
+    padding: 16px;
+    align-items: flex-start;
+  }
+
+  .overview-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .queue-overview,
+  .recent-calls {
+    padding: 16px;
+  }
+
+  .call-item,
+  .queue-item {
+    padding: 12px;
+  }
+}
+
+@media (max-width: 560px) {
+  .inbound-calls {
+    padding: 12px;
+  }
+
+  .inbound-tabs-new {
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .tab-link {
+    font-size: 14px;
+    padding: 10px 0;
+  }
+
+  .call-item {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .call-meta {
+    width: 100%;
+    text-align: left;
   }
 }

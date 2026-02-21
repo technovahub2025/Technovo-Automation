@@ -40,7 +40,7 @@ const Sidebar = () => {
   const API_URL = import.meta.env.VITE_API_ADMIN_URL;
 
   // ✅ Take token key name from ENV
-  const TOKEN_KEY = import.meta.env.VITE_TOKEN_KEY || "token";
+  const TOKEN_KEY = import.meta.env.VITE_TOKEN_KEY || "authToken";
 
   const getInitials = (name) => {
     if (!name || name === "Guest") return "GU";
@@ -143,3 +143,4 @@ const Sidebar = () => {
 };
 
 export default Sidebar;
+

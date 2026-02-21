@@ -12,9 +12,7 @@
   font-family: 'Segoe UI', system-ui, sans-serif;
   padding: 2rem;
   height: 100vh;
-  /* Fixed height */
   overflow: hidden;
-  /* Prevent page scrolling */
   display: flex;
   gap: 2rem;
   color: var(--text);
@@ -26,12 +24,10 @@
   align-items: center;
   gap: 15px;
   margin-bottom: 0.8rem;
-  /* Compact row spacing */
 }
 
 .form-row label {
   min-width: 130px;
-  /* Reduced from 160px */
   font-weight: 600;
   color: var(--primary);
   text-align: left;
@@ -43,7 +39,6 @@
   margin-bottom: 0 !important;
 }
 
-/* Forms & Inputs */
 .login-box,
 .initial-screen,
 .user-list {
@@ -51,7 +46,6 @@
   border-radius: 16px;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
   padding: 1.2rem;
-  /* Streamlined for better fit */
 }
 
 .step-header {
@@ -91,13 +85,9 @@
   box-shadow: 0 0 0 3px rgba(118, 75, 162, 0.1);
 }
 
-/* Modal Styling - Rectangular approach */
 .modal-overlay {
   position: fixed;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
+  inset: 0;
   background: rgba(0, 0, 0, 0.4);
   display: flex;
   align-items: center;
@@ -111,13 +101,26 @@
   border-radius: 20px;
   width: 95%;
   max-width: 550px;
-  /* Narrower for better content fit */
   padding: 1.5rem;
   box-shadow: 0 30px 60px rgba(0, 0, 0, 0.3);
-  max-height: 90vh;
-  overflow-y: hidden;
-  /* Removed scroll bar */
+  max-height: min(90vh, 820px);
+  overflow-y: auto;
+  overflow-x: hidden;
   position: relative;
+}
+
+.modal-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.modal-content::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 4px;
+}
+
+.modal-content::-webkit-scrollbar-thumb {
+  background: var(--primary);
+  border-radius: 4px;
 }
 
 .modal-header {
@@ -125,7 +128,6 @@
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.2rem;
-  /* Reduced margin */
   padding-bottom: 8px;
   border-bottom: 2px solid var(--bg-gray);
 }
@@ -150,8 +152,9 @@
 
 .modal-actions {
   display: flex;
-  justify-content: center;
+  justify-content: flex-end;
   align-items: center;
+  flex-wrap: wrap;
   gap: 15px;
   margin-top: 1.5rem;
   width: 100%;
@@ -175,22 +178,29 @@
   width: 100% !important;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  /* Center the form contents */
+  align-items: stretch;
 }
 
-.form-row {
+.modal-content .form-row {
   width: 100%;
-  /* Ensure rows take full width for centering to work */
-  display: flex;
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
   align-items: center;
-  justify-content: center;
-  /* Center row content */
-  gap: 15px;
+  gap: 12px;
   margin-bottom: 0.8rem;
 }
 
-/* Password Field */
+.modal-content .form-row label {
+  min-width: 0;
+  margin: 0;
+}
+
+.modal-content .form-row input,
+.modal-content .form-row .password-field {
+  width: 100%;
+  margin-bottom: 0 !important;
+}
+
 .password-field {
   position: relative;
   display: flex;
@@ -202,19 +212,22 @@
   width: 100%;
   padding-right: 42px;
   margin-bottom: 0 !important;
-  /* Center icon relative to input box */
 }
 
-/* Add margin to the field container instead */
 .login-box .password-field,
 .form-row .password-field {
   margin-bottom: 1.2rem;
 }
 
+.modal-content .login-box .password-field,
+.modal-content .form-row .password-field {
+  margin-bottom: 0;
+}
+
 .eye-icon {
   position: absolute;
   right: 12px;
-  top: 60%;
+  top: 50%;
   transform: translateY(-50%);
   cursor: pointer;
   color: #555;
@@ -222,13 +235,10 @@
   align-items: center;
 }
 
-/* User Cards */
 .user-list {
   flex: 0 0 450px;
   max-height: calc(100vh - 100px);
-  /* Fit within viewport */
   overflow-y: auto;
-  /* Enable scrolling */
 }
 
 .user-card {
@@ -254,7 +264,6 @@
   font-size: 1.1rem;
 }
 
-/* Buttons */
 button {
   padding: 0.6rem 1.2rem;
   border: none;
@@ -286,7 +295,6 @@ button {
   color: white;
 }
 
-/* Read Only Header */
 .user-header-display {
   margin-bottom: 20px;
   padding: 12px 16px;
@@ -306,7 +314,6 @@ button {
   font-style: italic;
 }
 
-/* Scrollbar */
 .user-list::-webkit-scrollbar {
   width: 8px;
 }
@@ -325,11 +332,12 @@ button {
   background: var(--secondary);
 }
 
-/* Responsive */
 @media (max-width: 992px) {
   .admin-multistep-page {
     flex-direction: column;
     padding: 1rem;
+    height: auto;
+    overflow: auto;
   }
 
   .user-list {
@@ -339,6 +347,18 @@ button {
 }
 
 @media (max-width: 576px) {
+  .modal-content {
+    width: calc(100% - 20px);
+    max-height: 92vh;
+    padding: 1rem;
+  }
+
+  .modal-content .form-row {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+    gap: 8px;
+  }
+
   .user-card {
     flex-direction: column;
     align-items: flex-start;
@@ -352,7 +372,6 @@ button {
   }
 }
 
-/* ========== WELCOME SCREEN ENHANCEMENTS ========== */
 .admin-welcome-container {
   display: flex;
   flex-direction: column;

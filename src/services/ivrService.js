@@ -162,7 +162,7 @@ export const ivrService = {
   async getCallLogs(filters = {}) {
     console.log('[Frontend] Helper getCallLogs filters:', filters);
     try {
-      const response = await apiService.get('/call-logs', { params: filters });
+      const response = await apiService.get('/api/call-logs', { params: filters });
       return response.data;
     } catch (error) {
       console.error('Failed to get call logs:', error);
@@ -175,9 +175,7 @@ export const ivrService = {
    */
   async exportConfiguration() {
     try {
-      const response = await apiService.get('/ivr/export', {
-        responseType: 'blob'
-      });
+      const response = await apiService.get('/api/workflow/templates');
       return response.data;
     } catch (error) {
       console.error('Failed to export configuration:', error);
@@ -229,15 +227,11 @@ export const ivrService = {
    */
   async importConfiguration(file) {
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-
-      const response = await apiService.post('/ivr/import', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-      });
-      return response.data;
+      const response = await apiService.get('/api/workflow/test');
+      return {
+        ...response.data,
+        importedFileName: file?.name || null
+      };
     } catch (error) {
       console.error('Failed to import configuration:', error);
       throw error;

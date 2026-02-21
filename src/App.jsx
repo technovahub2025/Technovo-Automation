@@ -12,7 +12,8 @@ import Contacts from "./pages/Contacts";
 import VoiceAutomation from "./pages/VoiceAutomation";
 import InboundCalls from "./components/inbound/InboundCalls";
 import OutboundCall from "./pages/OutboundCall";
-import CallHistory from "./pages/CallHistory";
+import CallAnalytics from "./components/inbound/ivr/CallAnalytics";
+
 import VoiceBroadcast from "./pages/VoiceBroadcast/VoiceBroadcast";
 import MissedCallsCallsPage from "./pages/MissedCallsCallsPage";
 import MissedCallsAutomationPage from "./pages/MissedCallsAutomationPage";
@@ -37,7 +38,7 @@ function App() {
         <Route path="/reset-password/:token" element={<ResetPassword />} />
 
         {/* App layout with nested routes */}
-        <Route path="/" element={<MainLayout />}>
+        <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}> 
           <Route index element={<Dashboard />} />
           <Route path="inbox" element={<TeamInbox />} />
           <Route path="inbox/:conversationId" element={<TeamInbox />} />
@@ -52,7 +53,8 @@ function App() {
           <Route path="voice-automation" element={<VoiceAutomation />} />
           <Route path="voice-automation/inbound" element={<InboundCalls />} />
           <Route path="voice-automation/outbound" element={<OutboundCall />} />
-          <Route path="voice-automation/history" element={<CallHistory />} />
+          <Route path="voice-automation/history" element={<CallAnalytics />} />
+
           <Route path="voice-broadcast" element={<VoiceBroadcast />} />
           <Route path="missedcalls" element={<Navigate to="/missedcalls/overview" replace />} />
           <Route path="missedcalls/overview" element={<MissedCallsOverviewPage />} />
@@ -78,3 +80,4 @@ function App() {
 }
 
 export default App;
+

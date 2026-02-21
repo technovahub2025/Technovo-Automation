@@ -176,7 +176,7 @@ const VoiceAutomation = () => {
 
         <div className="voice-card">
           <BarChart3 size={28} />
-          <h4>Call Logs & Analytics</h4>
+          <h4>Call Analytics</h4>
           <p style={{ height: "40px" }}>View detailed call history, statistics, and exported data.</p>
           <button
             className="card-button"
