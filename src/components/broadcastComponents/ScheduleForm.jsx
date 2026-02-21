@@ -43,6 +43,7 @@ const ScheduleForm = ({
   onResetForm
 }) => {
   const scheduleInputRef = React.useRef(null);
+  const [isDragOver, setIsDragOver] = React.useState(false);
 
   const extractTemplateBody = (template) => {
     if (!template || typeof template !== 'object') return '';
@@ -126,6 +127,31 @@ const ScheduleForm = ({
   const triggerCsvPicker = () => {
     const input = document.getElementById('broadcast-csv-upload');
     if (input) input.click();
+  };
+
+  const handleCsvDragOver = (event) => {
+    event.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleCsvDragLeave = (event) => {
+    event.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleCsvDrop = (event) => {
+    event.preventDefault();
+    setIsDragOver(false);
+
+    const droppedFile = event.dataTransfer?.files?.[0];
+    if (!droppedFile) return;
+
+    if (!String(droppedFile.name || '').toLowerCase().endsWith('.csv')) {
+      alert('Please drop a valid CSV file');
+      return;
+    }
+
+    onFileUpload({ target: { files: [droppedFile] } });
   };
 
   const openSchedulePicker = () => {
@@ -324,13 +350,20 @@ const ScheduleForm = ({
                 type="file"
                 accept=".csv"
                 onChange={onFileUpload}
+                onClick={(e) => { e.target.value = ''; }}
                 id="broadcast-csv-upload"
                 className="csv-input"
               />
 
               {recipients.length === 0 ? (
                 <>
-                  <div className="voice-upload-dropzone" onClick={triggerCsvPicker}>
+                  <div
+                    className={`voice-upload-dropzone ${isDragOver ? 'drag-over' : ''}`}
+                    onClick={triggerCsvPicker}
+                    onDragOver={handleCsvDragOver}
+                    onDragLeave={handleCsvDragLeave}
+                    onDrop={handleCsvDrop}
+                  >
                     <Upload size={48} />
                     <h3>Upload CSV File</h3>
                     <p>Click to select or drag and drop</p>

@@ -219,6 +219,8 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         isRouteActive('/contacts') ||
         location.pathname.startsWith('/inbox');
 
+    const isMissedCallsRouteActive = location.pathname.startsWith('/missedcalls');
+
     return (
         <div className={`sidebar-container ${isCompactMobile ? 'compact-mobile' : ''}`}>
             {isCompactMobile && (
@@ -369,7 +371,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                             </div>
 
                     <div
-                        className={`icon-item ${isRouteActive('/missedcalls') ? 'active' : ''}`}
+                        className={`icon-item ${isMissedCallsRouteActive ? 'active' : ''}`}
                         onMouseEnter={() => {
                             if (!isMobile) {
                                 setOpenMenu(null);
@@ -377,7 +379,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                         }}
                         onClick={() => {
                             setOpenMenu(null); // Close any open panel
-                            navigate('/missedcalls');
+                            navigate('/missedcalls/overview');
                                 }}
                                 title="Missed Calls"
                             >
@@ -605,3 +607,4 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
 };
 
 export default Sidebar;
+

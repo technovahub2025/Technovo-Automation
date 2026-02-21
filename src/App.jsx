@@ -14,7 +14,9 @@ import InboundCalls from "./components/inbound/InboundCalls";
 import OutboundCall from "./pages/OutboundCall";
 import CallHistory from "./pages/CallHistory";
 import VoiceBroadcast from "./pages/VoiceBroadcast/VoiceBroadcast";
-import MissedCalls from "./pages/MissedCalls";
+import MissedCallsCallsPage from "./pages/MissedCallsCallsPage";
+import MissedCallsAutomationPage from "./pages/MissedCallsAutomationPage";
+import MissedCallsOverviewPage from "./pages/MissedCallsOverviewPage";
 import EmailAutomation from "./pages/EmailAutomation";
 import PDFExtractor from "./pages/PDFExtractor";
 import Login from "./pages/login";
@@ -52,7 +54,10 @@ function App() {
           <Route path="voice-automation/outbound" element={<OutboundCall />} />
           <Route path="voice-automation/history" element={<CallHistory />} />
           <Route path="voice-broadcast" element={<VoiceBroadcast />} />
-          <Route path="missedcalls" element={<MissedCalls />} />
+          <Route path="missedcalls" element={<Navigate to="/missedcalls/overview" replace />} />
+          <Route path="missedcalls/overview" element={<MissedCallsOverviewPage />} />
+          <Route path="missedcalls/calls" element={<MissedCallsCallsPage />} />
+          <Route path="missedcalls/automation" element={<MissedCallsAutomationPage />} />
           <Route path="email-automation" element={<EmailAutomation />} />
           <Route path="pdf-extractor" element={<PDFExtractor />} />
           <Route
@@ -64,7 +69,7 @@ function App() {
             }
           />
         </Route>
-        
+
         {/* Fallback route */}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>

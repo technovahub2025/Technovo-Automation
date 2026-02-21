@@ -45,7 +45,32 @@ missedcall.css
 }
 
 .missed-calls-section-card {
-  margin-bottom: 18px;
+  margin-bottom: 20px;
+  padding: 18px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.missed-calls-section-header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 14px;
+}
+
+.missed-calls-section-header h3 {
+  margin: 0;
+  color: #111827;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.missed-calls-section-header p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 13px;
 }
 
 /* Header */
@@ -128,12 +153,12 @@ missedcall.css
 }
 
 .automation-settings-card {
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 20px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  padding: 0;
+  margin-bottom: 0;
+  box-shadow: none;
 }
 
 .automation-settings-header {
@@ -297,7 +322,7 @@ missedcall.css
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 15px;
-  margin-bottom: 30px;
+  margin-bottom: 0;
 }
 
 .stat-card {
@@ -348,11 +373,11 @@ missedcall.css
 
 /* Controls */
 .controls-container {
-  background: white;
-  padding: 24px;
+  background: #f8fafc;
+  padding: 16px;
   border-radius: 12px;
-  margin-bottom: 30px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  margin-bottom: 14px;
+  box-shadow: none;
   border: 1px solid #e5e7eb;
 }
 
@@ -504,10 +529,10 @@ missedcall.css
 
 /* Calls List */
 .calls-container {
-  background: white;
+  background: #ffffff;
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  box-shadow: none;
   border: 1px solid #e5e7eb;
 }
 
@@ -740,12 +765,12 @@ missedcall.css
 
 /* Details View */
 .details-container {
-  background: white;
+  background: #ffffff;
   border-radius: 12px;
   overflow: hidden;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+  box-shadow: none;
   border: 1px solid #e5e7eb;
-  margin-top: 20px;
+  margin-top: 0;
 }
 
 .details-header {
@@ -1236,5 +1261,347 @@ missedcall.css
   .action-buttons .action-btn {
     width: 100%;
     justify-content: center;
+  }
+}
+
+/* Missed Calls Overview - Dashboard Style */
+.dashboard-shell {
+  --bg-1: #fff7ed;
+  --bg-2: #e0f2fe;
+  --ink-1: #0f172a;
+  --ink-2: #334155;
+  --stroke: #dbe3ef;
+  --card: #ffffff;
+  --sent: #22c55e;
+  --failed: #ef4444;
+  --processing: #3b82f6;
+  --pending: #f59e0b;
+
+  min-height: calc(100vh - 110px);
+  padding: 28px;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(251, 191, 36, 0.22), transparent 28%),
+    radial-gradient(circle at 95% 12%, rgba(14, 165, 233, 0.2), transparent 24%),
+    linear-gradient(130deg, var(--bg-1), var(--bg-2));
+  color: var(--ink-1);
+  font-family: 'Sora', 'Manrope', 'Segoe UI', sans-serif;
+}
+
+.dash-hero {
+  display: flex;
+  justify-content: space-between;
+  gap: 20px;
+  align-items: flex-start;
+  margin-bottom: 18px;
+}
+
+.dash-eyebrow {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: #9a3412;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.dash-hero h1 {
+  margin: 8px 0 6px;
+  font-size: clamp(24px, 3.2vw, 36px);
+  line-height: 1.2;
+}
+
+.dash-subtitle {
+  margin: 0;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+.dash-refresh {
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.75);
+  padding: 10px 14px;
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.dash-refresh:hover {
+  background: #fff;
+}
+
+.dash-error,
+.dash-loading {
+  background: #fee2e2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+  border-radius: 12px;
+  padding: 12px 14px;
+  margin: 12px 0;
+}
+
+.dash-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(150px, 1fr));
+  gap: 12px;
+  margin: 16px 0 20px;
+}
+
+.dash-kpi-card {
+  background: var(--card);
+  border: 1px solid var(--stroke);
+  border-radius: 14px;
+  padding: 14px;
+  box-shadow: 0 8px 30px rgba(15, 23, 42, 0.05);
+}
+
+.dash-kpi-card span {
+  display: block;
+  color: #64748b;
+  margin: 10px 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.dash-kpi-card strong {
+  font-size: 28px;
+  font-weight: 800;
+}
+
+.kpi-icon {
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  background: #e0f2fe;
+  color: #0c4a6e;
+}
+
+.kpi-icon.success {
+  background: #dcfce7;
+  color: #14532d;
+}
+
+.kpi-icon.danger {
+  background: #fee2e2;
+  color: #7f1d1d;
+}
+
+.kpi-icon.warning {
+  background: #fef3c7;
+  color: #78350f;
+}
+
+.dash-main-grid {
+  display: grid;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.dash-bottom-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 14px;
+}
+
+.dash-panel {
+  background: var(--card);
+  border: 1px solid var(--stroke);
+  border-radius: 16px;
+  padding: 16px;
+  box-shadow: 0 12px 34px rgba(15, 23, 42, 0.06);
+}
+
+.dash-panel.accent {
+  background: linear-gradient(160deg, #0f172a, #1e293b);
+  color: #f8fafc;
+  border-color: transparent;
+}
+
+.dash-panel-head h3 {
+  margin: 0;
+  font-size: 17px;
+}
+
+.dash-panel-head p {
+  margin: 5px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.dash-panel.accent .dash-panel-head p {
+  color: #94a3b8;
+}
+
+.pie-wrap {
+  margin-top: 16px;
+  display: flex;
+  gap: 20px;
+  align-items: center;
+}
+
+.pie-ring {
+  width: 180px;
+  height: 180px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+}
+
+.pie-center {
+  width: 112px;
+  height: 112px;
+  border-radius: 50%;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.pie-center strong {
+  font-size: 28px;
+  line-height: 1;
+}
+
+.pie-center span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.pie-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  font-size: 14px;
+}
+
+.pie-legend div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.dot.sent { background: var(--sent); }
+.dot.failed { background: var(--failed); }
+.dot.processing { background: var(--processing); }
+.dot.pending { background: var(--pending); }
+
+.recent-list,
+.template-list,
+.health-stack {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recent-item,
+.template-item,
+.health-line {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--stroke);
+  border-radius: 12px;
+}
+
+.dash-panel.accent .health-line {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: rgba(148, 163, 184, 0.07);
+}
+
+.recent-item p {
+  margin: 3px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.recent-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 5px;
+}
+
+.badge {
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.badge.sent { background: #dcfce7; color: #14532d; }
+.badge.failed { background: #fee2e2; color: #7f1d1d; }
+.badge.pending { background: #fef3c7; color: #78350f; }
+.badge.processing { background: #dbeafe; color: #1e3a8a; }
+
+.template-item strong,
+.health-line strong {
+  font-size: 18px;
+}
+
+.health-line {
+  color: #e2e8f0;
+  border-color: #334155;
+}
+
+.health-line span {
+  flex: 1;
+}
+
+.health-line.muted {
+  color: #94a3b8;
+}
+
+.dash-empty {
+  color: #64748b;
+  margin: 6px 0;
+}
+
+@media (max-width: 1200px) {
+  .dash-kpi-grid {
+    grid-template-columns: repeat(3, minmax(150px, 1fr));
+  }
+
+  .dash-main-grid,
+  .dash-bottom-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .dashboard-shell {
+    padding: 16px;
+  }
+
+  .dash-hero {
+    flex-direction: column;
+  }
+
+  .dash-kpi-grid {
+    grid-template-columns: repeat(2, minmax(120px, 1fr));
+  }
+
+  .pie-wrap {
+    flex-direction: column;
   }
 }

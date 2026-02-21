@@ -1,5 +1,6 @@
 
 import React, { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import "./missedcall.css";
 import {
   PhoneMissed, 
@@ -17,11 +18,22 @@ import {
   FileText,
   MessageCircle,
   ArrowLeft,
-  PhoneOutgoing
+  PhoneOutgoing,
+  Activity,
+  AlertTriangle,
+  CalendarDays,
+  Send,
+  Sparkles,
+  TrendingUp
 } from "lucide-react";
 import { apiClient } from "../services/whatsappapi";
 
-const MissedCalls = () => {
+const MissedCalls = ({ page = "all" }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const isCallsOnlyPage = page === "calls";
+  const isAutomationOnlyPage = page === "automation";
+  const isOverviewOnlyPage = page === "overview";
   const variableSourceOptions = [
     { value: "callerName", label: "Caller Name" },
     { value: "callerPhone", label: "Caller Phone" },
@@ -35,11 +47,16 @@ const MissedCalls = () => {
   const [filteredCalls, setFilteredCalls] = useState([]);
   const [activeFilter, setActiveFilter] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [lastOverviewUpdated, setLastOverviewUpdated] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [selectedCall, setSelectedCall] = useState(null);
   const [viewMode, setViewMode] = useState("list");
-  const [activeSection, setActiveSection] = useState("calls");
+  const [activeSection, setActiveSection] = useState(() => {
+    if (isAutomationOnlyPage) return "automation";
+    if (isOverviewOnlyPage) return "overview";
+    return "calls";
+  });
   const [dateRange, setDateRange] = useState({
     startDate: "",
     endDate: ""
@@ -214,6 +231,7 @@ const MissedCalls = () => {
 
       setAllCalls(mapped);
       setFilteredCalls(mapped);
+      setLastOverviewUpdated(new Date());
     } catch (error) {
       setAllCalls([]);
       setFilteredCalls([]);
@@ -293,6 +311,42 @@ const MissedCalls = () => {
     fetchCalls();
     loadAutomationSettings();
   }, []);
+
+  useEffect(() => {
+    if (isCallsOnlyPage) {
+      setViewMode((prev) => (prev === "details" ? prev : "list"));
+      setActiveSection((prev) => (prev === "details" ? prev : "calls"));
+      return;
+    }
+
+    if (isOverviewOnlyPage) {
+      setViewMode("list");
+      setActiveSection("overview");
+      return;
+    }
+
+    if (isAutomationOnlyPage) {
+      setViewMode("list");
+      setActiveSection("automation");
+      return;
+    }
+
+    const pathname = String(location.pathname || "").toLowerCase();
+    if (pathname.startsWith("/missedcalls/automation")) {
+      setViewMode("list");
+      setActiveSection("automation");
+      return;
+    }
+    if (pathname.startsWith("/missedcalls/overview")) {
+      setViewMode("list");
+      setActiveSection("overview");
+      return;
+    }
+    if (pathname.startsWith("/missedcalls/calls") || pathname === "/missedcalls") {
+      setViewMode((prev) => (prev === "details" ? prev : "list"));
+      setActiveSection((prev) => (prev === "details" ? prev : "calls"));
+    }
+  }, [location.pathname, isCallsOnlyPage, isAutomationOnlyPage, isOverviewOnlyPage]);
 
   const handleSettingsChange = (key, value) => {
     setAutomationSettings((prev) => ({
@@ -607,8 +661,71 @@ const MissedCalls = () => {
     failedAutomation: allCalls.filter(call => call.automationStatus === "failed").length
   };
 
+  const safePercent = (value, total) => {
+    if (!total) return 0;
+    return Math.round((value / total) * 100);
+  };
+
+  const resolvedRate = safePercent(stats.resolved, stats.total);
+  const missedRate = safePercent(stats.missed, stats.total);
+  const inboundRate = safePercent(stats.inbound, stats.total);
+  const outboundRate = safePercent(stats.outbound, stats.total);
+  const automationSentRate = safePercent(stats.sent, stats.missed);
+  const automationFailedRate = safePercent(stats.failedAutomation, stats.missed);
+  const pendingRate = safePercent(stats.pending + stats.processing, stats.missed);
+  const pieTotal = Math.max(1, stats.sent + stats.failedAutomation + stats.pending + stats.processing);
+  const sentPct = Math.round((stats.sent / pieTotal) * 100);
+  const failedPct = Math.round((stats.failedAutomation / pieTotal) * 100);
+  const processingPct = Math.round((stats.processing / pieTotal) * 100);
+  const pendingPct = Math.max(0, 100 - sentPct - failedPct - processingPct);
+
+  const pieStyle = {
+    background: `conic-gradient(
+      #22c55e 0 ${sentPct}%,
+      #ef4444 ${sentPct}% ${sentPct + failedPct}%,
+      #3b82f6 ${sentPct + failedPct}% ${sentPct + failedPct + processingPct}%,
+      #f59e0b ${sentPct + failedPct + processingPct}% 100%
+    )`
+  };
+
+  const topTemplates = Object.entries(
+    allCalls.reduce((acc, call) => {
+      const key = String(call.automationTemplate || "").trim();
+      if (!key || key === "-") return acc;
+      if (!acc[key]) acc[key] = 0;
+      acc[key] += 1;
+      return acc;
+    }, {})
+  )
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  const recentAutomationRuns = [...allCalls]
+    .filter((call) => call.automationStatus)
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    .slice(0, 6);
+
+  const isSplitPageMode = isCallsOnlyPage || isAutomationOnlyPage;
+  const showSectionTabs = true;
+  const showAutomationSection = isAutomationOnlyPage || activeSection === "automation";
+  const showOverviewSection = (isOverviewOnlyPage || (!isAutomationOnlyPage && activeSection === "overview"));
+  const showCallsSection = !isOverviewOnlyPage && (isCallsOnlyPage || activeSection === "calls") && viewMode !== "details";
+  const showDetailsSection =
+    !isAutomationOnlyPage &&
+    !isOverviewOnlyPage &&
+    (activeSection === "details" || viewMode === "details") &&
+    selectedCall;
+
   const handleSectionChange = (section) => {
     if (section === "details" && !selectedCall) return;
+    if (section === "automation") {
+      navigate("/missedcalls/automation");
+    } else if (section === "overview") {
+      navigate("/missedcalls/overview");
+    } else if (section === "calls") {
+      navigate("/missedcalls/calls");
+    }
     setActiveSection(section);
     if (section === "details") {
       setViewMode("details");
@@ -631,41 +748,52 @@ const MissedCalls = () => {
        
       </div>
 
-      <div className="missed-calls-sections-nav">
-        <button
-          className={`missed-calls-section-tab ${activeSection === "automation" ? "active" : ""}`}
-          onClick={() => handleSectionChange("automation")}
-          type="button"
-        >
-          Automation Settings
-        </button>
-        <button
-          className={`missed-calls-section-tab ${activeSection === "overview" ? "active" : ""}`}
-          onClick={() => handleSectionChange("overview")}
-          type="button"
-        >
-          Overview
-        </button>
-        <button
-          className={`missed-calls-section-tab ${activeSection === "calls" ? "active" : ""}`}
-          onClick={() => handleSectionChange("calls")}
-          type="button"
-        >
-          Calls
-        </button>
-        <button
-          className={`missed-calls-section-tab ${activeSection === "details" ? "active" : ""}`}
-          onClick={() => handleSectionChange("details")}
-          type="button"
-          disabled={!selectedCall}
-          title={selectedCall ? "Open selected call details" : "Select a call to view details"}
-        >
-          Details
-        </button>
-      </div>
+      {showSectionTabs && (
+        <div className="missed-calls-sections-nav">
+          <button
+            className={`missed-calls-section-tab ${activeSection === "calls" ? "active" : ""}`}
+            onClick={() => handleSectionChange("calls")}
+            type="button"
+          >
+            Calls
+          </button>
+          <button
+            className={`missed-calls-section-tab ${activeSection === "overview" ? "active" : ""}`}
+            onClick={() => handleSectionChange("overview")}
+            type="button"
+          >
+            Overview
+          </button>
+          <button
+            className={`missed-calls-section-tab ${activeSection === "automation" ? "active" : ""}`}
+            onClick={() => handleSectionChange("automation")}
+            type="button"
+          >
+            Automation Settings
+          </button>
+          {!isSplitPageMode && (
+            <>
+              <button
+                className={`missed-calls-section-tab ${activeSection === "details" ? "active" : ""}`}
+                onClick={() => handleSectionChange("details")}
+                type="button"
+                disabled={!selectedCall}
+                title={selectedCall ? "Open selected call details" : "Select a call to view details"}
+              >
+                Details
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
-      {activeSection === "automation" && (
-      <div className="automation-settings-card missed-calls-section-card">
+      {showAutomationSection && (
+      <section className="missed-calls-section-card">
+        <div className="missed-calls-section-header">
+          <h3>Automation Settings</h3>
+          <p>Configure how missed calls should be auto-processed and replied.</p>
+        </div>
+      <div className="automation-settings-card">
         <div className="automation-settings-header">
           <h3>Missed Call Automation Settings</h3>
           {settingsLoading ? <span className="settings-muted">Loading...</span> : null}
@@ -834,66 +962,179 @@ const MissedCalls = () => {
           {settingsError ? <span className="settings-error">{settingsError}</span> : null}
         </div>
       </div>
+      </section>
       )}
 
       {/* Stats */}
-      {activeSection === "overview" && (
-      <div className="stats-container missed-calls-section-card">
-        <div className="stat-card">
-          <div className="stat-icon total">
-            <Phone size={20} />
+      {showOverviewSection && (
+      <section className="missed-calls-section-card dashboard-shell">
+        <section className="dash-hero">
+          <div>
+            <p className="dash-eyebrow"><Sparkles size={14} /> Automation Command Center</p>
+            <h1>Missed Calls and Template Automation Overview</h1>
+            <p className="dash-subtitle">Live performance snapshot across missed calls, queue states, and template delivery.</p>
           </div>
-          <div className="stat-info">
-            <h3>{stats.total}</h3>
-            <p>Total Calls</p>
-          </div>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon inbound">
-            <PhoneMissed size={20} />
-          </div>
-          <div className="stat-info">
-            <h3>{stats.inbound}</h3>
-            <p>Inbound</p>
-          </div>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon outbound">
-            <PhoneOutgoing size={20} />
-          </div>
-          <div className="stat-info">
-            <h3>{stats.outbound}</h3>
-            <p>Outbound</p>
-          </div>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon missed">
-            <Clock size={20} />
-          </div>
-          <div className="stat-info">
-            <h3>{stats.missed}</h3>
-            <p>Missed</p>
-          </div>
-        </div>
-        
-        <div className="stat-card">
-          <div className="stat-icon resolved">
-            <CheckCircle size={20} />
-          </div>
-          <div className="stat-info">
-            <h3>{stats.resolved}</h3>
-            <p>Resolved</p>
-          </div>
-        </div>
-      </div>
-      )}
+          <button className="dash-refresh" onClick={fetchCalls}>
+            <RefreshCcw size={16} /> Refresh
+          </button>
+        </section>
 
+        <section className="dash-kpi-grid">
+          <article className="dash-kpi-card">
+            <div className="kpi-icon"><PhoneMissed size={18} /></div>
+            <span>Total Calls</span>
+            <strong>{stats.total}</strong>
+          </article>
+          <article className="dash-kpi-card">
+            <div className="kpi-icon danger"><AlertTriangle size={18} /></div>
+            <span>Open Missed</span>
+            <strong>{stats.missed}</strong>
+          </article>
+          <article className="dash-kpi-card">
+            <div className="kpi-icon success"><CheckCircle size={18} /></div>
+            <span>Resolved</span>
+            <strong>{stats.resolved}</strong>
+          </article>
+          <article className="dash-kpi-card">
+            <div className="kpi-icon"><Send size={18} /></div>
+            <span>Template Sends</span>
+            <strong>{stats.sent}</strong>
+          </article>
+          <article className="dash-kpi-card">
+            <div className="kpi-icon warning"><Clock size={18} /></div>
+            <span>Pending Queue</span>
+            <strong>{stats.pending + stats.processing}</strong>
+          </article>
+          <article className="dash-kpi-card">
+            <div className="kpi-icon"><CalendarDays size={18} /></div>
+            <span>Today Calls</span>
+            <strong>{stats.today}</strong>
+          </article>
+        </section>
+
+        <section className="dash-main-grid">
+          <article className="dash-panel">
+            <div className="dash-panel-head">
+              <h3>Automation Status Split</h3>
+              <p>Missed call template lifecycle</p>
+            </div>
+            <div className="pie-wrap">
+              <div className="pie-ring" style={pieStyle}>
+                <div className="pie-center">
+                  <strong>{stats.sent}</strong>
+                  <span>Sent</span>
+                </div>
+              </div>
+              <div className="pie-legend">
+                <div><i className="dot sent" /> Sent {stats.sent}</div>
+                <div><i className="dot failed" /> Failed {stats.failedAutomation}</div>
+                <div><i className="dot processing" /> Processing {stats.processing}</div>
+                <div><i className="dot pending" /> Pending {stats.pending}</div>
+              </div>
+            </div>
+          </article>
+
+          <article className="dash-panel">
+            <div className="dash-panel-head">
+              <h3>Call Distribution</h3>
+              <p>Inbound and outbound activity</p>
+            </div>
+            <div className="overview-progress-list">
+              <div className="overview-progress-row">
+                <span>Inbound</span>
+                <div className="overview-progress-bar"><div style={{ width: `${inboundRate}%` }} /></div>
+                <strong>{inboundRate}%</strong>
+              </div>
+              <div className="overview-progress-row">
+                <span>Outbound</span>
+                <div className="overview-progress-bar"><div style={{ width: `${outboundRate}%` }} /></div>
+                <strong>{outboundRate}%</strong>
+              </div>
+              <div className="overview-progress-row">
+                <span>Missed</span>
+                <div className="overview-progress-bar"><div style={{ width: `${missedRate}%` }} /></div>
+                <strong>{missedRate}%</strong>
+              </div>
+              <div className="overview-progress-row">
+                <span>Resolved</span>
+                <div className="overview-progress-bar"><div style={{ width: `${resolvedRate}%` }} /></div>
+                <strong>{resolvedRate}%</strong>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section className="dash-bottom-grid">
+          <article className="dash-panel">
+            <div className="dash-panel-head">
+              <h3>Recent Automation Activity</h3>
+              <p>Latest call queue activity</p>
+            </div>
+            <div className="recent-list">
+              {recentAutomationRuns.length ? recentAutomationRuns.map((row) => (
+                <div key={`recent-${row.id}`} className="recent-item">
+                  <div>
+                    <strong>{row.name}</strong>
+                    <p>{row.phone}</p>
+                  </div>
+                  <div className="recent-meta">
+                    <span className={`badge ${row.automationStatus || "pending"}`}>
+                      {row.automationStatus || "pending"}
+                    </span>
+                  </div>
+                </div>
+              )) : <p className="dash-empty">No automation activity yet</p>}
+            </div>
+          </article>
+
+          <article className="dash-panel">
+            <div className="dash-panel-head">
+              <h3>Top Templates</h3>
+              <p>Most used automation templates</p>
+            </div>
+            <div className="template-list">
+              {topTemplates.length ? topTemplates.map((template) => (
+                <div key={template.name} className="template-item">
+                  <span>{template.name}</span>
+                  <strong>{template.count}</strong>
+                </div>
+              )) : <p className="dash-empty">No templates used yet</p>}
+            </div>
+          </article>
+
+          {/* <article className="dash-panel accent">
+            <div className="dash-panel-head">
+              <h3>Live Health</h3>
+              <p>Operational confidence index</p>
+            </div>
+            <div className="health-stack">
+              <div className="health-line">
+                <Activity size={16} />
+                <span>Delivery Strength</span>
+                <strong>{Math.max(0, 100 - failedPct)}%</strong>
+              </div>
+              <div className="health-line">
+                <TrendingUp size={16} />
+                <span>Automation Efficiency</span>
+                <strong>{sentPct}%</strong>
+              </div>
+              <div className="health-line muted">
+                <Clock size={16} />
+                <span>Last Updated</span>
+                <strong>{formatDateTime(lastOverviewUpdated)}</strong>
+              </div>
+            </div>
+          </article> */}
+        </section>
+      </section>
+      )}
       {/* Main Content (List/Grid View) */}
-      {activeSection === "calls" && viewMode !== "details" && (
-        <>
+      {showCallsSection && (
+        <section className="missed-calls-section-card">
+          <div className="missed-calls-section-header">
+            <h3>Calls</h3>
+            <p>Search, filter and review inbound/outbound missed call records.</p>
+          </div>
           {/* Controls */}
           <div className="controls-container">
             <div className="search-box">
@@ -1158,11 +1399,16 @@ const MissedCalls = () => {
               </div>
             )}
           </div>
-        </>
+        </section>
       )}
 
       {/* Call Details View */}
-      {(activeSection === "details" || viewMode === "details") && selectedCall && (
+      {showDetailsSection && selectedCall && (
+        <section className="missed-calls-section-card">
+        <div className="missed-calls-section-header">
+          <h3>Call Details</h3>
+          <p>Inspect complete call context, automation, and follow-up actions.</p>
+        </div>
         <div className="details-container">
           <div className="details-header">
             <button className="back-btn" onClick={() => { setViewMode("list"); setActiveSection("calls"); }}>
@@ -1324,9 +1570,15 @@ const MissedCalls = () => {
             </div>
           </div>
         </div>
+        </section>
       )}
     </div>
   );
 };
 
 export default MissedCalls;
+
+
+
+
+
