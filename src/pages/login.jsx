@@ -93,19 +93,6 @@ const Login = () => {
   return (
     <div className="login-container">
       <form className="login-box" onSubmit={handleSubmit} autoComplete="off">
-        <input
-          type="text"
-          name="fake-user"
-          autoComplete="username"
-          style={{ display: "none" }}
-        />
-        <input
-          type="password"
-          name="fake-pass"
-          autoComplete="current-password"
-          style={{ display: "none" }}
-        />
-
         <div className="profile-image-container">
           <img
             src={defaultProfileImage}
@@ -119,6 +106,8 @@ const Login = () => {
         <div className="input-group">
           <input
             type="email"
+            name="email"
+            autoComplete="username"
             placeholder="Email Address"
             value={email}
             readOnly
@@ -132,6 +121,8 @@ const Login = () => {
         <div className="input-group password-group">
           <input
             type={showPassword ? "text" : "password"}
+            name="password"
+            autoComplete="current-password"
             placeholder="Password"
             value={password}
             readOnly

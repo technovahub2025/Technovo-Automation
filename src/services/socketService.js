@@ -4,6 +4,7 @@ class SocketService {
   constructor() {
     this.socket = null;
     this.isDev = import.meta.env.DEV;
+    this.useCredentials = String(import.meta.env.VITE_SOCKET_WITH_CREDENTIALS || import.meta.env.VITE_API_WITH_CREDENTIALS || 'false').toLowerCase() === 'true';
   }
 
   resolveUrl(url) {
@@ -27,6 +28,7 @@ class SocketService {
     this.socket = io(resolvedUrl, {
       auth: token ? { token } : undefined,
       transports: ['websocket', 'polling'],
+      withCredentials: this.useCredentials,
       reconnection: true,
       reconnectionAttempts: 10,
       reconnectionDelay: 1000,

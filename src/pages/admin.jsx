@@ -17,13 +17,16 @@ const AdminMultiStep = () => {
   const [resettingPassword, setResettingPassword] = useState(false);
 
   // ------------------- TWILIO / WHATSAPP -------------------
-  const [twilioId, setTwilioId] = useState("");
+  const [twilioAccountSid, setTwilioAccountSid] = useState("");
+  const [twilioAuthToken, setTwilioAuthToken] = useState("");
+  const [twilioPhoneNumber, setTwilioPhoneNumber] = useState("");
   const [whatsappId, setWhatsappId] = useState("");
   const [whatsappToken, setWhatsappToken] = useState("");
   const [whatsappBusiness, setWhatsappBusiness] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [missedCallWebhook, setMissedCallWebhook] = useState("");
   const [showToken, setShowToken] = useState(false);
+  const [showTwilioToken, setShowTwilioToken] = useState(false);
 
   // ------------------- USERS LIST -------------------
   const [users, setUsers] = useState([]);
@@ -65,7 +68,7 @@ const AdminMultiStep = () => {
     }
 
     // For Twilio editing inside modal, make sure all fields are filled
-    if (editingUserId && (!twilioId || !whatsappId || !whatsappToken || !whatsappBusiness || !phoneNumber || !missedCallWebhook)) {
+    if (editingUserId && (!twilioAccountSid || !twilioPhoneNumber || !whatsappId || !whatsappToken || !whatsappBusiness || !phoneNumber || !missedCallWebhook)) {
       setErrors({ register: "All Twilio & WhatsApp fields are required" });
       return;
     }
@@ -85,7 +88,9 @@ const AdminMultiStep = () => {
         // 2) Update Twilio/WhatsApp credentials via dedicated backend API
         await apiService.post(`${backendUrl}/api/nexionadmin/admindata`, {
           adminId: editingUserId,
-          twilioId: String(twilioId || "").trim(),
+          twilioAccountSid: String(twilioAccountSid || "").trim(),
+          ...(twilioAuthToken ? { twilioAuthToken: String(twilioAuthToken).trim() } : {}),
+          twilioPhoneNumber: String(twilioPhoneNumber || "").trim(),
           whatsappId: String(whatsappId || "").trim(),
           whatsappToken: String(whatsappToken || "").trim(),
           whatsappBusiness: String(whatsappBusiness || "").trim(),
@@ -97,7 +102,7 @@ const AdminMultiStep = () => {
 
         // Reset fields after edit flow
         setUsername(""); setEmail(""); setPassword(""); setShowPassword(false);
-        setTwilioId(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setPhoneNumber(""); setMissedCallWebhook("");
+        setTwilioAccountSid(""); setTwilioAuthToken(""); setTwilioPhoneNumber(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setPhoneNumber(""); setMissedCallWebhook("");
         setEditingUserId(null);
         setResettingPassword(false);
         setErrors({});
@@ -130,7 +135,7 @@ const AdminMultiStep = () => {
       setErrors({ twilio: "Admin ID missing. Please create/edit admin again." });
       return;
     }
-    if (!twilioId || !whatsappId || !whatsappToken || !whatsappBusiness || !phoneNumber || !missedCallWebhook) {
+    if (!twilioAccountSid || !twilioAuthToken || !twilioPhoneNumber || !whatsappId || !whatsappToken || !whatsappBusiness || !phoneNumber || !missedCallWebhook) {
       setErrors({ twilio: "All fields are required" });
       return;
     }
@@ -141,7 +146,9 @@ const AdminMultiStep = () => {
         `${backendUrl}/api/nexionadmin/admindata`,
         {
           adminId: editingUserId,
-          twilioId: String(twilioId || "").trim(),
+          twilioAccountSid: String(twilioAccountSid || "").trim(),
+          twilioAuthToken: String(twilioAuthToken || "").trim(),
+          twilioPhoneNumber: String(twilioPhoneNumber || "").trim(),
           whatsappId: String(whatsappId || "").trim(),
           whatsappToken: String(whatsappToken || "").trim(),
           whatsappBusiness: String(whatsappBusiness || "").trim(),
@@ -154,11 +161,11 @@ const AdminMultiStep = () => {
       alert("Admin & Twilio info saved successfully!");
       localStorage.setItem(
         "twilioData",
-        JSON.stringify({ twilioId, whatsappId, whatsappToken, whatsappBusiness, phoneNumber, missedCallWebhook })
+        JSON.stringify({ twilioAccountSid, twilioAuthToken, twilioPhoneNumber, whatsappId, whatsappToken, whatsappBusiness, phoneNumber, missedCallWebhook })
       );
 
       setStep(0);
-      setTwilioId(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setPhoneNumber(""); setMissedCallWebhook("");
+      setTwilioAccountSid(""); setTwilioAuthToken(""); setTwilioPhoneNumber(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setPhoneNumber(""); setMissedCallWebhook("");
       setErrors({});
       fetchUsers();
     } catch (err) {
@@ -190,7 +197,9 @@ const AdminMultiStep = () => {
 
     // Populate Twilio info if exists
 
-    setTwilioId(user.twilioId ?? user.twilioid ?? "");
+    setTwilioAccountSid(user.twilioAccountSid ?? user.twilioaccountsid ?? "");
+    setTwilioAuthToken(user.twilioAuthToken ?? user.twilioauthtoken ?? "");
+    setTwilioPhoneNumber(user.twilioPhoneNumber ?? user.twiliophonenumber ?? user.phoneNumber ?? user.phonenumber ?? "");
     setWhatsappId(user.whatsappId ?? user.whatsappid ?? "");
     setWhatsappToken(user.whatsappToken ?? user.whatsapptoken ?? "");
     setWhatsappBusiness(user.whatsappBusiness ?? user.whatsappbussiness ?? "");
@@ -207,7 +216,7 @@ const AdminMultiStep = () => {
     setShowEditModal(false);
     setEditingUserId(null);
     setUsername(""); setEmail(""); setPassword(""); setShowPassword(false);
-    setTwilioId(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setPhoneNumber(""); setMissedCallWebhook("");
+    setTwilioAccountSid(""); setTwilioAuthToken(""); setTwilioPhoneNumber(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setPhoneNumber(""); setMissedCallWebhook("");
     setErrors({});
   };
 
@@ -220,7 +229,7 @@ const AdminMultiStep = () => {
   const handleCreateNewAdmin = () => {
     setEditingUserId(null);
     setUsername(""); setEmail(""); setPassword(""); setShowPassword(false);
-    setTwilioId(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setPhoneNumber(""); setMissedCallWebhook("");
+    setTwilioAccountSid(""); setTwilioAuthToken(""); setTwilioPhoneNumber(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setPhoneNumber(""); setMissedCallWebhook("");
     setResettingPassword(false);
     setErrors({});
     setStep(1);
@@ -267,8 +276,31 @@ const AdminMultiStep = () => {
                 <input
                   type="text"
                   placeholder="Twilio Account SID"
-                  value={twilioId}
-                  onChange={(e) => setTwilioId(e.target.value)}
+                  value={twilioAccountSid}
+                  onChange={(e) => setTwilioAccountSid(e.target.value)}
+                />
+              </div>
+              <div className="form-row">
+                <label>Twilio Auth Token</label>
+                <div className="password-field">
+                  <input
+                    type={showTwilioToken ? "text" : "password"}
+                    placeholder="Twilio Auth Token"
+                    value={twilioAuthToken}
+                    onChange={(e) => setTwilioAuthToken(e.target.value)}
+                  />
+                  <span className="eye-icon" onClick={() => setShowTwilioToken(!showTwilioToken)}>
+                    {showTwilioToken ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </span>
+                </div>
+              </div>
+              <div className="form-row">
+                <label>Twilio Phone Number</label>
+                <input
+                  type="text"
+                  placeholder="Twilio Phone Number"
+                  value={twilioPhoneNumber}
+                  onChange={(e) => setTwilioPhoneNumber(e.target.value)}
                 />
               </div>
 
@@ -436,8 +468,25 @@ const AdminMultiStep = () => {
             <input
               type="text"
               placeholder="Twilio Account SID"
-              value={twilioId}
-              onChange={(e) => setTwilioId(e.target.value)}
+              value={twilioAccountSid}
+              onChange={(e) => setTwilioAccountSid(e.target.value)}
+            />
+            <div className="password-field">
+              <input
+                type={showTwilioToken ? "text" : "password"}
+                placeholder="Twilio Auth Token"
+                value={twilioAuthToken}
+                onChange={(e) => setTwilioAuthToken(e.target.value)}
+              />
+              <span className="eye-icon" onClick={() => setShowTwilioToken(!showTwilioToken)}>
+                {showTwilioToken ? <EyeOff size={18} /> : <Eye size={18} />}
+              </span>
+            </div>
+            <input
+              type="text"
+              placeholder="Twilio Phone Number"
+              value={twilioPhoneNumber}
+              onChange={(e) => setTwilioPhoneNumber(e.target.value)}
             />
             <input
               type="text"
@@ -482,3 +531,5 @@ const AdminMultiStep = () => {
 };
 
 export default AdminMultiStep;
+
+

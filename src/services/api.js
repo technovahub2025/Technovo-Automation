@@ -11,11 +11,13 @@ import socketService from "./socketService";
 // Base URL from environment variable
 const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 const ADMIN_API_BASE_URL = import.meta.env.VITE_API_ADMIN_URL || API_BASE_URL;
+const USE_CREDENTIALS = String(import.meta.env.VITE_API_WITH_CREDENTIALS || "false").toLowerCase() === "true";
 
 // Create Axios instance
 const apiService = axios.create({
   baseURL: API_BASE_URL,
   timeout: 30000, // Increase default timeout to 30 seconds
+  withCredentials: USE_CREDENTIALS,
   headers: {
     "Content-Type": "application/json",
   },
@@ -46,7 +48,7 @@ apiService.interceptors.response.use(
   (error) => {
     console.error("API Error:", error.response?.data || error.message);
 
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && !error.config?.skipAuthRedirect) {
       console.warn("401 Unauthorized - Logging out user");
       const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
       localStorage.removeItem(tokenKey);
@@ -68,7 +70,8 @@ apiService.interceptors.response.use(
 // ------------------------
 
 // Voice Call APIs
-apiService.getActiveCalls = () => apiService.get("/voice/calls/active");
+apiService.getActiveCalls = () =>
+  apiService.get("/voice/calls/active", { skipAuthRedirect: true });
 apiService.getCallDetails = (callSid) =>
   apiService.get(`/voice/call/${callSid}`);
 apiService.makeOutboundCall = (to, from) =>
@@ -95,7 +98,8 @@ apiService.getContacts = () => apiService.get("/api/outbound-config/contact-list
 // Call History & Stats
 apiService.getCallHistory = (params) =>
   apiService.get("/api/call-logs", { params });
-apiService.getCallStats = () => apiService.get("/voice/stats");
+apiService.getCallStats = () =>
+  apiService.get("/voice/stats", { skipAuthRedirect: true });
 apiService.getCallTemplates = () => apiService.get("/api/outbound-config/templates");
 apiService.getCallSettings = () => Promise.resolve({ data: {} });
 apiService.updateCallSettings = (settings) =>
@@ -104,8 +108,10 @@ apiService.getScheduledCalls = () =>
   Promise.resolve({ data: [] });
 
 // Health Checks
-apiService.checkBackendHealth = () => apiService.get("/");
-apiService.checkAIHealth = () => apiService.get("/ai/health");
+apiService.checkBackendHealth = () =>
+  apiService.get("/", { skipAuthRedirect: true });
+apiService.checkAIHealth = () =>
+  apiService.get("/ai/health", { skipAuthRedirect: true });
 
 // Inbound and IVR methods
 apiService.getInboundAnalytics = (period = 'today', params = {}) => {

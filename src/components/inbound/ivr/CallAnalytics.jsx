@@ -31,6 +31,8 @@ const CallAnalytics = () => {
   });
   const [socketConnected, setSocketConnected] = useState(false);
   const socketRef = useRef(null);
+  const refreshTimeoutRef = useRef(null);
+  const fetchInFlightRef = useRef(false);
   const previousDataRef = useRef(null);
   
   // Production-level state
@@ -44,6 +46,16 @@ const CallAnalytics = () => {
   const [comparisonData, setComparisonData] = useState(null);
 
   useEffect(() => {
+    const scheduleAnalyticsRefresh = () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+
+      // Coalesce bursty socket events into one background refresh.
+      refreshTimeoutRef.current = setTimeout(() => {
+        fetchAnalytics({ background: true });
+      }, 350);
+    };
 
     const socket = apiService.initializeSocket();
     if (!socket) return undefined;
@@ -62,9 +74,8 @@ const CallAnalytics = () => {
     };
 
     const handleCallEvent = (data) => {
-      // Real-time call events trigger data refresh
       if (data?.type === 'call_started' || data?.type === 'call_ended' || data?.type === 'call_updated') {
-        fetchAnalytics();
+        scheduleAnalyticsRefresh();
       }
     };
 
@@ -84,31 +95,25 @@ const CallAnalytics = () => {
     };
 
     // Handle call details updates from call details controller
-    const handleCallDetailsUpdate = (data) => {
-      console.log('📊 Analytics: Call details update received', data);
-      // Refresh analytics when any call changes
-      fetchAnalytics();
+    const handleCallDetailsUpdate = () => {
+      scheduleAnalyticsRefresh();
     };
 
-    const handleInboundCallUpdate = (data) => {
-      console.log('📊 Analytics: Inbound call update', data);
-      fetchAnalytics();
+    const handleInboundCallUpdate = () => {
+      scheduleAnalyticsRefresh();
     };
 
-    const handleIVRCallUpdate = (data) => {
-      console.log('📊 Analytics: IVR call update', data);
-      fetchAnalytics();
+    const handleIVRCallUpdate = () => {
+      scheduleAnalyticsRefresh();
     };
 
-    const handleOutboundCallUpdate = (data) => {
-      console.log('📊 Analytics: Outbound call update', data);
-      fetchAnalytics();
+    const handleOutboundCallUpdate = () => {
+      scheduleAnalyticsRefresh();
     };
 
     const handleCallListUpdate = (data) => {
-      console.log('📊 Analytics: Call list update', data);
       if (data?.action === 'refresh' || data?.action === 'add' || data?.action === 'update') {
-        fetchAnalytics();
+        scheduleAnalyticsRefresh();
       }
     };
 
@@ -159,6 +164,9 @@ const CallAnalytics = () => {
     fetchAnalytics();
 
     return () => {
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
 
       socket.off('ivr_workflow_stats', handleWorkflowStats);
       socket.off('call_event', handleCallEvent);
@@ -181,9 +189,14 @@ const CallAnalytics = () => {
 
   }, [period, filters.callType, filters.status]);
 
-  const fetchAnalytics = useCallback(async () => {
+  const fetchAnalytics = useCallback(async (options = {}) => {
+    const { background = false } = options;
+
+    if (fetchInFlightRef.current) return;
+
     try {
-      setLoading(true);
+      fetchInFlightRef.current = true;
+      if (!background) setLoading(true);
       setError(null);
       
       const params = {
@@ -194,7 +207,7 @@ const CallAnalytics = () => {
       const normalizedData = response?.data?.data || response?.data || null;
       setAnalytics(normalizedData);
       
-      if (comparisonPeriod) {
+      if (comparisonPeriod && !background) {
         const compResponse = await apiService.getInboundAnalytics(comparisonPeriod);
         setComparisonData(compResponse?.data?.data || compResponse?.data || null);
       }
@@ -204,9 +217,10 @@ const CallAnalytics = () => {
       console.error('Failed to fetch analytics:', error);
       setError(error.message);
     } finally {
-      setLoading(false);
+      fetchInFlightRef.current = false;
+      if (!background) setLoading(false);
     }
-  }, [period, filters, comparisonPeriod]);
+  }, [period, filters.callType, filters.status, comparisonPeriod]);
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -779,3 +793,4 @@ const CallAnalytics = () => {
 };
 
 export default CallAnalytics;
+
