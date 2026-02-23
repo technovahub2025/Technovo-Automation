@@ -24,7 +24,9 @@ import {
   CalendarDays,
   Send,
   Sparkles,
-  TrendingUp
+  TrendingUp,
+  Copy,
+  X
 } from "lucide-react";
 import { apiClient } from "../services/whatsappapi";
 
@@ -67,6 +69,7 @@ const MissedCalls = ({ page = "all" }) => {
   const [settingsError, setSettingsError] = useState("");
   const [templateOptions, setTemplateOptions] = useState([]);
   const [automationSettings, setAutomationSettings] = useState({
+    missedCallWebhook: "",
     missedCallAutomationEnabled: true,
     missedCallDelayMinutes: 5,
     missedCallAutomationMode: "immediate",
@@ -77,6 +80,109 @@ const MissedCalls = ({ page = "all" }) => {
     missedCallTemplateLanguage: "en_US",
     missedCallTemplateVariables: []
   });
+  const [showConnectGuide, setShowConnectGuide] = useState(false);
+  const [guideStep, setGuideStep] = useState(0);
+  const [copiedKey, setCopiedKey] = useState("");
+
+  const getLocalWebhookUrl = () => {
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "null");
+      const twilioConfig = JSON.parse(localStorage.getItem("twilioConfig") || "null");
+      const fromUser = String(user?.missedCallWebhook || user?.missedcallwebhook || "").trim();
+      const fromTwilioConfig = String(
+        twilioConfig?.missedCallWebhook || twilioConfig?.missedcallwebhook || ""
+      ).trim();
+      return fromUser || fromTwilioConfig || "";
+    } catch {
+      return "";
+    }
+  };
+  const getLocalBusinessPhone = () => {
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "null");
+      const twilioConfig = JSON.parse(localStorage.getItem("twilioConfig") || "null");
+      const fromUser = String(user?.phoneNumber || user?.phonenumber || "").trim();
+      const fromTwilioConfig = String(
+        twilioConfig?.phoneNumber || twilioConfig?.phonenumber || ""
+      ).trim();
+      return fromUser || fromTwilioConfig || "";
+    } catch {
+      return "";
+    }
+  };
+
+  const webhookBase = String(
+    import.meta.env.VITE_API_BASE_URL ||
+    import.meta.env.VITE_API_URL ||
+    window.location.origin
+  ).replace(/\/+$/, "");
+  const fallbackWebhookUrl = webhookBase.includes("/api")
+    ? `${webhookBase}/missedcalls/webhook`
+    : `${webhookBase}/api/missedcalls/webhook`;
+  const webhookUrl =
+    String(automationSettings?.missedCallWebhook || "").trim() ||
+    getLocalWebhookUrl() ||
+    fallbackWebhookUrl;
+  const webhookBody = JSON.stringify(
+    {
+      from: "{call_number}",
+      to: getLocalBusinessPhone() || "YOUR_BUSINESS_PHONE_NUMBER",
+      status: "missed",
+      direction: "inbound",
+      callerName: "{call_name}",
+      provider: "macrodroid"
+    },
+    null,
+    2
+  );
+  const guideSteps = [
+    {
+      title: "Install App",
+      description: "Open Play Store and download the caller automation app.",
+      image: "/assets/missedcalls/step-1-playstore.png"
+    },
+    {
+      title: "Tap Add Micro",
+      description: "Open the app and click the Add Micro button.",
+      image: "/assets/missedcalls/step-2-add-micro.jpeg"
+    },
+    {
+      title: "Add Trigger",
+      description: "Add a trigger and choose Call Cancel as the event.",
+      images: [
+        "/assets/missedcalls/step-3-add-trigger-call-cancel-1.jpeg",
+        "/assets/missedcalls/step-3-add-trigger-call-cancel-2.jpeg",
+        "/assets/missedcalls/step-3-add-trigger-call-cancel-3.jpeg"
+      ]
+    },
+    {
+      title: "Add Action",
+      description: "Add Action and choose POST request.",
+      images: [
+        "/assets/missedcalls/step-4-add-action-post-1.jpeg",
+        "/assets/missedcalls/step-4-add-action-post-2.jpeg",
+        "/assets/missedcalls/step-4-add-action-post-3.jpeg"
+      ]
+    },
+    {
+      title: "Set Webhook",
+      description: "Paste webhook URL and request body, then save.",
+      images: [
+        "/assets/missedcalls/step-5-webhook-1.jpeg",
+        "/assets/missedcalls/step-5-webhook-2.jpeg"
+      ],
+      imageInstructions: [
+        "Change request method from GET to POST. In the Enter URL field, copy and paste the Webhook URL.",
+        "Set Content Type to application/json. Set Content Body to Text, then copy and paste the Request Body."
+      ],
+      showWebhookConfig: true
+    },
+    {
+      title: "Done",
+      description: "Setup complete. Close this guide and test with one missed call.",
+      image: ""
+    }
+  ];
   
   const formatDate = (dateString) => {
     const date = new Date(dateString);
@@ -277,6 +383,12 @@ const MissedCalls = ({ page = "all" }) => {
         normalizedTemplates.find((tpl) => tpl.name === savedTemplateName);
 
       setAutomationSettings({
+        missedCallWebhook: String(
+          settingsData.missedCallWebhook ||
+          settingsData.missedcallwebhook ||
+          getLocalWebhookUrl() ||
+          ""
+        ).trim(),
         missedCallAutomationEnabled: settingsData.missedCallAutomationEnabled !== false,
         missedCallDelayMinutes: Number.isFinite(Number(settingsData.missedCallDelayMinutes))
           ? Number(settingsData.missedCallDelayMinutes)
@@ -418,6 +530,9 @@ const MissedCalls = ({ page = "all" }) => {
       const updated = res?.data?.data || payload;
       setAutomationSettings((prev) => ({
         ...prev,
+        missedCallWebhook: String(
+          updated.missedCallWebhook || updated.missedcallwebhook || prev.missedCallWebhook || ""
+        ).trim(),
         missedCallAutomationEnabled: updated.missedCallAutomationEnabled !== false,
         missedCallDelayMinutes: Number.isFinite(Number(updated.missedCallDelayMinutes))
           ? Number(updated.missedCallDelayMinutes)
@@ -701,10 +816,27 @@ const MissedCalls = ({ page = "all" }) => {
     .sort((a, b) => b.count - a.count)
     .slice(0, 5);
 
-  const recentAutomationRuns = [...allCalls]
-    .filter((call) => call.automationStatus)
+  const trend = [];
+  for (let i = 6; i >= 0; i -= 1) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    const key = d.toISOString().split("T")[0];
+    const label = d.toLocaleDateString([], { weekday: "short" });
+
+    const calls = allCalls.filter(
+      (call) => call.date === key && String(call.status || "") === "missed"
+    ).length;
+    const sent = allCalls.filter(
+      (call) => call.date === key && String(call.automationStatus || "") === "sent"
+    ).length;
+
+    trend.push({ key, label, calls, sent });
+  }
+
+  const trendMax = Math.max(1, ...trend.flatMap((item) => [item.calls, item.sent]));
+  const recentCalls = [...allCalls]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 6);
+    .slice(0, 8);
 
   const isSplitPageMode = isCallsOnlyPage || isAutomationOnlyPage;
   const showSectionTabs = true;
@@ -734,6 +866,16 @@ const MissedCalls = ({ page = "all" }) => {
     setViewMode("list");
   };
 
+  const copyText = async (key, value) => {
+    try {
+      await navigator.clipboard.writeText(String(value || ""));
+      setCopiedKey(key);
+      setTimeout(() => setCopiedKey(""), 1500);
+    } catch (_error) {
+      setCopiedKey("");
+    }
+  };
+
   return (
     <div className="missedcalls-page">
       {/* Header */}
@@ -745,8 +887,135 @@ const MissedCalls = ({ page = "all" }) => {
           </h2>
           <p>Track and manage all inbound and outbound calls</p>
         </div>
-       
+        <div className="header-actions">
+          <button
+            type="button"
+            className="secondary-btn"
+            onClick={() => {
+              setGuideStep(0);
+              setShowConnectGuide(true);
+            }}
+          >
+            How to Connect Phone
+          </button>
+        </div>
       </div>
+
+      {showConnectGuide ? (
+        <div className="guide-modal-overlay" onClick={() => setShowConnectGuide(false)}>
+          <div className="guide-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="guide-modal-header">
+              <div>
+                <h3>Phone Connection Setup</h3>
+                <p>Step {guideStep + 1} of {guideSteps.length}: {guideSteps[guideStep].title}</p>
+              </div>
+              <button
+                type="button"
+                className="guide-close-btn"
+                onClick={() => setShowConnectGuide(false)}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="guide-progress-track">
+              <div
+                className="guide-progress-fill"
+                style={{ width: `${((guideStep + 1) / guideSteps.length) * 100}%` }}
+              />
+            </div>
+
+            <div className="guide-content">
+              <p className="guide-description">{guideSteps[guideStep].description}</p>
+              {guideSteps[guideStep].images?.length ? (
+                <div className="guide-image-flow">
+                  {guideSteps[guideStep].images.map((imgPath, idx) => (
+                    <React.Fragment key={`${imgPath}-${idx}`}>
+                      <div className="guide-image-wrap guide-image-wrap-flow">
+                        <img
+                          src={imgPath}
+                          alt={`${guideSteps[guideStep].title} ${idx + 1}`}
+                          className="guide-image"
+                        />
+                        {guideSteps[guideStep].imageInstructions?.[idx] ? (
+                          <p className="guide-image-instruction">
+                            <span>Image {idx + 1}:</span> {guideSteps[guideStep].imageInstructions[idx]}
+                          </p>
+                        ) : null}
+                      </div>
+                      {idx < guideSteps[guideStep].images.length - 1 ? (
+                        <div className="guide-image-arrow" aria-hidden="true">
+                          <ChevronRight size={24} />
+                        </div>
+                      ) : null}
+                    </React.Fragment>
+                  ))}
+                </div>
+              ) : guideSteps[guideStep].image ? (
+                <div className="guide-image-wrap">
+                  <img
+                    src={guideSteps[guideStep].image}
+                    alt={guideSteps[guideStep].title}
+                    className="guide-image"
+                  />
+                </div>
+              ) : null}
+
+              {guideSteps[guideStep].showWebhookConfig ? (
+                <div className="guide-copy-grid">
+                  <div className="guide-copy-card">
+                    <div className="guide-copy-head">
+                      <strong>Webhook URL</strong>
+                      <button type="button" onClick={() => copyText("url", webhookUrl)}>
+                        <Copy size={14} /> {copiedKey === "url" ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                    <code>{webhookUrl}</code>
+                  </div>
+
+                  <div className="guide-copy-card">
+                    <div className="guide-copy-head">
+                      <strong>Request Body</strong>
+                      <button type="button" onClick={() => copyText("body", webhookBody)}>
+                        <Copy size={14} /> {copiedKey === "body" ? "Copied" : "Copy"}
+                      </button>
+                    </div>
+                    <pre>{webhookBody}</pre>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="guide-actions">
+              <button
+                type="button"
+                className="secondary-btn"
+                disabled={guideStep === 0}
+                onClick={() => setGuideStep((prev) => Math.max(0, prev - 1))}
+              >
+                Previous
+              </button>
+              {guideStep < guideSteps.length - 1 ? (
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={() => setGuideStep((prev) => Math.min(guideSteps.length - 1, prev + 1))}
+                >
+                  Next
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="primary-btn"
+                  onClick={() => setShowConnectGuide(false)}
+                >
+                  Done
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {showSectionTabs && (
         <div className="missed-calls-sections-nav">
@@ -1036,30 +1305,27 @@ const MissedCalls = ({ page = "all" }) => {
 
           <article className="dash-panel">
             <div className="dash-panel-head">
-              <h3>Call Distribution</h3>
-              <p>Inbound and outbound activity</p>
+              <h3>7-Day Trend</h3>
+              <p>Missed calls vs template sent</p>
             </div>
-            <div className="overview-progress-list">
-              <div className="overview-progress-row">
-                <span>Inbound</span>
-                <div className="overview-progress-bar"><div style={{ width: `${inboundRate}%` }} /></div>
-                <strong>{inboundRate}%</strong>
-              </div>
-              <div className="overview-progress-row">
-                <span>Outbound</span>
-                <div className="overview-progress-bar"><div style={{ width: `${outboundRate}%` }} /></div>
-                <strong>{outboundRate}%</strong>
-              </div>
-              <div className="overview-progress-row">
-                <span>Missed</span>
-                <div className="overview-progress-bar"><div style={{ width: `${missedRate}%` }} /></div>
-                <strong>{missedRate}%</strong>
-              </div>
-              <div className="overview-progress-row">
-                <span>Resolved</span>
-                <div className="overview-progress-bar"><div style={{ width: `${resolvedRate}%` }} /></div>
-                <strong>{resolvedRate}%</strong>
-              </div>
+            <div className="trend-chart">
+              {trend.map((item) => (
+                <div className="trend-col" key={item.key}>
+                  <div className="trend-bars">
+                    <span
+                      className="bar calls"
+                      style={{ height: `${Math.max(6, (item.calls / trendMax) * 100)}%` }}
+                      title={`Calls: ${item.calls}`}
+                    />
+                    <span
+                      className="bar sent"
+                      style={{ height: `${Math.max(6, (item.sent / trendMax) * 100)}%` }}
+                      title={`Sent: ${item.sent}`}
+                    />
+                  </div>
+                  <label>{item.label}</label>
+                </div>
+              ))}
             </div>
           </article>
         </section>
@@ -1067,11 +1333,11 @@ const MissedCalls = ({ page = "all" }) => {
         <section className="dash-bottom-grid">
           <article className="dash-panel">
             <div className="dash-panel-head">
-              <h3>Recent Automation Activity</h3>
+              <h3>Recent Missed Calls</h3>
               <p>Latest call queue activity</p>
             </div>
             <div className="recent-list">
-              {recentAutomationRuns.length ? recentAutomationRuns.map((row) => (
+              {recentCalls.length ? recentCalls.map((row) => (
                 <div key={`recent-${row.id}`} className="recent-item">
                   <div>
                     <strong>{row.name}</strong>
@@ -1081,6 +1347,7 @@ const MissedCalls = ({ page = "all" }) => {
                     <span className={`badge ${row.automationStatus || "pending"}`}>
                       {row.automationStatus || "pending"}
                     </span>
+                    <small>{formatDateTime(`${row.date}T${row.time || "00:00"}`)}</small>
                   </div>
                 </div>
               )) : <p className="dash-empty">No automation activity yet</p>}
@@ -1577,8 +1844,3 @@ const MissedCalls = ({ page = "all" }) => {
 };
 
 export default MissedCalls;
-
-
-
-
-

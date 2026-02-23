@@ -317,6 +317,219 @@ missedcall.css
   font-weight: 500;
 }
 
+/* Setup guide modal */
+.guide-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.46);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1200;
+  padding: 16px;
+}
+
+.guide-modal {
+  width: min(860px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: #ffffff;
+  border-radius: 14px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 16px 50px rgba(15, 23, 42, 0.25);
+  padding: 18px;
+}
+
+.guide-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.guide-modal-header h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 20px;
+}
+
+.guide-modal-header p {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 13px;
+}
+
+.guide-close-btn {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  border-radius: 8px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.guide-progress-track {
+  margin-top: 14px;
+  height: 8px;
+  background: #e2e8f0;
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.guide-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #14b8a6);
+  transition: width 0.25s ease;
+}
+
+.guide-content {
+  margin-top: 16px;
+}
+
+.guide-description {
+  margin: 0 0 12px;
+  color: #334155;
+  font-size: 14px;
+}
+
+.guide-image-wrap {
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f8fafc;
+}
+
+.guide-image-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.guide-image-flow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.guide-image-wrap-flow {
+  min-width: 220px;
+  flex: 1 0 220px;
+}
+
+.guide-image-arrow {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #334155;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+}
+
+.guide-image {
+  width: 100%;
+  max-height: 340px;
+  object-fit: contain;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+}
+
+@media (max-width: 768px) {
+  .guide-image-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-image-wrap-flow {
+    min-width: 260px;
+    flex-basis: 260px;
+  }
+}
+
+.guide-image-wrap small {
+  display: block;
+  margin-top: 8px;
+  color: #64748b;
+}
+
+.guide-image-instruction {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #475569;
+}
+
+.guide-image-instruction span {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.guide-copy-grid {
+  margin-top: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.guide-copy-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.guide-copy-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.guide-copy-head button {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #1e293b;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.guide-copy-card code {
+  display: block;
+  font-size: 12px;
+  color: #0f172a;
+  word-break: break-all;
+}
+
+.guide-copy-card pre {
+  margin: 0;
+  font-size: 12px;
+  background: #0f172a;
+  color: #e2e8f0;
+  border-radius: 8px;
+  padding: 10px;
+  overflow: auto;
+}
+
+.guide-actions {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 /* Stats */
 .stats-container {
   display: grid;
@@ -1603,5 +1816,160 @@ missedcall.css
 
   .pie-wrap {
     flex-direction: column;
+  }
+}
+
+/* Call Distribution Bars */
+.overview-progress-list {
+  margin-top: 16px;
+  display: grid;
+  gap: 12px;
+}
+
+.overview-progress-row {
+  display: grid;
+  grid-template-columns: 90px 1fr 44px;
+  align-items: center;
+  gap: 10px;
+}
+
+.overview-progress-row > span {
+  font-size: 13px;
+  color: #334155;
+  font-weight: 600;
+}
+
+.overview-progress-row > strong {
+  text-align: right;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.overview-progress-bar {
+  position: relative;
+  height: 10px;
+  border-radius: 999px;
+  background: #e2e8f0;
+  overflow: hidden;
+}
+
+.overview-progress-bar > div {
+  height: 100%;
+  border-radius: 999px;
+  min-width: 0;
+  background: linear-gradient(90deg, #2563eb, #14b8a6);
+  transition: width 0.35s ease;
+}
+
+@media (max-width: 720px) {
+  .overview-progress-row {
+    grid-template-columns: 70px 1fr 38px;
+    gap: 8px;
+  }
+}
+
+/* Date-wise Missed vs Sent */
+.datewise-list {
+  margin-top: 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.datewise-row {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 12px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.datewise-meta strong {
+  display: block;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.datewise-meta span {
+  display: block;
+  margin-top: 3px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.datewise-bars {
+  display: grid;
+  gap: 8px;
+}
+
+.datewise-bar {
+  height: 8px;
+  border-radius: 999px;
+  min-width: 4px;
+}
+
+.datewise-bar.missed {
+  background: linear-gradient(90deg, #ef4444, #f97316);
+}
+
+.datewise-bar.sent {
+  background: linear-gradient(90deg, #22c55e, #14b8a6);
+}
+
+@media (max-width: 720px) {
+  .datewise-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 7-day trend chart */
+.trend-chart {
+  height: 230px;
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+}
+
+.trend-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+}
+
+.trend-bars {
+  width: 100%;
+  height: 190px;
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  gap: 8px;
+}
+
+.bar {
+  width: 14px;
+  border-radius: 8px 8px 3px 3px;
+}
+
+.bar.calls {
+  background: #a855f7;
+}
+
+.bar.sent {
+  background: #14b8a6;
+}
+
+.trend-col label {
+  font-size: 12px;
+  color: #64748b;
+}
+
+@media (max-width: 720px) {
+  .trend-bars {
+    height: 150px;
   }
 }
