@@ -126,10 +126,12 @@ const VoiceAutomation = () => {
       {/* System Health Status */}
       <div className="health-status">
         <div className={`status-badge ${healthStatus.backend ? 'online' : 'offline'}`}>
-          Backend: {healthStatus.backend ? '🟢 Online' : '🔴 Offline'}
+          {healthStatus.backend && <span className="pulse-dot"></span>}
+          Backend: {healthStatus.backend ? 'Online' : 'Offline'}
         </div>
         <div className={`status-badge ${healthStatus.ai ? 'online' : 'offline'}`}>
-          AI Service: {healthStatus.ai ? '🟢 Healthy' : '🔴 Unhealthy'}
+          {healthStatus.ai && <span className="pulse-dot"></span>}
+          AI Service: {healthStatus.ai ? 'Healthy' : 'Unhealthy'}
         </div>
         <div className="status-badge">
           Active Calls: {activeCalls.length}
@@ -196,8 +198,9 @@ const VoiceAutomation = () => {
               <div key={call.call_sid || `call-${index}`} className="call-item">
                 <div className="call-info">
                   <span className="call-sid">{call.call_sid}</span>
-                  <span className="call-status">
-                    {call.connected ? '🟢 Connected' : '🔴 Disconnected'}
+                  <span className={`status-badge ${call.connected ? 'online' : 'offline'}`}>
+                    {call.connected && <span className="pulse-dot"></span>}
+                    {call.connected ? 'Connected' : 'Disconnected'}
                   </span>
                 </div>
               </div>

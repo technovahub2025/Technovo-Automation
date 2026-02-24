@@ -272,7 +272,7 @@ const AdminMultiStep = () => {
 
 
               <div className="form-row">
-                <label>Twilio SID</label>
+                <label>Twilio Account SID</label>
                 <input
                   type="text"
                   placeholder="Twilio Account SID"

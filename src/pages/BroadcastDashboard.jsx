@@ -172,12 +172,12 @@ const BroadcastDashboard = () => {
                     <div className="widget-card">
                         <div className="widget-header">
                             <h3>Message Analytics</h3>
-                            <button
+                            {/* <button
                                 className="view-all-btn"
                                 onClick={() => setShowDetailedAnalytics(!showDetailedAnalytics)}
                             >
                                 {showDetailedAnalytics ? 'Show Less' : 'Show More'}
-                            </button>
+                            </button> */}
                         </div>
 
                         {showDetailedAnalytics ? (
