@@ -6,12 +6,24 @@ import CallsTable from './CallsTable';
 import StatsChart from './StatsChart';
 import './BroadcastMonitor.css';
 
+const resolveSocketUrl = () => {
+  const configuredApi = import.meta.env.VITE_API_URL || '';
+  const configuredSocket = import.meta.env.VITE_SOCKET_URL || '';
+  return configuredSocket || (configuredApi ? configuredApi.replace(/\/api\/?$/, '') : window.location.origin);
+};
+
+const resolveSocketAuth = () => {
+  const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
+  const token = localStorage.getItem(tokenKey) || localStorage.getItem('authToken') || localStorage.getItem('token');
+  return token ? { token } : undefined;
+};
+
 const BroadcastMonitor = ({ broadcastId }) => {
   const [broadcast, setBroadcast] = useState(null);
   const [calls, setCalls] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedStatus, setSelectedStatus] = useState('all');
-  const [connectionStatus, setConnectionStatus] = useState('disconnected');
+  const [connectionStatus, setConnectionStatus] = useState('connecting');
   const socketRef = useRef(null);
   const audioRef = useRef(new Audio('/notification.mp3'));
 
@@ -31,6 +43,13 @@ const BroadcastMonitor = ({ broadcastId }) => {
       socketRef.current.off('broadcast_update');
       socketRef.current.off('call_update');
       socketRef.current.off('disconnect');
+      socketRef.current.off('connect_error');
+      socketRef.current.off('reconnect');
+      socketRef.current.off('reconnect_attempt');
+      socketRef.current.off('reconnect_error');
+      socketRef.current.io?.off('reconnect');
+      socketRef.current.io?.off('reconnect_attempt');
+      socketRef.current.io?.off('reconnect_error');
       socketRef.current.disconnect();
       socketRef.current = null;
     }
@@ -47,6 +66,7 @@ const BroadcastMonitor = ({ broadcastId }) => {
 
       setBroadcast(broadcastData.data.broadcast);
       setCalls(callsData.data.calls);
+      setConnectionStatus((prev) => (prev === 'connected' ? prev : 'connected'));
     } catch (error) {
       console.error('Failed to load broadcast data:', error);
     } finally {
@@ -57,8 +77,10 @@ const BroadcastMonitor = ({ broadcastId }) => {
   const connectWebSocket = () => {
     if (socketRef.current?.connected) return;
 
-    const socket = io(import.meta.env.VITE_API_URL, {
+    const socket = io(resolveSocketUrl(), {
+      auth: resolveSocketAuth(),
       transports: ['websocket', 'polling'],
+      withCredentials: String(import.meta.env.VITE_SOCKET_WITH_CREDENTIALS || import.meta.env.VITE_API_WITH_CREDENTIALS || 'false').toLowerCase() === 'true',
       reconnection: true,
       reconnectionAttempts: 5,
       reconnectionDelay: 1000,
@@ -74,16 +96,28 @@ const BroadcastMonitor = ({ broadcastId }) => {
 
     socket.on('disconnect', (reason) => {
       console.log('WebSocket disconnected:', reason);
-      setConnectionStatus('disconnected');
+      if (reason === 'io client disconnect') return;
+      setConnectionStatus('reconnecting');
     });
 
     socket.on('connect_error', (error) => {
       console.error('WebSocket connection error:', error);
-      setConnectionStatus('error');
+      if (String(error?.message || '').toLowerCase().includes('unauthorized')) {
+        // Keep UI stable when REST polling works but socket auth fails transiently.
+        setConnectionStatus((prev) => (prev === 'connected' ? prev : 'error'));
+        return;
+      }
+      // Ignore transient transport errors after a successful connection.
+      if (socket.connected) {
+        setConnectionStatus('connected');
+        return;
+      }
+      setConnectionStatus(prev => (prev === 'connected' ? 'connected' : 'error'));
     });
 
     socket.on('broadcast_update', (data) => {
       console.log('Broadcast update:', data);
+      setConnectionStatus('connected');
       setBroadcast(prev => ({
         ...prev,
         status: data.status,
@@ -93,6 +127,7 @@ const BroadcastMonitor = ({ broadcastId }) => {
 
     socket.on('call_update', (data) => {
       console.log('Call update:', data);
+      setConnectionStatus('connected');
 
       setCalls(prev => {
         const index = prev.findIndex(c => c._id === data.callId || c.callSid === data.callSid);
@@ -117,6 +152,19 @@ const BroadcastMonitor = ({ broadcastId }) => {
       if (data.status === 'completed') {
         audioRef.current.play().catch(() => { });
       }
+    });
+
+    socket.io.on('reconnect_attempt', () => {
+      setConnectionStatus('reconnecting');
+    });
+
+    socket.io.on('reconnect', () => {
+      setConnectionStatus('connected');
+      socket.emit('join_broadcast', broadcastId);
+    });
+
+    socket.io.on('reconnect_error', () => {
+      setConnectionStatus(prev => (prev === 'connected' ? 'connected' : 'error'));
     });
 
     socketRef.current = socket;
@@ -194,6 +242,11 @@ const BroadcastMonitor = ({ broadcastId }) => {
                 <>
                   <Wifi size={16} />
                   <span>Connected</span>
+                </>
+              ) : connectionStatus === 'reconnecting' || connectionStatus === 'connecting' ? (
+                <>
+                  <Wifi size={16} />
+                  <span>Connecting...</span>
                 </>
               ) : connectionStatus === 'error' ? (
                 <>
