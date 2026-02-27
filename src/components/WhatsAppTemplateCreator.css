@@ -362,7 +362,7 @@
   color: #495057;
 }
 
-.remove-button {
+.template-remove-button {
   background: #dc3545;
   color: white;
   border: none;
@@ -376,11 +376,28 @@
   transition: background 0.2s ease;
 }
 
-.remove-button:hover {
+.template-remove-button:hover {
   background: #c82333;
 }
 
-.add-button {
+.template-remove-button svg {
+  width: 16px;
+  height: 16px;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2.25;
+  fill: none;
+}
+
+.template-remove-button .template-remove-symbol {
+  display: inline-block;
+  font-size: 18px;
+  line-height: 1;
+  font-weight: 700;
+  color: #ffffff;
+}
+
+.template-add-button {
   background: #007bff;
   color: white;
   border: none;
@@ -395,7 +412,7 @@
   transition: background 0.2s ease;
 }
 
-.add-button:hover {
+.template-add-button:hover {
   background: #0056b3;
 }
 
@@ -407,7 +424,7 @@
   align-items: flex-start;
 }
 
-.submit-button {
+.template-submit-button {
   background: #25d366;
   color: white;
   border: none;
@@ -422,12 +439,12 @@
   transition: all 0.2s ease;
 }
 
-.submit-button:hover:not(:disabled) {
+.template-submit-button:hover:not(:disabled) {
   background: #128c7e;
   transform: translateY(-1px);
 }
 
-.submit-button:disabled {
+.template-submit-button:disabled {
   background: #6c757d;
   cursor: not-allowed;
   transform: none;
@@ -721,7 +738,7 @@
 }
 
 /* Loading States */
-.submit-button:disabled {
+.template-submit-button:disabled {
   opacity: 0.7;
   cursor: not-allowed;
 }

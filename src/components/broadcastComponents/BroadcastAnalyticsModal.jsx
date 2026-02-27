@@ -1,14 +1,15 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { X, TrendingUp, Users, MessageCircle, CheckCircle, Eye, AlertCircle } from 'lucide-react';
 import './BroadcastAnalyticsModal.css';
+import { apiClient } from '../../services/whatsappapi';
 
 const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
   const [activeTab, setActiveTab] = useState('overview');
-
-  if (!isOpen || !broadcast) return null;
-
-  const stats = broadcast.stats || {};
-  const totalRecipients = broadcast.recipientCount || broadcast.recipients?.length || 0;
+  const [recipientDetails, setRecipientDetails] = useState([]);
+  const [isRecipientLoading, setIsRecipientLoading] = useState(false);
+  const safeBroadcast = broadcast || {};
+  const stats = safeBroadcast.stats || {};
+  const totalRecipients = safeBroadcast.recipientCount || safeBroadcast.recipients?.length || 0;
 
   // Calculate percentages
   const deliveryRate = totalRecipients > 0 ? Math.round((stats.delivered / totalRecipients) * 100) : 0;
@@ -32,6 +33,102 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
     { label: 'Replied', value: stats.replied, color: '#f59e0b' },
     { label: 'Failed', value: stats.failed, color: '#ef4444' }
   ];
+
+  const mapRecipientsToRows = (items = []) =>
+    (Array.isArray(items) ? items : [])
+      .map((recipient) => {
+        const phone = recipient?.phone || recipient;
+        if (!phone) return null;
+        return {
+          phone,
+          name: recipient?.name || '',
+          sent: false,
+          delivered: false,
+          read: false,
+          failed: false,
+          replied: false,
+          replyCount: 0,
+          status: 'pending',
+          lastStatusAt: null,
+          lastReplyAt: null
+        };
+      })
+      .filter(Boolean);
+
+  const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
+
+  const buildNameMap = (items = []) => {
+    const map = new Map();
+    (Array.isArray(items) ? items : []).forEach((recipient) => {
+      const rawPhone = recipient?.phone || recipient;
+      const key = normalizePhone(rawPhone);
+      const name = String(recipient?.name || '').trim();
+      if (key && name) {
+        map.set(key, name);
+      }
+    });
+    return map;
+  };
+
+  const applyRecipientNames = (rows = [], nameMap = new Map()) =>
+    (Array.isArray(rows) ? rows : []).map((row) => {
+      const currentName = String(row?.name || '').trim();
+      if (currentName) return row;
+      const mappedName = nameMap.get(normalizePhone(row?.phone));
+      return {
+        ...row,
+        name: mappedName || ''
+      };
+    });
+
+  useEffect(() => {
+    const loadRecipientDetails = async () => {
+      if (!isOpen || !safeBroadcast?._id) return;
+      setIsRecipientLoading(true);
+      try {
+        const [broadcastResult, contactsResult] = await Promise.allSettled([
+          apiClient.getBroadcast(safeBroadcast._id),
+          apiClient.getContacts()
+        ]);
+
+        const response =
+          broadcastResult.status === 'fulfilled' ? broadcastResult.value : null;
+        const contactsResponse =
+          contactsResult.status === 'fulfilled' ? contactsResult.value : null;
+
+        const payload = response?.data?.data || response?.data || {};
+        const contactsPayload =
+          contactsResponse?.data?.data || contactsResponse?.data || [];
+        const apiRows = Array.isArray(payload?.recipientDetails) ? payload.recipientDetails : [];
+        const fallbackRows = mapRecipientsToRows(payload?.recipients);
+        const localFallbackRows = mapRecipientsToRows(safeBroadcast?.recipients);
+        const mergedNameMap = new Map([
+          ...buildNameMap(contactsPayload),
+          ...buildNameMap(payload?.recipients),
+          ...buildNameMap(safeBroadcast?.recipients)
+        ]);
+        const rows = apiRows.length ? apiRows : (fallbackRows.length ? fallbackRows : localFallbackRows);
+        setRecipientDetails(applyRecipientNames(rows, mergedNameMap));
+      } catch (error) {
+        console.error('Failed to load recipient details:', error);
+        const fallbackRows = mapRecipientsToRows(safeBroadcast?.recipients);
+        setRecipientDetails(applyRecipientNames(fallbackRows, buildNameMap(safeBroadcast?.recipients)));
+      } finally {
+        setIsRecipientLoading(false);
+      }
+    };
+
+    loadRecipientDetails();
+  }, [isOpen, safeBroadcast?._id]);
+
+  const formatDateTime = (value) => {
+    if (!value) return '-';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return '-';
+    return parsed.toLocaleString();
+  };
+
+  if (!isOpen || !broadcast) return null;
 
   const renderPieChart = () => {
     const total = pieData.reduce((sum, item) => sum + item.value, 0);
@@ -160,6 +257,12 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
           >
             Details
           </button>
+          <button 
+            className={`tab-btn ${activeTab === 'recipients' ? 'active' : ''}`}
+            onClick={() => setActiveTab('recipients')}
+          >
+            Recipients
+          </button>
         </div>
 
         <div className="analytics-content">
@@ -272,6 +375,55 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
                   <span>{new Date(broadcast.updatedAt).toLocaleString()}</span>
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeTab === 'recipients' && (
+            <div className="recipient-details-section">
+              {isRecipientLoading ? (
+                <div className="no-data">Loading recipient details...</div>
+              ) : recipientDetails.length === 0 ? (
+                <div className="no-data">No recipient details available</div>
+              ) : (
+                <div className="recipient-table-wrap">
+                  <table className="recipient-table">
+                    <thead>
+                      <tr>
+                        <th>Phone</th>
+                        <th>Name</th>
+                        <th>Status</th>
+                        <th>Delivered</th>
+                        <th>Read</th>
+                        <th>Replied</th>
+                        <th>Failed</th>
+                        <th>Reply Count</th>
+                        <th>Last Status</th>
+                        <th>Last Reply</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {recipientDetails.map((item, index) => (
+                        <tr key={`${item.phone}-${index}`}>
+                          <td>{item.phone || '-'}</td>
+                          <td>{String(item.name || '').trim() || 'Unknown'}</td>
+                          <td>
+                            <span className={`recipient-status ${String(item.status || 'pending').toLowerCase()}`}>
+                              {String(item.status || 'pending').toUpperCase()}
+                            </span>
+                          </td>
+                          <td>{item.delivered ? 'Yes' : 'No'}</td>
+                          <td>{item.read ? 'Yes' : 'No'}</td>
+                          <td>{item.replied ? 'Yes' : 'No'}</td>
+                          <td>{item.failed ? 'Yes' : 'No'}</td>
+                          <td>{item.replyCount || 0}</td>
+                          <td>{formatDateTime(item.lastStatusAt)}</td>
+                          <td>{formatDateTime(item.lastReplyAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           )}
         </div>

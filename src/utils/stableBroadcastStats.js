@@ -1,6 +1,6 @@
 /**
- * Stabilizes broadcast statistics by preventing rapid fluctuations
- * Addresses the issue where numbers increase/decrease due to competing update mechanisms
+ * Stabilizes broadcast statistics by preventing rapid fluctuations.
+ * Uses input signature-aware cache so overview never shows stale counts.
  */
 
 // Debounce function to prevent rapid successive updates
@@ -20,7 +20,27 @@ const debounce = (func, wait) => {
 let statsCache = {
   data: null,
   timestamp: null,
-  debounceTimer: null
+  debounceTimer: null,
+  signature: ''
+};
+
+const getBroadcastsSignature = (broadcasts = []) => {
+  if (!Array.isArray(broadcasts) || broadcasts.length === 0) return 'empty';
+  return broadcasts
+    .map((broadcast) => {
+      const stats = broadcast?.stats || {};
+      return [
+        String(broadcast?._id || ''),
+        String(broadcast?.updatedAt || broadcast?.completedAt || broadcast?.startedAt || broadcast?.createdAt || ''),
+        Number(stats.sent || 0),
+        Number(stats.delivered || 0),
+        Number(stats.read || 0),
+        Number(stats.replied || 0),
+        Number(stats.failed || 0),
+        String(broadcast?.status || '')
+      ].join(':');
+    })
+    .join('|');
 };
 
 /**
@@ -28,36 +48,19 @@ let statsCache = {
  */
 export const validateBroadcastStats = (broadcasts) => {
   if (!Array.isArray(broadcasts)) return [];
-  
-  return broadcasts.map(broadcast => {
+
+  return broadcasts.map((broadcast) => {
     const stats = broadcast.stats || {};
     const recipientCount = broadcast.recipientCount || broadcast.recipients?.length || 0;
-    
-    // Keep stats monotonic and logically consistent.
+
     // read implies delivered; delivered/read should not exceed sent/recipients.
-    const maxPossible = recipientCount > 0 ? recipientCount : (stats.sent || 0);
-    let sent = Math.min(stats.sent || 0, maxPossible);
-    let delivered = Math.min(Math.max(stats.delivered || 0, stats.read || 0), sent);
-    let read = Math.min(stats.read || 0, delivered);
-    let replied = Math.min(stats.replied || 0, read);
-    let failed = Math.min(stats.failed || 0, sent);
-    
-    // Only log if there are meaningful changes
-    const hasChanges = 
-      stats.sent !== sent ||
-      stats.delivered !== delivered ||
-      stats.read !== read ||
-      stats.replied !== replied ||
-      stats.failed !== failed;
-    
-    if (hasChanges) {
-      console.log(`🔧 Normalizing stats for "${broadcast.name}":`, {
-        original: stats,
-        normalized: { sent, delivered, read, replied, failed },
-        recipientCount
-      });
-    }
-    
+    const maxPossible = recipientCount > 0 ? recipientCount : Number(stats.sent || 0);
+    const sent = Math.min(Number(stats.sent || 0), maxPossible);
+    const delivered = Math.min(Math.max(Number(stats.delivered || 0), Number(stats.read || 0)), sent);
+    const read = Math.min(Number(stats.read || 0), delivered);
+    const replied = Math.min(Number(stats.replied || 0), read);
+    const failed = Math.min(Number(stats.failed || 0), sent);
+
     return {
       ...broadcast,
       stats: {
@@ -76,88 +79,83 @@ export const validateBroadcastStats = (broadcasts) => {
  * Calculates stable overview stats without debouncing for immediate results
  */
 export const calculateStableOverviewStats = (broadcasts) => {
-  console.log('🔍 calculateStableOverviewStats called with', broadcasts.length, 'broadcasts');
-  
-  // Validate and normalize broadcast data first
-  const validatedBroadcasts = validateBroadcastStats(broadcasts);
-  
-  console.log('🔍 Validated broadcasts:', validatedBroadcasts.length);
-  
-  const stats = validatedBroadcasts.reduce((acc, broadcast, index) => {
-    const broadcastStats = broadcast.stats || {};
-    
-    const sent = broadcastStats.sent || 0;
-    const delivered = broadcastStats.delivered || 0;
-    const read = broadcastStats.read || 0;
-    const replied = broadcastStats.replied || 0;
-    const failed = broadcastStats.failed || 0;
-    
-    console.log(`📊 Broadcast ${index + 1} "${broadcast.name}":`, {
-      sent, delivered, read, replied, failed,
-      status: broadcast.status,
-      recipients: broadcast.recipientCount || broadcast.recipients?.length || 0
-    });
-    
-    return {
-      sent: acc.sent + sent,
-      delivered: acc.delivered + delivered,
-      read: acc.read + read,
-      replied: acc.replied + replied,
-      sending: acc.sending + (broadcast.status === 'sending' ? broadcast.recipientCount || 0 : 0),
-      failed: acc.failed + failed,
-      processing: acc.processing + (broadcast.status === 'processing' ? 1 : 0),
-      queued: acc.queued + (broadcast.status === 'scheduled' ? 1 : 0),
-    };
-  }, {
-    sent: 0,
-    delivered: 0,
-    read: 0,
-    replied: 0,
-    sending: 0,
-    failed: 0,
-    processing: 0,
-    queued: 0,
-  });
+  const validatedBroadcasts = validateBroadcastStats(broadcasts || []);
 
-  console.log('🔍 Final stable overview stats:', stats);
-  console.log('📊 Read count breakdown:', {
-    totalRead: stats.read,
-    broadcastsWithRead: validatedBroadcasts.filter(b => (b.stats?.read || 0) > 0).length,
-    totalBroadcasts: validatedBroadcasts.length
-  });
-  
+  const stats = validatedBroadcasts.reduce(
+    (acc, broadcast) => {
+      const broadcastStats = broadcast.stats || {};
+
+      const sent = Number(broadcastStats.sent || 0);
+      const delivered = Number(broadcastStats.delivered || 0);
+      const read = Number(broadcastStats.read || 0);
+      const replied = Number(broadcastStats.replied || 0);
+      const failed = Number(broadcastStats.failed || 0);
+      const recipientCount = Number(broadcast.recipientCount || broadcast.recipients?.length || 0);
+      const status = String(broadcast.status || '').toLowerCase();
+
+      return {
+        sent: acc.sent + sent,
+        delivered: acc.delivered + delivered,
+        read: acc.read + read,
+        replied: acc.replied + replied,
+        sending: acc.sending + (status === 'sending' ? recipientCount : 0),
+        failed: acc.failed + failed,
+        processing: acc.processing + (status === 'processing' ? 1 : 0),
+        queued: acc.queued + (status === 'scheduled' ? 1 : 0)
+      };
+    },
+    {
+      sent: 0,
+      delivered: 0,
+      read: 0,
+      replied: 0,
+      sending: 0,
+      failed: 0,
+      processing: 0,
+      queued: 0
+    }
+  );
+
   // Update cache
   statsCache.data = stats;
   statsCache.timestamp = Date.now();
-  
+
   return stats;
 };
 
-// Debounced version for frequent updates
+// Keep debounced function for compatibility with previous imports/usage.
 const debouncedCalculateStableOverviewStats = debounce(calculateStableOverviewStats, 500);
+void debouncedCalculateStableOverviewStats;
 
 /**
- * Gets cached stats if they're recent enough, otherwise calculates new ones
+ * Gets cached stats if they're recent enough and input data is unchanged,
+ * otherwise calculates new ones.
  */
 export const getCachedOverviewStats = (broadcasts, maxAge = 2000) => {
   const now = Date.now();
-  
-  if (statsCache.data && statsCache.timestamp && (now - statsCache.timestamp) < maxAge) {
-    console.log('📋 Using cached stats (age:', now - statsCache.timestamp, 'ms)');
+  const signature = getBroadcastsSignature(broadcasts);
+
+  if (
+    statsCache.data &&
+    statsCache.timestamp &&
+    statsCache.signature === signature &&
+    now - statsCache.timestamp < maxAge
+  ) {
     return statsCache.data;
   }
-  
-  console.log('🔄 Cache expired or empty, calculating new stats');
-  return calculateStableOverviewStats(broadcasts);
+
+  const next = calculateStableOverviewStats(broadcasts);
+  statsCache.signature = signature;
+  return next;
 };
 
 /**
  * Clears the stats cache (useful for manual refreshes)
  */
 export const clearStatsCache = () => {
-  console.log('🗑️  Clearing stats cache');
   statsCache.data = null;
   statsCache.timestamp = null;
+  statsCache.signature = '';
   if (statsCache.debounceTimer) {
     clearTimeout(statsCache.debounceTimer);
     statsCache.debounceTimer = null;

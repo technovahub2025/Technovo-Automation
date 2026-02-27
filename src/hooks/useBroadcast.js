@@ -27,9 +27,11 @@ export const useBroadcast = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
-  const [wsUpdateInProgress, setWsUpdateInProgress] = useState(false); // Track WebSocket updates
+  const [wsConnected, setWsConnected] = useState(false);
   const loadRequestSeqRef = useRef(0);
   const latestAppliedSeqRef = useRef(0);
+  const storedUser = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; } })();
+  const currentUserId = storedUser?.id || storedUser?._id || localStorage.getItem('userId') || null;
 
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -84,19 +86,11 @@ export const useBroadcast = () => {
 
   const syncTemplates = useCallback(async () => {
     try {
-      console.log('Syncing templates from Meta WhatsApp Business Manager...');
       const response = await apiClient.syncTemplates();
       const responseData = response?.data?.data ?? response?.data ?? [];
       const templates = Array.isArray(responseData) ? responseData : [];
 
-      console.log('Meta templates response:', response);
-      console.log('Processed Meta templates:', templates);
-
       setOfficialTemplates(templates);
-      console.log('Meta templates synced successfully');
-
-      const templateStatuses = templates.map(t => ({ name: t.name, status: t.status }));
-      console.log('Meta template statuses:', templateStatuses);
 
     } catch (error) {
       console.error('Failed to sync Meta templates:', error);
@@ -108,48 +102,22 @@ export const useBroadcast = () => {
   
 
   // Handle WebSocket messages
-  const handleWebSocketMessage = useCallback((data) => {
-    console.log('WebSocket message received:', data);
-  }, []);
+  const handleWebSocketMessage = useCallback(() => {}, []);
 
   // Handle broadcast stats updates
   const handleBroadcastStatsUpdate = useCallback((data) => {
-    console.log('Broadcast stats updated via WebSocket:', data);
-
     if (data.broadcastId && data.stats) {
-      // Set flag to indicate WebSocket update is in progress
-      setWsUpdateInProgress(true);
-      
-      console.log('Looking for broadcast with ID:', data.broadcastId);
-
-      // Ensure we have a string ID for comparison
       const targetId = String(data.broadcastId);
 
       setBroadcasts(prevBroadcasts => {
         const updatedBroadcasts = prevBroadcasts.map(broadcast => {
-          // Convert both IDs to strings for reliable comparison
           const broadcastId = String(broadcast._id || '');
 
-          console.log('Comparing:', {
-            frontendId: broadcastId,
-            backendId: targetId,
-            match: broadcastId === targetId
-          });
-
           if (broadcastId === targetId) {
-            console.log('Found matching broadcast, updating stats');
-
-            // Ensure data consistency - delivered should never exceed recipients
             const currentRecipients = broadcast.recipientCount || broadcast.recipients?.length || 0;
             const updatedStats = { ...data.stats };
 
-            // Fix data inconsistency
             if (updatedStats.delivered > currentRecipients && currentRecipients > 0) {
-              console.log('Fixing data inconsistency:', {
-                delivered: updatedStats.delivered,
-                recipients: currentRecipients,
-                issue: 'delivered > recipients'
-              });
               updatedStats.delivered = currentRecipients;
             }
 
@@ -161,64 +129,110 @@ export const useBroadcast = () => {
           return broadcast;
         });
 
-        // Log the changes for debugging
-        const changedBroadcast = updatedBroadcasts.find(b =>
-          String(b._id) === targetId
-        );
-
-        if (changedBroadcast) {
-          console.log('Updated broadcast:', {
-            id: changedBroadcast._id,
-            name: changedBroadcast.name,
-            stats: changedBroadcast.stats
-          });
-        } else {
-          console.log('No matching broadcast found for ID:', targetId);
-          console.log('Available broadcast IDs:', prevBroadcasts.map(b => ({
-            id: String(b._id),
-            name: b.name
-          })));
-        }
-
         return updatedBroadcasts;
       });
-      
-      // Clear the flag after a short delay to allow backend reload protection
-      setTimeout(() => {
-        setWsUpdateInProgress(false);
-      }, 1200);
     }
   }, []);
 
   // Handle message status updates
   const handleMessageStatusUpdate = useCallback((data) => {
-    console.log('Message status update via WebSocket:', data);
+    const status = String(data?.status || '').toLowerCase();
+    const previousStatus = String(data?.previousStatus || '').toLowerCase();
+    const targetId = data?.broadcastId ? String(data.broadcastId) : '';
 
-    // Only reload broadcasts for significant status changes and with longer delay
-    // BUT don't reload if WebSocket updates are in progress (to prevent overwriting correct data)
-    if (data.status === 'delivered' || data.status === 'read') {
-      if (wsUpdateInProgress) {
-        console.log('🛡️  Skipping backend reload - WebSocket update in progress');
-        return;
-      }
-      
-      console.log('Scheduling broadcast reload due to message status change...');
-      // Increased delay from 1 second to 3 seconds to allow WebSocket updates to settle
-      setTimeout(() => {
-        if (!wsUpdateInProgress) {
-          console.log('Reloading broadcasts after message status change...');
-          loadBroadcasts();
-        } else {
-          console.log('🛡️  Cancelled backend reload - WebSocket update still in progress');
-        }
-      }, 450);
+    if (targetId && ['delivered', 'read', 'failed'].includes(status)) {
+      setBroadcasts((prevBroadcasts) =>
+        prevBroadcasts.map((broadcast) => {
+          if (String(broadcast?._id || '') !== targetId) return broadcast;
+          const toNumber = (value) => {
+            const parsed = Number(value || 0);
+            return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+          };
+          const stats = { ...(broadcast.stats || {}) };
+
+          if (status === 'delivered' && previousStatus === 'sent') {
+            stats.delivered = toNumber(stats.delivered) + 1;
+          } else if (status === 'read' && previousStatus !== 'read') {
+            stats.read = toNumber(stats.read) + 1;
+            if (previousStatus !== 'delivered') {
+              stats.delivered = toNumber(stats.delivered) + 1;
+            }
+          } else if (status === 'failed' && previousStatus !== 'failed') {
+            stats.failed = toNumber(stats.failed) + 1;
+            if (previousStatus === 'sent') {
+              stats.sent = Math.max(0, toNumber(stats.sent) - 1);
+            }
+          }
+
+          stats.delivered = Math.max(toNumber(stats.delivered), toNumber(stats.read));
+          return { ...broadcast, stats };
+        })
+      );
+
+      // fast backend reconciliation
+      setTimeout(() => loadBroadcasts(), 120);
+      return;
     }
-  }, [loadBroadcasts, wsUpdateInProgress]);
+
+    // Fallback for payloads without broadcastId
+    if (['delivered', 'read', 'failed', 'sent'].includes(status)) {
+      setTimeout(() => loadBroadcasts(), 180);
+    }
+  }, [loadBroadcasts]);
 
   const parseDateValue = (value) => {
     if (!value) return null;
     const parsed = new Date(value);
     return Number.isNaN(parsed.getTime()) ? null : parsed;
+  };
+
+  const getPeriodDateRange = (period) => {
+    if (!period) return { start: null, end: null };
+
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const todayEnd = new Date(todayStart);
+    todayEnd.setHours(23, 59, 59, 999);
+
+    switch (period) {
+      case 'today':
+        return { start: todayStart, end: todayEnd };
+      case 'yesterday': {
+        const start = new Date(todayStart);
+        start.setDate(start.getDate() - 1);
+        const end = new Date(start);
+        end.setHours(23, 59, 59, 999);
+        return { start, end };
+      }
+      case 'last7days': {
+        const start = new Date(todayStart);
+        start.setDate(start.getDate() - 6);
+        return { start, end: todayEnd };
+      }
+      case 'last30days':
+      case 'last1month': {
+        const start = new Date(todayStart);
+        start.setDate(start.getDate() - 29);
+        return { start, end: todayEnd };
+      }
+      case 'last3months': {
+        const start = new Date(todayStart);
+        start.setMonth(start.getMonth() - 3);
+        return { start, end: todayEnd };
+      }
+      case 'last6months': {
+        const start = new Date(todayStart);
+        start.setMonth(start.getMonth() - 6);
+        return { start, end: todayEnd };
+      }
+      case 'lastyear': {
+        const start = new Date(todayStart);
+        start.setFullYear(start.getFullYear() - 1);
+        return { start, end: todayEnd };
+      }
+      default:
+        return { start: null, end: null };
+    }
   };
 
   // Load initial data and setup WebSocket
@@ -230,44 +244,21 @@ export const useBroadcast = () => {
     // Setup WebSocket for real-time updates
     const setupWebSocket = async () => {
       try {
-        console.log('Attempting to connect WebSocket...');
-        await webSocketService.connect('broadcast-user', handleWebSocketMessage);
+        await webSocketService.connect(currentUserId || 'broadcast-user', handleWebSocketMessage);
+        setWsConnected(webSocketService.isConnected());
 
         if (isCancelled) return undefined;
 
-        const handleConnected = (data) => {
-          console.log('WebSocket connected event:', data);
-        };
+        const handleConnected = () => setWsConnected(true);
+        const handleDisconnected = () => setWsConnected(false);
+        const handleError = () => setWsConnected(false);
 
-        const handleDisconnected = (data) => {
-          console.log('WebSocket disconnected event:', data);
-        };
-
-        const handleError = (data) => {
-          console.log('WebSocket error event:', data);
-        };
-
-        // Listen for all events to debug
         webSocketService.on('connected', handleConnected);
         webSocketService.on('disconnected', handleDisconnected);
         webSocketService.on('error', handleError);
 
-        // Listen for broadcast stat updates
         webSocketService.on('broadcast_stats_updated', handleBroadcastStatsUpdate);
         webSocketService.on('message_status', handleMessageStatusUpdate);
-
-        console.log('WebSocket connected for real-time broadcast updates');
-        console.log('WebSocket connection status:', webSocketService.getConnectionState());
-
-        // Test connection by sending a ping
-        setTimeout(() => {
-          if (webSocketService.isConnected()) {
-            console.log('Testing WebSocket connection...');
-            webSocketService.send({ type: 'ping', test: true });
-          } else {
-            console.log('WebSocket not connected after setup');
-          }
-        }, 2000);
 
         return () => {
           webSocketService.off('connected', handleConnected);
@@ -276,7 +267,7 @@ export const useBroadcast = () => {
         };
       } catch (error) {
         console.error('Failed to connect WebSocket:', error);
-        console.log('WebSocket will retry connection automatically...');
+        setWsConnected(false);
         return undefined;
       }
     };
@@ -292,17 +283,19 @@ export const useBroadcast = () => {
       if (cleanupEvents) cleanupEvents();
       webSocketService.off('broadcast_stats_updated', handleBroadcastStatsUpdate);
       webSocketService.off('message_status', handleMessageStatusUpdate);
+      setWsConnected(false);
     };
-  }, [handleBroadcastStatsUpdate, handleMessageStatusUpdate, handleWebSocketMessage, loadBroadcasts, loadTemplates]);
+  }, [currentUserId, handleBroadcastStatsUpdate, handleMessageStatusUpdate, handleWebSocketMessage, loadBroadcasts, loadTemplates]);
 
-  // Auto-refresh broadcasts smoothly while user is on overview
-  // Faster polling when there are active broadcasts (scheduled/sending/processing)
+  // Fallback polling only when websocket is unavailable.
   useEffect(() => {
+    if (wsConnected) return undefined;
+
     const hasActiveBroadcasts = broadcasts.some((b) =>
       ['scheduled', 'sending', 'processing'].includes(String(b?.status || '').toLowerCase())
     );
 
-    const intervalMs = hasActiveBroadcasts ? 2000 : 4500;
+    const intervalMs = hasActiveBroadcasts ? 2500 : 5000;
 
     const interval = setInterval(() => {
       if (activeTab !== 'overview') return;
@@ -331,24 +324,17 @@ export const useBroadcast = () => {
       document.removeEventListener('visibilitychange', handleVisibility);
       window.removeEventListener('focus', handleFocus);
     };
-  }, [activeTab, broadcasts, loadBroadcasts]);
+  }, [activeTab, broadcasts, loadBroadcasts, wsConnected]);
 
   // Fetch official templates when template mode is selected
   useEffect(() => {
     const fetchTemplates = async () => {
       try {
-        console.log('🔄 Fetching official templates from Meta...');
         const response = await apiClient.getTemplates();
         const responseData = response?.data?.data ?? response?.data ?? [];
         const templates = Array.isArray(responseData) ? responseData : [];
 
-        console.log('📋 Meta official templates response:', response);
-        console.log('📋 Processed Meta official templates:', templates);
-
         setOfficialTemplates(templates);
-
-        const templateStatuses = templates.map(t => ({ name: t.name, status: t.status }));
-        console.log('📊 Meta official template statuses:', templateStatuses);
 
       } catch (error) {
         console.error('❌ Failed to fetch Meta templates:', error);
@@ -405,31 +391,12 @@ export const useBroadcast = () => {
     const delivered = Math.max(deliveredRaw, read);
     const sent = toNonNegative(broadcast.stats?.sent);
 
-    console.log(`???? Success Rate Calculation for "${broadcast.name}":`, {
-      delivered,
-      deliveredRaw,
-      read,
-      sent,
-      stats: broadcast.stats
-    });
-
     if (sent === 0) return 0;
 
     let successRate = (delivered / sent) * 100;
+    if (successRate > 100) successRate = 100;
 
-    if (successRate > 100) {
-      console.log('???? Success rate > 100%, capping at 100:', {
-        delivered,
-        sent,
-        originalRate: successRate
-      });
-      successRate = 100;
-    }
-
-    const finalRate = Math.round(successRate);
-    console.log(`???? Final success rate: ${finalRate}%`);
-
-    return finalRate;
+    return Math.round(successRate);
   };
 
   const getReadPercentage = (broadcast) => {
@@ -438,37 +405,14 @@ export const useBroadcast = () => {
     const totalRecipients = broadcast.recipientCount || broadcast.recipients?.length || 0;
     const delivered = toNonNegative(broadcast.stats?.delivered);
 
-    console.log(`???? Read Rate Calculation for "${broadcast.name}":`, {
-      read,
-      sent,
-      totalRecipients,
-      delivered,
-      stats: broadcast.stats
-    });
-
-    // Use sent count as primary base, fallback to total recipients, then delivered
     const base = sent || totalRecipients || delivered;
     if (base === 0) return 0;
-    
-    // Additional validation: read should never exceed sent
+
     const validRead = Math.min(read, sent || base);
     let readRate = (validRead / base) * 100;
+    if (readRate > 100) readRate = 100;
 
-    if (readRate > 100) {
-      console.log('???? Read rate > 100%, capping at 100:', {
-        read,
-        validRead,
-        sent,
-        base,
-        originalRate: readRate
-      });
-      readRate = 100;
-    }
-
-    const finalRate = Math.round(readRate);
-    console.log(`???? Final read rate: ${finalRate}% (read: ${validRead}, base: ${base})`);
-
-    return finalRate;
+    return Math.round(readRate);
   };
 
   const getRepliedPercentage = (broadcast) => {
@@ -476,65 +420,27 @@ export const useBroadcast = () => {
     const replied = toNonNegative(broadcast.stats?.replied);
     const totalRecipients = broadcast.recipientCount || broadcast.recipients?.length || 0;
 
-    console.log(`???? Replied Rate Calculation for "${broadcast.name}":`, {
-      sent,
-      replied,
-      totalRecipients,
-      stats: broadcast.stats
-    });
-
     const base = sent || totalRecipients;
     if (base === 0) return 0;
 
     let repliedRate = (replied / base) * 100;
+    if (repliedRate > 100) repliedRate = 100;
 
-    if (repliedRate > 100) {
-      console.log('???? Replied rate > 100%, capping at 100:', {
-        replied,
-        base,
-        originalRate: repliedRate
-      });
-      repliedRate = 100;
-    }
-
-    const finalRate = Math.round(repliedRate);
-    console.log(`???? Final replied rate: ${finalRate}%`);
-
-    return finalRate;
+    return Math.round(repliedRate);
   };
 
   const getOverviewStats = () => {
-    console.log('🔍 getOverviewStats called with broadcasts:', broadcasts);
-    console.log('🔍 Broadcast sample:', broadcasts[0]);
-    
     const stats = broadcasts.reduce((acc, broadcast) => {
       const broadcastStats = broadcast.stats || {};
-      console.log(`🔍 Processing broadcast "${broadcast.name}":`, {
-        stats: broadcastStats,
-        delivered: broadcastStats.delivered,
-        sent: broadcastStats.sent,
-        read: broadcastStats.read
-      });
-      
+
       const sent = toNonNegative(broadcastStats.sent);
       const delivered = toNonNegative(broadcastStats.delivered);
       const read = toNonNegative(broadcastStats.read);
       const replied = toNonNegative(broadcastStats.replied);
       const failed = toNonNegative(broadcastStats.failed);
-      
-      // Fix logical inconsistency: delivered should never be less than read
-      // If read > delivered, it means delivered count is underreported
+
       const correctedDelivered = Math.max(delivered, read);
-      
-      if (correctedDelivered !== delivered) {
-        console.log(`🔧 Fixing delivery inconsistency for "${broadcast.name}":`, {
-          originalDelivered: delivered,
-          read: read,
-          correctedDelivered: correctedDelivered,
-          reason: 'Read count cannot exceed delivered count'
-        });
-      }
-      
+
       return {
         sent: acc.sent + sent,
         delivered: acc.delivered + correctedDelivered,
@@ -556,7 +462,6 @@ export const useBroadcast = () => {
       queued: 0,
     });
 
-    console.log('🔍 Final overview stats:', stats);
     return stats;
   };
 
@@ -627,11 +532,17 @@ export const useBroadcast = () => {
       filtered = filtered.filter((broadcast) => broadcast.status === statusFilter);
     }
 
-    if (startDate || endDate) {
+    const parsedStartDate = parseDateValue(startDate);
+    const parsedEndDate = parseDateValue(endDate);
+    const periodRange = getPeriodDateRange(selectedPeriod);
+    const effectiveStart = parsedStartDate || periodRange.start;
+    const effectiveEnd = parsedEndDate || periodRange.end;
+
+    if (effectiveStart || effectiveEnd) {
       filtered = filtered.filter((b) => {
         const campaignDate = new Date(b.createdAt || b.scheduledAt || 0);
-        const start = parseDateValue(startDate);
-        const end = parseDateValue(endDate);
+        const start = effectiveStart;
+        const end = effectiveEnd ? new Date(effectiveEnd) : null;
         if (end) {
           end.setHours(23, 59, 59, 999);
         }
@@ -693,9 +604,10 @@ export const useBroadcast = () => {
   };
 
   // Download campaigns as CSV
-  const downloadAllCampaigns = () => {
+  const downloadAllCampaigns = (campaigns = broadcasts) => {
+    const exportRows = Array.isArray(campaigns) ? campaigns : broadcasts;
     const csvHeaders = ['Campaign Name', 'Status', 'Scheduled Time', 'Recipients', 'Sent', 'Delivered', 'Read'];
-    const csvData = broadcasts.map(broadcast => [
+    const csvData = exportRows.map(broadcast => [
       broadcast.name || '',
       broadcast.status || '',
       broadcast.scheduledAt ? new Date(broadcast.scheduledAt).toLocaleString('en-US', {
@@ -721,7 +633,7 @@ export const useBroadcast = () => {
     const link = document.createElement('a');
     const url = URL.createObjectURL(blob);
     link.setAttribute('href', url);
-    link.setAttribute('download', `all_campaigns_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `campaigns_export_${new Date().toISOString().split('T')[0]}.csv`);
     link.style.visibility = 'hidden';
     document.body.appendChild(link);
     link.click();

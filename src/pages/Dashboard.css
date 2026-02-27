@@ -92,15 +92,22 @@
 
     display: grid;
 
-    grid-template-columns: 2fr 1fr;
+    grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
 
     gap: 24px;
 
 }
 
+.dashboard-content-grid > * {
+    min-width: 0;
+}
 
+.main-chart-area,
+.side-widgets {
+    min-width: 0;
+}
 
-@media (max-width: 1024px) {
+@media (max-width: 1280px) {
 
     .dashboard-content-grid {
 
@@ -344,7 +351,7 @@
 
 /* Action Buttons */
 
-.action-btn {
+.dashboard-action-btn {
 
     width: 100%;
 
@@ -370,7 +377,7 @@
 
 
 
-.action-btn:hover:not(:disabled) {
+.dashboard-action-btn:hover:not(:disabled) {
 
     background-color: var(--color-bg-surface);
 
@@ -380,7 +387,7 @@
 
 
 
-.action-btn:disabled {
+.dashboard-action-btn:disabled {
 
     opacity: 0.6;
 
@@ -390,7 +397,7 @@
 
 
 
-.action-btn:last-child {
+.dashboard-action-btn:last-child {
 
     margin-bottom: 0;
 
@@ -398,9 +405,9 @@
 
 
 
-/* Metrics Grid */
+/* Dashboard Metrics Grid */
 
-.metrics-grid {
+.dashboard-metrics-grid {
 
     display: grid;
 
@@ -412,7 +419,7 @@
 
 
 
-.metric-item {
+.dashboard-metric-item {
 
     text-align: center;
 
@@ -426,7 +433,7 @@
 
 
 
-.metric-label {
+.dashboard-metric-label {
 
     font-size: 12px;
 
@@ -438,7 +445,7 @@
 
 
 
-.metric-value {
+.dashboard-metric-value {
 
     font-size: 18px;
 
@@ -446,4 +453,62 @@
 
     color: var(--color-text-primary);
 
+}
+/* Dashboard Analytics Modal */
+.dashboard-modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    background: rgba(17, 24, 39, 0.55);
+    backdrop-filter: blur(2px);
+}
+
+.dashboard-modal-content {
+    position: relative;
+    width: min(1200px, 94vw);
+    max-height: 92vh;
+    overflow: auto;
+    border-radius: 14px;
+}
+
+.dashboard-modal-content .message-analytics {
+    box-shadow: var(--shadow-lg);
+}
+
+.dashboard-modal-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 2;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    background: var(--color-bg-surface);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    font-size: 20px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dashboard-modal-close:hover {
+    border-color: var(--color-primary);
+}
+
+@media (max-width: 768px) {
+    .dashboard-modal-overlay {
+        padding: 10px;
+    }
+
+    .dashboard-modal-content {
+        width: 100%;
+        max-height: 96vh;
+    }
 }

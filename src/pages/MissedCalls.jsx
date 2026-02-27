@@ -1802,33 +1802,33 @@ const MissedCalls = ({ page = "all" }) => {
 
                 <div className="detail-section full-width">
                   <h3><MessageCircle size={18} /> Actions</h3>
-                  <div className="action-buttons">
+                  <div className="details-action-buttons">
                     {selectedCall.status === "missed" && (
                       <button
-                        className="action-btn primary"
+                        className="details-action-btn primary"
                         onClick={() => resolveCall(selectedCall.id)}
                       >
                         <CheckCircle size={16} /> Mark Resolved
                       </button>
                     )}
-                    <button className="action-btn primary">
+                    <button className="details-action-btn primary">
                       <Phone size={16} /> Call Back
                     </button>
                     {(selectedCall.automationStatus === "failed" || selectedCall.automationStatus === "pending") && (
                       <button
-                        className="action-btn secondary"
+                        className="details-action-btn secondary"
                         onClick={() => runNow(selectedCall.id)}
                       >
                         <RefreshCcw size={16} /> Run Automation Now
                       </button>
                     )}
-                    <button className="action-btn secondary">
+                    <button className="details-action-btn secondary">
                       <MessageCircle size={16} /> Send SMS
                     </button>
-                    <button className="action-btn outline">
+                    <button className="details-action-btn outline">
                       <Mail size={16} /> Send Email
                     </button>
-                    <button className="action-btn outline">
+                    <button className="details-action-btn outline">
                       <FileText size={16} /> Add Note
                     </button>
                   </div>

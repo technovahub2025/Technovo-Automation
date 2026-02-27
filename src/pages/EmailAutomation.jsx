@@ -105,9 +105,9 @@ const EmailAutomation = () => {
                 const Icon = stat.icon;
                 return (
                   <div key={index} className="stat-card">
-                    <div className="stat-header-flex" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '10px' }}>
+                    <div className="stat-header-flex">
                       <h3>{stat.label}</h3>
-                      <div className="stat-icon-wrapper" style={{ backgroundColor: `${stat.color}20`, padding: '8px', borderRadius: '8px', color: stat.color }}>
+                      <div className="stat-icon-wrapper" style={{ backgroundColor: `${stat.color}20`, color: stat.color }}>
                         <Icon size={20} />
                       </div>
                     </div>
@@ -148,18 +148,18 @@ const EmailAutomation = () => {
             <div className="quick-actions">
               <div className="section-card">
                 <h2>Quick Actions</h2>
-                <div className="action-buttons">
+                <div className="email-quick-action-buttons">
                   <button
-                    className="action-btn primary"
+                    className="email-quick-action-btn primary"
                     onClick={() => setActiveTab('extractor')}
                   >
                     Extract New PDF
                   </button>
-                  <button className="action-btn secondary" onClick={handleViewHistory}>
+                  <button className="email-quick-action-btn secondary" onClick={handleViewHistory}>
                     {showFullHistory ? 'Hide History' : 'View History'}
                   </button>
                   <button
-                    className="action-btn secondary"
+                    className="email-quick-action-btn secondary"
                     onClick={handleExportReports}
                     disabled={isExporting}
                   >

@@ -136,13 +136,20 @@
   padding: 24px;
 }
 
-.overview-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+.analytics-modal .overview-grid {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
   gap: 20px;
 }
 
-.metric-card {
+.analytics-modal .overview-grid .metric-card {
+  flex: 0 0 calc((100% - 20px) / 2);
+  max-width: calc((100% - 20px) / 2);
+  box-sizing: border-box;
+}
+
+.analytics-modal .metric-card {
   display: flex;
   align-items: center;
   gap: 16px;
@@ -153,7 +160,7 @@
   transition: all 0.2s;
 }
 
-.metric-card:hover {
+.analytics-modal .metric-card:hover {
   box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
@@ -344,6 +351,75 @@
   font-size: 14px;
 }
 
+.recipient-details-section {
+  width: 100%;
+}
+
+.recipient-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #ffffff;
+}
+
+.recipient-table {
+  width: 100%;
+  min-width: 980px;
+  border-collapse: collapse;
+}
+
+.recipient-table th,
+.recipient-table td {
+  padding: 10px 12px;
+  text-align: left;
+  border-bottom: 1px solid #f3f4f6;
+  font-size: 13px;
+  color: #111827;
+  white-space: nowrap;
+}
+
+.recipient-table th {
+  background: #f9fafb;
+  color: #4b5563;
+  font-weight: 600;
+}
+
+.recipient-status {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.recipient-status.read {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.recipient-status.delivered {
+  background: #d1fae5;
+  color: #047857;
+}
+
+.recipient-status.sent {
+  background: #ede9fe;
+  color: #6d28d9;
+}
+
+.recipient-status.failed {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.recipient-status.pending {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
 @media (max-width: 768px) {
   .analytics-modal {
     margin: 20px;
@@ -355,8 +431,13 @@
     grid-template-columns: 1fr;
   }
 
-  .overview-grid {
-    grid-template-columns: 1fr;
+  .analytics-modal .overview-grid {
+    justify-content: stretch;
+  }
+
+  .analytics-modal .overview-grid .metric-card {
+    flex: 0 0 100%;
+    max-width: 100%;
   }
 
   .bar-chart {

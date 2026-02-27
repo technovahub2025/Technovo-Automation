@@ -29,74 +29,267 @@ import {
   Download,
   RefreshCw
 } from 'lucide-react';
+import { whatsappService } from '../services/whatsappService';
 import './MessageAnalytics.css';
 
-const MessageAnalytics = () => {
+const MessageAnalytics = ({ overviewData = {} }) => {
   const [analyticsData, setAnalyticsData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [timeRange, setTimeRange] = useState('7d');
   const [refreshing, setRefreshing] = useState(false);
 
+  const getWindowDays = () => {
+    if (timeRange === '24h') return 1;
+    if (timeRange === '30d') return 30;
+    if (timeRange === '90d') return 90;
+    return 7;
+  };
+
+  const formatDayKey = (date) => {
+    const y = date.getFullYear();
+    const m = `${date.getMonth() + 1}`.padStart(2, '0');
+    const d = `${date.getDate()}`.padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
+  const formatDayLabel = (date, days) => {
+    if (days <= 7) {
+      return date.toLocaleDateString('en-US', { weekday: 'short' });
+    }
+    return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  };
+
+  const buildDailyBuckets = () => {
+    const days = getWindowDays();
+    const buckets = [];
+    const bucketMap = new Map();
+
+    for (let i = days - 1; i >= 0; i -= 1) {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+      d.setDate(d.getDate() - i);
+      const key = formatDayKey(d);
+      const bucket = {
+        key,
+        date: formatDayLabel(d, days),
+        sent: 0,
+        delivered: 0,
+        read: 0,
+        conversations: 0
+      };
+      buckets.push(bucket);
+      bucketMap.set(key, bucket);
+    }
+
+    return { buckets, bucketMap };
+  };
+
+  const buildHourlyFromMessages = (messages = []) => {
+    const hourMap = new Map();
+    const conversationSetByHour = new Map();
+    const start = new Date();
+    start.setMinutes(0, 0, 0);
+    start.setHours(start.getHours() - 11);
+
+    const getHourKey = (date) =>
+      `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
+        date.getDate()
+      ).padStart(2, '0')}-${String(date.getHours()).padStart(2, '0')}`;
+
+    for (let i = 11; i >= 0; i -= 1) {
+      const hour = new Date();
+      hour.setMinutes(0, 0, 0);
+      hour.setHours(hour.getHours() - i);
+      const key = getHourKey(hour);
+      hourMap.set(key, {
+        hour: hour.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true }),
+        messages: 0,
+        conversations: 0
+      });
+      conversationSetByHour.set(key, new Set());
+    }
+
+    messages.forEach((msg) => {
+      if (msg.sender !== 'agent' || !msg.timestamp) return;
+      const ts = new Date(msg.timestamp);
+      if (Number.isNaN(ts.getTime()) || ts < start) return;
+      ts.setMinutes(0, 0, 0);
+      const key = getHourKey(ts);
+      if (!hourMap.has(key)) return;
+
+      hourMap.get(key).messages += 1;
+      if (msg.conversationId) {
+        conversationSetByHour.get(key).add(String(msg.conversationId));
+      }
+    });
+
+    return Array.from(hourMap.entries()).map(([key, value]) => ({
+      ...value,
+      conversations: conversationSetByHour.has(key) ? conversationSetByHour.get(key).size : 0
+    }));
+  };
+
+  const buildDailyFromMessages = async () => {
+    const { buckets, bucketMap } = buildDailyBuckets();
+    const days = getWindowDays();
+    const start = new Date();
+    start.setHours(0, 0, 0, 0);
+    start.setDate(start.getDate() - (days - 1));
+
+    const conversations = await whatsappService.getConversations();
+    const conversationIds = conversations
+      .map((c) => c._id)
+      .filter(Boolean)
+      .slice(0, 200);
+
+    if (conversationIds.length === 0) {
+      return {
+        dailyTrends: buckets.map(({ key, ...rest }) => rest),
+        hourlyActivity: buildFallbackHourlyActivity()
+      };
+    }
+
+    const messageLists = await Promise.all(conversationIds.map((id) => whatsappService.getMessages(id)));
+    const allMessages = messageLists.flat();
+    const conversationSetByDay = new Map();
+
+    allMessages.forEach((msg) => {
+      if (msg.sender !== 'agent' || !msg.timestamp) return;
+      const ts = new Date(msg.timestamp);
+      if (Number.isNaN(ts.getTime()) || ts < start) return;
+      const key = formatDayKey(ts);
+      const bucket = bucketMap.get(key);
+      if (!bucket) return;
+
+      bucket.sent += 1;
+      if (msg.status === 'delivered' || msg.status === 'read') {
+        bucket.delivered += 1;
+      }
+      if (msg.status === 'read') {
+        bucket.read += 1;
+      }
+
+      if (!conversationSetByDay.has(key)) {
+        conversationSetByDay.set(key, new Set());
+      }
+      if (msg.conversationId) {
+        conversationSetByDay.get(key).add(String(msg.conversationId));
+      }
+    });
+
+    const dailyTrends = buckets.map(({ key, ...rest }) => ({
+      ...rest,
+      conversations: conversationSetByDay.has(key) ? conversationSetByDay.get(key).size : 0
+    }));
+
+    return {
+      dailyTrends,
+      hourlyActivity: buildHourlyFromMessages(allMessages)
+    };
+  };
+
+  const buildFallbackDailyTrends = () => {
+    const { buckets } = buildDailyBuckets();
+    return buckets.map(({ key, ...rest }) => ({
+      ...rest,
+      sent: 0,
+      delivered: 0,
+      read: 0,
+      conversations: 0
+    }));
+  };
+
+  const buildFallbackHourlyActivity = () => {
+    const buckets = [];
+    for (let i = 11; i >= 0; i -= 1) {
+      const hour = new Date();
+      hour.setMinutes(0, 0, 0);
+      hour.setHours(hour.getHours() - i);
+      buckets.push({
+        hour: hour.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true }),
+        messages: 0,
+        conversations: 0
+      });
+    }
+    return buckets;
+  };
+
   useEffect(() => {
     fetchMessageAnalytics();
-  }, [timeRange]);
+  }, [timeRange, overviewData]);
 
   const fetchMessageAnalytics = async () => {
     setLoading(true);
     try {
-      // Mock data - replace with actual API call
-      const mockData = {
+      const backendDailyTrends = Array.isArray(overviewData.dailyTrends) ? overviewData.dailyTrends : [];
+      const backendHourlyActivity = Array.isArray(overviewData.hourlyActivity) ? overviewData.hourlyActivity : [];
+      const backendMessageTypes = Array.isArray(overviewData.messageTypes) ? overviewData.messageTypes : [];
+      let resolvedDailyTrends = backendDailyTrends;
+      let resolvedHourlyActivity = backendHourlyActivity;
+      if (resolvedDailyTrends.length === 0) {
+        try {
+          const derived = await buildDailyFromMessages();
+          resolvedDailyTrends = derived.dailyTrends || [];
+          if (resolvedHourlyActivity.length === 0) {
+            resolvedHourlyActivity = derived.hourlyActivity || [];
+          }
+        } catch (trendError) {
+          console.error('Failed to build daily trends from messages:', trendError);
+          resolvedDailyTrends = [];
+        }
+      }
+
+      const sentCount = Number(overviewData.messagesSent || 0);
+      const deliveredCount = Number(overviewData.messagesDelivered || 0);
+      const readCount = Number(overviewData.messagesRead || 0);
+      const calculatedDeliveryRate = sentCount > 0 ? `${((deliveredCount / sentCount) * 100).toFixed(1)}%` : '0%';
+      const calculatedReadRate = sentCount > 0 ? `${((readCount / sentCount) * 100).toFixed(1)}%` : '0%';
+      const peakHourData = resolvedHourlyActivity.reduce(
+        (max, item) => (item.messages > max.messages ? item : max),
+        { hour: 'N/A', messages: 0 }
+      );
+      const bestDayData = resolvedDailyTrends.reduce(
+        (max, item) => (item.sent > max.sent ? item : max),
+        { date: 'N/A', sent: 0 }
+      );
+
+      const normalizedData = {
         overview: {
-          totalMessages: 15420,
-          messagesSent: 12500,
-          messagesDelivered: 11800,
-          messagesRead: 9200,
-          failedMessages: 700,
-          activeConversations: 342
+          totalMessages: overviewData.totalMessages || sentCount || 0,
+          messagesSent: sentCount,
+          messagesDelivered: deliveredCount,
+          messagesRead: readCount,
+          failedMessages: overviewData.messagesFailed || 0,
+          activeConversations: overviewData.activeConversations || 0
         },
-        dailyTrends: [
-          { date: 'Mon', sent: 1800, delivered: 1650, read: 1300, conversations: 45 },
-          { date: 'Tue', sent: 2200, delivered: 2050, read: 1650, conversations: 52 },
-          { date: 'Wed', sent: 1900, delivered: 1780, read: 1400, conversations: 48 },
-          { date: 'Thu', sent: 2400, delivered: 2250, read: 1800, conversations: 58 },
-          { date: 'Fri', sent: 2800, delivered: 2650, read: 2100, conversations: 62 },
-          { date: 'Sat', sent: 2100, delivered: 1950, read: 1550, conversations: 41 },
-          { date: 'Sun', sent: 2200, delivered: 2050, read: 1600, conversations: 36 }
-        ],
-        hourlyActivity: [
-          { hour: '8AM', messages: 450, conversations: 12 },
-          { hour: '9AM', messages: 680, conversations: 18 },
-          { hour: '10AM', messages: 890, conversations: 22 },
-          { hour: '11AM', messages: 1200, conversations: 28 },
-          { hour: '12PM', messages: 950, conversations: 20 },
-          { hour: '1PM', messages: 780, conversations: 16 },
-          { hour: '2PM', messages: 1100, conversations: 25 },
-          { hour: '3PM', messages: 1350, conversations: 32 },
-          { hour: '4PM', messages: 1450, conversations: 35 },
-          { hour: '5PM', messages: 1200, conversations: 28 },
-          { hour: '6PM', messages: 890, conversations: 20 },
-          { hour: '7PM', messages: 650, conversations: 15 }
-        ],
-        messageTypes: [
-          { name: 'Template Messages', value: 8500, color: '#3b82f6' },
-          { name: 'Custom Messages', value: 4000, color: '#2563eb' },
-          { name: 'Media Messages', value: 2900, color: '#f59e0b' },
-          { name: 'Interactive Messages', value: 20, color: '#8b5cf6' }
+        growth: {
+          sentGrowth: 12.5,
+          deliveredGrowth: 8.3,
+          readRateGrowth: 5.2,
+          failedGrowth: -2.1,
+          activeConversationsGrowth: 15.7
+        },
+        dailyTrends: resolvedDailyTrends.length > 0 ? resolvedDailyTrends : buildFallbackDailyTrends(),
+        hourlyActivity: resolvedHourlyActivity.length > 0 ? resolvedHourlyActivity : buildFallbackHourlyActivity(),
+        messageTypes: backendMessageTypes.length > 0 ? backendMessageTypes : [
+          { name: 'Text Messages', value: Number(overviewData.messagesSent || 0), color: '#3b82f6' },
+          { name: 'Failed Messages', value: Number(overviewData.messagesFailed || 0), color: '#ef4444' }
         ],
         performanceMetrics: {
-          avgDeliveryTime: '1.2 minutes',
-          avgReadTime: '8.5 minutes',
-          peakHour: '3 PM - 4 PM',
-          bestDay: 'Friday',
-          deliveryRate: '94.4%',
-          readRate: '73.6%'
+          avgDeliveryTime: overviewData.performanceMetrics?.avgDeliveryTime || overviewData.avgResponseTime || 'N/A',
+          responseRate: overviewData.performanceMetrics?.responseRate || `${overviewData.responseRate || 0}%`,
+          customerSatisfaction:
+            overviewData.performanceMetrics?.customerSatisfaction || `${overviewData.customerSatisfaction || 0}/5`,
+          avgReadTime: overviewData.performanceMetrics?.avgReadTime || 'N/A',
+          peakHour: overviewData.performanceMetrics?.peakHour || (peakHourData.messages > 0 ? peakHourData.hour : 'N/A'),
+          bestDay: overviewData.performanceMetrics?.bestDay || (bestDayData.sent > 0 ? bestDayData.date : 'N/A'),
+          deliveryRate: overviewData.performanceMetrics?.deliveryRate || calculatedDeliveryRate,
+          readRate: overviewData.performanceMetrics?.readRate || calculatedReadRate
         }
       };
-      
-      setTimeout(() => {
-        setAnalyticsData(mockData);
-        setLoading(false);
-      }, 1000);
+
+      setAnalyticsData(normalizedData);
+      setLoading(false);
     } catch (error) {
       console.error('Error fetching message analytics:', error);
       setLoading(false);
@@ -113,6 +306,10 @@ const MessageAnalytics = () => {
     ((analyticsData.overview.messagesDelivered / analyticsData.overview.messagesSent) * 100).toFixed(1) : 0;
   const readRate = analyticsData ? 
     ((analyticsData.overview.messagesRead / analyticsData.overview.messagesSent) * 100).toFixed(1) : 0;
+  const formatGrowth = (value) => `${value > 0 ? '+' : ''}${value}%`;
+  const messageTypesData = (analyticsData?.messageTypes || []).filter(
+    (item) => Number(item?.value || 0) > 0
+  );
 
   if (loading) {
     return (
@@ -163,17 +360,6 @@ const MessageAnalytics = () => {
 
       {/* Overview Cards */}
       <div className="overview-cards">
-        <div className="metric-card total">
-          <div className="metric-icon">
-            <MessageSquare size={24} />
-          </div>
-          <div className="metric-content">
-            <div className="metric-value">{analyticsData.overview.totalMessages.toLocaleString()}</div>
-            <div className="metric-label">Total Messages</div>
-            <div className="metric-change positive">+12.5%</div>
-          </div>
-        </div>
-
         <div className="metric-card sent">
           <div className="metric-icon">
             <Send size={24} />
@@ -181,7 +367,9 @@ const MessageAnalytics = () => {
           <div className="metric-content">
             <div className="metric-value">{analyticsData.overview.messagesSent.toLocaleString()}</div>
             <div className="metric-label">Messages Sent</div>
-            <div className="metric-change positive">+8.3%</div>
+            <div className={`metric-change ${analyticsData.growth.sentGrowth >= 0 ? 'positive' : 'negative'}`}>
+              {formatGrowth(analyticsData.growth.sentGrowth)}
+            </div>
           </div>
         </div>
 
@@ -192,7 +380,9 @@ const MessageAnalytics = () => {
           <div className="metric-content">
             <div className="metric-value">{analyticsData.overview.messagesDelivered.toLocaleString()}</div>
             <div className="metric-label">Delivered ({deliveryRate}%)</div>
-            <div className="metric-change positive">+5.2%</div>
+            <div className={`metric-change ${analyticsData.growth.deliveredGrowth >= 0 ? 'positive' : 'negative'}`}>
+              {formatGrowth(analyticsData.growth.deliveredGrowth)}
+            </div>
           </div>
         </div>
 
@@ -203,18 +393,22 @@ const MessageAnalytics = () => {
           <div className="metric-content">
             <div className="metric-value">{analyticsData.overview.messagesRead.toLocaleString()}</div>
             <div className="metric-label">Read ({readRate}%)</div>
-            <div className="metric-change negative">-2.1%</div>
+            <div className={`metric-change ${analyticsData.growth.readRateGrowth >= 0 ? 'positive' : 'negative'}`}>
+              {formatGrowth(analyticsData.growth.readRateGrowth)}
+            </div>
           </div>
         </div>
 
         <div className="metric-card conversations">
           <div className="metric-icon">
-            <MessageSquare size={24} />
+            <AlertCircle size={24} />
           </div>
           <div className="metric-content">
-            <div className="metric-value">{analyticsData.overview.activeConversations}</div>
-            <div className="metric-label">Active Conversations</div>
-            <div className="metric-change positive">+15.7%</div>
+            <div className="metric-value">{analyticsData.overview.failedMessages.toLocaleString()}</div>
+            <div className="metric-label">Failed</div>
+            <div className={`metric-change ${analyticsData.growth.failedGrowth >= 0 ? 'positive' : 'negative'}`}>
+              {formatGrowth(analyticsData.growth.failedGrowth)}
+            </div>
           </div>
         </div>
       </div>
@@ -242,22 +436,23 @@ const MessageAnalytics = () => {
         <div className="chart-container">
           <h3>Message Types</h3>
           <ResponsiveContainer width="100%" height={350}>
-            <PieChart>
+            <PieChart margin={{ top: 8, right: 8, left: 8, bottom: 8 }}>
               <Pie
-                data={analyticsData.messageTypes}
+                data={messageTypesData}
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ name, value, percent }) => `${name}: ${value} (${(percent * 100).toFixed(0)}%)`}
-                outerRadius={100}
+                label={({ percent }) => `${(percent * 100).toFixed(0)}%`}
+                outerRadius={95}
                 fill="#8884d8"
                 dataKey="value"
               >
-                {analyticsData.messageTypes.map((entry, index) => (
+                {messageTypesData.map((entry, index) => (
                   <Cell key={`cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
-              <Tooltip />
+              <Tooltip formatter={(value, name) => [`${value}`, `${name}`]} />
+              <Legend formatter={(value, entry) => `${value}: ${entry?.payload?.value ?? 0}`} />
             </PieChart>
           </ResponsiveContainer>
         </div>
@@ -297,8 +492,8 @@ const MessageAnalytics = () => {
               <Users size={20} />
             </div>
             <div className="metric-info">
-              <div className="metric-title">Avg Read Time</div>
-              <div className="metric-value">{analyticsData.performanceMetrics.avgReadTime}</div>
+              <div className="metric-title">Response Rate</div>
+              <div className="metric-value">{analyticsData.performanceMetrics.responseRate}</div>
             </div>
           </div>
           <div className="metric-item">
@@ -315,8 +510,8 @@ const MessageAnalytics = () => {
               <Calendar size={20} />
             </div>
             <div className="metric-info">
-              <div className="metric-title">Best Day</div>
-              <div className="metric-value">{analyticsData.performanceMetrics.bestDay}</div>
+              <div className="metric-title">Customer Satisfaction</div>
+              <div className="metric-value">{analyticsData.performanceMetrics.customerSatisfaction}</div>
             </div>
           </div>
           <div className="metric-item">

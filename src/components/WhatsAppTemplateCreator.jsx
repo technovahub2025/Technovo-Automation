@@ -825,10 +825,11 @@ const WhatsAppTemplateCreator = () => {
                     <span>Button {index + 1}</span>
                     <button
                       type="button"
-                      className="remove-button"
+                      className="template-remove-button"
                       onClick={() => removeButton(index)}
+                      aria-label={`Remove button ${index + 1}`}
                     >
-                      <X size={16} />
+                      <span className="template-remove-symbol" aria-hidden="true">&times;</span>
                     </button>
                   </div>
                   
@@ -886,7 +887,7 @@ const WhatsAppTemplateCreator = () => {
               ))}
               
               {templateData.content.buttons.length < 10 && (
-                <button type="button" className="add-button" onClick={addButton}>
+                <button type="button" className="template-add-button" onClick={addButton}>
                   <Plus size={16} />
                   Add Button
                 </button>
@@ -900,7 +901,7 @@ const WhatsAppTemplateCreator = () => {
             <div className="submit-actions">
               <button
                 type="button"
-                className="submit-button"
+                className="template-submit-button"
                 onClick={handleSubmit}
                 disabled={isSubmitting || hasValidationErrors}
               >

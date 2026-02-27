@@ -10,7 +10,7 @@ const Dashboard = () => {
                     width: '100%',
                     height: '85vh',
                     border: 'none',
-                    borderRadius: '12px', // Optional: adds a bit of polish matching the design system usually
+                    borderRadius: '12px',
                     backgroundColor: 'white'
                 }}
             />

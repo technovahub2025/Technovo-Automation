@@ -6,7 +6,9 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    width: 1150px;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
 }
 
 .section-header {

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { memo } from 'react';
 import { LineChart, Trash } from 'lucide-react';
 import './BroadcastCard.css';
 
@@ -17,6 +17,11 @@ const BroadcastCard = ({
   onDeleteClick,
   onViewAnalytics
 }) => {
+  const toNumber = (value) => {
+    const parsed = Number(value || 0);
+    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+  };
+
   const getProgressClass = (percentage) => {
     if (percentage === 0) return 'zero';
     if (percentage >= 80) return 'high';
@@ -36,14 +41,51 @@ const BroadcastCard = ({
     return parsed.toLocaleString();
   };
 
-  const renderProgressCircle = (percentage) => {
+  const getMetricTooltip = (metricType, currentBroadcast) => {
+    const stats = currentBroadcast?.stats || {};
+    const sent = toNumber(stats.sent);
+    const delivered = Math.max(toNumber(stats.delivered), toNumber(stats.read));
+    const read = toNumber(stats.read);
+    const replied = toNumber(stats.replied);
+
+    if (metricType === 'successful') {
+      return {
+        title: 'Successful',
+        lines: [
+          { label: 'Sent', value: sent },
+          { label: 'Delivered', value: delivered }
+        ]
+      };
+    }
+    if (metricType === 'read') {
+      return {
+        title: 'Read',
+        lines: [
+          { label: 'Read', value: read },
+          { label: 'Sent', value: sent }
+        ]
+      };
+    }
+    if (metricType === 'replied') {
+      return {
+        title: 'Replied',
+        lines: [
+          { label: 'Replied', value: replied },
+          { label: 'Sent', value: sent }
+        ]
+      };
+    }
+    return { title: '', lines: [] };
+  };
+
+  const renderProgressCircle = (percentage, tooltip = { title: '', lines: [] }) => {
     const progressClass = getProgressClass(percentage);
     const radius = 20;
     const circumference = 2 * Math.PI * radius;
     const strokeDashoffset = circumference - (percentage / 100) * circumference;
-    
+
     return (
-      <div className="progress-indicator">
+      <div className="progress-indicator metric-hover" aria-label={tooltip?.title || 'Metric details'} tabIndex={0}>
         <svg className={`progress-circle ${progressClass}`} width="48" height="48">
           <circle
             className="progress-background"
@@ -79,6 +121,15 @@ const BroadcastCard = ({
             {percentage}%
           </text>
         </svg>
+        <div className="metric-hover-card" role="tooltip">
+          <div className="metric-hover-title">{tooltip?.title || 'Metric'}</div>
+          {(tooltip?.lines || []).map((line) => (
+            <div key={line.label} className="metric-hover-row">
+              <span>{line.label}</span>
+              <strong>{line.value}</strong>
+            </div>
+          ))}
+        </div>
       </div>
     );
   };
@@ -99,16 +150,16 @@ const BroadcastCard = ({
 
       <td>{getDisplayDateTime(broadcast)}</td>
 
-      <td>{renderProgressCircle(getSuccessPercentage(broadcast))}</td>
+      <td>{renderProgressCircle(getSuccessPercentage(broadcast), getMetricTooltip('successful', broadcast))}</td>
 
-      <td>{renderProgressCircle(getReadPercentage(broadcast))}</td>
+      <td>{renderProgressCircle(getReadPercentage(broadcast), getMetricTooltip('read', broadcast))}</td>
 
-      <td>{renderProgressCircle(getRepliedPercentage(broadcast))}</td>
+      <td>{renderProgressCircle(getRepliedPercentage(broadcast), getMetricTooltip('replied', broadcast))}</td>
 
       <td>
         {broadcast.recipientCount || broadcast.recipients?.length || 0} Contact{(broadcast.recipientCount || broadcast.recipients?.length || 0) !== 1 ? 's' : ''}
       </td>
-      
+
       <td>
         {broadcast.stats?.failed || 0} Contact{(broadcast.stats?.failed || 0) !== 1 ? 's' : ''}
       </td>
@@ -122,16 +173,38 @@ const BroadcastCard = ({
           <button className="action-btn" title="View Analytics" onClick={() => onViewAnalytics?.(broadcast)}>
             <LineChart size={10} />
           </button>
-          
+
           <button className="action-btn delete-btn" title="Delete Campaign" onClick={() => onDeleteClick?.(broadcast)}>
             <Trash size={10} />
           </button>
-
         </div>
       </td>
     </tr>
   );
 };
 
-export default BroadcastCard;
+const areEqual = (prevProps, nextProps) => {
+  const prev = prevProps.broadcast || {};
+  const next = nextProps.broadcast || {};
+  const prevStats = prev.stats || {};
+  const nextStats = next.stats || {};
 
+  return (
+    prev._id === next._id &&
+    prev.status === next.status &&
+    prev.name === next.name &&
+    prev.scheduledAt === next.scheduledAt &&
+    prev.startedAt === next.startedAt &&
+    prev.createdAt === next.createdAt &&
+    prev.recipientCount === next.recipientCount &&
+    prevStats.sent === nextStats.sent &&
+    prevStats.delivered === nextStats.delivered &&
+    prevStats.read === nextStats.read &&
+    prevStats.replied === nextStats.replied &&
+    prevStats.failed === nextStats.failed &&
+    prevProps.selectionMode === nextProps.selectionMode &&
+    prevProps.selectedCampaigns.includes(prev._id) === nextProps.selectedCampaigns.includes(next._id)
+  );
+};
+
+export default memo(BroadcastCard, areEqual);

@@ -1219,13 +1219,13 @@ missedcall.css
 }
 
 /* Action Buttons in Details */
-.action-buttons {
+.details-action-buttons {
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
 }
 
-.action-buttons .action-btn {
+.details-action-buttons .details-action-btn {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1238,31 +1238,31 @@ missedcall.css
   transition: all 0.3s;
 }
 
-.action-buttons .action-btn.primary {
+.details-action-buttons .details-action-btn.primary {
   background: #3b82f6;
   color: white;
 }
 
-.action-buttons .action-btn.primary:hover {
+.details-action-buttons .details-action-btn.primary:hover {
   background: #2563eb;
 }
 
-.action-buttons .action-btn.secondary {
+.details-action-buttons .details-action-btn.secondary {
   background: #10b981;
   color: white;
 }
 
-.action-buttons .action-btn.secondary:hover {
+.details-action-buttons .details-action-btn.secondary:hover {
   background: #059669;
 }
 
-.action-buttons .action-btn.outline {
+.details-action-buttons .details-action-btn.outline {
   background: white;
   color: #374151;
   border: 1px solid #d1d5db;
 }
 
-.action-buttons .action-btn.outline:hover {
+.details-action-buttons .details-action-btn.outline:hover {
   background: #f9fafb;
   border-color: #9ca3af;
 }
@@ -1418,11 +1418,11 @@ missedcall.css
     width: 100%;
   }
   
-  .action-buttons {
+  .details-action-buttons {
     justify-content: center;
   }
   
-  .action-buttons .action-btn {
+  .details-action-buttons .details-action-btn {
     flex: 1;
     min-width: 150px;
     justify-content: center;
@@ -1471,7 +1471,7 @@ missedcall.css
     min-width: auto;
   }
   
-  .action-buttons .action-btn {
+  .details-action-buttons .details-action-btn {
     width: 100%;
     justify-content: center;
   }

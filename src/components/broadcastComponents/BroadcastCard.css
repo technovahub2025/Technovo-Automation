@@ -7,6 +7,92 @@
     justify-content: center;
     width: 100%;
     height: 100%;
+    position: relative;
+}
+
+.metric-hover {
+    cursor: pointer;
+}
+
+.metric-hover-card {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 50%;
+    transform: translateX(-50%) translateY(6px);
+    min-width: 160px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #ffffff;
+    color: #0f172a;
+    border: 1px solid #e5e7eb;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.14);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+    z-index: 12;
+}
+
+.metric-hover-card::before {
+    content: "";
+    position: absolute;
+    top: -5px;
+    left: 50%;
+    width: 10px;
+    height: 10px;
+    background: #ffffff;
+    border-top: 1px solid #e5e7eb;
+    border-left: 1px solid #e5e7eb;
+    transform: translateX(-50%) rotate(45deg);
+}
+
+.metric-hover-title {
+    font-size: 12px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: #111827;
+}
+
+.metric-hover-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    font-size: 12px;
+    color: #4b5563;
+}
+
+.metric-hover-row strong {
+    color: #111827;
+    font-weight: 700;
+}
+
+.metric-hover:hover .metric-hover-card,
+.metric-hover:focus-visible .metric-hover-card {
+    opacity: 1;
+    visibility: visible;
+    transform: translateX(-50%) translateY(0);
+}
+
+/* Avoid clipping on last rows inside rounded/overflow-hidden table wrappers */
+.data-table tbody tr:nth-last-child(-n+2) .metric-hover-card {
+    top: auto;
+    bottom: calc(100% + 10px);
+    transform: translateX(-50%) translateY(-6px);
+}
+
+.data-table tbody tr:nth-last-child(-n+2) .metric-hover-card::before {
+    top: auto;
+    bottom: -6px;
+    border-top: none;
+    border-left: none;
+    border-right: 1px solid #e5e7eb;
+    border-bottom: 1px solid #e5e7eb;
+}
+
+.data-table tbody tr:nth-last-child(-n+2) .metric-hover:hover .metric-hover-card,
+.data-table tbody tr:nth-last-child(-n+2) .metric-hover:focus-visible .metric-hover-card {
+    transform: translateX(-50%) translateY(0);
 }
 
 .progress-circle {

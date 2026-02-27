@@ -6,7 +6,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom';
 
 
 
-import { Search, Filter, Paperclip, Send, Smile, Phone, MoreVertical, Check, CheckCheck } from 'lucide-react';
+import { Search, Filter, Send, Smile, Phone, MoreVertical, Check, CheckCheck } from 'lucide-react';
 
 
 
@@ -86,19 +86,24 @@ const TeamInbox = () => {
 
 
   const [showMessageSelectMode, setShowMessageSelectMode] = useState(false);
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
 
 
   const [selectedMessagesForDeletion, setSelectedMessagesForDeletion] = useState([]);
+  const [contactNameMap, setContactNameMap] = useState({});
   const [showContactInfo, setShowContactInfo] = useState(false);
   const messagesEndRef = useRef(null);
   const chatMessagesRef = useRef(null);
   const inboxMenuRef = useRef(null);
   const messageMenuRef = useRef(null);
   const filterMenuRef = useRef(null);
+  const emojiPickerRef = useRef(null);
+  const messageInputRef = useRef(null);
   const isConversationSwitchRef = useRef(false);
   const realtimeResyncTimerRef = useRef(null);
   const selectedConversationRef = useRef(null);
+  const commonEmojis = ['😀', '😁', '😂', '😊', '😍', '👍', '🙏', '🎉', '❤️', '🔥', '👏', '😎'];
   const storedUser = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; } })();
   const currentUserId = user?.id || user?._id || storedUser?.id || storedUser?._id || localStorage.getItem('userId') || null;
 
@@ -134,6 +139,10 @@ const TeamInbox = () => {
     const value =
       conversation?.unreadCount ??
       conversation?.unread_count ??
+      conversation?.unread ??
+      conversation?.unread_messages ??
+      conversation?.unreadMessagesCount ??
+      conversation?.unread_message_count ??
       conversation?.unreadMessages ??
       0;
     const parsed = Number(value);
@@ -143,6 +152,100 @@ const TeamInbox = () => {
     ...conversation,
     unreadCount: getUnreadCount(conversation)
   });
+
+  const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
+  const getPhoneLookupKeys = (value) => {
+    const normalized = normalizePhone(value);
+    if (!normalized) return [];
+    const keys = [normalized];
+    if (normalized.length > 10) keys.push(normalized.slice(-10));
+    return Array.from(new Set(keys));
+  };
+  const isRealName = (value) => {
+    const name = String(value || '').trim();
+    return Boolean(name) && !/^\+?\d+$/.test(name);
+  };
+  const getMappedContactName = (phone) => {
+    const keys = getPhoneLookupKeys(phone);
+    for (const key of keys) {
+      if (isRealName(contactNameMap[key])) return contactNameMap[key];
+    }
+    return '';
+  };
+  const getContactName = (conversation) =>
+    String(conversation?.contactId?.name || conversation?.contactName || '').trim();
+  const hasRealContactName = (conversation) => {
+    const name = getContactName(conversation);
+    return isRealName(name);
+  };
+  const getConversationDisplayName = (conversation) => {
+    const name = getContactName(conversation);
+    if (hasRealContactName(conversation)) return name;
+    const mappedName = getMappedContactName(conversation?.contactPhone);
+    return mappedName || conversation?.contactPhone || name || 'Unknown';
+  };
+  const getContactIdValue = (conversation) => String(
+    conversation?.contactId?._id ||
+    conversation?.contactId?.id ||
+    conversation?.contactId ||
+    ''
+  );
+  const enrichConversationIdentity = (conversation, sources = []) => {
+    const base = normalizeConversation(conversation || {});
+    if (hasRealContactName(base)) return base;
+
+    const basePhone = normalizePhone(base?.contactPhone);
+    const baseContactId = getContactIdValue(base);
+    const candidate = sources.find((item) => {
+      if (!item || !hasRealContactName(item)) return false;
+      const itemPhone = normalizePhone(item?.contactPhone);
+      const itemContactId = getContactIdValue(item);
+      if (basePhone && itemPhone && basePhone === itemPhone) return true;
+      if (baseContactId && itemContactId && baseContactId === itemContactId) return true;
+      return false;
+    });
+
+    const mappedName = getMappedContactName(base?.contactPhone);
+    if (!candidate) {
+      if (!mappedName) return base;
+      const mergedContact = {
+        ...(base?.contactId && typeof base.contactId === 'object' ? base.contactId : {}),
+        name: mappedName
+      };
+      return normalizeConversation({
+        ...base,
+        contactId: mergedContact,
+        contactName: mappedName
+      });
+    }
+
+    const mergedContact = {
+      ...(candidate?.contactId && typeof candidate.contactId === 'object' ? candidate.contactId : {}),
+      ...(base?.contactId && typeof base.contactId === 'object' ? base.contactId : {}),
+      name: getContactName(base) || getContactName(candidate) || mappedName
+    };
+
+    return normalizeConversation({
+      ...candidate,
+      ...base,
+      contactId: mergedContact,
+      contactName: getContactName(base) || getContactName(candidate) || mappedName,
+      contactPhone: base?.contactPhone || candidate?.contactPhone
+    });
+  };
+
+  const getConversationAvatarText = (conversation) => {
+    const name = String(getConversationDisplayName(conversation) || '').trim();
+    const phone = String(conversation?.contactPhone || '').trim();
+
+    // If contact has a real name, show its initial.
+    if (isRealName(name)) return name.charAt(0).toUpperCase();
+
+    // Fallback for number-only contacts to avoid confusing numeric avatar bubbles.
+    if (phone) return 'UN';
+
+    return '?';
+  };
 
 
 
@@ -168,6 +271,9 @@ const TeamInbox = () => {
       if (filterMenuRef.current && !filterMenuRef.current.contains(event.target)) {
         setShowFilterMenu(false);
       }
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target)) {
+        setShowEmojiPicker(false);
+      }
     };
 
     document.addEventListener('mousedown', handleOutsideClick);
@@ -177,6 +283,25 @@ const TeamInbox = () => {
       document.removeEventListener('touchstart', handleOutsideClick);
     };
   }, []);
+
+  const handleEmojiInsert = (emoji) => {
+    const inputEl = messageInputRef.current;
+    if (!inputEl) {
+      setMessageInput((prev) => `${prev}${emoji}`);
+      return;
+    }
+
+    const start = inputEl.selectionStart ?? messageInput.length;
+    const end = inputEl.selectionEnd ?? messageInput.length;
+    const next = `${messageInput.slice(0, start)}${emoji}${messageInput.slice(end)}`;
+    setMessageInput(next);
+
+    requestAnimationFrame(() => {
+      inputEl.focus();
+      const cursor = start + emoji.length;
+      inputEl.setSelectionRange(cursor, cursor);
+    });
+  };
 
   const scheduleRealtimeResync = (targetConversationId) => {
     if (!targetConversationId) return;
@@ -207,6 +332,7 @@ const TeamInbox = () => {
 
       setWsConnected(true);
       loadConversations({ silent: true });
+      loadContacts({ silent: true });
 
 
 
@@ -248,6 +374,14 @@ const TeamInbox = () => {
 
       console.log('ðŸ“¨ New message received:', data);
 
+      const incomingConversationRaw = data?.conversation || {};
+      if (
+        !hasRealContactName(incomingConversationRaw) &&
+        !getMappedContactName(incomingConversationRaw?.contactPhone)
+      ) {
+        loadContacts({ silent: true });
+      }
+
 
 
       
@@ -259,7 +393,10 @@ const TeamInbox = () => {
 
 
       setConversations(prev => {
-        const incomingConversation = normalizeConversation(data?.conversation || {});
+        const incomingConversation = enrichConversationIdentity(
+          data?.conversation || {},
+          [...prev, selectedConversationRef.current].filter(Boolean)
+        );
         const activeConversation = selectedConversationRef.current;
         const isSelectedConversation =
           activeConversation && activeConversation._id === incomingConversation._id;
@@ -270,7 +407,10 @@ const TeamInbox = () => {
           if (conv._id !== incomingConversation._id) return conv;
 
           found = true;
-          const mergedConversation = normalizeConversation({ ...conv, ...incomingConversation });
+          const mergedConversation = enrichConversationIdentity(
+            { ...conv, ...incomingConversation },
+            [conv, incomingConversation, ...prev]
+          );
 
           if (isSelectedConversation && isIncomingContactMessage) {
             mergedConversation.unreadCount = 0;
@@ -286,13 +426,13 @@ const TeamInbox = () => {
         });
 
         if (!found && incomingConversation._id) {
-          updated.unshift(normalizeConversation({
+          updated.unshift(enrichConversationIdentity({
             ...incomingConversation,
             unreadCount:
               isSelectedConversation && isIncomingContactMessage
                 ? 0
                 : Math.max(getUnreadCount(incomingConversation), isIncomingContactMessage ? 1 : 0)
-          }));
+          }, [...prev, selectedConversationRef.current].filter(Boolean)));
         }
 
         return updated.sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
@@ -555,6 +695,7 @@ const TeamInbox = () => {
 
 
     loadConversations();
+    loadContacts({ silent: true });
 
 
 
@@ -1414,30 +1555,61 @@ const TeamInbox = () => {
 
 
 
-  const formatTime = (timestamp) => {
-
-
-
+  const formatMessageTime = (timestamp) => {
     const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return '';
 
-
-
-    return date.toLocaleTimeString('en-US', { 
-
-
-
-      hour: '2-digit', 
-
-
-
-      minute: '2-digit' 
-
-
-
+    return date.toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit'
     });
+  };
 
+  const loadContacts = async ({ silent = true } = {}) => {
+    try {
+      const data = await whatsappService.getContacts();
+      const contacts = Array.isArray(data) ? data : [];
+      const nextMap = {};
+      contacts.forEach((contact) => {
+        const name = String(contact?.name || '').trim();
+        if (!isRealName(name)) return;
+        getPhoneLookupKeys(contact?.phone).forEach((key) => {
+          if (!nextMap[key]) nextMap[key] = name;
+        });
+      });
+      setContactNameMap(nextMap);
+    } catch (error) {
+      if (!silent) {
+        console.error('Failed to load contacts:', error);
+      }
+    }
+  };
 
+  const formatConversationTime = (timestamp) => {
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return '';
 
+    const now = new Date();
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const diffDays = Math.floor((startOfToday - startOfDate) / (1000 * 60 * 60 * 24));
+
+    // WhatsApp-style list label
+    if (diffDays === 0) {
+      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+    }
+    if (diffDays === 1) {
+      return 'Yesterday';
+    }
+    if (diffDays > 1 && diffDays < 7) {
+      return date.toLocaleDateString('en-US', { weekday: 'short' });
+    }
+
+    return date.toLocaleDateString('en-GB', {
+      day: '2-digit',
+      month: '2-digit',
+      year: '2-digit'
+    });
   };
 
   const formatDateLabel = (timestamp) => {
@@ -1787,7 +1959,9 @@ const TeamInbox = () => {
 
 
 
-              {filteredConversations.map(conversation => (
+              {filteredConversations.map(conversation => {
+                const unreadCount = getUnreadCount(conversation);
+                return (
 
 
 
@@ -1799,7 +1973,7 @@ const TeamInbox = () => {
 
 
 
-                  className={`conversation-item ${selectedConversation?._id === conversation._id ? 'active' : ''} ${showSelectMode ? 'select-mode' : ''}`}
+                  className={`conversation-item ${selectedConversation?._id === conversation._id ? 'active' : ''} ${showSelectMode ? 'select-mode' : ''} ${unreadCount > 0 ? 'has-unread' : ''}`}
 
 
 
@@ -1896,7 +2070,7 @@ const TeamInbox = () => {
 
 
 
-                    {conversation.contactId?.name?.charAt(0) || conversation.contactPhone?.charAt(0)}
+                    {getConversationAvatarText(conversation)}
 
 
 
@@ -1916,7 +2090,7 @@ const TeamInbox = () => {
 
 
 
-                        {conversation.contactId?.name || conversation.contactPhone}
+                        {getConversationDisplayName(conversation)}
 
 
 
@@ -1924,15 +2098,14 @@ const TeamInbox = () => {
 
 
 
-                      <span className="time">
-
-
-
-                        {formatTime(conversation.lastMessageTime)}
-
-
-
-                      </span>
+                      <div className="conversation-meta-right">
+                        <span className={`time conversation-time-label ${unreadCount > 0 ? 'unread' : ''}`}>
+                          {formatConversationTime(conversation.lastMessageTime)}
+                        </span>
+                        {unreadCount > 0 && (
+                          <span className="team-unread-badge">{unreadCount}</span>
+                        )}
+                      </div>
 
 
 
@@ -1948,18 +2121,6 @@ const TeamInbox = () => {
 
 
 
-                      {getUnreadCount(conversation) > 0 && (
-
-
-
-                        <span className="unread-badge">{getUnreadCount(conversation)}</span>
-
-
-
-                      )}
-
-
-
                     </div>
 
 
@@ -1972,7 +2133,8 @@ const TeamInbox = () => {
 
 
 
-              ))}
+              );
+              })}
 
 
 
@@ -2016,7 +2178,7 @@ const TeamInbox = () => {
 
 
 
-                {selectedConversation.contactId?.name?.charAt(0) || selectedConversation.contactPhone?.charAt(0)}
+                {getConversationAvatarText(selectedConversation)}
 
 
 
@@ -2032,7 +2194,7 @@ const TeamInbox = () => {
 
 
 
-                  {selectedConversation.contactId?.name || selectedConversation.contactPhone}
+                  {getConversationDisplayName(selectedConversation)}
 
 
 
@@ -2207,7 +2369,7 @@ const TeamInbox = () => {
 
                     <div className="message-info">
                       <span className="timestamp">
-                        {formatTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
+                        {formatMessageTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
                       </span>
                       {message.sender === 'agent' && getStatusIcon(message.status)}
                     </div>
@@ -2243,17 +2405,12 @@ const TeamInbox = () => {
                 </div>
               )}
 
-
-
-              <button className="attach-btn"><Paperclip size={20} /></button>
-
-
-
               <input
 
 
 
                 type="text"
+                ref={messageInputRef}
 
 
 
@@ -2280,9 +2437,29 @@ const TeamInbox = () => {
 
               />
 
-
-
-              <button className="emoji-btn"><Smile size={20} /></button>
+              <div className="emoji-picker-wrap" ref={emojiPickerRef}>
+                <button
+                  className="emoji-btn"
+                  type="button"
+                  onClick={() => setShowEmojiPicker((prev) => !prev)}
+                >
+                  <Smile size={20} />
+                </button>
+                {showEmojiPicker && (
+                  <div className="emoji-picker-popup">
+                    {commonEmojis.map((emoji) => (
+                      <button
+                        key={emoji}
+                        type="button"
+                        className="emoji-option-btn"
+                        onClick={() => handleEmojiInsert(emoji)}
+                      >
+                        {emoji}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
 
 
 

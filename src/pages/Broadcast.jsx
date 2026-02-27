@@ -1219,7 +1219,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
             onApplyFilter={() => setCurrentPage(1)}
 
-            onExportCampaigns={downloadAllCampaigns}
+            onExportCampaigns={() => downloadAllCampaigns(filteredBroadcasts)}
 
           />
 
