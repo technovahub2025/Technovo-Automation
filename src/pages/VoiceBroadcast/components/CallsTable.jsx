@@ -2,7 +2,7 @@ import React from 'react';
 import { Phone, Clock, User, CheckCircle, XCircle, Loader } from 'lucide-react';
 import './CallsTable.css';
 
-const CallsTable = ({ calls, getStatusColor }) => {
+const CallsTable = ({ calls, getStatusColor, maxRetries = 2 }) => {
   const formatDuration = (seconds) => {
     if (!seconds) return '-';
     const mins = Math.floor(seconds / 60);
@@ -94,7 +94,7 @@ const CallsTable = ({ calls, getStatusColor }) => {
                 </td>
                 <td>
                   <span className="attempts-badge">
-                    {call.attempts} / 2
+                    {call.attempts} / {maxRetries}
                   </span>
                 </td>
               </tr>

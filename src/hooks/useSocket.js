@@ -4,37 +4,46 @@ import socketService from '../services/socketService';
 const useSocket = () => {
   const [connected, setConnected] = useState(socketService.isConnected());
   const [error, setError] = useState(null);
+  const [socket, setSocket] = useState(socketService.getSocket());
 
   useEffect(() => {
-    const socket = socketService.connect();
-    if (!socket) return undefined;
+    const socketInstance = socketService.connect();
+    if (!socketInstance) return undefined;
+    setSocket(socketInstance);
 
-    if (socket.connected) {
-      setConnected(true);
-      setError(null);
-    }
+    const syncConnectionState = () => {
+      setConnected(Boolean(socketInstance.connected));
+      if (socketInstance.connected) {
+        setError(null);
+      }
+    };
 
     const handleConnect = () => {
-      setConnected(true);
-      setError(null);
+      syncConnectionState();
     };
 
     const handleDisconnect = () => {
-      setConnected(false);
+      syncConnectionState();
     };
 
     const handleConnectError = (err) => {
+      syncConnectionState();
       setError(err?.message || 'Socket connection error');
     };
 
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
-    socket.on('connect_error', handleConnectError);
+    socketInstance.on('connect', handleConnect);
+    socketInstance.on('disconnect', handleDisconnect);
+    socketInstance.on('connect_error', handleConnectError);
+    socketInstance.on('reconnect', syncConnectionState);
+
+    // Important: sync after listeners are attached to avoid missing fast connect events.
+    syncConnectionState();
 
     return () => {
-      socket.off('connect', handleConnect);
-      socket.off('disconnect', handleDisconnect);
-      socket.off('connect_error', handleConnectError);
+      socketInstance.off('connect', handleConnect);
+      socketInstance.off('disconnect', handleDisconnect);
+      socketInstance.off('connect_error', handleConnectError);
+      socketInstance.off('reconnect', syncConnectionState);
     };
   }, []);
 
@@ -59,7 +68,7 @@ const useSocket = () => {
   };
 
   return {
-    socket: socketService.getSocket(),
+    socket,
     connected,
     error,
     emit,

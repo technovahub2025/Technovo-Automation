@@ -57,6 +57,7 @@
   flex: 1;
   overflow-y: auto;
   padding: 20px;
+  overscroll-behavior: contain;
 }
 
 .config-section {
@@ -74,6 +75,25 @@
 
 .form-group {
   margin-bottom: 16px;
+}
+
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.radio-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #374151;
+}
+
+.radio-label input[type="radio"] {
+  width: auto;
+  margin: 0;
 }
 
 .form-group label {
@@ -121,6 +141,29 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+  align-items: start;
+}
+
+.form-row .form-group {
+  margin-bottom: 0;
+}
+
+/* Keep voicemail settings readable in narrow right drawer */
+.voicemail-config-section .voicemail-row-stacked {
+  grid-template-columns: 1fr;
+}
+
+.voicemail-config-section .voicemail-row-stacked .form-group {
+  margin-bottom: 16px;
+}
+
+.voicemail-config-section .voicemail-row-stacked .form-group:last-child {
+  margin-bottom: 0;
+}
+
+.voicemail-config-section .voicemail-row-inline {
+  grid-template-columns: 1fr 1fr;
+  align-items: start;
 }
 
 .checkbox-group {
@@ -181,6 +224,7 @@
   display: flex;
   gap: 12px;
   justify-content: flex-end;
+  align-items: center;
 }
 
 .btn {
@@ -192,8 +236,11 @@
   border: none;
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   transition: all 0.2s ease;
+  min-height: 40px;
+  min-width: 124px;
 }
 
 .btn-secondary {
@@ -215,9 +262,24 @@
   background: #2563eb;
 }
 
+.node-config-panel .form-group input[type="number"] {
+  text-align: left;
+}
+
+.node-config-panel .form-group select,
+.node-config-panel .form-group input,
+.node-config-panel .form-group textarea {
+  line-height: 1.35;
+}
+
 /* Audio Upload and Player Styles */
 .upload-container {
   position: relative;
+}
+
+.file-input,
+.full-width {
+  width: 100%;
 }
 
 .audio-preview {

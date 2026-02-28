@@ -7,6 +7,38 @@ class SocketService {
     this.useCredentials = String(import.meta.env.VITE_SOCKET_WITH_CREDENTIALS || import.meta.env.VITE_API_WITH_CREDENTIALS || 'false').toLowerCase() === 'true';
   }
 
+  getToken() {
+    const envTokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
+    return (
+      localStorage.getItem(envTokenKey) ||
+      localStorage.getItem('authToken') ||
+      localStorage.getItem('token')
+    );
+  }
+
+  clearAuthAndRedirect() {
+    const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
+    localStorage.removeItem(tokenKey);
+    localStorage.removeItem('authToken');
+    localStorage.removeItem('token');
+    localStorage.removeItem('user');
+    sessionStorage.setItem('auth_expired_notice', 'Your session expired. Please login again.');
+
+    if (window.location.pathname !== '/login' && !window.location.pathname.includes('/register')) {
+      window.location.href = '/login';
+    }
+  }
+
+  isAuthError(error) {
+    const message = String(error?.message || '').toLowerCase();
+    return (
+      message.includes('unauthorized') ||
+      message.includes('invalid token') ||
+      message.includes('expired token') ||
+      message.includes('invalid or expired token')
+    );
+  }
+
   resolveUrl(url) {
     const configuredApi = import.meta.env.VITE_API_URL || '';
     const configuredSocket = import.meta.env.VITE_SOCKET_URL || '';
@@ -19,11 +51,24 @@ class SocketService {
   }
 
   connect(url) {
-    if (this.socket) return this.socket;
-
-    const envTokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
-    const token = localStorage.getItem(envTokenKey) || localStorage.getItem('authToken');
+    const token = this.getToken();
     const resolvedUrl = this.resolveUrl(url);
+
+    if (this.socket) {
+      const currentToken = this.socket.auth?.token || null;
+      const nextToken = token || null;
+      const tokenChanged = currentToken !== nextToken;
+
+      if (tokenChanged) {
+        this.socket.auth = nextToken ? { token: nextToken } : {};
+      }
+
+      if (!this.socket.connected) {
+        this.socket.connect();
+      }
+
+      return this.socket;
+    }
 
     this.socket = io(resolvedUrl, {
       auth: token ? { token } : undefined,
@@ -52,6 +97,11 @@ class SocketService {
       if (this.isDev) {
         console.error('Socket connection error:', error.message);
       }
+
+      if (this.isAuthError(error)) {
+        this.disconnect();
+        this.clearAuthAndRedirect();
+      }
     });
 
     this.socket.on('reconnect', (attemptNumber) => {
@@ -69,6 +119,11 @@ class SocketService {
     this.socket.on('reconnect_error', (error) => {
       if (this.isDev) {
         console.error('Socket reconnect error:', error.message);
+      }
+
+      if (this.isAuthError(error)) {
+        this.disconnect();
+        this.clearAuthAndRedirect();
       }
     });
 

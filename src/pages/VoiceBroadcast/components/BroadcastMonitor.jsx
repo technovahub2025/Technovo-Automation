@@ -138,6 +138,7 @@ const BroadcastMonitor = ({ broadcastId }) => {
             ...updated[index],
             status: data.status,
             duration: data.duration || updated[index].duration,
+            attempts: data.attempts ?? updated[index].attempts,
             callSid: data.callSid || updated[index].callSid
           };
           return updated;
@@ -388,6 +389,7 @@ const BroadcastMonitor = ({ broadcastId }) => {
       <CallsTable
         calls={getFilteredCalls()}
         getStatusColor={getStatusColor}
+        maxRetries={broadcast?.config?.maxRetries || 2}
       />
     </div>
   );

@@ -240,6 +240,8 @@
   font-size: 13px;
   color: #0f172a;
   min-height: 36px;
+  display: flex;
+  align-items: center;
 }
 
 .node-body p {
@@ -250,11 +252,13 @@
   margin-top: 10px;
   display: flex;
   gap: 8px;
+  align-items: center;
 }
 
 .node-action {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 6px;
   font-size: 12px;
   padding: 6px 8px;
@@ -262,6 +266,16 @@
   border: 1px solid #cbd5f5;
   background: #f8fafc;
   cursor: pointer;
+  flex: 1;
+  min-width: 0;
+}
+
+.node-action .lucide-settings,
+.node-action .lucide-link {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  stroke-width: 2;
 }
 
 .node-action.active {
@@ -283,8 +297,12 @@
 .node-warning {
   margin-top: 8px;
   font-size: 11px;
-  color: #ef4444;
+  color: #b91c1c;
   font-weight: 600;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  padding: 4px 6px;
 }
 
 .canvas-controls {

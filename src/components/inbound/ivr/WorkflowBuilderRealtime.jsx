@@ -7,6 +7,9 @@ import TestPanel from './TestPanel';
 import PropertyPanel from './PropertyPanel';
 import './WorkflowBuilderRealtime.css';
 
+const createUniqueId = (prefix) =>
+    `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+
 const WorkflowBuilderRealtime = ({ workflowId, initialData, industry, onSave }) => {
     const [nodes, setNodes] = useState(initialData?.nodes || []);
     const [edges, setEdges] = useState(initialData?.edges || []);
@@ -125,7 +128,7 @@ const WorkflowBuilderRealtime = ({ workflowId, initialData, industry, onSave }) 
     const handleNodeAdd = useCallback((nodeType, position) => {
         saveToHistory();
         const newNode = {
-            id: `node_${Date.now()}`,
+            id: createUniqueId('node'),
             type: nodeType,
             position,
             data: getDefaultNodeData(nodeType, industry)
@@ -172,7 +175,7 @@ const WorkflowBuilderRealtime = ({ workflowId, initialData, industry, onSave }) 
 
             saveToHistory();
             const newEdge = {
-                id: `edge_${Date.now()}`,
+                id: createUniqueId('edge'),
                 source,
                 target,
                 sourceHandle: 'out',

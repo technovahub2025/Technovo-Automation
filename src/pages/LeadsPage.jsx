@@ -55,8 +55,8 @@ const LeadsPage = () => {
     try {
       setLoading(true);
       const response = await leadService.getLeads(filters);
-      const payload = response?.data || {};
-      const leadData = payload?.data || {};
+      // leadService.getLeads() already returns response.data
+      const leadData = response?.data || response || {};
       const fetchedLeads = leadData?.leads || [];
       const pagination = leadData?.pagination || {};
       const normalizedLeads = fetchedLeads.map(mapLeadForView);

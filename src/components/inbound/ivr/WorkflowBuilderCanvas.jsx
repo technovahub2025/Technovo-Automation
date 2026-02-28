@@ -42,9 +42,23 @@ const NODE_HEIGHT = 110;
 const MAX_HISTORY = 50;
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 1.8;
+const createUniqueId = (prefix) =>
+  `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+const extractCloudinaryPublicId = (value) => {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return '';
+
+  if (raw.startsWith('http://') || raw.startsWith('https://')) {
+    const match =
+      raw.match(/\/(?:image|video|raw)\/upload\/(?:v\d+\/)?([^?]+?)(?:\.[a-zA-Z0-9]+)?(?:\?|$)/) ||
+      raw.match(/\/upload\/(?:v\d+\/)?([^?]+?)(?:\.[a-zA-Z0-9]+)?(?:\?|$)/);
+    return match?.[1] || raw;
+  }
+
+  return raw;
+};
 
 const createNodeData = (type) => {
-  const timestamp = Date.now();
   switch (type) {
     case 'audio':
       return {
@@ -56,7 +70,7 @@ const createNodeData = (type) => {
         maxRetries: 3,
         timeoutSeconds: 10,
         fallbackAudioNodeId: '',
-        promptKey: `audio_${timestamp}`
+        promptKey: createUniqueId('audio')
       };
     case 'input':
       return {
@@ -68,33 +82,33 @@ const createNodeData = (type) => {
         timeoutAudioNodeId: '',
         maxAttempts: 3,
         timeoutSeconds: 10,
-        promptKey: `input_${timestamp}`
+        promptKey: createUniqueId('input')
       };
     case 'transfer':
       return {
         destination: '+1234567890',
         department: 'support',
-        promptKey: `transfer_${timestamp}`
+        promptKey: createUniqueId('transfer')
       };
     case 'voicemail':
       return {
         mailbox: 'general',
         transcription: true,
         greetingAudioNodeId: '',
-        promptKey: `voicemail_${timestamp}`
+        promptKey: createUniqueId('voicemail')
       };
     case 'end':
       return {
-        promptKey: `end_${timestamp}`
+        promptKey: createUniqueId('end')
       };
     case 'conditional':
       return {
         condition: 'business_hours',
-        promptKey: `conditional_${timestamp}`
+        promptKey: createUniqueId('conditional')
       };
     default:
       return {
-        promptKey: `${type}_${timestamp}`
+        promptKey: createUniqueId(type)
       };
   }
 };
@@ -130,6 +144,7 @@ const WorkflowBuilderCanvas = ({
   const [reconnectEdgeId, setReconnectEdgeId] = useState(null);
   const [history, setHistory] = useState([]);
   const [future, setFuture] = useState([]);
+  const [deletingNodeIds, setDeletingNodeIds] = useState(() => new Set());
   const nodes = workflow?.nodes || [];
   const edges = workflow?.edges || [];
 
@@ -152,7 +167,7 @@ const WorkflowBuilderCanvas = ({
     lastWorkflowRef.current = workflow;
   }, [workflow]);
 
-  const applyWorkflowUpdate = useCallback((nextWorkflow, { recordHistory = true, saveToBackend = false } = {}) => {
+  const applyWorkflowUpdate = useCallback((nextWorkflow, { recordHistory = true } = {}) => {
     // Generate new structure hash to check for structural changes
     const newHash = generateStructureHash(nextWorkflow.nodes, nextWorkflow.edges);
     const isStructuralChange = structureHashRef.current !== newHash;
@@ -166,71 +181,11 @@ const WorkflowBuilderCanvas = ({
       structureHashRef.current = newHash;
     }
 
+    // Keep local ref aligned so later merges (e.g. TTS updates) don't use stale workflow.
+    lastWorkflowRef.current = nextWorkflow;
     // Update local state immediately
     onChange(nextWorkflow);
-
-    // Only save to backend if explicitly requested
-    if (saveToBackend) {
-      const saveWorkflow = async () => {
-        try {
-          const workflowIdToUse = workflowId || workflow._id || workflow.id;
-          if (!workflowIdToUse) {
-            console.error('No workflow ID found:', workflow);
-            return;
-          }
-
-          const response = await apiService.put(`/workflow/${workflowIdToUse}`, {
-            nodes: Array.isArray(nextWorkflow.nodes) ? nextWorkflow.nodes : [],
-            edges: Array.isArray(nextWorkflow.edges) ? nextWorkflow.edges : [],
-            settings: nextWorkflow.settings || {}
-          });
-
-          if (response.data.success) {
-            onChange(response.data.data.workflow);
-            structureHashRef.current = generateStructureHash(
-              response.data.data.workflow.nodes,
-              response.data.data.workflow.edges
-            );
-          }
-        } catch (error) {
-          console.error('Failed to save workflow:', error);
-        }
-      };
-
-      // Debounced save
-      const timeoutId = setTimeout(saveWorkflow, 1000);
-      return () => clearTimeout(timeoutId);
-    }
-
-    return () => { };
-  }, [workflowId, workflow, onChange, generateStructureHash]);
-
-  // Separate function for explicit backend saves using socket
-  const saveWorkflowToBackend = useCallback(async (workflowData) => {
-    try {
-      const socket = socketService.connect();
-      if (socket && socketService.isConnected()) {
-        // Emit workflow update event instead of direct API call
-        socket.emit('workflow_update', {
-          workflowId: workflowId || workflow._id || workflow.id,
-          workflowData: {
-            nodes: Array.isArray(workflowData.nodes) ? workflowData.nodes : [],
-            edges: Array.isArray(workflowData.edges) ? workflowData.edges : [],
-            settings: workflowData.settings || {}
-          }
-        });
-
-        console.log('📡 Workflow update sent via socket:', {
-          workflowId: workflowId || workflow._id || workflow.id,
-          nodeCount: workflowData.nodes?.length || 0
-        });
-      }
-    } catch (error) {
-      console.error('Failed to send workflow update via socket:', error);
-    }
-  }, [workflowId, onChange]);
-
-  // Listen for background TTS generation events
+  }, [onChange, generateStructureHash]);  // Listen for background TTS generation events
   useEffect(() => {
     const workflowIdToUse = workflowId || workflow?._id || workflow?.id;
     if (!workflowIdToUse) return;
@@ -268,29 +223,31 @@ const WorkflowBuilderCanvas = ({
             // Merge new node data (audioUrl) while preserving current user edits
             const remoteNodes = response.data.data.nodes || [];
 
-            onChange((currentWorkflow) => {
-              const currentNodes = currentWorkflow.nodes || [];
-              const mergedNodes = currentNodes.map(node => {
-                const remoteNode = remoteNodes.find(rn => rn.id === node.id);
-                if (remoteNode && remoteNode.data?.audioUrl && !node.data?.audioUrl) {
-                  return {
-                    ...node,
-                    data: {
-                      ...node.data,
-                      audioUrl: remoteNode.data.audioUrl,
-                      audioAssetId: remoteNode.data.audioAssetId
-                    }
-                  };
-                }
-                return node;
-              });
-
-              return {
-                ...currentWorkflow,
-                nodes: mergedNodes,
-                ttsStatus: 'completed'
-              };
+            const currentWorkflow = lastWorkflowRef.current || workflow || { nodes: [], edges: [] };
+            const currentNodes = currentWorkflow.nodes || [];
+            const mergedNodes = currentNodes.map(node => {
+              const remoteNode = remoteNodes.find(rn => rn.id === node.id);
+              if (remoteNode && remoteNode.data?.audioUrl && !node.data?.audioUrl) {
+                return {
+                  ...node,
+                  data: {
+                    ...node.data,
+                    audioUrl: remoteNode.data.audioUrl,
+                    audioAssetId: remoteNode.data.audioAssetId
+                  }
+                };
+              }
+              return node;
             });
+
+            const mergedWorkflow = {
+              ...currentWorkflow,
+              nodes: mergedNodes,
+              ttsStatus: 'completed'
+            };
+
+            lastWorkflowRef.current = mergedWorkflow;
+            onChange(mergedWorkflow);
           }
         } catch (error) {
           console.error('Failed to reload workflow after TTS:', error);
@@ -387,11 +344,53 @@ const WorkflowBuilderCanvas = ({
     }
 
     const nodeIds = new Set(currentNodes.map(n => n.id));
+    const duplicateNodeIds = new Set();
+    const missingNodeIds = [];
+    currentNodes.forEach((node) => {
+      const id = typeof node?.id === 'string' ? node.id.trim() : '';
+      if (!id) {
+        missingNodeIds.push(node?.id || '<missing>');
+      } else if (nodeIds.has(id) && currentNodes.filter((n) => n.id === id).length > 1) {
+        duplicateNodeIds.add(id);
+      }
+    });
+
+    if (missingNodeIds.length > 0) {
+      errors.push({ code: 'INVALID_NODE_ID', message: 'One or more nodes are missing a valid ID.' });
+    }
+    if (duplicateNodeIds.size > 0) {
+      errors.push({ code: 'DUPLICATE_NODE_ID', message: `Duplicate node IDs: ${Array.from(duplicateNodeIds).join(', ')}` });
+    }
+
     const incoming = new Map(currentNodes.map(n => [n.id, 0]));
+    const edgeKeySet = new Set();
+    const sourceHandleMap = new Set();
+    const audioNodeIds = new Set(
+      currentNodes
+        .filter((n) => ['audio', 'greeting'].includes((n.type || '').toLowerCase()))
+        .map((n) => n.id)
+    );
     currentEdges.forEach(edge => {
       if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
         errors.push({ code: 'BROKEN_EDGE', message: 'Broken connection detected.', edgeId: edge.id });
       } else {
+        const edgeKey = `${edge.source}|${edge.target}|${edge.sourceHandle || ''}|${edge.targetHandle || ''}`;
+        if (edgeKeySet.has(edgeKey)) {
+          errors.push({ code: 'DUPLICATE_EDGE', message: 'Duplicate connection detected.', edgeId: edge.id });
+        }
+        edgeKeySet.add(edgeKey);
+
+        const sourceNode = currentNodes.find((n) => n.id === edge.source);
+        const sourceType = (sourceNode?.type || '').toLowerCase();
+        if (sourceType === 'input' || sourceType === 'conditional') {
+          const handle = edge.sourceHandle || '__default__';
+          const key = `${edge.source}:${handle}`;
+          if (sourceHandleMap.has(key)) {
+            errors.push({ code: 'DUPLICATE_SOURCE_HANDLE', message: `Node ${edge.source} has duplicate route handle "${handle}".`, edgeId: edge.id });
+          }
+          sourceHandleMap.add(key);
+        }
+
         incoming.set(edge.target, (incoming.get(edge.target) || 0) + 1);
       }
     });
@@ -430,6 +429,71 @@ const WorkflowBuilderCanvas = ({
       errors.push({ code: 'UNREACHABLE_END', message: 'No reachable end node.' });
     }
 
+    const asNodeId = (value) => (typeof value === 'string' ? value.trim() : '');
+    currentNodes.forEach((node) => {
+      const nodeType = (node.type || '').toLowerCase();
+      const data = node.data || {};
+
+      if (nodeType === 'audio' || nodeType === 'greeting') {
+        const mode = (data.mode || 'tts').toLowerCase();
+        const text = (data.messageText || data.text || data.message || '').trim();
+        const audioUrl = (data.audioUrl || '').trim();
+        if (mode === 'tts' && !text) {
+          errors.push({ code: 'AUDIO_TEXT_REQUIRED', message: `Audio node ${node.id} is missing TTS text.`, nodeId: node.id });
+        }
+        if ((mode === 'upload' || mode === 'file') && !audioUrl) {
+          errors.push({ code: 'AUDIO_URL_REQUIRED', message: `Audio node ${node.id} is missing uploaded audio URL.`, nodeId: node.id });
+        }
+        const fallbackAudioNodeId = asNodeId(data.fallbackAudioNodeId);
+        if (fallbackAudioNodeId && !audioNodeIds.has(fallbackAudioNodeId)) {
+          errors.push({ code: 'INVALID_AUDIO_FALLBACK_REF', message: `Audio node ${node.id} fallback is not an audio node.`, nodeId: node.id });
+        }
+      }
+
+      if (nodeType === 'input') {
+        const promptAudioNodeId = asNodeId(data.promptAudioNodeId || data.prompt_audio_node_id);
+        const invalidAudioNodeId = asNodeId(data.invalidAudioNodeId || data.invalid_audio_node_id);
+        const timeoutAudioNodeId = asNodeId(data.timeoutAudioNodeId || data.timeout_audio_node_id);
+        if (!promptAudioNodeId || !audioNodeIds.has(promptAudioNodeId)) {
+          errors.push({ code: 'INVALID_PROMPT_AUDIO_REF', message: `Input node ${node.id} must reference a valid prompt audio node.`, nodeId: node.id });
+        }
+        if (invalidAudioNodeId && !audioNodeIds.has(invalidAudioNodeId)) {
+          errors.push({ code: 'INVALID_INPUT_AUDIO_REF', message: `Input node ${node.id} invalid-audio reference is not an audio node.`, nodeId: node.id });
+        }
+        if (timeoutAudioNodeId && !audioNodeIds.has(timeoutAudioNodeId)) {
+          errors.push({ code: 'INVALID_TIMEOUT_AUDIO_REF', message: `Input node ${node.id} timeout-audio reference is not an audio node.`, nodeId: node.id });
+        }
+        const digit = String(data.digit ?? '').trim();
+        if (digit && !currentEdges.some((edge) => edge.source === node.id && edge.sourceHandle === digit)) {
+          errors.push({ code: 'MISSING_DIGIT_ROUTE', message: `Input node ${node.id} digit "${digit}" has no edge route.`, nodeId: node.id });
+        }
+        const timeoutSeconds = Number(data.timeoutSeconds ?? data.timeout);
+        const maxAttempts = Number(data.maxAttempts ?? data.max_attempts);
+        if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 60) {
+          errors.push({ code: 'INVALID_TIMEOUT', message: `Input node ${node.id} timeout must be between 1 and 60 seconds.`, nodeId: node.id });
+        }
+        if (!Number.isFinite(maxAttempts) || maxAttempts < 1 || maxAttempts > 10) {
+          errors.push({ code: 'INVALID_MAX_ATTEMPTS', message: `Input node ${node.id} max attempts must be between 1 and 10.`, nodeId: node.id });
+        }
+      }
+
+      if (nodeType === 'conditional') {
+        if (!currentEdges.some((edge) => edge.source === node.id && edge.sourceHandle === 'true')) {
+          errors.push({ code: 'MISSING_TRUE_BRANCH', message: `Conditional node ${node.id} is missing true branch.`, nodeId: node.id });
+        }
+        if (!currentEdges.some((edge) => edge.source === node.id && edge.sourceHandle === 'false')) {
+          errors.push({ code: 'MISSING_FALSE_BRANCH', message: `Conditional node ${node.id} is missing false branch.`, nodeId: node.id });
+        }
+      }
+
+      if (nodeType === 'voicemail') {
+        const greetingAudioNodeId = asNodeId(data.greetingAudioNodeId || data.greeting_audio_node_id);
+        if (greetingAudioNodeId && !audioNodeIds.has(greetingAudioNodeId)) {
+          errors.push({ code: 'INVALID_VOICEMAIL_GREETING_REF', message: `Voicemail node ${node.id} greeting reference is not an audio node.`, nodeId: node.id });
+        }
+      }
+    });
+
     return errors;
   }, []);
 
@@ -459,7 +523,7 @@ const WorkflowBuilderCanvas = ({
 
     const position = resolveCollision(snapPoint(toCanvasPoint(event.clientX, event.clientY)));
     const newNode = {
-      id: `node_${Date.now()}`,
+      id: createUniqueId('node'),
       type: nodeType,
       position,
       data: createNodeData(nodeType)
@@ -468,7 +532,7 @@ const WorkflowBuilderCanvas = ({
     applyWorkflowUpdate({
       ...workflow,
       nodes: [...nodes, newNode]
-    }, { recordHistory: true, saveToBackend: true });
+    }, { recordHistory: true, saveToBackend: false });
 
     onNodeAdded?.(newNode, position);
   }, [applyWorkflowUpdate, nodes, onNodeAdded, snapPoint, toCanvasPoint, workflow]);
@@ -494,8 +558,9 @@ const WorkflowBuilderCanvas = ({
   }, [nodes, toCanvasPoint]);
 
   const handleMouseMove = useCallback((event) => {
-    if (dragStateRef.current) {
-      const { nodeId, offsetX, offsetY } = dragStateRef.current;
+    const dragState = dragStateRef.current;
+    if (dragState) {
+      const { nodeId, offsetX, offsetY, snapshot, recorded } = dragState;
       const point = toCanvasPoint(event.clientX, event.clientY);
       const newPosition = resolveCollision(
         snapPoint({ x: point.x - offsetX, y: point.y - offsetY }),
@@ -505,9 +570,12 @@ const WorkflowBuilderCanvas = ({
       // Store the current position in dragStateRef for saving on mouse up
       dragStateRef.current.currentPosition = newPosition;
 
-      if (!dragStateRef.current.recorded) {
-        setHistory(prev => [...prev, dragStateRef.current.snapshot].slice(-MAX_HISTORY));
-        dragStateRef.current.recorded = true;
+      if (!recorded) {
+        // Use captured snapshot reference to avoid race when dragStateRef changes mid-frame.
+        setHistory(prev => [...prev, snapshot].slice(-MAX_HISTORY));
+        if (dragStateRef.current) {
+          dragStateRef.current.recorded = true;
+        }
         setFuture([]);
       }
 
@@ -542,24 +610,62 @@ const WorkflowBuilderCanvas = ({
     setIsPanning(false);
   }, [onNodeMoved]);
 
-  const handleNodeRemove = useCallback((nodeId) => {
-    const updatedNodes = nodes.filter((node) => node.id !== nodeId);
-    const updatedEdges = edges.filter(
-      (edge) => edge.source !== nodeId && edge.target !== nodeId
-    );
+  const handleNodeRemove = useCallback(async (nodeId) => {
+    if (deletingNodeIds.has(nodeId)) return;
 
-    applyWorkflowUpdate({
-      ...workflow,
-      nodes: updatedNodes,
-      edges: updatedEdges
-    }, { recordHistory: true, saveToBackend: true });
+    const nodeToDelete = nodes.find((node) => node.id === nodeId);
+    const isAudioNode = (nodeToDelete?.type || '').toLowerCase() === 'audio';
+    if (isAudioNode) {
+      const confirmed = window.confirm('Delete this Audio node and its Cloudinary audio file?');
+      if (!confirmed) return;
+    }
 
-    onNodeRemoved?.(nodeId);
-  }, [nodes, edges, workflow, applyWorkflowUpdate, onNodeRemoved]);
+    setDeletingNodeIds((prev) => new Set(prev).add(nodeId));
+    try {
+      if (isAudioNode) {
+        const audioPublicId = extractCloudinaryPublicId(
+          nodeToDelete?.data?.audioPublicId ||
+          nodeToDelete?.data?.audioAssetId ||
+          nodeToDelete?.audioAssetId ||
+          nodeToDelete?.data?.audioUrl ||
+          nodeToDelete?.audioUrl
+        );
+
+        if (audioPublicId) {
+          const deleteResponse = await apiService.deleteCustomAudioByPublicId(audioPublicId);
+          if (!deleteResponse?.data?.success) {
+            throw new Error(deleteResponse?.data?.error || 'Failed to delete Cloudinary audio');
+          }
+        }
+      }
+
+      const updatedNodes = nodes.filter((node) => node.id !== nodeId);
+      const updatedEdges = edges.filter(
+        (edge) => edge.source !== nodeId && edge.target !== nodeId
+      );
+
+      applyWorkflowUpdate({
+        ...workflow,
+        nodes: updatedNodes,
+        edges: updatedEdges
+      }, { recordHistory: true, saveToBackend: false });
+
+      onNodeRemoved?.(nodeId);
+    } catch (error) {
+      alert(`Unable to delete node: ${error.message}`);
+      return;
+    } finally {
+      setDeletingNodeIds((prev) => {
+        const next = new Set(prev);
+        next.delete(nodeId);
+        return next;
+      });
+    }
+  }, [nodes, edges, workflow, applyWorkflowUpdate, onNodeRemoved, deletingNodeIds]);
 
   const handleEdgeRemove = useCallback((edgeId) => {
     const updatedEdges = edges.filter(edge => edge.id !== edgeId);
-    applyWorkflowUpdate({ ...workflow, edges: updatedEdges }, { recordHistory: true, saveToBackend: true });
+    applyWorkflowUpdate({ ...workflow, edges: updatedEdges }, { recordHistory: true, saveToBackend: false });
     onEdgeRemoved?.(edgeId);
     setEdgeMenu(null);
     setSelectedEdge(null);
@@ -585,21 +691,10 @@ const WorkflowBuilderCanvas = ({
     applyWorkflowUpdate({
       ...workflow,
       nodes: updatedNodes
-    }, { recordHistory: true, saveToBackend: true });
+    }, { recordHistory: true, saveToBackend: false });
 
     setConfigPanelOpen(false);
     setConfigNode(null);
-  }, [nodes, workflow, applyWorkflowUpdate]);
-
-  const handleNodeConfigAutoSave = useCallback((nodeId, config) => {
-    const updatedNodes = nodes.map((n) =>
-      n.id === nodeId ? { ...n, data: { ...n.data, ...config } } : n
-    );
-
-    applyWorkflowUpdate({
-      ...workflow,
-      nodes: updatedNodes
-    }, { recordHistory: false, saveToBackend: false });
   }, [nodes, workflow, applyWorkflowUpdate]);
 
   const handleNodeConfigClose = useCallback(() => {
@@ -624,8 +719,11 @@ const WorkflowBuilderCanvas = ({
     if (!sourceNode || !targetNode) return;
 
     let sourceHandle = null;
-    if (sourceNode.type === 'input' && sourceNode.data?.digit) {
-      sourceHandle = sourceNode.data.digit;
+    if (sourceNode.type === 'input') {
+      const digit = String(sourceNode.data?.digit ?? '').trim();
+      if (digit) {
+        sourceHandle = digit;
+      }
     }
     if (sourceNode.type === 'conditional') {
       const existing = edges.filter(edge => edge.source === sourceNode.id).map(edge => edge.sourceHandle);
@@ -633,7 +731,7 @@ const WorkflowBuilderCanvas = ({
     }
 
     const newEdge = {
-      id: `edge_${Date.now()}`,
+      id: createUniqueId('edge'),
       source: connectingFrom,
       target: nodeId,
       sourceHandle,
@@ -643,7 +741,7 @@ const WorkflowBuilderCanvas = ({
     applyWorkflowUpdate({
       ...workflow,
       edges: [...edges, newEdge]
-    }, { recordHistory: true, saveToBackend: true });
+    }, { recordHistory: true, saveToBackend: false });
 
     onEdgeConnected?.(newEdge);
     setConnectingFrom(null);
@@ -655,7 +753,7 @@ const WorkflowBuilderCanvas = ({
     if (!edge) return;
 
     const updatedEdges = edges.map(e => e.id === reconnectEdgeId ? { ...e, target: nodeId } : e);
-    applyWorkflowUpdate({ ...workflow, edges: updatedEdges }, { recordHistory: true, saveToBackend: true });
+    applyWorkflowUpdate({ ...workflow, edges: updatedEdges }, { recordHistory: true, saveToBackend: false });
     onEdgeReattached?.(reconnectEdgeId, { target: nodeId });
     setReconnectEdgeId(null);
     setEdgeMenu(null);
@@ -794,14 +892,14 @@ const WorkflowBuilderCanvas = ({
     };
 
     const newNode = {
-      id: `node_${Date.now()}`,
+      id: createUniqueId('node'),
       type: nodeType,
       position: snapPoint(mid),
       data: createNodeData(nodeType)
     };
 
     const firstEdge = {
-      id: `edge_${Date.now()}_a`,
+      id: createUniqueId('edge_a'),
       source: edge.source,
       target: newNode.id,
       sourceHandle: edge.sourceHandle,
@@ -810,7 +908,7 @@ const WorkflowBuilderCanvas = ({
     };
 
     const secondEdge = {
-      id: `edge_${Date.now()}_b`,
+      id: createUniqueId('edge_b'),
       source: newNode.id,
       target: edge.target,
       sourceHandle: null,
@@ -821,7 +919,7 @@ const WorkflowBuilderCanvas = ({
       ...workflow,
       nodes: [...nodes, newNode],
       edges: [...edges.filter(e => e.id !== edgeId), firstEdge, secondEdge]
-    }, { recordHistory: true, saveToBackend: true });
+    }, { recordHistory: true, saveToBackend: false });
 
     onNodeAdded?.(newNode, newNode.position);
     onEdgeConnected?.(firstEdge);
@@ -890,6 +988,17 @@ const WorkflowBuilderCanvas = ({
   }, [handleWheel]);
 
   const handleKeyDown = useCallback((event) => {
+    const target = event.target;
+    const tagName = String(target?.tagName || '').toLowerCase();
+    const isTypingTarget =
+      tagName === 'input' ||
+      tagName === 'textarea' ||
+      tagName === 'select' ||
+      Boolean(target?.isContentEditable);
+
+    // Never run canvas shortcuts while user is editing form fields.
+    if (isTypingTarget) return;
+
     if (event.ctrlKey || event.metaKey) {
       if (event.key.toLowerCase() === 'z') {
         event.preventDefault();
@@ -1144,7 +1253,7 @@ const WorkflowBuilderCanvas = ({
                       Connect
                     </button>
                   </div>
-                  {hasError && <div className="node-warning">Check connection</div>}
+                  {hasError && <div className="node-warning">Configuration required</div>}
                 </div>
               );
             })}
@@ -1238,9 +1347,10 @@ const WorkflowBuilderCanvas = ({
       {configPanelOpen && (
         <NodeConfigPanel
           node={configNode}
+          workflowId={workflowId || workflow?._id || workflow?.id || ''}
           onSave={handleNodeConfigSave}
           onClose={handleNodeConfigClose}
-          onAutoSave={handleNodeConfigAutoSave}
+          availableAudioNodes={nodes}
           availableVoices={availableVoices || []}
         />
       )}
@@ -1249,3 +1359,4 @@ const WorkflowBuilderCanvas = ({
 };
 
 export default WorkflowBuilderCanvas;
+

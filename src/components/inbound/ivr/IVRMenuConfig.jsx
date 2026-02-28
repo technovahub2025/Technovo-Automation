@@ -3,7 +3,6 @@ import { Plus } from 'lucide-react';
 import useIVRMenus from '../../../hooks/useIVRMenus';
 import useSocket from '../../../hooks/useSocket';
 import apiService from '../../../services/api';
-import { VOICE_OPTIONS } from '../../../config/api.config';
 import IVRMenuCard from './IVRMenuCard';
 import './IVRMenuConfig.css';
 
@@ -16,29 +15,12 @@ const IVRMenuConfig = () => {
     updateMenu,
     deleteMenu,
     loading,
-    error,
-    socketConnected,
     setError,
   } = useIVRMenus();
 
   const { socket, connected } = useSocket();
 
   const [newIvrName, setNewIvrName] = useState('');
-
-  const [formData, setFormData] = useState({
-
-    name: '',
-    voiceId: VOICE_OPTIONS.BRITISH_ENGLISH[0].value,
-    options: [
-      { digit: '1', action: 'transfer', destination: '', label: '' },
-    ],
-    timeout: 10,
-    maxRetries: 3,
-    invalidOption: {
-      message: 'Invalid option. Please try again.',
-      action: 'repeat',
-    },
-  });
 
   useEffect(() => {
     if (socket && connected) {
@@ -111,39 +93,6 @@ const IVRMenuConfig = () => {
     }
   }, [socket, connected, setError]);
 
-  const handleChange = useCallback((field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      [field]: value,
-    }));
-  }, []);
-
-  const handleOptionChange = useCallback((index, field, value) => {
-    setFormData(prev => ({
-      ...prev,
-      options: prev.options.map((opt, i) =>
-        i === index ? { ...opt, [field]: value } : opt
-      ),
-    }));
-  }, []);
-
-  const addOption = useCallback(() => {
-    setFormData(prev => ({
-      ...prev,
-      options: [
-        ...prev.options,
-        { digit: '', action: 'transfer', destination: '', label: '' },
-      ],
-    }));
-  }, []);
-
-  const removeOption = useCallback((index) => {
-    setFormData(prev => ({
-      ...prev,
-      options: prev.options.filter((_, i) => i !== index),
-    }));
-  }, []);
-
   const handleInlineCreate = useCallback(async () => {
     const trimmedName = newIvrName.trim();
     if (!trimmedName) {
@@ -153,71 +102,15 @@ const IVRMenuConfig = () => {
 
     try {
       const now = Date.now();
-      const starterNodes = [
-        {
-          id: `audio_${now}`,
-          type: 'audio',
-          position: { x: 120, y: 60 },
-          data: {
-            mode: 'tts',
-            messageText: `Welcome to ${trimmedName}. Please choose an option.`,
-            voice: 'en-GB-SoniaNeural',
-            language: 'en-GB',
-            afterPlayback: 'next',
-            maxRetries: 3,
-            timeoutSeconds: 10,
-            promptKey: `audio_${now}`
-          }
-        },
-        {
-          id: `input_${now}`,
-          type: 'input',
-          position: { x: 120, y: 180 },
-          data: {
-            digit: '1',
-            label: 'Customer Support',
-            action: 'transfer',
-            promptAudioNodeId: `audio_${now}`,
-            invalidAudioNodeId: '',
-            timeoutAudioNodeId: '',
-            maxAttempts: 3,
-            timeoutSeconds: 10,
-            promptKey: `input_${now}`
-          }
-        }
-      ];
 
       const menuData = {
-        name: trimmedName,
         displayName: trimmedName,
         promptKey: `ivr_${trimmedName.replace(/\s+/g, '_').toLowerCase()}_${now}`,
-        voiceId: 'en-GB-SoniaNeural',
-        language: 'en-GB',
-        timeout: 10,
-        maxRetries: 3,
-        invalidOption: {
-          message: 'Invalid option. Please try again.',
-          action: 'repeat'
-        },
-        menuConfig: { type: 'workflow' },
         workflowConfig: {
-          nodes: starterNodes,
-          edges: [],
-          settings: {
-            timeout: 10,
-            maxRetries: 3,
-            language: 'en-GB',
-            voice: 'en-GB-SoniaNeural'
-          }
+          nodes: [],
+          edges: []
         },
-        options: [
-          {
-            digit: '1',
-            action: 'transfer',
-            destination: '',
-            label: 'Customer Support'
-          }
-        ]
+        status: 'draft'
       };
 
       await createMenu(menuData);
@@ -239,69 +132,45 @@ const IVRMenuConfig = () => {
     }
   }, [deleteMenu, setError]);
 
-  const validateForm = useCallback(() => {
-    if (!formData.name.trim()) {
-      setError('Menu name is required');
-      return false;
-    }
-
-    const validOptions = formData.options.filter(opt =>
-      opt.digit && opt.digit.trim() &&
-      opt.action && opt.action.trim() &&
-      opt.destination && opt.destination.trim()
-    );
-
-    if (validOptions.length === 0) {
-      setError('At least one complete menu option is required (digit, action, and destination)');
-      return false;
-    }
-
-    const digits = validOptions.map(opt => opt.digit);
-    const duplicates = digits.filter((digit, index) => digits.indexOf(digit) !== index);
-    if (duplicates.length > 0) {
-      setError(`Duplicate digits found: ${[...new Set(duplicates)].join(', ')}`);
-      return false;
-    }
-
-    return true;
-  }, [formData]);
-
-  const resetForm = useCallback(() => {
-    setFormData({
-      name: '',
-      voiceId: VOICE_OPTIONS.BRITISH_ENGLISH[0].value,
-      options: [
-        { digit: '1', action: 'transfer', destination: '', label: '' },
-      ],
-      timeout: 10,
-      maxRetries: 3,
-      invalidOption: {
-        message: 'Invalid option. Please try again.',
-        action: 'repeat',
-      },
-    });
-  }, []);
-
   const handleWorkflowUpdate = useCallback(async (menuId, workflowData) => {
     try {
-      const sanitizedWorkflowData = {
-        ...workflowData,
-        nodes: workflowData.nodes?.map(node => ({
-          ...node,
-          data: {
-            ...node.data,
-            text: node.data.text || '',
-            voice: node.data.voice || 'en-GB-SoniaNeural',
-            language: node.data.language || 'en-GB'
+      const incomingWorkflow = workflowData?.workflowConfig || workflowData || {};
+      const hasWorkflowPayload =
+        Array.isArray(incomingWorkflow?.nodes) ||
+        Array.isArray(incomingWorkflow?.edges);
+
+      const sanitizedWorkflowData = hasWorkflowPayload
+        ? {
+            ...incomingWorkflow,
+            ...(Array.isArray(incomingWorkflow.nodes)
+              ? {
+                  nodes: incomingWorkflow.nodes.map(node => ({
+                    ...node,
+                    data: {
+                      ...node.data,
+                      text: node.data?.text || '',
+                      voice: node.data?.voice || 'en-GB-SoniaNeural',
+                      language: node.data?.language || 'en-GB'
+                    }
+                  }))
+                }
+              : {})
           }
-        })) || []
+        : null;
+
+      const updatePayload = {
+        ...(sanitizedWorkflowData ? { workflowConfig: sanitizedWorkflowData } : {}),
+        ...(workflowData?.status
+          ? { status: workflowData.status }
+          : (sanitizedWorkflowData ? { status: 'draft' } : {})),
+        ...(workflowData?.lastEditedBy ? { lastEditedBy: workflowData.lastEditedBy } : {})
       };
 
-      await updateMenu(menuId, {
-        workflowConfig: sanitizedWorkflowData,
-        status: 'draft',
-        lastEditedBy: 'current_user'
-      });
+      if (Object.keys(updatePayload).length === 0) {
+        return;
+      }
+
+      await updateMenu(menuId, updatePayload);
       setError(null);
     } catch (error) {
       console.error('Error updating workflow:', error);
@@ -331,36 +200,6 @@ const IVRMenuConfig = () => {
     }
   }, []);
 
-  const handleDelete = useCallback(async (menuId) => {
-    if (!window.confirm('Are you sure you want to delete this IVR menu?')) {
-      return;
-    }
-
-    try {
-      setError(null);
-      console.log('🗑️ Deleting IVR menu:', menuId);
-
-      await deleteMenu(menuId);
-
-      console.log('✅ IVR menu deleted successfully');
-      setError(null);
-
-    } catch (err) {
-      console.error('❌ Error deleting IVR menu:', err);
-
-      let displayMsg = 'Failed to delete IVR menu';
-
-      if (err.response) {
-        displayMsg = err.response.data?.error || err.response.data?.message || displayMsg;
-      } else if (err.request) {
-        displayMsg = 'Network error. Please check your connection and try again.';
-      } else {
-        displayMsg = err.message || displayMsg;
-      }
-
-      setError(displayMsg);
-    }
-  }, [deleteMenu]);
 
   return (
     <div className="ivr-menu-tab">
@@ -421,3 +260,4 @@ const IVRMenuConfig = () => {
 
 
 export default IVRMenuConfig;
+

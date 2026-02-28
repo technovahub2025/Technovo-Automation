@@ -1,12 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { Phone, Mic, Settings, Users, BarChart3, Activity, PhoneCall, Bot, FileText, ClipboardList } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Mic, BarChart3, PhoneCall } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import apiService from '../services/api';
 import socketService from '../services/socketService';
 import './VoiceAutomation.css';
 
 const VoiceAutomation = () => {
-  //const VITE_API_URL_ROUTE='/api/message/bulknode'
   const navigate = useNavigate();
   const [activeCalls, setActiveCalls] = useState([]);
   const [callStats, setCallStats] = useState(null);
@@ -14,31 +13,107 @@ const VoiceAutomation = () => {
     backend: false,
     ai: false
   });
+  const [lastUpdated, setLastUpdated] = useState(null);
   const [loading, setLoading] = useState(true);
 
+  const refreshTimeoutRef = useRef(null);
+  const isMountedRef = useRef(true);
 
-  // Fetch active calls
-  const fetchActiveCalls = async () => {
+  const formatCallTime = useCallback((call = {}) => {
+    const sourceTime = call?.startTime || call?.createdAt;
+    if (!sourceTime) return null;
+    const date = new Date(sourceTime);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  }, []);
+
+  const normalizeStats = useCallback((payload = {}) => {
+    const summary = payload?.summary || payload || {};
+
+    const totalCalls = Number(summary?.totalCalls);
+    const avgDuration = Number(summary?.avgDuration);
+    const successRate = Number(summary?.successRate);
+
+    return {
+      totalCalls: Number.isFinite(totalCalls) ? totalCalls : 0,
+      avgDuration: Number.isFinite(avgDuration) ? Math.round(avgDuration) : 0,
+      successRate: Number.isFinite(successRate) ? successRate : 0
+    };
+  }, []);
+
+  const mergeStats = useCallback(
+    (incoming = {}) => {
+      const next = normalizeStats(incoming);
+      setCallStats((prev) => {
+        if (!prev) return next;
+
+        return {
+          totalCalls: Number.isFinite(next.totalCalls) ? next.totalCalls : prev.totalCalls,
+          avgDuration: Number.isFinite(next.avgDuration) ? next.avgDuration : prev.avgDuration,
+          successRate: Number.isFinite(next.successRate) ? next.successRate : prev.successRate
+        };
+      });
+      setLastUpdated(new Date().toISOString());
+    },
+    [normalizeStats]
+  );
+
+  const fetchActiveCalls = useCallback(async () => {
     try {
       const response = await apiService.getActiveCalls();
-      setActiveCalls(response.data.calls || []);
+      const calls = response?.data?.calls || [];
+
+      if (isMountedRef.current) {
+        setActiveCalls(Array.isArray(calls) ? calls : []);
+      }
     } catch (error) {
       console.error('Failed to fetch active calls:', error);
     }
-  };
+  }, []);
 
-  // Fetch call statistics
-  const fetchCallStats = async () => {
+  const fetchCallStats = useCallback(async () => {
     try {
-      const response = await apiService.getCallStats();
-      setCallStats(response.data);
-    } catch (error) {
-      console.error('Failed to fetch call stats:', error);
-    }
-  };
+      const unifiedResponse = await apiService.getVoiceTodayStats();
+      const unifiedData = unifiedResponse?.data?.data || {};
+      const unifiedSummary = unifiedData?.summary || {};
+      const normalizedUnified = normalizeStats(unifiedSummary);
 
-  // Check system health
-  const checkHealth = async () => {
+      if (isMountedRef.current) {
+        setCallStats(normalizedUnified);
+        setLastUpdated(new Date().toISOString());
+      }
+      return;
+    } catch (unifiedError) {
+      console.warn('Unified voice stats fetch failed, trying analytics fallback:', unifiedError?.message || unifiedError);
+    }
+
+    try {
+      const analyticsResponse = await apiService.getInboundAnalytics('today', {
+        callType: 'all',
+        status: 'all'
+      });
+
+      const analyticsData = analyticsResponse?.data?.data || analyticsResponse?.data || {};
+      const normalized = normalizeStats(analyticsData?.summary || {});
+
+      if (isMountedRef.current) {
+        setCallStats(normalized);
+        setLastUpdated(new Date().toISOString());
+      }
+    } catch (error) {
+      console.warn('Primary analytics stats fetch failed, using legacy stats fallback:', error?.message || error);
+      try {
+        const response = await apiService.getCallStats();
+        if (isMountedRef.current) {
+          mergeStats(response?.data || {});
+        }
+      } catch (fallbackError) {
+        console.error('Failed to fetch call stats:', fallbackError);
+      }
+    }
+  }, [mergeStats, normalizeStats]);
+
+  const checkHealth = useCallback(async () => {
     const [backendHealth, aiHealth] = await Promise.allSettled([
       apiService.checkBackendHealth(),
       apiService.checkAIHealth()
@@ -46,84 +121,156 @@ const VoiceAutomation = () => {
 
     const backendOk =
       backendHealth.status === 'fulfilled' &&
-      (backendHealth.value?.data?.status === 'online' ||
-        backendHealth.value?.data?.status === 'ok');
+      (backendHealth.value?.data?.status === 'online' || backendHealth.value?.data?.status === 'ok');
 
-    const aiOk =
-      aiHealth.status === 'fulfilled' &&
-      aiHealth.value?.data?.status === 'healthy';
+    const aiOk = aiHealth.status === 'fulfilled' && aiHealth.value?.data?.status === 'healthy';
 
     if (backendHealth.status === 'rejected') {
       console.warn('Backend health check failed:', backendHealth.reason?.message || backendHealth.reason);
     }
+
     if (aiHealth.status === 'rejected') {
       console.warn('AI health check failed:', aiHealth.reason?.message || aiHealth.reason);
     }
 
-    setHealthStatus({
-      backend: backendOk,
-      ai: aiOk
-    });
-    setLoading(false);
-  };
+    if (isMountedRef.current) {
+      setHealthStatus({
+        backend: backendOk,
+        ai: aiOk
+      });
+    }
+  }, []);
 
-  // WebSocket connection for real-time updates
+  const scheduleStatsRefresh = useCallback(() => {
+    if (refreshTimeoutRef.current) {
+      clearTimeout(refreshTimeoutRef.current);
+    }
+
+    refreshTimeoutRef.current = setTimeout(() => {
+      fetchCallStats();
+      fetchActiveCalls();
+    }, 350);
+  }, [fetchActiveCalls, fetchCallStats]);
+
   useEffect(() => {
-    // Initial data load
-    checkHealth();
-    fetchActiveCalls();
-    fetchCallStats();
+    isMountedRef.current = true;
 
-    // Connect to Socket.io server using shared service
+    const initialize = async () => {
+      await Promise.allSettled([checkHealth(), fetchActiveCalls(), fetchCallStats()]);
+
+      if (isMountedRef.current) {
+        setLoading(false);
+      }
+    };
+
+    initialize();
+
     const socket = socketService.connect();
 
-    socket.on('connect', () => {
-      console.log('✅ WebSocket connected');
-    });
-
-    // Listen for active calls updates
-    socket.on('calls_update', (data) => {
-      console.log('📞 Active calls updated:', data);
-      setActiveCalls(data.calls || []);
-    });
-
-    // Listen for stats updates
-    socket.on('stats_update', (data) => {
-      console.log('📊 Stats updated:', data);
-      setCallStats(data);
-    });
-
-    // Listen for health updates
-    socket.on('health_update', (data) => {
-      console.log('🏥 Health updated:', data);
-      setHealthStatus({
-        backend: data.backend,
-        ai: data.ai
+    const handleConnect = () => {
+      console.log('WebSocket connected');
+      socket.emit('join_analytics_room', {
+        period: 'today',
+        callType: 'all',
+        status: 'all'
       });
-    });
-
-    socket.on('disconnect', () => {
-      console.log('❌ WebSocket disconnected');
-    });
-
-    // Cleanup on unmount - only remove listeners, keep socket connected
-    return () => {
-      socket.off('calls_update');
-      socket.off('stats_update');
-      socket.off('health_update');
-      socket.off('connect');
-      socket.off('disconnect');
+      socket.emit('request_call_analytics', {
+        period: 'today',
+        callType: 'all',
+        status: 'all',
+        reason: 'voice_automation_dashboard'
+      });
+      socket.emit('subscribe_calls');
     };
-  }, []);
+
+    const handleDisconnect = () => {
+      console.log('WebSocket disconnected');
+    };
+
+    const handleCallsUpdate = (data) => {
+      const calls = data?.calls || [];
+      setActiveCalls(Array.isArray(calls) ? calls : []);
+    };
+
+    const handleStatsUpdate = (data) => {
+      mergeStats(data || {});
+    };
+
+    const handleAnalyticsUpdate = (data) => {
+      const snapshot = data?.analytics || data?.data || data;
+      if (!snapshot) return;
+      mergeStats(snapshot?.summary || snapshot);
+    };
+
+    const handleCallEvent = (data) => {
+      if (['call_started', 'call_ended', 'call_updated'].includes(data?.type)) {
+        scheduleStatsRefresh();
+      }
+    };
+
+    const handleOutboundUpdate = () => {
+      scheduleStatsRefresh();
+    };
+
+    const handleInboundUpdate = () => {
+      scheduleStatsRefresh();
+    };
+
+    const handleBroadcastUpdate = () => {
+      scheduleStatsRefresh();
+    };
+
+    const handleHealthUpdate = (data) => {
+      setHealthStatus({
+        backend: Boolean(data?.backend),
+        ai: Boolean(data?.ai)
+      });
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('calls_update', handleCallsUpdate);
+    socket.on('stats_update', handleStatsUpdate);
+    socket.on('call_analytics_update', handleAnalyticsUpdate);
+    socket.on('call_event', handleCallEvent);
+    socket.on('outbound_call_update', handleOutboundUpdate);
+    socket.on('inbound_call_update', handleInboundUpdate);
+    socket.on('broadcast_update', handleBroadcastUpdate);
+    socket.on('call_status_update', handleOutboundUpdate);
+    socket.on('health_update', handleHealthUpdate);
+
+    if (socket.connected) {
+      handleConnect();
+    }
+
+    return () => {
+      isMountedRef.current = false;
+
+      if (refreshTimeoutRef.current) {
+        clearTimeout(refreshTimeoutRef.current);
+      }
+
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('calls_update', handleCallsUpdate);
+      socket.off('stats_update', handleStatsUpdate);
+      socket.off('call_analytics_update', handleAnalyticsUpdate);
+      socket.off('call_event', handleCallEvent);
+      socket.off('outbound_call_update', handleOutboundUpdate);
+      socket.off('inbound_call_update', handleInboundUpdate);
+      socket.off('broadcast_update', handleBroadcastUpdate);
+      socket.off('call_status_update', handleOutboundUpdate);
+      socket.off('health_update', handleHealthUpdate);
+      socket.emit('leave_analytics_room');
+      socket.emit('unsubscribe_calls');
+    };
+  }, [checkHealth, fetchActiveCalls, fetchCallStats, mergeStats, scheduleStatsRefresh]);
 
   return (
     <div className="voice-automation">
       <h2>Voice Automation</h2>
-      <p className="subtitle">
-        Setup AI voice calls, auto responses, and call workflows
-      </p>
+      <p className="subtitle">Setup AI voice calls, auto responses, and call workflows</p>
 
-      {/* System Health Status */}
       <div className="health-status">
         <div className={`status-badge ${healthStatus.backend ? 'online' : 'offline'}`}>
           {healthStatus.backend && <span className="pulse-dot"></span>}
@@ -133,21 +280,15 @@ const VoiceAutomation = () => {
           {healthStatus.ai && <span className="pulse-dot"></span>}
           AI Service: {healthStatus.ai ? 'Healthy' : 'Unhealthy'}
         </div>
-        <div className="status-badge">
-          Active Calls: {activeCalls.length}
-        </div>
+        <div className="status-badge">Active Calls: {activeCalls.length}</div>
       </div>
 
-      {/* Voice Cards */}
       <div className="voice-cards">
         <div className="voice-card">
           <PhoneCall size={28} />
           <h4>Inbound Calls</h4>
           <p>Manage IVR menus, queues, and call routing with advanced features.</p>
-          <button
-            className="card-button"
-            onClick={() => navigate('/voice-automation/inbound')}
-          >
+          <button className="card-button" onClick={() => navigate('/voice-automation/inbound')}>
             Configure
           </button>
         </div>
@@ -156,10 +297,7 @@ const VoiceAutomation = () => {
           <Mic size={28} />
           <h4>Outbound Calls</h4>
           <p>Trigger automated voice calls for reminders or follow-ups.</p>
-          <button
-            className="card-button"
-            onClick={() => navigate('/voice-automation/outbound')}
-          >
+          <button className="card-button" onClick={() => navigate('/voice-automation/outbound')}>
             Make Call
           </button>
         </div>
@@ -167,11 +305,8 @@ const VoiceAutomation = () => {
         <div className="voice-card">
           <PhoneCall size={28} />
           <h4>Voice Broadcast</h4>
-          <p style={{ height: "40px" }}>Send bulk voice messages to multiple contacts.</p>
-          <button
-            className="card-button"
-            onClick={() => navigate('/voice-broadcast')}
-          >
+          <p style={{ height: '40px' }}>Send bulk voice messages to multiple contacts.</p>
+          <button className="card-button" onClick={() => navigate('/voice-broadcast')}>
             Start Broadcast
           </button>
         </div>
@@ -179,50 +314,39 @@ const VoiceAutomation = () => {
         <div className="voice-card">
           <BarChart3 size={28} />
           <h4>Call Analytics</h4>
-          <p style={{ height: "40px" }}>View detailed call history, statistics, and exported data.</p>
-          <button
-            className="card-button"
-            onClick={() => navigate('/voice-automation/history')}
-          >
+          <p style={{ height: '40px' }}>View detailed call history, statistics, and exported data.</p>
+          <button className="card-button" onClick={() => navigate('/voice-automation/history')}>
             View Logs
           </button>
         </div>
       </div>
 
-      {/* Active Calls Section */}
       {activeCalls.length > 0 && (
         <div className="active-calls-section">
           <h3>Active Calls</h3>
           <div className="calls-list">
             {activeCalls.map((call, index) => (
-              <div key={call.call_sid || `call-${index}`} className="call-item">
-                <div className="call-info">
-                  <span className="call-sid">{call.call_sid}</span>
-                  <span className={`status-badge ${call.connected ? 'online' : 'offline'}`}>
-                    {call.connected && <span className="pulse-dot"></span>}
-                    {call.connected ? 'Connected' : 'Disconnected'}
-                  </span>
-                </div>
+              <div key={call.call_sid || call.callSid || `call-${index}`} className="call-item minimal">
+                <span className="call-time">{formatCallTime(call) ? `Started ${formatCallTime(call)}` : 'Live now'}</span>
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Call Statistics */}
       {callStats && (
         <div className="stats-section">
           <h3>Today's Statistics</h3>
           <div className="stats-grid">
-            <div className="stat-card-voice">
+            <div className="stat-card-voice stat-total">
               <h4>{callStats.totalCalls || 0}</h4>
               <p>Total Calls</p>
             </div>
-            <div className="stat-card-voice">
+            <div className="stat-card-voice stat-duration">
               <h4>{callStats.avgDuration || 0}s</h4>
               <p>Avg Duration</p>
             </div>
-            <div className="stat-card-voice">
+            <div className="stat-card-voice stat-success">
               <h4>{callStats.successRate || 0}%</h4>
               <p>Success Rate</p>
             </div>
@@ -230,16 +354,12 @@ const VoiceAutomation = () => {
         </div>
       )}
 
-      {/* Loading State */}
       {loading && (
         <div className="loading">
           <div className="spinner"></div>
           <p>Loading voice automation...</p>
         </div>
       )}
-
-      {/* Voice Broadcast Section */}
-      {/* Removed modal to use dedicated page instead */}
     </div>
   );
 };

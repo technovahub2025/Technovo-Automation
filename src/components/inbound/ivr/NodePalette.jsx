@@ -9,9 +9,7 @@ const NODE_TYPES = [
     { type: 'queue', label: 'Queue', icon: '👥', description: 'Enqueue Call' },
     { type: 'transfer', label: 'Transfer', icon: '📞', description: 'Transfer to number' },
     { type: 'voicemail', label: 'Voicemail', icon: '📬', description: 'Record message' },
-    { type: 'sms', label: 'Send SMS', icon: '💬', description: 'Send text message' },
-    { type: 'ai_assistant', label: 'AI Assistant', icon: '🤖', description: 'Streaming AI Agent' },
-    { type: 'repeat', label: 'Repeat', icon: '🔄', description: 'Repeat menu' },
+    { type: 'sms', label: 'Send SMS', icon: '💬', description: 'Send text message' },    { type: 'repeat', label: 'Repeat', icon: '🔄', description: 'Repeat menu' },
     { type: 'end', label: 'End', icon: '🔚', description: 'Hang up call' }
 ];
 
@@ -45,3 +43,4 @@ const NodePalette = ({ industry, onNodeAdd }) => {
 };
 
 export default NodePalette;
+

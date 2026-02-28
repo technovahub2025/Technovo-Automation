@@ -1,4 +1,4 @@
-import React, { useState, useContext } from "react";
+import React, { useState, useContext, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import "./login.css";
@@ -19,6 +19,17 @@ const Login = () => {
 
   const API_URL = import.meta.env.VITE_API_ADMIN_URL;
   const TOKEN_KEY = import.meta.env.VITE_TOKEN_KEY || "authToken";
+
+  useEffect(() => {
+    const expiredNotice = sessionStorage.getItem("auth_expired_notice");
+    if (!expiredNotice) return;
+
+    setErrors((prev) => ({
+      ...prev,
+      general: expiredNotice,
+    }));
+    sessionStorage.removeItem("auth_expired_notice");
+  }, []);
 
   const validateForm = () => {
     const newErrors = {};

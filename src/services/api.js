@@ -51,9 +51,12 @@ apiService.interceptors.response.use(
     if (error.response?.status === 401 && !error.config?.skipAuthRedirect) {
       console.warn("401 Unauthorized - Logging out user");
       const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
+      socketService.disconnect();
       localStorage.removeItem(tokenKey);
       localStorage.removeItem("authToken"); // Remove fallback key too
+      localStorage.removeItem("token");
       localStorage.removeItem("user");
+      sessionStorage.setItem("auth_expired_notice", "Your session expired. Please login again.");
 
       // Prevent infinite redirect loops if already on login
       if (window.location.pathname !== "/login" && !window.location.pathname.includes("/register")) {
@@ -71,7 +74,7 @@ apiService.interceptors.response.use(
 
 // Voice Call APIs
 apiService.getActiveCalls = () =>
-  apiService.get("/voice/calls/active", { skipAuthRedirect: true });
+  apiService.get("/voice/calls/active");
 apiService.getCallDetails = (callSid) =>
   apiService.get(`/voice/call/${callSid}`);
 apiService.makeOutboundCall = (to, from) =>
@@ -99,7 +102,7 @@ apiService.getContacts = () => apiService.get("/api/outbound-config/contact-list
 apiService.getCallHistory = (params) =>
   apiService.get("/api/call-logs", { params });
 apiService.getCallStats = () =>
-  apiService.get("/voice/stats", { skipAuthRedirect: true });
+  apiService.get("/voice/stats");
 apiService.getCallTemplates = () => apiService.get("/api/outbound-config/templates");
 apiService.getCallSettings = () => Promise.resolve({ data: {} });
 apiService.updateCallSettings = (settings) =>
@@ -118,6 +121,8 @@ apiService.getInboundAnalytics = (period = 'today', params = {}) => {
   const queryParams = new URLSearchParams({ period, ...params }).toString();
   return apiService.get(`/api/analytics/inbound?${queryParams}`);
 };
+apiService.getVoiceTodayStats = () =>
+  apiService.get('/api/analytics/voice/today');
 
 
 // IVR Audio Management (using existing /ivr routes)
@@ -127,6 +132,7 @@ apiService.generateIVRAudio = (promptKey, text, language, forceRegenerate = fals
   apiService.post('/ivr/generate-audio', { promptKey, text, language, forceRegenerate });
 apiService.deleteIVRAudio = (promptKey, language) => apiService.delete(`/ivr/audio/${promptKey}/${language}`);
 apiService.deleteCustomAudio = (publicId) => apiService.delete(`/ivr/audio/${encodeURIComponent(publicId)}`);
+apiService.deleteCustomAudioByPublicId = (publicId) => apiService.delete('/ivr/audio/delete', { data: { publicId } });
 
 // IVR Menu Management
 apiService.createIVRConfig = (menuName, config) => apiService.post('/inbound/ivr/configs', { menuName, config });

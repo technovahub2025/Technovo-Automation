@@ -15,8 +15,12 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
   const [isSavingWorkflow, setIsSavingWorkflow] = useState(false);
   const [validationErrors, setValidationErrors] = useState([]);
   const [testRunActive, setTestRunActive] = useState(false);
-  const [testRunIndex, setTestRunIndex] = useState(0);
   const [activePath, setActivePath] = useState({ nodeId: null, edgeIds: [] });
+  const [testRunCurrentNodeId, setTestRunCurrentNodeId] = useState(null);
+  const [testRunSteps, setTestRunSteps] = useState([]);
+  const [testRunMessage, setTestRunMessage] = useState('');
+  const [testRunInputDigit, setTestRunInputDigit] = useState('');
+  const [testRunConditionalMode, setTestRunConditionalMode] = useState('auto');
   const [currentStatus, setCurrentStatus] = useState(menu?.status || 'draft');
   
   // Track which node is being edited to prevent socket updates
@@ -50,17 +54,27 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
   const ensureUniqueNodeIds = (workflowData) => {
     const nodes = workflowData?.nodes || [];
     const edges = workflowData?.edges || [];
-    const seenIds = new Set();
-    const uniqueNodes = [];
+    const idCount = new Map();
+    let missingIdCounter = 0;
 
-    for (const node of nodes) {
-      if (!node?.id) continue;
-      if (seenIds.has(node.id)) continue;
-      seenIds.add(node.id);
-      uniqueNodes.push(node);
-    }
+    const uniqueNodes = nodes.map((node, index) => {
+      if (!node) return node;
 
-    if (uniqueNodes.length === nodes.length) {
+      const rawId = typeof node.id === 'string' && node.id.trim()
+        ? node.id.trim()
+        : `node_auto_${index + 1}_${++missingIdCounter}`;
+      const occurrence = (idCount.get(rawId) || 0) + 1;
+      idCount.set(rawId, occurrence);
+
+      const nextId = occurrence === 1 ? rawId : `${rawId}__dup${occurrence}`;
+      if (nextId === node.id) {
+        return node;
+      }
+      return { ...node, id: nextId };
+    }).filter(Boolean);
+
+    const changed = uniqueNodes.some((node, index) => node?.id !== nodes[index]?.id);
+    if (!changed) {
       return workflowData;
     }
 
@@ -87,15 +101,19 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
           ...node,
           type: 'audio',
           data: {
-            mode: 'tts',
-            messageText: node.data?.text || node.data?.messageText || 'Welcome message',
+            ...(node.data || {}),
+            mode: node.data?.mode || 'tts',
+            messageText: node.data?.messageText || node.data?.text || 'Welcome message',
             voice: node.data?.voice || 'en-GB-SoniaNeural',
             language: node.data?.language || 'en-GB',
             afterPlayback: node.data?.afterPlayback || 'next',
-            maxRetries: node.data?.maxRetries || 3,
-            timeoutSeconds: node.data?.timeoutSeconds || 10,
+            maxRetries: node.data?.maxRetries ?? 3,
+            timeoutSeconds: node.data?.timeoutSeconds ?? node.data?.timeout ?? 10,
             fallbackAudioNodeId: node.data?.fallbackAudioNodeId || '',
-            promptKey: node.data?.promptKey || `audio_${Date.now()}`
+            promptKey: node.data?.promptKey || `audio_${Date.now()}`,
+            audioPublicId: node.data?.audioPublicId || node.data?.audioAssetId || node.audioAssetId || '',
+            audioUrl: node.data?.audioUrl || node.audioUrl || '',
+            audioAssetId: node.data?.audioAssetId || node.audioAssetId || ''
           }
         };
       }
@@ -107,64 +125,50 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
       nodes: migratedNodes
     });
   }, [effectiveWorkflow]);
-
-  // Migration Effect - Only fires when necessary to persist structural changes
-  useEffect(() => {
-    if (!migratedWorkflow || !menu?._id || !onUpdate) return;
-
-    const hasGreetingNodes = effectiveWorkflow.nodes?.some(node => node.type === 'greeting');
-    if (hasGreetingNodes) {
-      console.log('🔄 Logic migration required: Auto-saving updated workflow structure...');
-      onUpdate(menu._id, migratedWorkflow);
-    }
-  }, [menu?._id, migratedWorkflow, effectiveWorkflow.nodes]);
+  // Migration is applied in-memory; persisted only on explicit Save.
 
   // Add socket listener for backend workflow updates
   useEffect(() => {
     const socket = socketService.connect();
     if (socket) {
       const handleWorkflowUpdated = (data) => {
-        if (data.workflowId === menu?._id) {
-          // Handle different data structures from backend
-          // Backend may send workflowData or just updates (like audioUrls, ttsStatus)
-          const workflowData = data.workflowData || data;
-          
-          // Only update if we have actual workflow data with nodes
-          if (!workflowData.nodes && !data.audioUrls) {
-            // If no nodes and no audio updates, just update status
-            console.log('📡 Workflow status update:', data.ttsStatus || data.status);
+        if (data.workflowId !== menu?._id) return;
+
+        // Backend may send workflowData or partial updates (like audioUrls/ttsStatus)
+        const workflowData = data.workflowData || data;
+
+        if (!workflowData.nodes && !data.audioUrls) {
+          console.log('Workflow status update:', data.ttsStatus || data.status);
+          return;
+        }
+
+        // Prevent useless re-renders - only update if data actually changed
+        const currentData = JSON.stringify(draftWorkflow || workflow);
+        const newData = JSON.stringify(workflowData);
+        if (currentData === newData) return;
+
+        // Never persist from socket update events here.
+        // onUpdate performs API save + menu refresh, which can overwrite in-progress draft edits.
+        if (workflowData.nodes) {
+          if (isEditing) {
+            // Keep draft stable during editing; explicit Save handles persistence.
             return;
           }
+          setDraftWorkflow(ensureUniqueNodeIds(workflowData));
+          return;
+        }
 
-
-          // Prevent useless re-renders - only update if data actually changed
-          const currentData = JSON.stringify(draftWorkflow || workflow);
-          const newData = JSON.stringify(workflowData);
-
-          if (currentData === newData) {
-            return;
-          }
-
-          // Update local workflow state with backend data (only when not editing)
-          if (onUpdate && workflowData.nodes) {
-            onUpdate(data.workflowId, workflowData);
-          } else if (data.audioUrls) {
-            // Handle audio URL updates separately
-            console.log('📡 Audio URLs updated:', data.audioUrls);
-            // Refresh the menu to get latest data
-            if (onUpdate) {
-              onUpdate(data.workflowId, {
-                ...migratedWorkflow,
-                audioProcessing: { 
-                  status: data.ttsStatus || 'completed', 
-                  audioUrls: data.audioUrls 
-                }
-              });
+        if (data.audioUrls) {
+          console.log('Audio URLs updated:', data.audioUrls);
+          setDraftWorkflow((prev) => ({
+            ...(prev || migratedWorkflow),
+            audioProcessing: {
+              status: data.ttsStatus || 'completed',
+              audioUrls: data.audioUrls
             }
-          }
+          }));
         }
       };
-
       socket.on('workflow_updated', handleWorkflowUpdated);
       socket.on('workflow_error', (error) => {
         console.error('❌ Workflow update error via socket:', error);
@@ -179,45 +183,187 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
         socket.off('workflow_error');
       };
     }
-  }, [menu?._id, onUpdate, migratedWorkflow, isEditing, draftWorkflow, workflow]);
+  }, [menu?._id, migratedWorkflow, isEditing, draftWorkflow, workflow]);
 
 
 
-  // Extract backend JSON fields
-  const menuOptions = safeMenu.menuOptions ?? [];
-  const settings = safeMenu.settings ?? {};
-
-  // Memoize workflow to prevent infinite loops
-  const stableWorkflow = useMemo(() => workflow, [JSON.stringify(workflow)]);
+  // Memoize status to avoid unnecessary updates
   const stableMenuStatus = useMemo(() => menu?.status, [menu?.status]);
 
-  // Validation state for buttons
-  const hasValidWorkflow = useMemo(() => {
-    const workflowNodes = migratedWorkflow?.nodes || [];
-    if (!workflowNodes || workflowNodes.length === 0) return false;
+  // Production-grade local validation before save/activate
+  const productionValidation = useMemo(() => {
+    const nodes = migratedWorkflow?.nodes || [];
+    const edges = migratedWorkflow?.edges || [];
+    const issues = [];
 
-    // Check audio node has proper configuration
-    const audioNode = workflowNodes.find(n => n.type === 'audio');
-    const hasAudioConfig = audioNode && (
-      (audioNode.data.mode === 'tts' && audioNode.data.messageText?.trim()) ||
-      (audioNode.data.mode === 'file' && audioNode.data.audioUrl?.trim())
+    if (!nodes.length) {
+      return {
+        issues: ['Workflow must contain at least one node.'],
+        isValidForSave: false,
+        isValidForActivation: false
+      };
+    }
+
+    const nodeIdSet = new Set();
+    const duplicateNodeIds = new Set();
+    const invalidNodeIds = [];
+    nodes.forEach((node) => {
+      const id = typeof node?.id === 'string' ? node.id.trim() : '';
+      if (!id) {
+        invalidNodeIds.push(String(node?.id || '<missing>'));
+        return;
+      }
+      if (nodeIdSet.has(id)) duplicateNodeIds.add(id);
+      nodeIdSet.add(id);
+    });
+
+    if (invalidNodeIds.length > 0) issues.push('One or more nodes are missing a valid node id.');
+    if (duplicateNodeIds.size > 0) issues.push(`Duplicate node ids: ${Array.from(duplicateNodeIds).join(', ')}`);
+
+    const audioNodeIds = new Set(
+      nodes
+        .filter((n) => ['audio', 'greeting'].includes((n.type || '').toLowerCase()))
+        .map((n) => n.id)
     );
 
-    // Check input nodes reference audio nodes properly
-    const inputNodes = workflowNodes.filter(n => n.type === 'input');
-    const inputNodesValid = inputNodes.every(node =>
-      node.data.promptAudioNodeId?.trim() &&
-      node.data.maxAttempts > 0 &&
-      node.data.timeoutSeconds > 0
-    );
+    const edgeKeySet = new Set();
+    const sourceHandleMap = new Set();
+    edges.forEach((edge) => {
+      if (!nodeIdSet.has(edge.source) || !nodeIdSet.has(edge.target)) {
+        issues.push(`Broken edge ${edge.id || '<no-id>'}: source/target node not found.`);
+        return;
+      }
+      const edgeKey = `${edge.source}|${edge.target}|${edge.sourceHandle || ''}|${edge.targetHandle || ''}`;
+      if (edgeKeySet.has(edgeKey)) {
+        issues.push(`Duplicate edge route detected: ${edge.source} -> ${edge.target}.`);
+      }
+      edgeKeySet.add(edgeKey);
 
-    return hasAudioConfig && inputNodesValid;
+      const sourceNode = nodes.find((n) => n.id === edge.source);
+      const sourceType = (sourceNode?.type || '').toLowerCase();
+      if (sourceType === 'input' || sourceType === 'conditional') {
+        const handle = edge.sourceHandle || '__default__';
+        const key = `${edge.source}:${handle}`;
+        if (sourceHandleMap.has(key)) {
+          issues.push(`Node ${edge.source} has multiple routes for handle "${handle}".`);
+        }
+        sourceHandleMap.add(key);
+      }
+    });
+
+    nodes.forEach((node) => {
+      const nodeType = (node.type || '').toLowerCase();
+      const data = node.data || {};
+      const asNodeId = (value) => (typeof value === 'string' ? value.trim() : '');
+
+      if (nodeType === 'audio' || nodeType === 'greeting') {
+        const mode = (data.mode || 'tts').toLowerCase();
+        const text = (data.messageText || data.text || data.message || '').trim();
+        const audioUrl = (data.audioUrl || '').trim();
+        if (mode === 'tts' && !text) issues.push(`Audio node ${node.id} is missing TTS text.`);
+        if ((mode === 'upload' || mode === 'file') && !audioUrl) issues.push(`Audio node ${node.id} is missing audio URL.`);
+
+        const fallbackAudioNodeId = asNodeId(data.fallbackAudioNodeId);
+        if (fallbackAudioNodeId && !audioNodeIds.has(fallbackAudioNodeId)) {
+          issues.push(`Audio node ${node.id} fallback references non-audio node ${fallbackAudioNodeId}.`);
+        }
+      }
+
+      if (nodeType === 'input') {
+        const promptAudioNodeId = asNodeId(data.promptAudioNodeId || data.prompt_audio_node_id);
+        const invalidAudioNodeId = asNodeId(data.invalidAudioNodeId || data.invalid_audio_node_id);
+        const timeoutAudioNodeId = asNodeId(data.timeoutAudioNodeId || data.timeout_audio_node_id);
+
+        if (!promptAudioNodeId || !audioNodeIds.has(promptAudioNodeId)) {
+          issues.push(`Input node ${node.id} must reference a valid prompt audio node.`);
+        }
+        if (invalidAudioNodeId && !audioNodeIds.has(invalidAudioNodeId)) {
+          issues.push(`Input node ${node.id} invalid-audio reference is not an audio node.`);
+        }
+        if (timeoutAudioNodeId && !audioNodeIds.has(timeoutAudioNodeId)) {
+          issues.push(`Input node ${node.id} timeout-audio reference is not an audio node.`);
+        }
+
+        const timeoutSeconds = Number(data.timeoutSeconds ?? data.timeout);
+        const maxAttempts = Number(data.maxAttempts ?? data.max_attempts);
+        if (!Number.isFinite(timeoutSeconds) || timeoutSeconds < 1 || timeoutSeconds > 60) {
+          issues.push(`Input node ${node.id} timeout must be between 1 and 60 seconds.`);
+        }
+        if (!Number.isFinite(maxAttempts) || maxAttempts < 1 || maxAttempts > 10) {
+          issues.push(`Input node ${node.id} max attempts must be between 1 and 10.`);
+        }
+
+        const digit = String(data.digit ?? '').trim();
+        if (digit && !edges.some((edge) => edge.source === node.id && edge.sourceHandle === digit)) {
+          issues.push(`Input node ${node.id} digit "${digit}" has no matching outgoing edge.`);
+        }
+      }
+
+      if (nodeType === 'conditional') {
+        if (!edges.some((edge) => edge.source === node.id && edge.sourceHandle === 'true')) {
+          issues.push(`Conditional node ${node.id} is missing a "true" branch.`);
+        }
+        if (!edges.some((edge) => edge.source === node.id && edge.sourceHandle === 'false')) {
+          issues.push(`Conditional node ${node.id} is missing a "false" branch.`);
+        }
+
+        const conditionType = String(data.condition || '').trim().toLowerCase();
+        if (conditionType === 'custom') {
+          const variable = String(data.variable || '').trim();
+          const operator = String(data.operator || '').trim();
+          const value = String(data.value || '').trim();
+          if (!variable) {
+            issues.push(`Conditional node ${node.id} custom mode requires a variable.`);
+          }
+          if (!operator) {
+            issues.push(`Conditional node ${node.id} custom mode requires an operator.`);
+          }
+          if (operator !== 'exists' && !value) {
+            issues.push(`Conditional node ${node.id} custom mode requires a value for operator "${operator}".`);
+          }
+        }
+
+        if (conditionType === 'business_hours') {
+          const start = Number(data.businessStartHour ?? data.business_start_hour ?? 9);
+          const end = Number(data.businessEndHour ?? data.business_end_hour ?? 18);
+          if (!Number.isFinite(start) || start < 0 || start > 23 || !Number.isFinite(end) || end < 0 || end > 23) {
+            issues.push(`Conditional node ${node.id} business hours must be between 0 and 23.`);
+          }
+        }
+      }
+
+      if (nodeType === 'voicemail') {
+        const greetingAudioNodeId = asNodeId(data.greetingAudioNodeId || data.greeting_audio_node_id);
+        const fallbackNodeId = asNodeId(data.fallbackNodeId || data.fallback_node_id);
+        if (greetingAudioNodeId && !audioNodeIds.has(greetingAudioNodeId)) {
+          issues.push(`Voicemail node ${node.id} greeting reference is not an audio node.`);
+        }
+        if (fallbackNodeId && !nodeIdSet.has(fallbackNodeId)) {
+          issues.push(`Voicemail node ${node.id} fallback node does not exist: ${fallbackNodeId}.`);
+        }
+      }
+    });
+
+    const hasStartNode = nodes.some((node) => {
+      const nodeType = (node.type || '').toLowerCase();
+      return nodeType === 'start' || nodeType === 'audio' || nodeType === 'greeting';
+    });
+    const hasInputNode = nodes.some((node) => (node.type || '').toLowerCase() === 'input');
+    const hasEndNode = nodes.some((node) => (node.type || '').toLowerCase() === 'end');
+
+    if (!hasStartNode) issues.push('Workflow must include at least one audio/greeting start node.');
+    if (!hasInputNode) issues.push('Workflow must include at least one input node.');
+    if (!hasEndNode) issues.push('Workflow must include at least one end node.');
+
+    return {
+      issues,
+      isValidForSave: issues.length === 0,
+      isValidForActivation: issues.length === 0
+    };
   }, [migratedWorkflow]);
 
-  const hasValidMenu = useMemo(() => {
-    const options = menuOptions || [];
-    return options && options.length > 0;
-  }, [menuOptions]);
+  const hasValidWorkflow = productionValidation.isValidForSave;
+  const hasValidMenu = productionValidation.isValidForActivation;
 
   const flowMetrics = useMemo(() => {
     const nodes = migratedWorkflow?.nodes || [];
@@ -303,9 +449,10 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
   };
 
   useEffect(() => {
+    if (isEditing) return;
     setDraftWorkflow(migratedWorkflow);
     setIsDirty(false);
-  }, [migratedWorkflow]);
+  }, [migratedWorkflow, isEditing]);
 
   // Listen for TTS progress events
   useEffect(() => {
@@ -354,6 +501,8 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
 
   const handleEdit = () => {
     if (!isEditing) {
+      setDraftWorkflow(migratedWorkflow);
+      setIsDirty(false);
       joinWorkflow(menu._id);
     } else {
       leaveWorkflow(menu._id);
@@ -372,17 +521,17 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
 
   const handleActivate = async () => {
     if (validationErrors.length > 0) return;
+    const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
 
-    // Frontend validation: ensure menu has at least one option
-    if (!menuOptions || menuOptions.length === 0) {
-      alert('Cannot activate IVR menu: At least one option is required.');
+    // Enforce strict validation only when activating
+    if (newStatus === 'active' && !hasValidMenu) {
+      const topIssues = productionValidation.issues.slice(0, 8);
+      alert(`Cannot activate IVR menu:\n\n- ${topIssues.join('\n- ')}`);
       return;
     }
 
     setIsSavingWorkflow(true);
     try {
-      const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
-
       await ivrService.updateWorkflowStatus(menu._id, newStatus);
 
       // Update local state immediately
@@ -485,6 +634,17 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
         if (transformedNode.data.audioAssetId !== undefined) {
           transformedNode.data.audio_asset_id = transformedNode.data.audioAssetId;
         }
+
+        // audioPublicId -> audio_public_id for strict node lifecycle tracking
+        if (transformedNode.data.audioPublicId !== undefined) {
+          transformedNode.data.audio_public_id = transformedNode.data.audioPublicId;
+          if (!transformedNode.data.audioAssetId) {
+            transformedNode.data.audioAssetId = transformedNode.data.audioPublicId;
+          }
+          if (!transformedNode.data.audio_asset_id) {
+            transformedNode.data.audio_asset_id = transformedNode.data.audioPublicId;
+          }
+        }
         
         // Map voice to expected format
         if (transformedNode.data.voice) {
@@ -496,13 +656,8 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
           transformedNode.data.language = transformedNode.data.language;
         }
         
-        // Keep mode field for frontend reference, but backend may ignore it
-        // afterPlayback is frontend-only, backend uses workflow edges
-        
-        // Remove frontend-only fields that might confuse backend
-        delete transformedNode.data.mode;
-        delete transformedNode.data.afterPlayback;
-        delete transformedNode.data.fallbackAudioNodeId;
+        // Keep mode/afterPlayback/fallbackAudioNodeId for frontend compatibility.
+        // Backend execution currently follows edges, but these fields should persist.
       }
     }
 
@@ -511,6 +666,16 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
       // timeoutSeconds -> timeout
       if (transformedNode.data.timeoutSeconds !== undefined) {
         transformedNode.data.timeout = transformedNode.data.timeoutSeconds;
+      }
+
+      // transferTimeout -> transfer_timeout
+      if (transformedNode.data.transferTimeout !== undefined) {
+        transformedNode.data.transfer_timeout = transformedNode.data.transferTimeout;
+      }
+
+      // numDigits -> num_digits
+      if (transformedNode.data.numDigits !== undefined) {
+        transformedNode.data.num_digits = transformedNode.data.numDigits;
       }
       
       // maxAttempts -> max_attempts
@@ -544,6 +709,11 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
       // greetingAudioNodeId -> greeting_audio_node_id
       if (transformedNode.data.greetingAudioNodeId !== undefined) {
         transformedNode.data.greeting_audio_node_id = transformedNode.data.greetingAudioNodeId;
+      }
+
+      // fallbackNodeId -> fallback_node_id
+      if (transformedNode.data.fallbackNodeId !== undefined) {
+        transformedNode.data.fallback_node_id = transformedNode.data.fallbackNodeId;
       }
     }
 
@@ -636,36 +806,9 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
   const handleWorkflowSave = async () => {
     if (!isDirty) return;
 
-    // Frontend validation: ensure workflow has at least one node
-    const workflowNodes = migratedWorkflow?.nodes || [];
-    if (workflowNodes.length === 0) {
-      alert("Workflow must have at least one node before saving.");
-      return;
-    }
-
-    // Frontend validation: ensure audio node has proper configuration
-    const audioNode = migratedWorkflow.nodes.find(n => n.type === 'audio');
-    if (audioNode) {
-      if (audioNode.data.mode === 'tts' && !audioNode.data.messageText?.trim()) {
-        alert("Cannot generate audio: Audio message text is missing.");
-        return;
-      }
-
-      if (audioNode.data.mode === 'file' && !audioNode.data.audioUrl?.trim()) {
-        alert("Cannot save: Audio file is missing.");
-        return;
-      }
-    }
-
-    // Frontend validation: ensure input nodes reference audio nodes properly
-    const inputNodes = workflowNodes.filter(n => n.type === 'input');
-    const inputNodesValid = inputNodes.every(node =>
-      node.data.promptAudioNodeId?.trim() &&
-      node.data.maxAttempts > 0 &&
-      node.data.timeoutSeconds > 0
-    );
-    if (!inputNodesValid) {
-      alert("Input nodes must reference audio nodes for prompts and have valid timeout/max attempts settings.");
+    if (!hasValidWorkflow) {
+      const topIssues = productionValidation.issues.slice(0, 8);
+      alert(`Cannot save workflow:\n\n- ${topIssues.join('\n- ')}`);
       return;
     }
 
@@ -673,22 +816,9 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
     try {
       // Transform workflow data for backend compatibility
       const backendWorkflow = transformWorkflowForBackend(migratedWorkflow);
-      
-      // Use socket for real-time workflow update
-      const socket = socketService.connect();
-      if (socket && socketService.isConnected()) {
-        socket.emit('workflow_update', {
-          workflowId: menu._id,
-          workflowData: backendWorkflow
-        });
 
-        console.log('📡 Workflow save sent via socket:', {
-          workflowId: menu._id,
-          nodeCount: backendWorkflow.nodes?.length || 0,
-          transformed: true
-        });
-      }
-
+      // Single explicit save on button click.
+      await onUpdate(menu._id, backendWorkflow);
       setIsDirty(false);
     } finally {
       setIsSavingWorkflow(false);
@@ -705,52 +835,210 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
   //   return () => clearTimeout(timer);
   // }, [isDirty, isEditing, migratedWorkflow, handleWorkflowSave]);
 
-  const advanceTestRun = () => {
-    const nodes = migratedWorkflow.nodes || [];
-    const edges = migratedWorkflow.edges || [];
-    if (nodes.length === 0) return;
+  const resolveStartNodeIdForTest = () => {
+    const nodes = migratedWorkflow?.nodes || [];
+    const edges = migratedWorkflow?.edges || [];
+    if (!nodes.length) return null;
 
-    const currentNode = nodes[testRunIndex] || nodes[0];
-    let nextNode = null;
-    let chosenEdge = null;
-
-    if (currentNode.type === 'conditional') {
-      chosenEdge = edges.find(e => e.source === currentNode.id && e.sourceHandle === 'true') || edges.find(e => e.source === currentNode.id);
-    } else if (currentNode.type === 'input') {
-      chosenEdge = edges.find(e => e.source === currentNode.id && e.sourceHandle === (currentNode.data?.digit || '1')) || edges.find(e => e.source === currentNode.id);
-    } else {
-      chosenEdge = edges.find(e => e.source === currentNode.id);
-    }
-
-    if (chosenEdge) {
-      nextNode = nodes.find(n => n.id === chosenEdge.target);
-    }
-
-    setActivePath({
-      nodeId: currentNode.id,
-      edgeIds: chosenEdge ? [chosenEdge.id] : []
+    const incoming = new Map(nodes.map((node) => [node.id, 0]));
+    edges.forEach((edge) => {
+      incoming.set(edge.target, (incoming.get(edge.target) || 0) + 1);
     });
 
-    if (!nextNode || currentNode.type === 'end') {
+    const entryWithNoIncoming = nodes.find((node) => {
+      const type = (node.type || '').toLowerCase();
+      return (type === 'audio' || type === 'greeting') && (incoming.get(node.id) || 0) === 0;
+    });
+    if (entryWithNoIncoming) return entryWithNoIncoming.id;
+
+    const firstEntry = nodes.find((node) => ['audio', 'greeting'].includes((node.type || '').toLowerCase()));
+    if (firstEntry) return firstEntry.id;
+
+    return nodes[0]?.id || null;
+  };
+
+  const evaluateConditionalForTest = (condition = '') => {
+    const normalized = String(condition || '').toLowerCase();
+    if (testRunConditionalMode === 'true') return true;
+    if (testRunConditionalMode === 'false') return false;
+
+    if (normalized === 'business_hours') {
+      const hour = new Date().getHours();
+      return hour >= 9 && hour < 18;
+    }
+    return true;
+  };
+
+  const findNextEdgeForTest = (currentNode, edges, nodesById) => {
+    const outgoing = edges.filter((edge) => edge.source === currentNode.id);
+    if (!outgoing.length) {
+      return { edge: null, reason: 'No outgoing edge from current node.' };
+    }
+
+    const nodeType = (currentNode.type || '').toLowerCase();
+    if (nodeType === 'conditional') {
+      const conditionResult = evaluateConditionalForTest(currentNode.data?.condition);
+      const handle = conditionResult ? 'true' : 'false';
+      const matchedEdge = outgoing.find((edge) => edge.sourceHandle === handle);
+      if (matchedEdge) {
+        return { edge: matchedEdge, reason: `Conditional branch "${handle}" selected.` };
+      }
+      return { edge: null, reason: `Conditional node missing "${handle}" branch.` };
+    }
+
+    if (nodeType === 'input') {
+      const preferredDigit = String(testRunInputDigit || (currentNode.data?.digit ?? '')).trim();
+      if (preferredDigit) {
+        const digitEdge = outgoing.find((edge) => String(edge.sourceHandle || '') === preferredDigit);
+        if (digitEdge) {
+          return { edge: digitEdge, reason: `Input digit "${preferredDigit}" matched.` };
+        }
+      }
+
+      const noMatchEdge = outgoing.find((edge) => ['no_match', 'default'].includes(String(edge.sourceHandle || '').toLowerCase()));
+      if (noMatchEdge) {
+        return { edge: noMatchEdge, reason: 'No digit match, default/no_match route used.' };
+      }
+
+      const timeoutEdge = outgoing.find((edge) => String(edge.sourceHandle || '').toLowerCase() === 'timeout');
+      if (timeoutEdge) {
+        return { edge: timeoutEdge, reason: 'No digit match, timeout route used.' };
+      }
+
+      return { edge: null, reason: 'Input node has no matching route for test digit.' };
+    }
+
+    // For non-input nodes, allow digit-driven branching in test simulation:
+    // 1) by edge source handle matching the entered digit
+    // 2) by target input-node configured digit matching the entered digit
+    const preferredDigit = String(testRunInputDigit || '').trim();
+    if (preferredDigit) {
+      const digitHandleEdge = outgoing.find(
+        (edge) => String(edge.sourceHandle ?? '').trim() === preferredDigit
+      );
+      if (digitHandleEdge) {
+        return { edge: digitHandleEdge, reason: `Digit "${preferredDigit}" matched edge handle.` };
+      }
+
+      const digitTargetInputEdge = outgoing.find((edge) => {
+        const targetNode = nodesById.get(edge.target);
+        if (!targetNode) return false;
+        if (String(targetNode.type || '').toLowerCase() !== 'input') return false;
+        return String(targetNode.data?.digit ?? '').trim() === preferredDigit;
+      });
+      if (digitTargetInputEdge) {
+        return { edge: digitTargetInputEdge, reason: `Digit "${preferredDigit}" matched target input node.` };
+      }
+    }
+
+    const directEdge = outgoing.find((edge) => !edge.sourceHandle) || outgoing[0];
+    if (!directEdge) {
+      return { edge: null, reason: 'No route available for current node.' };
+    }
+
+    if (!nodesById.has(directEdge.target)) {
+      return { edge: null, reason: `Edge target not found: ${directEdge.target}` };
+    }
+
+    return { edge: directEdge, reason: 'Direct next edge selected.' };
+  };
+
+  const advanceTestRun = () => {
+    const nodes = migratedWorkflow?.nodes || [];
+    const edges = migratedWorkflow?.edges || [];
+    if (!nodes.length) {
+      setTestRunMessage('No nodes available for test run.');
       setTestRunActive(false);
       return;
     }
 
-    const nextIndex = nodes.findIndex(n => n.id === nextNode.id);
-    setTestRunIndex(nextIndex === -1 ? 0 : nextIndex);
+    const nodesById = new Map(nodes.map((node) => [node.id, node]));
+    const currentNodeId = testRunCurrentNodeId || resolveStartNodeIdForTest();
+    const currentNode = nodesById.get(currentNodeId);
+
+    if (!currentNode) {
+      setTestRunMessage('Unable to resolve start node for test run.');
+      setTestRunActive(false);
+      return;
+    }
+
+    const stepNumber = testRunSteps.length + 1;
+    if (stepNumber > 200) {
+      setTestRunMessage('Stopped: exceeded 200 test steps (loop protection).');
+      setTestRunActive(false);
+      return;
+    }
+
+    if ((currentNode.type || '').toLowerCase() === 'end') {
+      setActivePath({ nodeId: currentNode.id, edgeIds: [] });
+      setTestRunSteps((prev) => ([
+        ...prev,
+        { step: stepNumber, nodeId: currentNode.id, nodeType: currentNode.type, decision: 'End node reached.' }
+      ]));
+      setTestRunMessage('Test run completed successfully.');
+      setTestRunActive(false);
+      return;
+    }
+
+    const { edge, reason } = findNextEdgeForTest(currentNode, edges, nodesById);
+    setActivePath({ nodeId: currentNode.id, edgeIds: edge ? [edge.id] : [] });
+
+    if (!edge) {
+      setTestRunSteps((prev) => ([
+        ...prev,
+        { step: stepNumber, nodeId: currentNode.id, nodeType: currentNode.type, decision: reason }
+      ]));
+      setTestRunMessage(`Stopped: ${reason}`);
+      setTestRunActive(false);
+      return;
+    }
+
+    setTestRunSteps((prev) => ([
+      ...prev,
+      {
+        step: stepNumber,
+        nodeId: currentNode.id,
+        nodeType: currentNode.type,
+        edgeId: edge.id,
+        sourceHandle: edge.sourceHandle || null,
+        targetNodeId: edge.target,
+        decision: reason
+      }
+    ]));
+    setTestRunCurrentNodeId(edge.target);
+    setTestRunMessage(reason);
   };
 
 
   const startTestRun = () => {
     if (validationErrors.length > 0) return;
+    const startNodeId = resolveStartNodeIdForTest();
+    if (!startNodeId) {
+      alert('Cannot start test run: no valid start node found.');
+      return;
+    }
     setTestRunActive(true);
-    setTestRunIndex(0);
+    setTestRunCurrentNodeId(startNodeId);
+    setTestRunSteps([]);
+    setActivePath({ nodeId: startNodeId, edgeIds: [] });
+    setTestRunMessage('Test run initialized. Click Next Step to simulate workflow.');
   };
 
   const stopTestRun = () => {
     setTestRunActive(false);
-    setTestRunIndex(0);
+    setTestRunCurrentNodeId(null);
     setActivePath({ nodeId: null, edgeIds: [] });
+    setTestRunMessage('');
+    setTestRunSteps([]);
+  };
+
+  const handleDeleteWorkflow = () => {
+    const workflowName = menu.displayName || menu.ivrName || menu.name || 'this IVR';
+    const confirmed = window.confirm(
+      `Delete "${workflowName}"?\n\nThis will permanently remove the IVR and associated audio files.`
+    );
+    if (!confirmed) return;
+    onDelete(menu._id);
   };
 
   return (
@@ -778,7 +1066,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
             className="action-btn"
             onClick={handleActivate}
             title={currentStatus === 'active' ? 'Deactivate Workflow' : 'Activate Workflow'}
-            disabled={validationErrors.length > 0 || isSavingWorkflow || !hasValidMenu}
+            disabled={validationErrors.length > 0 || isSavingWorkflow || (currentStatus !== 'active' && !hasValidMenu)}
           >
             {currentStatus === 'active' ? <Pause size={16} /> : <Play size={16} />}
           </button>
@@ -789,9 +1077,9 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
           >
             <Edit3 size={16} />
           </button>
-                    <button
+          <button
             className="action-btn delete-btn"
-            onClick={() => onDelete(menu._id)}
+            onClick={handleDeleteWorkflow}
             title="Delete Workflow"
           >
             <Trash2 size={16} />
@@ -869,7 +1157,44 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
           {testRunActive && (
             <div className="test-run-panel">
               <div className="test-run-header">Test Run</div>
-              <p>Simulating call flow. Step through nodes to verify logic.</p>
+              <p>Simulating full call flow with configured routes.</p>
+              <div className="test-run-controls">
+                <label>
+                  Input Digit
+                  <input
+                    type="text"
+                    value={testRunInputDigit}
+                    maxLength={1}
+                    onChange={(e) => setTestRunInputDigit(e.target.value)}
+                    placeholder="1"
+                  />
+                </label>
+                <label>
+                  Conditional
+                  <select
+                    value={testRunConditionalMode}
+                    onChange={(e) => setTestRunConditionalMode(e.target.value)}
+                  >
+                    <option value="auto">Auto</option>
+                    <option value="true">Force True</option>
+                    <option value="false">Force False</option>
+                  </select>
+                </label>
+              </div>
+              <div className="test-run-state">
+                <div><strong>Current:</strong> {testRunCurrentNodeId || 'N/A'}</div>
+                <div><strong>Steps:</strong> {testRunSteps.length}</div>
+                <div className="test-run-message">{testRunMessage || 'Idle'}</div>
+              </div>
+              {testRunSteps.length > 0 && (
+                <div className="test-run-log">
+                  {testRunSteps.slice(-3).map((step) => (
+                    <div key={`${step.step}-${step.nodeId}`} className="test-run-log-item">
+                      {`#${step.step} ${step.nodeType} -> ${step.targetNodeId || 'stop'}`}
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="test-run-actions">
                 <button className="btn btn-secondary" onClick={advanceTestRun}>Next Step</button>
                 <button className="btn btn-secondary" onClick={stopTestRun}>Stop</button>
@@ -927,3 +1252,4 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
 };
 
 export default IVRMenuCard;
+

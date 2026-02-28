@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Plus, Edit2, Trash2, Save, X, ArrowUp, ArrowDown, Play, AlertCircle } from 'lucide-react';
+import { Plus, Pencil, Trash2, Save, X, ArrowUp, ArrowDown, PlayCircle, AlertCircle, Route } from 'lucide-react';
 import apiService from '../services/api';
 import './RoutingRules.css';
 
@@ -264,6 +264,10 @@ const RoutingRules = () => {
     setError('');
   };
 
+  const handleCloseTestResult = () => {
+    setTestResult(null);
+  };
+
   const resolveRuleActionText = (rule) => {
     const actionType = rule.actionType || (inferIvrPromptFromAction(rule.action) ? 'ivr' : 'custom');
     if (actionType !== 'ivr') return rule.action;
@@ -284,7 +288,10 @@ const RoutingRules = () => {
   return (
     <div className="routing-rules">
       <div className="rules-header">
-        <h2>Routing Rules Manager</h2>
+        <h2>
+          <Route size={22} />
+          Routing Rules Manager
+        </h2>
         <button className="btn btn-primary" onClick={handleAddRule}>
           <Plus size={16} />
           Add New Rule
@@ -437,11 +444,11 @@ const RoutingRules = () => {
                       </button>
                       <button
                         onClick={() => handleTestRule(rule)}
-                        className="btn btn-secondary"
+                        className="btn btn-secondary btn-rule-test"
                         title={ruleActionType === 'ivr' ? 'Test linked IVR flow' : 'Run rule test'}
                         disabled={playDisabled}
                       >
-                        <Play size={16} />
+                        <PlayCircle size={16} />
                         {isTesting ? 'Testing...' : 'Play'}
                       </button>
                       <button
@@ -453,14 +460,14 @@ const RoutingRules = () => {
                       </button>
                       <button
                         onClick={() => handleEditRule(rule)}
-                        className="btn btn-primary"
+                        className="btn btn-primary btn-rule-edit-rule"
                         title="Edit rule"
                       >
-                        <Edit2 size={16} />
+                        <Pencil size={16} />
                       </button>
                       <button
                         onClick={() => handleDeleteRule(rule.id)}
-                        className="btn btn-danger"
+                        className="btn btn-danger btn-rule-delete-rule"
                         title="Delete rule"
                       >
                         <Trash2 size={16} />
@@ -484,7 +491,18 @@ const RoutingRules = () => {
 
       {testResult && (
         <div className="rule-test-result">
-          <h3>Rule Test Result</h3>
+          <div className="rule-test-result-header">
+            <h3>Rule Test Result</h3>
+            <button
+              type="button"
+              className="btn btn-secondary rule-test-close"
+              onClick={handleCloseTestResult}
+              title="Close test result"
+            >
+              <X size={14} />
+              Close
+            </button>
+          </div>
           <p><strong>Rule:</strong> {testResult.ruleName}</p>
           <p><strong>IVR:</strong> {testResult.workflowName || 'Unknown'}</p>
           <p><strong>Menu Options:</strong> {testResult.optionCount}</p>
