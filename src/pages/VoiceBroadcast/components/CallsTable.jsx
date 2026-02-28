@@ -1,5 +1,5 @@
 import React from 'react';
-import { Phone, Clock, User, CheckCircle, XCircle, Loader } from 'lucide-react';
+import { Phone, Clock, User, CheckCircle, XCircle, Loader, PhoneOff } from 'lucide-react';
 import './CallsTable.css';
 
 const CallsTable = ({ calls, getStatusColor, maxRetries = 2 }) => {
@@ -27,6 +27,8 @@ const CallsTable = ({ calls, getStatusColor, maxRetries = 2 }) => {
       case 'no_answer':
       case 'busy':
         return <XCircle size={16} color="#ef4444" />;
+      case 'opted_out':
+        return <PhoneOff size={16} color="#d97706" />;
       case 'calling':
       case 'ringing':
       case 'in_progress':

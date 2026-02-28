@@ -151,6 +151,10 @@
   border-left: 3px solid #ef4444;
 }
 
+.call-row.status-opted_out {
+  border-left: 3px solid #d97706;
+}
+
 .call-row.status-calling,
 .call-row.status-in_progress {
   border-left: 3px solid #3b82f6;

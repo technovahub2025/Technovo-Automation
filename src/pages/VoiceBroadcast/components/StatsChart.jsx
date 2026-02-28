@@ -8,6 +8,7 @@ const StatsChart = ({ broadcast }) => {
   const data = [
     { name: 'Completed', value: broadcast.stats.completed, color: '#2563eb' },
     { name: 'Failed', value: broadcast.stats.failed, color: '#ef4444' },
+    { name: 'Opted Out', value: broadcast.stats.opted_out || 0, color: '#d97706' },
     { name: 'Calling', value: broadcast.stats.calling, color: '#3b82f6' },
     { name: 'Queued', value: broadcast.stats.queued, color: '#94a3b8' },
   ].filter(item => item.value > 0);

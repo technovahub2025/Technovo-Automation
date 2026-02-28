@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Activity, Phone, CheckCircle, XCircle, Clock, Users, TrendingUp, Wifi, WifiOff } from 'lucide-react';
+import { Activity, Phone, CheckCircle, XCircle, Clock, Users, TrendingUp, Wifi, WifiOff, PhoneOff } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { broadcastAPI } from '../../../services/broadcastAPI';
 import CallsTable from './CallsTable';
@@ -352,6 +352,16 @@ const BroadcastMonitor = ({ broadcastId }) => {
             <span className="stat-label">Success Rate</span>
           </div>
         </div>
+
+        <div className="stat-card stat-card-opted-out">
+          <div className="stat-icon-broadcast icon-opted-out">
+            <PhoneOff size={24} />
+          </div>
+          <div className="stat-content">
+            <span className="stat-value">{broadcast.stats.opted_out || 0}</span>
+            <span className="stat-label">Opted Out</span>
+          </div>
+        </div>
       </div>
 
       {/* Stats Chart */}
@@ -382,6 +392,12 @@ const BroadcastMonitor = ({ broadcastId }) => {
           onClick={() => setSelectedStatus('calling')}
         >
           In Progress ({broadcast.stats.calling})
+        </button>
+        <button
+          className={`filter-tab ${selectedStatus === 'opted_out' ? 'active' : ''}`}
+          onClick={() => setSelectedStatus('opted_out')}
+        >
+          Opted Out ({broadcast.stats.opted_out || 0})
         </button>
       </div>
 
