@@ -289,8 +289,8 @@ const BroadcastMonitor = ({ broadcastId }) => {
 
       {/* Stats Grid */}
       <div className="stats-grid-voice">
-        <div className="stat-card">
-          <div className="stat-icon-broadcast">
+        <div className="stat-card stat-card-total">
+          <div className="stat-icon-broadcast icon-total">
             <Users size={24} />
           </div>
           <div className="stat-content">
@@ -299,9 +299,9 @@ const BroadcastMonitor = ({ broadcastId }) => {
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-icon-broadcast" style={{ background: '#dbeafe' }}>
-            <Phone size={24} color="#3b82f6" />
+        <div className="stat-card stat-card-calling">
+          <div className="stat-icon-broadcast icon-calling">
+            <Phone size={24} />
           </div>
           <div className="stat-content">
             <span className="stat-value">{broadcast.stats.calling}</span>
@@ -309,9 +309,9 @@ const BroadcastMonitor = ({ broadcastId }) => {
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-icon" style={{ background: '#d1fae5' }}>
-            <CheckCircle size={24} color="#10b981" />
+        <div className="stat-card stat-card-completed">
+          <div className="stat-icon-broadcast icon-completed">
+            <CheckCircle size={24} />
           </div>
           <div className="stat-content">
             <span className="stat-value">{broadcast.stats.completed}</span>
@@ -319,9 +319,9 @@ const BroadcastMonitor = ({ broadcastId }) => {
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-icon-broadcast" style={{ background: '#fee2e2' }}>
-            <XCircle size={24} color="#ef4444" />
+        <div className="stat-card stat-card-failed">
+          <div className="stat-icon-broadcast icon-failed">
+            <XCircle size={24} />
           </div>
           <div className="stat-content">
             <span className="stat-value">{broadcast.stats.failed}</span>
@@ -329,9 +329,9 @@ const BroadcastMonitor = ({ broadcastId }) => {
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-icon-broadcast" style={{ background: '#fef3c7' }}>
-            <Clock size={24} color="#f59e0b" />
+        <div className="stat-card stat-card-queued">
+          <div className="stat-icon-broadcast icon-queued">
+            <Clock size={24} />
           </div>
           <div className="stat-content">
             <span className="stat-value">{broadcast.stats.queued}</span>
@@ -339,9 +339,9 @@ const BroadcastMonitor = ({ broadcastId }) => {
           </div>
         </div>
 
-        <div className="stat-card">
-          <div className="stat-icon-broadcast" style={{ background: '#e0e7ff' }}>
-            <TrendingUp size={24} color="#6366f1" />
+        <div className="stat-card stat-card-rate">
+          <div className="stat-icon-broadcast icon-rate">
+            <TrendingUp size={24} />
           </div>
           <div className="stat-content">
             <span className="stat-value">

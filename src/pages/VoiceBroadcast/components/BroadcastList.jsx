@@ -1,5 +1,5 @@
 import React from 'react';
-import { Calendar, Users, Activity, Eye, Square, Trash2 } from 'lucide-react';
+import { Calendar, Users, Activity, Eye, StopCircle, Trash2 } from 'lucide-react';
 import './BroadcastList.css';
 
 const BroadcastList = ({ broadcasts, loading, onMonitor, onStop, onDelete }) => {
@@ -116,31 +116,30 @@ const BroadcastList = ({ broadcasts, loading, onMonitor, onStop, onDelete }) => 
               </div>
             </div>
 
-            <div className="card-actions" style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+            <div className="card-actions">
               {['in_progress', 'queued'].includes(broadcast.status) && (
-                <>
+                <div className="card-actions-main">
                   <button
-                    className="btn btn-primary"
-                    style={{ flex: 1 }}
+                    className="btn btn-primary card-main-action"
                     onClick={() => onMonitor(broadcast._id || broadcast.id)}
                   >
                     <Eye size={16} />
                     Monitor
                   </button>
                   <button
-                    className="btn btn-danger"
+                    className="btn card-icon-action card-stop-action"
                     onClick={() => onStop(broadcast._id || broadcast.id)}
                     title="Stop Broadcast"
+                    aria-label="Stop Broadcast"
                   >
-                    <Square size={16} fill="currentColor" />
+                    <StopCircle size={16} />
                   </button>
-                </>
+                </div>
               )}
 
               {['completed', 'cancelled'].includes(broadcast.status) && (
                 <button
-                  className="btn btn-secondary btn-block"
-                  style={{ flex: 1 }}
+                  className="btn btn-secondary card-main-action card-main-action-full"
                   onClick={() => onMonitor(broadcast._id || broadcast.id)}
                 >
                   <Eye size={16} />
@@ -149,10 +148,10 @@ const BroadcastList = ({ broadcasts, loading, onMonitor, onStop, onDelete }) => 
               )}
 
               <button
-                className="btn btn-icon-only text-danger"
+                className="btn card-icon-action card-delete-action"
                 onClick={() => onDelete(broadcast._id || broadcast.id)}
                 title="Delete Campaign"
-                style={{ marginLeft: 'auto', padding: '8px' }}
+                aria-label="Delete Campaign"
               >
                 <Trash2 size={16} />
               </button>

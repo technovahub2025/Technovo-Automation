@@ -172,6 +172,83 @@
   color: #ef4444;
 }
 
+/* Card Actions */
+.card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 16px;
+  min-width: 0;
+}
+
+.card-actions-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+}
+
+.card-main-action {
+  flex: 1;
+  justify-content: center;
+  min-width: 0;
+}
+
+.card-main-action-full {
+  flex: 1;
+}
+
+.card-icon-action {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 10px;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.card-actions .btn.card-icon-action {
+  border: 1px solid #e2e8f0;
+  background: #f8fafc;
+  color: #64748b;
+}
+
+.card-actions .btn.card-icon-action svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  stroke: currentColor;
+  stroke-width: 2.1;
+  flex-shrink: 0;
+}
+
+.card-actions .btn.card-stop-action {
+  color: #b45309;
+  background: #fffbeb;
+  border-color: #fde68a;
+}
+
+.card-actions .btn.card-stop-action:hover:not(:disabled) {
+  color: #92400e;
+  background: #fef3c7;
+  border-color: #fcd34d;
+}
+
+.card-actions .btn.card-delete-action {
+  margin-left: auto;
+  color: #b91c1c;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.card-actions .btn.card-delete-action:hover:not(:disabled) {
+  color: #991b1b;
+  background: #fee2e2;
+  border-color: #fecaca;
+}
+
 /* Block Button */
 .btn-block {
   width: 100%;
@@ -226,5 +303,13 @@
 @media (max-width: 768px) {
   .broadcasts-grid {
     grid-template-columns: 1fr;
+  }
+
+  .card-actions {
+    flex-wrap: wrap;
+  }
+
+  .card-actions-main {
+    width: 100%;
   }
 }
