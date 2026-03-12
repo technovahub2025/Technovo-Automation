@@ -12,6 +12,7 @@ const BroadcastDashboard = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(false);
+    const baseUrl = import.meta.env.BASE_URL || '/';
 
     useEffect(() => {
         loadDashboardData();
@@ -111,7 +112,7 @@ const BroadcastDashboard = () => {
                         <h1>Broadcast Dashboard</h1>
                         <p>Here's what's happening with your WhatsApp platform today.</p>
                     </div>
-                    <button className="primary-btn" onClick={() => window.location.href = '/broadcast'}>
+                    <button className="primary-btn" onClick={() => { window.location.href = `${baseUrl}broadcast`; }}>
                         <Plus size={18} />
                         New Broadcast
                     </button>
@@ -231,10 +232,10 @@ const BroadcastDashboard = () => {
                             <button className="dashboard-action-btn" onClick={refreshData} disabled={refreshing}>
                                 {refreshing ? 'Refreshing...' : 'Refresh Dashboard'}
                             </button>
-                            <button className="dashboard-action-btn" onClick={() => window.location.href = '/inbox'}>
+                            <button className="dashboard-action-btn" onClick={() => { window.location.href = `${baseUrl}inbox`; }}>
                                 View All Conversations
                             </button>
-                            <button className="dashboard-action-btn" onClick={() => window.location.href = '/broadcast'}>
+                            <button className="dashboard-action-btn" onClick={() => { window.location.href = `${baseUrl}broadcast`; }}>
                                 Create Broadcast
                             </button>
                         </div>

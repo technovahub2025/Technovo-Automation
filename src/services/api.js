@@ -57,10 +57,14 @@ apiService.interceptors.response.use(
       localStorage.removeItem("token");
       localStorage.removeItem("user");
       sessionStorage.setItem("auth_expired_notice", "Your session expired. Please login again.");
+      const baseUrl = import.meta.env.BASE_URL || "/";
+      const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
+      const loginPath = `${normalizedBase}/login`;
+      const registerPath = `${normalizedBase}/register`;
 
       // Prevent infinite redirect loops if already on login
-      if (window.location.pathname !== "/login" && !window.location.pathname.includes("/register")) {
-        window.location.href = "/login";
+      if (window.location.pathname !== loginPath && !window.location.pathname.includes(registerPath)) {
+        window.location.href = loginPath;
       }
     }
 

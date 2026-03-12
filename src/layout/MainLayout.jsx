@@ -8,18 +8,23 @@ const MainLayout = () => {
   const [expandedPanel, setExpandedPanel] = useState(null);
   const [lastBulkMessageItem, setLastBulkMessageItem] = useState('/broadcast-dashboard');
   const location = useLocation();
+  const baseUrl = import.meta.env.BASE_URL || '/';
+  const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+  const currentPath = normalizedBase && location.pathname.startsWith(normalizedBase)
+    ? (location.pathname.slice(normalizedBase.length) || '/')
+    : location.pathname;
 
   // Track last active bulk message item when navigating to bulk message routes
   useEffect(() => {
     const bulkMessageRoutes = ['/broadcast-dashboard', '/broadcast', '/broadcast/new', '/broadcast/new/template', '/broadcast/new/message', '/templates', '/contacts'];
-    const isInboxRoute = location.pathname.startsWith('/inbox');
-    if (bulkMessageRoutes.includes(location.pathname) || isInboxRoute) {
-      setLastBulkMessageItem(location.pathname);
+    const isInboxRoute = currentPath.startsWith('/inbox');
+    if (bulkMessageRoutes.includes(currentPath) || isInboxRoute) {
+      setLastBulkMessageItem(currentPath);
     }
-  }, [location.pathname]);
+  }, [currentPath]);
 
   // Show header on dashboard and broadcast dashboard pages
-  const shouldShowHeader = location.pathname === '/' || location.pathname === '/broadcast-dashboard';
+  const shouldShowHeader = currentPath === '/' || currentPath === '/broadcast-dashboard';
 
   return (
     <div className="main-layout">

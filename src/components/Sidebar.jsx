@@ -28,6 +28,11 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
     const navigate = useNavigate();
     const location = useLocation();
     const { user, logout } = useContext(AuthContext);
+    const baseUrl = import.meta.env.BASE_URL || '/';
+    const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
+    const currentPath = normalizedBase && location.pathname.startsWith(normalizedBase)
+        ? (location.pathname.slice(normalizedBase.length) || '/')
+        : location.pathname;
 
     // Use prop state instead of local
     const openMenu = expandedPanel;
@@ -209,7 +214,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
 
     // Helper function to check if a route is currently active
     const isRouteActive = (route) => {
-        return location.pathname === route;
+        return currentPath === route;
     };
 
     const isBulkRouteActive =
@@ -217,9 +222,9 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         isRouteActive('/broadcast') ||
         isRouteActive('/templates') ||
         isRouteActive('/contacts') ||
-        location.pathname.startsWith('/inbox');
+        currentPath.startsWith('/inbox');
 
-    const isMissedCallsRouteActive = location.pathname.startsWith('/missedcalls');
+    const isMissedCallsRouteActive = currentPath.startsWith('/missedcalls');
 
     return (
         <div className={`sidebar-container ${isCompactMobile ? 'compact-mobile' : ''}`}>
@@ -509,7 +514,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 </NavLink>
                                 <NavLink
                                     to="/inbox"
-                                    className={() => `panel-item ${location.pathname.startsWith('/inbox') ? 'active' : ''}`}
+                                    className={() => `panel-item ${currentPath.startsWith('/inbox') ? 'active' : ''}`}
                                     onClick={() => {
                                         setLastBulkMessageItem('/inbox');
                                         closeMobileMenusAfterNavigate();
