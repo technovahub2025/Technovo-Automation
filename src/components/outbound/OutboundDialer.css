@@ -1,0 +1,855 @@
+.outbound-dialer-wrap {
+  display: grid;
+  gap: 20px;
+}
+
+.outbound-dialer-wrap .outbound-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 18px 20px;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+}
+
+.outbound-dialer-wrap .composer-mode-switch {
+  display: inline-flex;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 6px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 14px;
+}
+
+.outbound-dialer-wrap .composer-mode-btn {
+  min-width: 140px;
+  height: 40px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: #47627f;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+}
+
+.outbound-dialer-wrap .composer-mode-btn.active {
+  background: #ffffff;
+  color: #1d4ed8;
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.16);
+}
+
+.outbound-dialer-wrap .quick-call-banner {
+  margin-top: 16px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
+  border: 1px solid #bfdbfe;
+}
+
+.outbound-dialer-wrap .quick-call-banner.bulk {
+  background: linear-gradient(135deg, #f8fafc 0%, #ecfeff 100%);
+  border-color: #bae6fd;
+}
+
+.outbound-dialer-wrap .quick-call-banner strong {
+  display: block;
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.outbound-dialer-wrap .quick-call-banner p {
+  margin: 4px 0 0;
+  color: #475569;
+  font-size: 13px;
+}
+
+.outbound-dialer-wrap .outbound-section-head h3 {
+  margin: 0;
+  font-size: 24px;
+  line-height: 1.2;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+.outbound-dialer-wrap .outbound-section-head p {
+  margin: 6px 0 0;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.outbound-dialer-wrap .outbound-grid {
+  display: grid;
+  gap: 14px;
+  margin-top: 16px;
+}
+
+.outbound-dialer-wrap .outbound-grid > div {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+}
+
+.outbound-dialer-wrap .outbound-grid-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+}
+
+.outbound-dialer-wrap .outbound-grid-1 {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+}
+
+.outbound-dialer-wrap .outbound-grid-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+.outbound-dialer-wrap .bulk-form-stack {
+  margin-top: 18px;
+  display: grid;
+  gap: 16px;
+}
+
+.outbound-dialer-wrap .bulk-form-stack .outbound-grid {
+  margin-top: 0;
+}
+
+.outbound-dialer-wrap .single-voice-grid {
+  margin-top: 16px;
+}
+
+.outbound-dialer-wrap .outbound-input,
+.outbound-dialer-wrap .outbound-textarea,
+.outbound-dialer-wrap .csv-drop-zone input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  padding: 11px 12px;
+  font-size: 14px;
+  background: #fff;
+  color: #0f172a;
+  transition: border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.outbound-dialer-wrap .outbound-input:focus,
+.outbound-dialer-wrap .outbound-textarea:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
+}
+
+.outbound-dialer-wrap .outbound-card label {
+  display: block;
+  font-size: 13px;
+  color: #4b5563;
+  margin-bottom: 0;
+}
+
+.outbound-dialer-wrap .template-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.outbound-dialer-wrap .template-actions {
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  gap: 10px;
+  height: 100%;
+}
+
+.outbound-dialer-wrap .template-actions-inline {
+  flex-wrap: wrap;
+}
+
+.outbound-dialer-wrap .provider-static-badge {
+  min-height: 46px;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+  padding: 10px 12px;
+  display: grid;
+  gap: 2px;
+}
+
+.outbound-dialer-wrap .provider-static-badge strong {
+  color: #0f172a;
+  font-size: 14px;
+}
+
+.outbound-dialer-wrap .provider-static-badge span {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.outbound-dialer-wrap .template-row {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+}
+
+.outbound-dialer-wrap .template-selector-block {
+  min-width: 0;
+}
+
+.outbound-dialer-wrap .pill {
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  color: #334155;
+  border-radius: 999px;
+  padding: 8px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.outbound-dialer-wrap .pill.active {
+  background: #dbeafe;
+  border-color: #60a5fa;
+  color: #1d4ed8;
+}
+
+.outbound-dialer-wrap .outbound-textarea {
+  margin-top: 0;
+  min-height: 104px;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.outbound-dialer-wrap .bulk-message-textarea {
+  margin-top: 0;
+  min-height: 124px;
+}
+
+.outbound-dialer-wrap .bulk-voice-meta {
+  margin-top: 2px;
+  margin-bottom: 0;
+}
+
+.outbound-dialer-wrap .outbound-actions-row {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-start;
+  gap: 10px;
+  align-items: center;
+}
+
+.outbound-dialer-wrap .contact-uploader {
+  margin-top: 16px;
+  margin-bottom: 0;
+}
+
+.outbound-dialer-wrap .bulk-window-grid {
+  align-self: end;
+}
+
+.outbound-dialer-wrap .template-expand-btn {
+  width: 100%;
+  border: 1px solid #dbe5ef;
+  background: #f8fafc;
+  border-radius: 10px;
+  min-height: 44px;
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 16px;
+  font-weight: 600;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.outbound-dialer-wrap .template-expand-btn:hover {
+  background: #f1f5f9;
+}
+
+.outbound-dialer-wrap .expand-icon {
+  font-size: 22px;
+  line-height: 1;
+  color: #475569;
+  transform: rotate(0deg);
+  transition: transform 0.18s ease;
+}
+
+.outbound-dialer-wrap .expand-icon.open {
+  transform: rotate(45deg);
+}
+
+.outbound-dialer-wrap .template-expand-panel {
+  margin-top: 12px;
+  border-top: 1px solid #e2e8f0;
+  padding-top: 12px;
+}
+
+.outbound-dialer-wrap .additional-settings-panel {
+  margin-top: 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.outbound-dialer-wrap .additional-settings-summary {
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 54px;
+  padding: 0 16px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  background: #ffffff;
+}
+
+.outbound-dialer-wrap .additional-settings-summary-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.outbound-dialer-wrap .additional-settings-summary::-webkit-details-marker {
+  display: none;
+}
+
+.outbound-dialer-wrap .additional-settings-panel[open] .additional-settings-summary svg {
+  transform: rotate(180deg);
+}
+
+.outbound-dialer-wrap .additional-settings-summary svg {
+  color: #94a3b8;
+  transition: transform 0.18s ease;
+}
+
+.outbound-dialer-wrap .additional-settings-content {
+  padding: 16px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.outbound-dialer-wrap .additional-settings-copy {
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.outbound-dialer-wrap .additional-settings-grid {
+  margin-top: 0;
+}
+
+.outbound-dialer-wrap .additional-settings-consent {
+  grid-column: 1 / -1;
+}
+
+.outbound-dialer-wrap .setting-item-card {
+  padding: 14px 14px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.outbound-dialer-wrap .setting-checkbox-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #1f2937;
+  font-size: 13px;
+  line-height: 1.45;
+  cursor: pointer;
+}
+
+.outbound-dialer-wrap .setting-checkbox-row input {
+  margin: 0;
+  width: 16px;
+  height: 16px;
+  align-self: center;
+}
+
+.outbound-dialer-wrap .consent-card {
+  background: #ffffff;
+}
+
+.outbound-dialer-wrap .additional-settings-panel .outbound-input {
+  min-height: 42px;
+}
+
+.outbound-dialer-wrap .additional-settings-panel label {
+  color: #475569;
+}
+
+.outbound-dialer-wrap .additional-settings-panel .outbound-muted {
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.outbound-dialer-wrap .additional-settings-content .outbound-grid + .outbound-grid {
+  margin-top: 12px;
+}
+
+.outbound-dialer-wrap .template-preview-card {
+  margin-top: 14px;
+  border: 1px solid #dbe5ef;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  padding: 14px 16px;
+}
+
+.outbound-dialer-wrap .bulk-template-preview {
+  margin-top: 0;
+}
+
+.outbound-dialer-wrap .template-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.outbound-dialer-wrap .template-preview-label {
+  margin: 0 0 4px;
+  color: #64748b;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.outbound-dialer-wrap .template-preview-head h4 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 18px;
+}
+
+.outbound-dialer-wrap .template-preview-meta {
+  color: #64748b;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.outbound-dialer-wrap .template-preview-body {
+  margin-top: 12px;
+  border-radius: 10px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  padding: 14px;
+  color: #334155;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.outbound-dialer-wrap .compact-grid {
+  margin-top: 0;
+}
+
+.outbound-dialer-wrap .campaign-monitor-list {
+  margin-top: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.outbound-dialer-wrap .campaign-monitor-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.outbound-dialer-wrap .campaign-monitor-row span {
+  color: #334155;
+  font-size: 14px;
+}
+
+.outbound-dialer-wrap .campaign-monitor-row strong {
+  color: #0f172a;
+  font-size: 13px;
+  text-transform: capitalize;
+}
+
+.outbound-dialer-wrap .template-expand-subtitle {
+  margin: 0 0 8px;
+  color: #64748b;
+  font-size: 14px;
+}
+
+.outbound-dialer-wrap .template-preview-copy {
+  margin-bottom: 0;
+  line-height: 1.45;
+}
+
+.outbound-dialer-wrap .primary-btn {
+  min-width: 136px;
+  height: 42px;
+  border: none;
+  border-radius: 10px;
+  padding: 0 18px;
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease;
+  box-shadow: 0 8px 18px rgba(37, 99, 235, 0.22);
+}
+
+.outbound-dialer-wrap .primary-btn:hover:enabled {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.27);
+}
+
+.outbound-dialer-wrap .primary-btn:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+.outbound-dialer-wrap .outbound-result-box {
+  margin-top: 12px;
+  padding: 12px;
+  border-radius: 10px;
+  background: #f0f9ff;
+  border: 1px solid #bae6fd;
+}
+
+.outbound-dialer-wrap .outbound-result-box p {
+  margin: 2px 0;
+}
+
+.outbound-dialer-wrap .outbound-error {
+  color: #b91c1c;
+  font-size: 13px;
+  margin-top: 10px;
+}
+
+.outbound-dialer-wrap .outbound-muted {
+  color: #6b7280;
+  font-size: 13px;
+  margin-top: 8px;
+}
+
+.outbound-dialer-wrap .csv-drop-zone {
+  margin-top: 14px;
+  border: 2px dashed #cbd5e1;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 14px;
+  display: grid;
+  gap: 10px;
+}
+
+.outbound-dialer-wrap .csv-drop-zone.active {
+  border-color: #2563eb;
+  background: #eff6ff;
+}
+
+.outbound-dialer-wrap .bulk-upload-embed {
+  margin-top: 16px;
+  padding: 18px;
+  border-radius: 16px;
+  background: #f8fbff;
+  border: 1px solid #dbeafe;
+}
+
+.outbound-dialer-wrap .upload-progress-wrap {
+  height: 8px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  margin-top: 12px;
+  overflow: hidden;
+}
+
+.outbound-dialer-wrap .upload-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #22c55e);
+}
+
+.outbound-dialer-wrap .csv-meta {
+  display: flex;
+  gap: 16px;
+  margin-top: 10px;
+  color: #374151;
+  font-size: 13px;
+}
+
+.outbound-dialer-wrap .csv-preview-list {
+  margin: 12px 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.outbound-dialer-wrap .csv-preview-list span {
+  font-size: 12px;
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 999px;
+  padding: 5px 10px;
+}
+
+.outbound-dialer-wrap .metrics-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.outbound-dialer-wrap .metrics-grid div {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px;
+  background: #f9fafb;
+}
+
+.outbound-dialer-wrap .metrics-grid h4 {
+  margin: 0;
+  font-size: 12px;
+  color: #6b7280;
+  font-weight: 600;
+}
+
+.outbound-dialer-wrap .metrics-grid p {
+  margin: 6px 0 0;
+  font-size: 20px;
+  color: #111827;
+  font-weight: 700;
+}
+
+.outbound-dialer-wrap .metrics-chart-wrap {
+  margin-top: 12px;
+}
+
+.outbound-dialer-wrap .secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 13px;
+  color: #334155;
+  cursor: pointer;
+}
+
+.outbound-dialer-wrap .reset-btn {
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.outbound-dialer-wrap .template-actions-inline .secondary-btn,
+.outbound-dialer-wrap .template-actions-inline .danger-btn {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  padding: 0;
+}
+
+.outbound-dialer-wrap .template-toggle-btn.open {
+  border-color: #cbd5e1;
+  background: #f8fafc;
+}
+
+.outbound-dialer-wrap .secondary-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.outbound-dialer-wrap .danger-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid #fecaca;
+  background: #fff1f2;
+  color: #9f1239;
+  border-radius: 8px;
+  height: 40px;
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.outbound-dialer-wrap .danger-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.outbound-dialer-wrap .trai-banner {
+  margin-top: 14px;
+  border-radius: 10px;
+  padding: 10px 12px;
+  border: 1px solid #d1d5db;
+  font-size: 13px;
+}
+
+.outbound-dialer-wrap .trai-banner.ok {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.outbound-dialer-wrap .trai-banner.blocked {
+  background: #fff7ed;
+  border-color: #fdba74;
+  color: #9a3412;
+}
+
+.outbound-dialer-wrap .recent-calls-wrap {
+  margin-top: 16px;
+}
+
+.outbound-dialer-wrap .recent-calls-wrap .outbound-card {
+  margin-top: 14px;
+}
+
+.outbound-dialer-wrap .recent-calls-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.outbound-dialer-wrap .recent-calls-head h4 {
+  margin: 0;
+  color: #1f2937;
+}
+
+.outbound-dialer-wrap .recent-calls-table {
+  margin-top: 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.outbound-dialer-wrap .recent-calls-row {
+  display: grid;
+  grid-template-columns: 1.3fr 0.8fr 1fr 1fr;
+  gap: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.outbound-dialer-wrap .recent-calls-row:first-child {
+  border-top: none;
+}
+
+.outbound-dialer-wrap .recent-calls-header {
+  background: #f8fafc;
+  font-weight: 600;
+  color: #374151;
+}
+
+.outbound-dialer-wrap .status-chip {
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid #cbd5e1;
+  background: #f8fafc;
+  text-transform: capitalize;
+}
+
+.outbound-dialer-wrap .status-chip.completed,
+.outbound-dialer-wrap .status-chip.in-progress,
+.outbound-dialer-wrap .status-chip.ringing,
+.outbound-dialer-wrap .status-chip.initiated {
+  background: #ecfdf5;
+  border-color: #86efac;
+  color: #166534;
+}
+
+.outbound-dialer-wrap .status-chip.failed,
+.outbound-dialer-wrap .status-chip.busy,
+.outbound-dialer-wrap .status-chip.no-answer {
+  background: #fef2f2;
+  border-color: #fca5a5;
+  color: #991b1b;
+}
+
+@media (max-width: 960px) {
+  .outbound-dialer-wrap .outbound-grid-2 {
+    grid-template-columns: 1fr;
+  }
+
+  .outbound-dialer-wrap .outbound-grid-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .outbound-dialer-wrap .metrics-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .outbound-dialer-wrap .template-actions {
+    align-items: stretch;
+    justify-content: flex-start;
+  }
+
+  .outbound-dialer-wrap .template-row {
+    grid-template-columns: 1fr;
+  }
+
+  .outbound-dialer-wrap .template-preview-head {
+    flex-direction: column;
+  }
+
+  .outbound-dialer-wrap .template-preview-meta {
+    white-space: normal;
+  }
+
+  .outbound-dialer-wrap .danger-btn {
+    width: fit-content;
+  }
+
+}
+
+@media (max-width: 640px) {
+  .outbound-dialer-wrap .outbound-card {
+    padding: 14px;
+    border-radius: 12px;
+  }
+
+  .outbound-dialer-wrap .composer-mode-switch {
+    width: 100%;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .outbound-dialer-wrap .composer-mode-btn {
+    min-width: 0;
+  }
+
+  .outbound-dialer-wrap .outbound-section-head h3 {
+    font-size: 22px;
+  }
+
+  .outbound-dialer-wrap .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .outbound-dialer-wrap .outbound-grid-3 {
+    grid-template-columns: 1fr;
+  }
+
+  .outbound-dialer-wrap .recent-calls-row {
+    grid-template-columns: 1fr;
+  }
+}
