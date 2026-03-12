@@ -7,8 +7,8 @@ import './VoiceAutomation.css';
 
 const VoiceAutomation = () => {
   const navigate = useNavigate();
-  const [activeCalls, setActiveCalls] = useState([]);
   const [callStats, setCallStats] = useState(null);
+  const [activeCallsCount, setActiveCallsCount] = useState(0);
   const [healthStatus, setHealthStatus] = useState({
     backend: false,
     ai: false
@@ -18,14 +18,6 @@ const VoiceAutomation = () => {
 
   const refreshTimeoutRef = useRef(null);
   const isMountedRef = useRef(true);
-
-  const formatCallTime = useCallback((call = {}) => {
-    const sourceTime = call?.startTime || call?.createdAt;
-    if (!sourceTime) return null;
-    const date = new Date(sourceTime);
-    if (Number.isNaN(date.getTime())) return null;
-    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-  }, []);
 
   const normalizeStats = useCallback((payload = {}) => {
     const summary = payload?.summary || payload || {};
@@ -58,16 +50,17 @@ const VoiceAutomation = () => {
     [normalizeStats]
   );
 
-  const fetchActiveCalls = useCallback(async () => {
+  const fetchActiveCallsCount = useCallback(async () => {
     try {
       const response = await apiService.getActiveCalls();
-      const calls = response?.data?.calls || [];
+      const count = Number(response?.data?.count);
+      const calls = Array.isArray(response?.data?.calls) ? response.data.calls : [];
 
       if (isMountedRef.current) {
-        setActiveCalls(Array.isArray(calls) ? calls : []);
+        setActiveCallsCount(Number.isFinite(count) ? count : calls.length);
       }
     } catch (error) {
-      console.error('Failed to fetch active calls:', error);
+      console.error('Failed to fetch active calls count:', error);
     }
   }, []);
 
@@ -148,15 +141,15 @@ const VoiceAutomation = () => {
 
     refreshTimeoutRef.current = setTimeout(() => {
       fetchCallStats();
-      fetchActiveCalls();
+      fetchActiveCallsCount();
     }, 350);
-  }, [fetchActiveCalls, fetchCallStats]);
+  }, [fetchActiveCallsCount, fetchCallStats]);
 
   useEffect(() => {
     isMountedRef.current = true;
 
     const initialize = async () => {
-      await Promise.allSettled([checkHealth(), fetchActiveCalls(), fetchCallStats()]);
+      await Promise.allSettled([checkHealth(), fetchCallStats(), fetchActiveCallsCount()]);
 
       if (isMountedRef.current) {
         setLoading(false);
@@ -187,9 +180,10 @@ const VoiceAutomation = () => {
       console.log('WebSocket disconnected');
     };
 
-    const handleCallsUpdate = (data) => {
-      const calls = data?.calls || [];
-      setActiveCalls(Array.isArray(calls) ? calls : []);
+    const handleCallsUpdate = (data = {}) => {
+      const count = Number(data?.count);
+      const calls = Array.isArray(data?.calls) ? data.calls : [];
+      setActiveCallsCount(Number.isFinite(count) ? count : calls.length);
     };
 
     const handleStatsUpdate = (data) => {
@@ -264,7 +258,13 @@ const VoiceAutomation = () => {
       socket.emit('leave_analytics_room');
       socket.emit('unsubscribe_calls');
     };
-  }, [checkHealth, fetchActiveCalls, fetchCallStats, mergeStats, scheduleStatsRefresh]);
+  }, [
+    checkHealth,
+    fetchActiveCallsCount,
+    fetchCallStats,
+    mergeStats,
+    scheduleStatsRefresh
+  ]);
 
   return (
     <div className="voice-automation">
@@ -280,7 +280,9 @@ const VoiceAutomation = () => {
           {healthStatus.ai && <span className="pulse-dot"></span>}
           AI Service: {healthStatus.ai ? 'Healthy' : 'Unhealthy'}
         </div>
-        <div className="status-badge">Active Calls: {activeCalls.length}</div>
+        <div className="status-badge">
+          Active Calls: {activeCallsCount}
+        </div>
       </div>
 
       <div className="voice-cards">
@@ -319,21 +321,8 @@ const VoiceAutomation = () => {
             View Logs
           </button>
         </div>
+
       </div>
-
-      {activeCalls.length > 0 && (
-        <div className="active-calls-section">
-          <h3>Active Calls</h3>
-          <div className="calls-list">
-            {activeCalls.map((call, index) => (
-              <div key={call.call_sid || call.callSid || `call-${index}`} className="call-item minimal">
-                <span className="call-time">{formatCallTime(call) ? `Started ${formatCallTime(call)}` : 'Live now'}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
       {callStats && (
         <div className="stats-section">
           <h3>Today's Statistics</h3>

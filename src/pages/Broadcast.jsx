@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 import { apiClient } from '../services/whatsappapi';
-import { useBroadcast } from '../hooks/useBroadcast';
+import { useBroadcast, useCampaignAutomation } from '../hooks/useBroadcast';
 
 // Import components
 import BroadcastHeader from '../components/broadcastComponents/BroadcastHeader';
@@ -25,6 +25,7 @@ import AllCampaignsPopup from '../components/broadcastComponents/AllCampaignsPop
 import CampaignResultsModal from '../components/broadcastComponents/CampaignResultsModal';
 import BroadcastResultsPopup from '../components/broadcastComponents/BroadcastResultsPopup';
 import BroadcastAnalyticsModal from '../components/broadcastComponents/BroadcastAnalyticsModal';
+import OutboundDialer from '../components/outbound/OutboundDialer';
 
 // Import styles
 import '../styles/whatsapp.css';
@@ -177,7 +178,24 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState(null);
+  const [broadcastMode, setBroadcastMode] = useState('whatsapp');
+  const [outboundPhaseTab, setOutboundPhaseTab] = useState('quick');
   const broadcastSubmitInFlightRef = useRef(false);
+  const {
+    scheduleLoading,
+    retryLoading,
+    abTestLoading,
+    rotationLoading,
+    scheduleResponse,
+    retryStats,
+    abTestResults,
+    rotationStats,
+    error: automationError,
+    scheduleCampaign,
+    triggerRetry,
+    createABTest,
+    loadRotationStats
+  } = useCampaignAutomation();
 
   const extractTemplateBody = (template) => {
     if (!template || typeof template !== 'object') return '';
@@ -1188,6 +1206,95 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   return (
 
     <div className="broadcast-page">
+      <div className="template-pills">
+        <button
+          type="button"
+          className={broadcastMode === 'whatsapp' ? 'pill active' : 'pill'}
+          onClick={() => setBroadcastMode('whatsapp')}
+        >
+          WhatsApp Broadcast
+        </button>
+        <button
+          type="button"
+          className={broadcastMode === 'outbound-local' ? 'pill active' : 'pill'}
+          onClick={() => setBroadcastMode('outbound-local')}
+        >
+          Outbound Voice
+        </button>
+      </div>
+
+      {broadcastMode === 'outbound-local' ? (
+        <>
+          <div className="phase2-subtabs">
+            <button
+              type="button"
+              className={outboundPhaseTab === 'quick' ? 'phase2-subtab active' : 'phase2-subtab'}
+              onClick={() => setOutboundPhaseTab('quick')}
+            >
+              Quick
+            </button>
+            <button
+              type="button"
+              className={outboundPhaseTab === 'schedule' ? 'phase2-subtab active' : 'phase2-subtab'}
+              onClick={() => setOutboundPhaseTab('schedule')}
+            >
+              Schedule
+            </button>
+            <button
+              type="button"
+              className={outboundPhaseTab === 'retry' ? 'phase2-subtab active' : 'phase2-subtab'}
+              onClick={() => setOutboundPhaseTab('retry')}
+            >
+              Retry
+            </button>
+            <button
+              type="button"
+              className={outboundPhaseTab === 'abtest' ? 'phase2-subtab active' : 'phase2-subtab'}
+              onClick={() => setOutboundPhaseTab('abtest')}
+            >
+              A/B
+            </button>
+          </div>
+
+          {outboundPhaseTab === 'quick' && <OutboundDialer />}
+
+          {outboundPhaseTab === 'schedule' && (
+            <>
+              <CampaignScheduler
+                onSchedule={scheduleCampaign}
+                loading={scheduleLoading}
+                error={automationError}
+                scheduleResponse={scheduleResponse}
+              />
+              <NumberRotation
+                stats={rotationStats}
+                loading={rotationLoading}
+                onRefresh={loadRotationStats}
+                error={automationError}
+              />
+            </>
+          )}
+
+          {outboundPhaseTab === 'retry' && (
+            <RetryDashboard
+              retryStats={retryStats}
+              onRetry={triggerRetry}
+              loading={retryLoading}
+              error={automationError}
+            />
+          )}
+
+          {outboundPhaseTab === 'abtest' && (
+            <ABTestCreator
+              onCreate={createABTest}
+              loading={abTestLoading}
+              results={abTestResults}
+              error={automationError}
+            />
+          )}
+        </>
+      ) : (
+        <>
 
       <BroadcastHeader
 
@@ -1490,11 +1597,14 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         onClose={() => setShowAnalyticsModal(false)}
         broadcast={selectedBroadcast}
       />
+      </>
+      )}
 
     </div>
   );
 };
 
 export default Broadcast;
+
 
 

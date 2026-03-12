@@ -12,6 +12,17 @@ import {
 import apiService from '../../../services/api';
 import './CallAnalytics.css';
 
+const INITIAL_OUTBOUND_METRICS = {
+  total: 0,
+  initiated: 0,
+  failed: 0,
+  successRate: 0,
+  progress: 0,
+  campaignName: '',
+  mode: '',
+  lastUpdate: null,
+  history: []
+};
 
 const CallAnalytics = () => {
   const navigate = useNavigate();
@@ -44,6 +55,45 @@ const CallAnalytics = () => {
   const [showFilters, setShowFilters] = useState(false);
   const [comparisonPeriod, setComparisonPeriod] = useState(null);
   const [comparisonData, setComparisonData] = useState(null);
+  const [outboundLiveMetrics, setOutboundLiveMetrics] = useState({
+    ...INITIAL_OUTBOUND_METRICS
+  });
+  const shouldShowOutboundMetrics = filters.callType === 'all' || filters.callType === 'outbound';
+  const syncOutboundMetricsFromSummary = useCallback((summary = {}, timestamp = new Date().toISOString()) => {
+    if (!shouldShowOutboundMetrics) return;
+
+    const isOutboundScoped = filters.callType === 'outbound';
+    const total = Number(isOutboundScoped ? summary.totalCalls : summary.outboundCalls) || 0;
+    const completed = Number(
+      isOutboundScoped ? summary.completedCalls : summary.outboundCompletedCalls
+    ) || 0;
+    const failed = Number(
+      isOutboundScoped ? summary.failedCalls : summary.outboundFailedCalls
+    ) || 0;
+    const successRate = total > 0 ? Math.round((completed / total) * 100) : 0;
+    const nextPoint = {
+      time: new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', {
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      initiated: completed,
+      failed,
+      total,
+      successRate
+    };
+
+    setOutboundLiveMetrics((prev) => ({
+      ...prev,
+      total,
+      initiated: completed,
+      failed,
+      successRate,
+      progress: total,
+      mode: 'analytics',
+      lastUpdate: timestamp,
+      history: [...prev.history, nextPoint].slice(-20)
+    }));
+  }, [shouldShowOutboundMetrics, filters.callType]);
 
   useEffect(() => {
     const scheduleAnalyticsRefresh = () => {
@@ -84,6 +134,7 @@ const CallAnalytics = () => {
       if (!snapshot) return;
 
       setAnalytics(snapshot);
+      syncOutboundMetricsFromSummary(snapshot?.summary || {}, data?.timestamp || new Date().toISOString());
       setRealTimeData((prev) => ({
         ...prev,
         totalExecutionsToday: snapshot?.summary?.totalCalls || 0,
@@ -115,6 +166,33 @@ const CallAnalytics = () => {
       if (data?.action === 'refresh' || data?.action === 'add' || data?.action === 'update') {
         scheduleAnalyticsRefresh();
       }
+    };
+    const handleOutboundMetrics = (data = {}) => {
+      if (!shouldShowOutboundMetrics) return;
+      setOutboundLiveMetrics((prev) => {
+        const nextPoint = {
+          time: new Date(data.timestamp || Date.now()).toLocaleTimeString('en-IN', {
+            hour: '2-digit',
+            minute: '2-digit'
+          }),
+          initiated: Number(data.initiated || 0),
+          failed: Number(data.failed || 0),
+          total: Number(data.total || 0),
+          successRate: Number(data.successRate || 0)
+        };
+
+        return {
+          total: Number(data.total || 0),
+          initiated: Number(data.initiated || 0),
+          failed: Number(data.failed || 0),
+          successRate: Number(data.successRate || 0),
+          progress: Number(data.progress || 0),
+          campaignName: String(data.campaignName || ''),
+          mode: String(data.mode || ''),
+          lastUpdate: data.timestamp || new Date().toISOString(),
+          history: [...prev.history, nextPoint].slice(-20)
+        };
+      });
     };
 
 
@@ -148,6 +226,7 @@ const CallAnalytics = () => {
     socket.on('ivr_call_details_update', handleIVRCallUpdate);
     socket.on('outbound_call_details_update', handleOutboundCallUpdate);
     socket.on('call_list_update', handleCallListUpdate);
+    socket.on('outbound_metrics', handleOutboundMetrics);
     
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
@@ -179,6 +258,7 @@ const CallAnalytics = () => {
       socket.off('ivr_call_details_update', handleIVRCallUpdate);
       socket.off('outbound_call_details_update', handleOutboundCallUpdate);
       socket.off('call_list_update', handleCallListUpdate);
+      socket.off('outbound_metrics', handleOutboundMetrics);
       
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
@@ -187,7 +267,13 @@ const CallAnalytics = () => {
     };
 
 
-  }, [period, filters.callType, filters.status]);
+  }, [period, filters.callType, filters.status, syncOutboundMetricsFromSummary]);
+
+  useEffect(() => {
+    if (!shouldShowOutboundMetrics) {
+      setOutboundLiveMetrics({ ...INITIAL_OUTBOUND_METRICS });
+    }
+  }, [shouldShowOutboundMetrics]);
 
   const fetchAnalytics = useCallback(async (options = {}) => {
     const { background = false } = options;
@@ -206,6 +292,7 @@ const CallAnalytics = () => {
       const response = await apiService.getInboundAnalytics(period, params);
       const normalizedData = response?.data?.data || response?.data || null;
       setAnalytics(normalizedData);
+      syncOutboundMetricsFromSummary(normalizedData?.summary || {}, new Date().toISOString());
       
       if (comparisonPeriod && !background) {
         const compResponse = await apiService.getInboundAnalytics(comparisonPeriod);
@@ -220,7 +307,7 @@ const CallAnalytics = () => {
       fetchInFlightRef.current = false;
       if (!background) setLoading(false);
     }
-  }, [period, filters.callType, filters.status, comparisonPeriod]);
+  }, [period, filters.callType, filters.status, comparisonPeriod, syncOutboundMetricsFromSummary]);
 
   const handleFilterChange = (key, value) => {
     setFilters(prev => ({ ...prev, [key]: value }));
@@ -262,6 +349,7 @@ const CallAnalytics = () => {
   };
 
   const formatNumber = (num) => num ? new Intl.NumberFormat().format(num) : '0';
+  const normalizeCallType = (callType) => (callType === 'outbound_quickcalls' ? 'outbound' : callType);
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16'];
 
@@ -281,7 +369,8 @@ const CallAnalytics = () => {
     return analytics.recentCalls.filter(call => {
       const matchesSearch = !filters.searchQuery || 
         call.phoneNumber?.toLowerCase().includes(filters.searchQuery.toLowerCase());
-      const matchesType = filters.callType === 'all' || call.type === filters.callType;
+      const matchesType =
+        filters.callType === 'all' || normalizeCallType(call.type) === filters.callType;
       const matchesStatus = filters.status === 'all' || call.status === filters.status;
       return matchesSearch && matchesType && matchesStatus;
     });
@@ -505,6 +594,64 @@ const CallAnalytics = () => {
           </div>
         </div>
       </div>
+
+      {/* Outbound Voice Live Metrics */}
+      {shouldShowOutboundMetrics && (
+      <div className="analytics-section">
+        <h3><Activity size={20} /> Outbound Voice Live Metrics</h3>
+        <div className="analytics-grid four-col">
+          <div className="stat-box">
+            <span className="stat-label">Total</span>
+            <span className="stat-value">{formatNumber(outboundLiveMetrics.total)}</span>
+          </div>
+          <div className="stat-box">
+            <span className="stat-label">Initiated</span>
+            <span className="stat-value">{formatNumber(outboundLiveMetrics.initiated)}</span>
+          </div>
+          <div className="stat-box">
+            <span className="stat-label">Failed</span>
+            <span className="stat-value">{formatNumber(outboundLiveMetrics.failed)}</span>
+          </div>
+          <div className="stat-box">
+            <span className="stat-label">Success Rate</span>
+            <span className="stat-value">{outboundLiveMetrics.successRate || 0}%</span>
+          </div>
+        </div>
+
+        <div className="outbound-live-meta">
+          <span>Mode: {outboundLiveMetrics.mode || 'N/A'}</span>
+          <span>Campaign: {outboundLiveMetrics.campaignName || 'N/A'}</span>
+          <span>Progress: {formatNumber(outboundLiveMetrics.progress || 0)}</span>
+          <span>Updated: {outboundLiveMetrics.lastUpdate ? new Date(outboundLiveMetrics.lastUpdate).toLocaleTimeString() : 'N/A'}</span>
+        </div>
+
+        <div className="chart-card full-width outbound-live-chart">
+          <h3>Outbound Metrics Trend</h3>
+          <ResponsiveContainer width="100%" height={280}>
+            <AreaChart data={outboundLiveMetrics.history}>
+              <defs>
+                <linearGradient id="outboundInitiatedGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
+                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
+                </linearGradient>
+                <linearGradient id="outboundFailedGradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+              <XAxis dataKey="time" stroke="#64748b" fontSize={12} />
+              <YAxis stroke="#64748b" fontSize={12} allowDecimals={false} />
+              <Tooltip />
+              <Legend />
+              <Area type="monotone" dataKey="initiated" stroke="#3b82f6" fill="url(#outboundInitiatedGradient)" name="Initiated" />
+              <Area type="monotone" dataKey="failed" stroke="#ef4444" fill="url(#outboundFailedGradient)" name="Failed" />
+              <Line type="monotone" dataKey="successRate" stroke="#10b981" strokeWidth={2} name="Success %" dot={false} />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+      )}
 
       {/* Charts Grid */}
       <div className="analytics-charts">
@@ -770,19 +917,22 @@ const CallAnalytics = () => {
                 </tr>
               </thead>
               <tbody>
-                {filteredCalls.slice(0, 10).map(call => (
-                  <tr key={call.callSid}>
-                    <td className="call-id">{call.callSid?.slice(-8)}</td>
-                    <td>{call.phoneNumber}</td>
-                    <td><span className={`badge ${call.type}`}>{call.type}</span></td>
-                    <td><span className={`badge ${call.status}`}>{call.status}</span></td>
-                    <td>{formatDuration(call.duration)}</td>
-                    <td>{new Date(call.createdAt).toLocaleString()}</td>
-                    <td>
-                      <button className="btn btn-icon"><Eye size={16} /></button>
-                    </td>
-                  </tr>
-                ))}
+                {filteredCalls.slice(0, 10).map(call => {
+                  const displayType = normalizeCallType(call.type);
+                  return (
+                    <tr key={call.callSid}>
+                      <td className="call-id">{call.callSid?.slice(-8)}</td>
+                      <td>{call.phoneNumber}</td>
+                      <td><span className={`badge ${displayType}`}>{displayType}</span></td>
+                      <td><span className={`badge ${call.status}`}>{call.status}</span></td>
+                      <td>{formatDuration(call.duration)}</td>
+                      <td>{new Date(call.createdAt).toLocaleString()}</td>
+                      <td>
+                        <button className="btn btn-icon"><Eye size={16} /></button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

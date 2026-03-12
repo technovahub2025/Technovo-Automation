@@ -411,6 +411,26 @@
   text-align: right;
 }
 
+.outbound-live-meta {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+}
+
+.outbound-live-meta span {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.outbound-live-chart {
+  margin-top: 14px;
+}
+
 /* Comprehensive Metrics */
 .analytics-details.comprehensive {
   display: grid;

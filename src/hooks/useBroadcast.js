@@ -1,6 +1,21 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '../services/whatsappapi';
 import webSocketService from '../services/websocketService';
+import apiService from '../services/api';
+
+const dedupeTemplatesById = (items = []) => {
+  const seen = new Set();
+
+  return items.filter((item) => {
+    const key = String(item?._id || '');
+    if (!key || seen.has(key)) {
+      return false;
+    }
+
+    seen.add(key);
+    return true;
+  });
+};
 
 export const useBroadcast = () => {
   // State management
@@ -695,6 +710,470 @@ export const useBroadcast = () => {
     extractTemplateVariables,
     getFilteredAndSortedBroadcasts,
     downloadAllCampaigns
+  };
+};
+
+export const useExotelOutbound = () => {
+  const [quickCallLoading, setQuickCallLoading] = useState(false);
+  const [bulkLoading, setBulkLoading] = useState(false);
+  const [overviewLoading, setOverviewLoading] = useState(false);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [lastResponse, setLastResponse] = useState(null);
+  const [overview, setOverview] = useState(null);
+  const [templates, setTemplates] = useState([]);
+  const [campaigns, setCampaigns] = useState([]);
+  const [workflows, setWorkflows] = useState([]);
+  const [error, setError] = useState('');
+
+  const quickCall = useCallback(async ({
+    provider,
+    to,
+    from,
+    templateId,
+    customMessage,
+    voiceId,
+    voice,
+    workflowId,
+    scheduleType,
+    scheduledAt,
+    recurrence,
+    timezone,
+    allowedWindowStart,
+    allowedWindowEnd
+  }) => {
+    setQuickCallLoading(true);
+    setError('');
+    try {
+      const response = await apiService.quickOutboundCall({
+        provider,
+        to,
+        from,
+        templateId,
+        customMessage,
+        message: customMessage,
+        voiceId,
+        voice,
+        workflowId,
+        scheduleType,
+        scheduledAt,
+        recurrence,
+        timezone,
+        allowedWindowStart,
+        allowedWindowEnd
+      });
+      setLastResponse(response?.data || null);
+      return response?.data;
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Quick call failed';
+      setError(message);
+      throw err;
+    } finally {
+      setQuickCallLoading(false);
+    }
+  }, []);
+
+  const launchBulkCampaign = useCallback(async ({
+    provider,
+    campaignName,
+    numbers,
+    from,
+    csvData,
+    maxConcurrent,
+    customMessage,
+    voiceId,
+    voice,
+    templateId,
+    workflowId,
+    scheduleType,
+    scheduledAt,
+    recurrence,
+    timezone,
+    allowedWindowStart,
+    allowedWindowEnd
+  }) => {
+    setBulkLoading(true);
+    setError('');
+    try {
+      const response = await apiService.launchOutboundBulkCampaign({
+        provider,
+        campaignName,
+        numbers,
+        from,
+        csvData,
+        maxConcurrent,
+        customMessage,
+        message: customMessage,
+        voiceId,
+        voice,
+        templateId,
+        workflowId,
+        scheduleType,
+        scheduledAt,
+        recurrence,
+        timezone,
+        allowedWindowStart,
+        allowedWindowEnd
+      });
+      setLastResponse(response?.data || null);
+      return response?.data;
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Bulk campaign failed';
+      setError(message);
+      throw err;
+    } finally {
+      setBulkLoading(false);
+    }
+  }, []);
+
+  const fetchOverview = useCallback(async () => {
+    setOverviewLoading(true);
+    setError('');
+    try {
+      const response = await apiService.getOutboundOverview();
+      setOverview(response?.data || null);
+      return response?.data;
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Failed to load outbound overview';
+      setError(message);
+      throw err;
+    } finally {
+      setOverviewLoading(false);
+    }
+  }, []);
+
+  const fetchTemplates = useCallback(async () => {
+    setTemplatesLoading(true);
+    setError('');
+    try {
+      const response = await apiService.getOutboundTemplates();
+      const list = Array.isArray(response?.data?.templates) ? response.data.templates : [];
+      setTemplates(dedupeTemplatesById(list));
+      return list;
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Failed to load templates';
+      setError(message);
+      throw err;
+    } finally {
+      setTemplatesLoading(false);
+    }
+  }, []);
+
+  const fetchCampaigns = useCallback(async (params = { limit: 20 }) => {
+    setError('');
+    try {
+      const response = await apiService.getOutboundCampaigns(params);
+      const list = Array.isArray(response?.data?.campaigns) ? response.data.campaigns : [];
+      setCampaigns(list);
+      return list;
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Failed to load campaigns';
+      setError(message);
+      throw err;
+    }
+  }, []);
+
+  const fetchWorkflows = useCallback(async () => {
+    setError('');
+    try {
+      const response = await apiService.getIVRMenus({ limit: 100 });
+      const list = Array.isArray(response?.data?.ivrMenus) ? response.data.ivrMenus : [];
+      setWorkflows(list);
+      return list;
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Failed to load IVR workflows';
+      setError(message);
+      throw err;
+    }
+  }, []);
+
+  const createTemplate = useCallback(async ({ name, script }) => {
+    setTemplateSaving(true);
+    setError('');
+    try {
+      const response = await apiService.createOutboundTemplate({ name, script });
+      const created = response?.data?.template || null;
+      if (created) {
+        setTemplates((prev) => dedupeTemplatesById([created, ...prev]));
+      }
+      return created;
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Failed to create template';
+      setError(message);
+      throw err;
+    } finally {
+      setTemplateSaving(false);
+    }
+  }, []);
+
+  const updateTemplate = useCallback(async (templateId, { name, script }) => {
+    setTemplateSaving(true);
+    setError('');
+    try {
+      const response = await apiService.updateOutboundTemplate(templateId, { name, script });
+      const updated = response?.data?.template || null;
+      if (updated?._id) {
+        setTemplates((prev) =>
+          dedupeTemplatesById(prev.map((item) => (
+            String(item?._id) === String(updated._id) ? updated : item
+          )))
+        );
+      }
+      return updated;
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Failed to update template';
+      setError(message);
+      throw err;
+    } finally {
+      setTemplateSaving(false);
+    }
+  }, []);
+
+  const deleteTemplate = useCallback(async (templateId) => {
+    setError('');
+    try {
+      await apiService.deleteOutboundTemplate(templateId);
+      setTemplates((prev) => prev.filter((item) => String(item?._id) !== String(templateId)));
+      return true;
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Failed to delete template';
+      setError(message);
+      throw err;
+    }
+  }, []);
+
+  useEffect(() => {
+    const socket = apiService.initializeSocket();
+    if (!socket) return undefined;
+
+    const handleOutboundMetrics = (payload = {}) => {
+      setOverview((prev) => {
+        const previous = prev && typeof prev === 'object' ? prev : {};
+        const previousToday = previous.today && typeof previous.today === 'object' ? previous.today : {};
+
+        return {
+          ...previous,
+          today: {
+            ...previousToday,
+            total: Number(payload?.total ?? previousToday.total ?? 0),
+            initiated: Number(payload?.initiated ?? previousToday.initiated ?? 0),
+            failed: Number(payload?.failed ?? previousToday.failed ?? 0),
+            successRate: Number(payload?.successRate ?? previousToday.successRate ?? 0),
+            lastUpdate: payload?.timestamp || new Date().toISOString(),
+            mode: payload?.mode || previousToday.mode || '',
+            campaignName: payload?.campaignName || previousToday.campaignName || '',
+            progress: Number(payload?.progress ?? previousToday.progress ?? 0),
+            completed: Boolean(payload?.completed ?? previousToday.completed ?? false)
+          }
+        };
+      });
+    };
+
+    const handleTemplateUpdate = (payload = {}) => {
+      const action = String(payload?.action || '').toLowerCase();
+
+      if ((action === 'created' || action === 'updated') && payload?.template?._id) {
+        setTemplates((prev) => {
+          const next = prev.filter((item) => String(item?._id) !== String(payload.template._id));
+          return dedupeTemplatesById([payload.template, ...next]);
+        });
+        return;
+      }
+
+      if (action === 'deleted' && payload?.templateId) {
+        setTemplates((prev) =>
+          prev.filter((item) => String(item?._id) !== String(payload.templateId))
+        );
+      }
+    };
+
+    const handleCampaignUpdate = (payload = {}) => {
+      const incomingCampaign = payload?.campaign;
+      if (!incomingCampaign?._id) {
+        return;
+      }
+
+      setCampaigns((prev) => {
+        const next = Array.isArray(prev) ? [...prev] : [];
+        const index = next.findIndex((item) => String(item?._id) === String(incomingCampaign._id));
+        if (index >= 0) {
+          next[index] = {
+            ...next[index],
+            ...incomingCampaign,
+            metrics: {
+              ...(next[index]?.metrics || {}),
+              ...(incomingCampaign?.metrics || {})
+            },
+            contactSummary: {
+              ...(next[index]?.contactSummary || {}),
+              ...(incomingCampaign?.contactSummary || {})
+            },
+            schedule: {
+              ...(next[index]?.schedule || {}),
+              ...(incomingCampaign?.schedule || {})
+            }
+          };
+        } else {
+          next.unshift(incomingCampaign);
+        }
+
+        return next
+          .sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0))
+          .slice(0, 20);
+      });
+    };
+
+    socket.on('outbound_metrics', handleOutboundMetrics);
+    socket.on('outbound_template_update', handleTemplateUpdate);
+    socket.on('campaign_update', handleCampaignUpdate);
+
+    return () => {
+      socket.off('outbound_metrics', handleOutboundMetrics);
+      socket.off('outbound_template_update', handleTemplateUpdate);
+      socket.off('campaign_update', handleCampaignUpdate);
+    };
+  }, []);
+
+  return {
+    quickCallLoading,
+    bulkLoading,
+    overviewLoading,
+    templatesLoading,
+    templateSaving,
+    lastResponse,
+    overview,
+    templates,
+    campaigns,
+    workflows,
+    error,
+    quickCall,
+    launchBulkCampaign,
+    fetchOverview,
+    fetchTemplates,
+    fetchCampaigns,
+    fetchWorkflows,
+    createTemplate,
+    updateTemplate,
+    deleteTemplate
+  };
+};
+
+export const useCampaignAutomation = () => {
+  const [scheduleLoading, setScheduleLoading] = useState(false);
+  const [retryLoading, setRetryLoading] = useState(false);
+  const [abTestLoading, setAbTestLoading] = useState(false);
+  const [rotationLoading, setRotationLoading] = useState(false);
+  const [scheduleResponse, setScheduleResponse] = useState(null);
+  const [retryStats, setRetryStats] = useState(null);
+  const [abTestResults, setAbTestResults] = useState(null);
+  const [rotationStats, setRotationStats] = useState(null);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    const socket = apiService.initializeSocket();
+    if (!socket) return undefined;
+
+    const handleCampaignUpdate = (payload) => {
+      setScheduleResponse((prev) => ({ ...(prev || {}), liveUpdate: payload }));
+    };
+
+    const handleRetryStats = (payload) => {
+      setRetryStats(payload);
+    };
+
+    const handleAbTestResults = (payload) => {
+      setAbTestResults(payload);
+    };
+
+    socket.on('campaign_update', handleCampaignUpdate);
+    socket.on('retry_stats', handleRetryStats);
+    socket.on('abtest_results', handleAbTestResults);
+
+    return () => {
+      socket.off('campaign_update', handleCampaignUpdate);
+      socket.off('retry_stats', handleRetryStats);
+      socket.off('abtest_results', handleAbTestResults);
+    };
+  }, []);
+
+  const scheduleCampaign = useCallback(async (payload) => {
+    setScheduleLoading(true);
+    setError('');
+    try {
+      const response = await apiService.scheduleOutboundCampaign(payload);
+      setScheduleResponse(response?.data || null);
+      return response?.data;
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Scheduling failed';
+      setError(message);
+      throw err;
+    } finally {
+      setScheduleLoading(false);
+    }
+  }, []);
+
+  const triggerRetry = useCallback(async () => {
+    setRetryLoading(true);
+    setError('');
+    try {
+      const response = await apiService.retryOutboundCampaign();
+      setRetryStats(response?.data || null);
+      return response?.data;
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Retry execution failed';
+      setError(message);
+      throw err;
+    } finally {
+      setRetryLoading(false);
+    }
+  }, []);
+
+  const createABTest = useCallback(async (payload) => {
+    setAbTestLoading(true);
+    setError('');
+    try {
+      const response = await apiService.createOutboundABTest(payload);
+      setAbTestResults(response?.data || null);
+      return response?.data;
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'A/B test failed';
+      setError(message);
+      throw err;
+    } finally {
+      setAbTestLoading(false);
+    }
+  }, []);
+
+  const loadRotationStats = useCallback(async () => {
+    setRotationLoading(true);
+    setError('');
+    try {
+      const response = await apiService.getOutboundRotationStats();
+      setRotationStats(response?.data || null);
+      return response?.data;
+    } catch (err) {
+      const message = err?.response?.data?.message || err?.message || 'Number rotation load failed';
+      setError(message);
+      throw err;
+    } finally {
+      setRotationLoading(false);
+    }
+  }, []);
+
+  return {
+    scheduleLoading,
+    retryLoading,
+    abTestLoading,
+    rotationLoading,
+    scheduleResponse,
+    retryStats,
+    abTestResults,
+    rotationStats,
+    error,
+    scheduleCampaign,
+    triggerRetry,
+    createABTest,
+    loadRotationStats
   };
 };
 

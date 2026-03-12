@@ -89,6 +89,70 @@ apiService.bulkOutboundCall = (data) =>
     phoneNumber: data?.phoneNumber || data?.to || data?.contacts?.[0],
     scenario: data
   });
+apiService.quickOutboundCall = (payload) =>
+  apiService.post("/api/voice/outbound-local", payload, {
+    timeout: Number(import.meta.env.VITE_OUTBOUND_QUICKCALL_TIMEOUT_MS || 90000)
+  });
+apiService.outboundLocalQuickCall = apiService.quickOutboundCall;
+apiService.outboundVoiceQuickCall = apiService.quickOutboundCall;
+apiService.getOutboundOverview = () =>
+  apiService.get("/api/voice/outbound-local/overview");
+apiService.getOutboundCampaigns = (params = {}) =>
+  apiService.get("/api/voice/outbound-local/campaigns", { params });
+apiService.bulkDeleteCallLogs = (callSids = []) =>
+  apiService.post("/api/call-logs/bulk-delete", { callSids });
+apiService.bulkDeleteOutboundCampaigns = (campaignIds = []) =>
+  apiService.post("/api/voice/outbound-local/campaigns/bulk-delete", { campaignIds });
+apiService.getOutboundLocalOverview = apiService.getOutboundOverview;
+apiService.getOutboundVoiceOverview = apiService.getOutboundOverview;
+apiService.getOutboundTemplates = () =>
+  apiService.get("/api/voice/outbound-local/templates");
+apiService.getOutboundLocalTemplates = apiService.getOutboundTemplates;
+apiService.getOutboundVoiceTemplates = apiService.getOutboundTemplates;
+apiService.createOutboundTemplate = (payload) =>
+  apiService.post("/api/voice/outbound-local/templates", payload);
+apiService.createOutboundLocalTemplate = apiService.createOutboundTemplate;
+apiService.createOutboundVoiceTemplate = apiService.createOutboundTemplate;
+apiService.updateOutboundTemplate = (templateId, payload) =>
+  apiService.put(`/api/voice/outbound-local/templates/${templateId}`, payload);
+apiService.updateOutboundLocalTemplate = apiService.updateOutboundTemplate;
+apiService.updateOutboundVoiceTemplate = apiService.updateOutboundTemplate;
+apiService.deleteOutboundTemplate = (templateId) =>
+  apiService.delete(`/api/voice/outbound-local/templates/${templateId}`);
+apiService.deleteOutboundLocalTemplate = apiService.deleteOutboundTemplate;
+apiService.deleteOutboundVoiceTemplate = apiService.deleteOutboundTemplate;
+apiService.launchOutboundBulkCampaign = (payload) =>
+  apiService.post("/api/voice/outbound-local/bulk", payload);
+apiService.outboundLocalBulkCampaign = apiService.launchOutboundBulkCampaign;
+apiService.outboundVoiceBulkCampaign = apiService.launchOutboundBulkCampaign;
+apiService.scheduleOutboundCampaign = (payload) =>
+  apiService.post("/api/outbound-local/schedule", payload);
+apiService.outboundLocalScheduleCampaign = apiService.scheduleOutboundCampaign;
+apiService.outboundVoiceScheduleCampaign = apiService.scheduleOutboundCampaign;
+apiService.getOutboundSchedules = (params = {}) =>
+  apiService.get("/api/outbound-local/schedule", { params });
+apiService.getOutboundLocalSchedules = apiService.getOutboundSchedules;
+apiService.getOutboundVoiceSchedules = apiService.getOutboundSchedules;
+apiService.retryOutboundCampaign = (payload = {}) =>
+  apiService.post("/api/outbound-local/retry", payload);
+apiService.outboundLocalRetryCampaign = apiService.retryOutboundCampaign;
+apiService.outboundVoiceRetryCampaign = apiService.retryOutboundCampaign;
+apiService.createOutboundABTest = (payload) =>
+  apiService.post("/api/outbound-local/abtest", payload);
+apiService.outboundLocalABTest = apiService.createOutboundABTest;
+apiService.outboundVoiceABTest = apiService.createOutboundABTest;
+apiService.getOutboundRotationStats = () =>
+  apiService.get("/api/outbound-local/numbers/rotate");
+apiService.outboundLocalRotateNumbers = apiService.getOutboundRotationStats;
+apiService.outboundVoiceRotateNumbers = apiService.getOutboundRotationStats;
+apiService.pauseOutboundSchedule = (scheduleId) =>
+  apiService.post(`/api/outbound-local/schedule/${scheduleId}/pause`);
+apiService.outboundLocalPauseSchedule = apiService.pauseOutboundSchedule;
+apiService.outboundVoicePauseSchedule = apiService.pauseOutboundSchedule;
+apiService.resumeOutboundSchedule = (scheduleId) =>
+  apiService.post(`/api/outbound-local/schedule/${scheduleId}/resume`);
+apiService.outboundLocalResumeSchedule = apiService.resumeOutboundSchedule;
+apiService.outboundVoiceResumeSchedule = apiService.resumeOutboundSchedule;
 apiService.cancelScheduledCall = (callId) =>
   Promise.resolve({ data: { success: true, message: "No scheduled-call API in backend contract" } });
 apiService.endCall = (callSid) => apiService.post(`/voice/call/${callSid}/end`);
@@ -117,9 +181,79 @@ apiService.checkAIHealth = () =>
   apiService.get("/ai/health", { skipAuthRedirect: true });
 
 // Inbound and IVR methods
-apiService.getInboundAnalytics = (period = 'today', params = {}) => {
+const fetchInboundAnalyticsHttp = (period = 'today', params = {}) => {
   const queryParams = new URLSearchParams({ period, ...params }).toString();
   return apiService.get(`/api/analytics/inbound?${queryParams}`);
+};
+apiService.getInboundAnalytics = async (period = 'today', params = {}) => {
+  const socket = socketService.connect();
+  const socketTimeoutMs = Number(import.meta.env.VITE_ANALYTICS_SOCKET_TIMEOUT_MS || 7000);
+  const payload = {
+    period,
+    callType: params?.callType || 'all',
+    status: params?.status || 'all',
+    reason: 'apiService.getInboundAnalytics'
+  };
+
+  if (!socket) {
+    return fetchInboundAnalyticsHttp(period, params);
+  }
+
+  // Socket-first analytics fetch. Falls back to HTTP if socket is unavailable/slow.
+  return new Promise((resolve, reject) => {
+    let settled = false;
+
+    const cleanup = () => {
+      clearTimeout(timeoutId);
+      socket.off('call_analytics_update', handleAnalyticsUpdate);
+      socket.off('analytics_error', handleAnalyticsError);
+    };
+
+    const settleResolve = (result) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+
+    const settleReject = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(error);
+    };
+
+    const handleAnalyticsUpdate = (eventPayload = {}) => {
+      const matchesPeriod = String(eventPayload.period || 'today') === String(payload.period);
+      const matchesType = String(eventPayload.callType || 'all') === String(payload.callType);
+      const matchesStatus = String(eventPayload.status || 'all') === String(payload.status);
+      if (!matchesPeriod || !matchesType || !matchesStatus) return;
+
+      settleResolve({ data: { data: eventPayload.analytics || null } });
+    };
+
+    const handleAnalyticsError = async (eventPayload = {}) => {
+      try {
+        const fallback = await fetchInboundAnalyticsHttp(period, params);
+        settleResolve(fallback);
+      } catch (fallbackError) {
+        settleReject(fallbackError || new Error(eventPayload?.error || 'Socket analytics error'));
+      }
+    };
+
+    const timeoutId = setTimeout(async () => {
+      try {
+        const fallback = await fetchInboundAnalyticsHttp(period, params);
+        settleResolve(fallback);
+      } catch (fallbackError) {
+        settleReject(fallbackError);
+      }
+    }, socketTimeoutMs);
+
+    socket.on('call_analytics_update', handleAnalyticsUpdate);
+    socket.on('analytics_error', handleAnalyticsError);
+    socket.emit('request_call_analytics', payload);
+  });
 };
 apiService.getVoiceTodayStats = () =>
   apiService.get('/api/analytics/voice/today');
@@ -138,6 +272,7 @@ apiService.deleteCustomAudioByPublicId = (publicId) => apiService.delete('/ivr/a
 apiService.createIVRConfig = (menuName, config) => apiService.post('/inbound/ivr/configs', { menuName, config });
 apiService.getIVRConfigs = () => apiService.get('/inbound/ivr/configs');
 apiService.deleteIVRConfig = (menuId) => apiService.delete(`/inbound/ivr/configs/${menuId}`);
+apiService.getIVRMenus = (params = {}) => apiService.get('/ivr/menus', { params });
 apiService.testIVRMenu = (menuId, phoneNumber) => apiService.post(`/ivr/menus/${menuId}/test`, { phoneNumber });
 
 
@@ -192,3 +327,4 @@ apiService.updateMyTwilio = (payload) => apiService.put(`${ADMIN_API_BASE_URL}/a
 // EXPORT
 // ------------------------
 export default apiService;
+

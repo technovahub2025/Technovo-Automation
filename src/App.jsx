@@ -11,7 +11,8 @@ import CreateTemplate from "./pages/CreateTemplate";
 import Contacts from "./pages/Contacts";
 import VoiceAutomation from "./pages/VoiceAutomation";
 import InboundCalls from "./components/inbound/InboundCalls";
-import OutboundCall from "./pages/OutboundCall";
+import OutboundCall from "./components/outbound/OutboundCall";
+import OutboundSchedules from "./components/outbound/OutboundSchedules";
 import CallAnalytics from "./components/inbound/ivr/CallAnalytics";
 
 import VoiceBroadcast from "./pages/VoiceBroadcast/VoiceBroadcast";
@@ -53,6 +54,7 @@ function App() {
           <Route path="voice-automation" element={<VoiceAutomation />} />
           <Route path="voice-automation/inbound" element={<InboundCalls />} />
           <Route path="voice-automation/outbound" element={<OutboundCall />} />
+          <Route path="voice-automation/outbound/schedules" element={<OutboundSchedules />} />
           <Route path="voice-automation/history" element={<CallAnalytics />} />
 
           <Route path="voice-broadcast" element={<VoiceBroadcast />} />

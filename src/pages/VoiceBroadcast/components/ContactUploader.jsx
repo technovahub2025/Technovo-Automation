@@ -3,16 +3,75 @@ import { Upload, X, Download, Users, AlertCircle } from 'lucide-react';
 import Papa from 'papaparse';
 import './ContactUploader.css';
 
-const ContactUploader = ({ contacts, onContactsUploaded, error, disabled }) => {
+const DEFAULT_SAMPLE_ROWS = [
+  { phone: '+919876543210', name: 'Rahul Kumar', city: 'Mumbai', offer: 'Diwali discount' },
+  { phone: '+919876543211', name: 'Priya Sharma', city: 'Delhi', offer: 'Diwali discount' },
+  { phone: '+919876543212', name: 'Amit Patel', city: 'Bangalore', offer: 'Diwali discount' }
+];
+
+const defaultNormalizePhoneNumber = (phone) => {
+  let cleaned = String(phone || '').replace(/[\s\-\(\)]/g, '');
+
+  if (!cleaned.startsWith('+')) {
+    if (cleaned.length === 10) {
+      cleaned = `+91${cleaned}`;
+    } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
+      cleaned = `+91${cleaned.substring(1)}`;
+    }
+  }
+
+  return cleaned;
+};
+
+const defaultTransformContact = (row, index, normalizePhoneNumber) => {
+  let phone = row.phone || row.mobile || row.number;
+
+  if (!phone) {
+    return null;
+  }
+
+  phone = normalizePhoneNumber(phone);
+
+  const customFields = {};
+  Object.keys(row || {}).forEach((key) => {
+    if (!['phone', 'mobile', 'number', 'name'].includes(key) && row[key]) {
+      customFields[key] = row[key];
+    }
+  });
+
+  return {
+    phone,
+    name: row.name || `Contact ${index + 1}`,
+    customFields
+  };
+};
+
+const ContactUploader = ({
+  contacts,
+  onContactsUploaded,
+  error,
+  disabled,
+  sampleRows = DEFAULT_SAMPLE_ROWS,
+  sampleFileName = 'broadcast_contacts_sample.csv',
+  parseFileName = null,
+  supportedColumnsHelp = 'CSV with columns: phone/mobile, name (optional), and any custom fields for personalization.',
+  emptyStateTitle = 'Upload CSV File',
+  emptyStateSubtitle = 'Click to select or drag and drop',
+  emptyStateHint = 'CSV must include "phone" or "mobile" column',
+  previewTitle = 'contacts uploaded',
+  onUploadProcessed = null,
+  normalizePhoneNumber = defaultNormalizePhoneNumber,
+  transformContact = defaultTransformContact
+}) => {
   const [uploading, setUploading] = useState(false);
   const [parseError, setParseError] = useState(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const fileInputRef = useRef(null);
 
-  const handleFileSelect = (e) => {
-    const file = e.target.files[0];
+  const processCsvFile = async (file) => {
     if (!file) return;
 
-    if (!file.name.endsWith('.csv')) {
+    if (!String(file.name || '').toLowerCase().endsWith('.csv')) {
       setParseError('Please upload a CSV file');
       return;
     }
@@ -20,14 +79,24 @@ const ContactUploader = ({ contacts, onContactsUploaded, error, disabled }) => {
     setUploading(true);
     setParseError(null);
 
-    Papa.parse(file, {
+    const rawText = await file.text();
+
+    Papa.parse(rawText, {
       header: true,
       skipEmptyLines: true,
-      transformHeader: (header) => header.trim().toLowerCase(),
+      transformHeader: (header) => String(header || '').trim().toLowerCase(),
       complete: (results) => {
         try {
           const parsedContacts = validateAndTransformContacts(results.data);
           onContactsUploaded(parsedContacts);
+          if (typeof onUploadProcessed === 'function') {
+            onUploadProcessed({
+              contacts: parsedContacts,
+              rawText,
+              fileName: parseFileName || file.name,
+              rejectedCount: Math.max(0, (results.data || []).length - parsedContacts.length)
+            });
+          }
           setUploading(false);
         } catch (err) {
           setParseError(err.message);
@@ -39,9 +108,6 @@ const ContactUploader = ({ contacts, onContactsUploaded, error, disabled }) => {
         setUploading(false);
       }
     });
-
-    // Reset input
-    e.target.value = '';
   };
 
   const validateAndTransformContacts = (data) => {
@@ -55,89 +121,73 @@ const ContactUploader = ({ contacts, onContactsUploaded, error, disabled }) => {
       throw new Error('CSV must have a "phone", "mobile", or "number" column');
     }
 
-    const contacts = [];
+    const nextContacts = [];
     const seen = new Set();
 
     data.forEach((row, index) => {
-      // Get phone number (try different column names)
-      let phone = row.phone || row.mobile || row.number;
-      
-      if (!phone) {
+      const contact = transformContact(row, index, normalizePhoneNumber);
+
+      if (!contact?.phone) {
         console.warn(`Row ${index + 1}: Missing phone number, skipping`);
         return;
       }
 
-      // Clean phone number
-      phone = cleanPhoneNumber(phone);
+      const phone = String(contact.phone || '').trim();
 
-      // Skip duplicates
       if (seen.has(phone)) {
         console.warn(`Row ${index + 1}: Duplicate phone ${phone}, skipping`);
         return;
       }
 
       seen.add(phone);
-
-      // Extract custom fields (all columns except phone/name)
-      const customFields = {};
-      Object.keys(row).forEach(key => {
-        if (!['phone', 'mobile', 'number', 'name'].includes(key) && row[key]) {
-          customFields[key] = row[key];
-        }
-      });
-
-      contacts.push({
-        phone,
-        name: row.name || `Contact ${index + 1}`,
-        customFields
+      nextContacts.push({
+        ...contact,
+        phone
       });
     });
 
-    if (contacts.length === 0) {
+    if (nextContacts.length === 0) {
       throw new Error('No valid contacts found in CSV');
     }
 
-    return contacts;
-  };
-
-  const cleanPhoneNumber = (phone) => {
-    // Remove spaces, dashes, parentheses
-    let cleaned = phone.toString().replace(/[\s\-\(\)]/g, '');
-
-    // Add country code if missing
-    if (!cleaned.startsWith('+')) {
-      // Assume Indian number if 10 digits
-      if (cleaned.length === 10) {
-        cleaned = '+91' + cleaned;
-      } else if (cleaned.length === 11 && cleaned.startsWith('0')) {
-        // Remove leading 0 and add +91
-        cleaned = '+91' + cleaned.substring(1);
-      }
-    }
-
-    return cleaned;
+    return nextContacts;
   };
 
   const handleClearContacts = () => {
     onContactsUploaded([]);
     setParseError(null);
+    if (typeof onUploadProcessed === 'function') {
+      onUploadProcessed({
+        contacts: [],
+        rawText: '',
+        fileName: '',
+        rejectedCount: 0
+      });
+    }
   };
 
   const downloadSampleCSV = () => {
-    const sampleData = [
-      { phone: '+919876543210', name: 'Rahul Kumar', city: 'Mumbai', offer: 'Diwali discount' },
-      { phone: '+919876543211', name: 'Priya Sharma', city: 'Delhi', offer: 'Diwali discount' },
-      { phone: '+919876543212', name: 'Amit Patel', city: 'Bangalore', offer: 'Diwali discount' }
-    ];
-
-    const csv = Papa.unparse(sampleData);
+    const csv = Papa.unparse(sampleRows);
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'broadcast_contacts_sample.csv';
+    a.download = sampleFileName;
     a.click();
     window.URL.revokeObjectURL(url);
+  };
+
+  const handleFileSelect = async (e) => {
+    const file = e.target.files[0];
+    await processCsvFile(file);
+    e.target.value = '';
+  };
+
+  const handleDrop = async (event) => {
+    event.preventDefault();
+    setIsDragOver(false);
+    const file = event.dataTransfer?.files?.[0];
+    await processCsvFile(file);
   };
 
   return (
@@ -159,8 +209,17 @@ const ContactUploader = ({ contacts, onContactsUploaded, error, disabled }) => {
           />
 
           <div
-            className="upload-dropzone"
+            className={`upload-dropzone ${isDragOver ? 'drag-over' : ''}`}
             onClick={() => fileInputRef.current?.click()}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setIsDragOver(true);
+            }}
+            onDragLeave={(event) => {
+              event.preventDefault();
+              setIsDragOver(false);
+            }}
+            onDrop={handleDrop}
           >
             {uploading ? (
               <div className="uploading-state">
@@ -170,9 +229,9 @@ const ContactUploader = ({ contacts, onContactsUploaded, error, disabled }) => {
             ) : (
               <>
                 <Upload size={48} />
-                <h3>Upload CSV File</h3>
-                <p>Click to select or drag and drop</p>
-                <small>CSV must include "phone" or "mobile" column</small>
+                <h3>{emptyStateTitle}</h3>
+                <p>{emptyStateSubtitle}</p>
+                <small>{emptyStateHint}</small>
               </>
             )}
           </div>
@@ -192,7 +251,7 @@ const ContactUploader = ({ contacts, onContactsUploaded, error, disabled }) => {
           <div className="preview-header">
             <div className="preview-info">
               <Users size={20} />
-              <span>{contacts.length} contacts uploaded</span>
+              <span>{contacts.length} {previewTitle}</span>
             </div>
             <button
               type="button"
@@ -263,8 +322,7 @@ const ContactUploader = ({ contacts, onContactsUploaded, error, disabled }) => {
 
       <div className="upload-info">
         <small>
-          <strong>Supported format:</strong> CSV with columns: phone/mobile, name (optional), 
-          and any custom fields for personalization.
+          <strong>Supported format:</strong> {supportedColumnsHelp}
         </small>
       </div>
     </div>

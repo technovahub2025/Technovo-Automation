@@ -11,6 +11,7 @@ const mapLeadForView = (lead) => ({
   callerNumber: lead?.callerNumber || lead?.caller?.phoneNumber || '',
   notes: lead?.notes || lead?.bookingDetails?.notes || '',
   workflowName: lead?.workflowName || lead?.workflow?.displayName || '',
+  workflowId: lead?.workflowId || lead?.workflow?._id || '',
   audioPrompts: Array.isArray(lead?.audioPrompts)
     ? lead.audioPrompts
     : Array.isArray(lead?.audioRecordings)
@@ -27,6 +28,7 @@ const LeadsPage = () => {
   const [expandedRow, setExpandedRow] = useState(null);
   const [selectedLeadIds, setSelectedLeadIds] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
   const [stats, setStats] = useState({ contactsUsed: 0 });
   const [pagination, setPagination] = useState({
     page: 1,
@@ -90,6 +92,48 @@ const LeadsPage = () => {
     }
   }, [filters]);
 
+  const matchesLeadFilters = useCallback((lead, activeFilters) => {
+    if (!lead) return false;
+    const searchValue = String(activeFilters.search || '').toLowerCase();
+    const statusFilter = String(activeFilters.status || '').toLowerCase();
+    const workflowFilter = String(activeFilters.workflowId || '');
+    const nameValue = `${lead.callerName || ''} ${lead.callerNumber || ''}`.toLowerCase();
+    const leadStatus = String(lead.status || '').toLowerCase();
+    const leadWorkflowId = String(lead.workflowId || lead.workflow?._id || '');
+
+    if (searchValue && !nameValue.includes(searchValue)) return false;
+    if (statusFilter && leadStatus !== statusFilter.toLowerCase()) return false;
+    if (workflowFilter && leadWorkflowId !== workflowFilter) return false;
+    return true;
+  }, []);
+
+  const applyLiveLeadUpdate = useCallback((payload) => {
+    const leadPayload = payload?.lead || payload?.leadData || payload?.leadDetails || payload;
+    const leadId = leadPayload?._id || leadPayload?.leadId || leadPayload?.id;
+    if (!leadId) return false;
+
+    setLeads((prev) => {
+      const next = Array.isArray(prev) ? [...prev] : [];
+      const index = next.findIndex((item) => String(item?._id) === String(leadId));
+      const mappedLead = mapLeadForView(leadPayload);
+      const matchesFilters = matchesLeadFilters(mappedLead, filters);
+
+      if (index >= 0) {
+        if (matchesFilters) {
+          next[index] = { ...next[index], ...mappedLead };
+        } else {
+          next.splice(index, 1);
+        }
+      } else if (matchesFilters) {
+        next.unshift(mappedLead);
+      }
+
+      return next;
+    });
+
+    return true;
+  }, [filters, matchesLeadFilters]);
+
   useEffect(() => {
     fetchIvrMenus();
   }, [fetchIvrMenus]);
@@ -119,9 +163,14 @@ const LeadsPage = () => {
       scheduleRefresh();
     };
 
-    socket.on('inbound_call_update', scheduleRefresh);
-    socket.on('call_status_update', scheduleRefresh);
-    socket.on('calls_update', scheduleRefresh);
+    const handleSocketUpdate = (payload) => {
+      const applied = applyLiveLeadUpdate(payload);
+      if (!applied) scheduleRefresh();
+    };
+
+    socket.on('inbound_call_update', handleSocketUpdate);
+    socket.on('call_status_update', handleSocketUpdate);
+    socket.on('calls_update', handleSocketUpdate);
     socket.on('ivr_config_created', handleIvrConfigChanged);
     socket.on('ivr_config_updated', handleIvrConfigChanged);
     socket.on('ivr_config_deleted', handleIvrConfigChanged);
@@ -130,14 +179,14 @@ const LeadsPage = () => {
       if (refreshTimerRef.current) {
         clearTimeout(refreshTimerRef.current);
       }
-      socket.off('inbound_call_update', scheduleRefresh);
-      socket.off('call_status_update', scheduleRefresh);
-      socket.off('calls_update', scheduleRefresh);
+      socket.off('inbound_call_update', handleSocketUpdate);
+      socket.off('call_status_update', handleSocketUpdate);
+      socket.off('calls_update', handleSocketUpdate);
       socket.off('ivr_config_created', handleIvrConfigChanged);
       socket.off('ivr_config_updated', handleIvrConfigChanged);
       socket.off('ivr_config_deleted', handleIvrConfigChanged);
     };
-  }, [socket, connected, fetchLeads, fetchIvrMenus]);
+  }, [socket, connected, fetchLeads, fetchIvrMenus, applyLiveLeadUpdate]);
 
   const handleSearchChange = (e) => {
     setFilters((prev) => ({ ...prev, search: e.target.value, page: 1 }));
@@ -166,24 +215,6 @@ const LeadsPage = () => {
     if (!dateString) return '-';
     return new Date(dateString).toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit'
-    });
-  };
-
-  const handleSelectAll = (e) => {
-    if (e.target.checked) {
-      setSelectedLeadIds(leads.map((lead) => lead._id));
-      return;
-    }
-    setSelectedLeadIds([]);
-  };
-
-  const handleSelectLead = (leadId, checked) => {
-    setSelectedLeadIds((prev) => {
-      if (checked) {
-        if (prev.includes(leadId)) return prev;
-        return [...prev, leadId];
-      }
-      return prev.filter((id) => id !== leadId);
     });
   };
 
@@ -235,13 +266,19 @@ const LeadsPage = () => {
   };
 
   const allVisibleSelected = leads.length > 0 && selectedLeadIds.length === leads.length;
+  const hasVisibleSelection = selectedLeadIds.length > 0;
+  const showClearVisible = selectionMode;
 
   const handleToggleSelectVisible = () => {
-    if (allVisibleSelected) {
-      setSelectedLeadIds([]);
-      return;
-    }
-    setSelectedLeadIds(leads.map((lead) => lead._id));
+    setSelectionMode((prev) => {
+      const next = !prev;
+      if (next) {
+        setSelectedLeadIds(leads.map((lead) => lead._id));
+      } else {
+        setSelectedLeadIds([]);
+      }
+      return next;
+    });
   };
 
   const escapeHtml = (value = '') =>
@@ -349,7 +386,15 @@ const LeadsPage = () => {
 
         <button
           className={`btn-filter-toggle ${showFilters ? 'active' : ''}`}
-          onClick={() => setShowFilters((prev) => !prev)}
+          onClick={() => {
+            setShowFilters((prev) => {
+              const next = !prev;
+              if (!next && selectedLeadIds.length === 0) {
+                setSelectionMode(false);
+              }
+              return next;
+            });
+          }}
           type="button"
           aria-expanded={showFilters}
           aria-label="Toggle filters"
@@ -374,62 +419,65 @@ const LeadsPage = () => {
 
       {showFilters && (
         <div className="filters-panel">
-          <div className="filters-grid">
-            <div className="filter-field">
-              <label>Status</label>
-              <select
-                className="status-filter"
-                value={filters.status}
-                onChange={handleStatusFilterChange}
-                title="Filter by status"
-              >
-                <option value="">All Status</option>
-                <option value="PENDING_AGENT">Pending Agent</option>
-                <option value="IN_PROGRESS">In Progress</option>
-                <option value="CONFIRMED">Confirmed</option>
-                <option value="CANCELLED">Cancelled</option>
-                <option value="COMPLETED">Completed</option>
-              </select>
-            </div>
+          <div className="filter-row">
+            <div className="filter-left">
+              <div className="filter-item">
+                <label>Status</label>
+                <select
+                  className="status-filter"
+                  value={filters.status}
+                  onChange={handleStatusFilterChange}
+                  title="Filter by status"
+                >
+                  <option value="">All Status</option>
+                  <option value="PENDING_AGENT">Pending Agent</option>
+                  <option value="IN_PROGRESS">In Progress</option>
+                  <option value="CONFIRMED">Confirmed</option>
+                  <option value="CANCELLED">Cancelled</option>
+                  <option value="COMPLETED">Completed</option>
+                </select>
+              </div>
 
-            <div className="filter-field">
-              <label>IVR</label>
-              <select
-                className="status-filter"
-                value={filters.workflowId}
-                onChange={handleWorkflowChange}
-                title="Filter by IVR"
-              >
-                <option value="">All IVRs</option>
-                {ivrMenus.map((menu) => (
-                  <option key={menu._id} value={menu._id}>
-                    {menu.displayName || menu.promptKey}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <div className="filter-item">
+                <label>IVR</label>
+                <select
+                  className="status-filter"
+                  value={filters.workflowId}
+                  onChange={handleWorkflowChange}
+                  title="Filter by IVR"
+                >
+                  <option value="">All IVRs</option>
+                  {ivrMenus.map((menu) => (
+                    <option key={menu._id} value={menu._id}>
+                      {menu.displayName || menu.promptKey}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            <div className="filter-field">
+            <div className="filter-item select-block">
               <label>Select</label>
               <button
-                className="btn-select-toggle"
-                onClick={handleToggleSelectVisible}
                 type="button"
-              >
-                {allVisibleSelected ? 'Clear Selection' : 'Select All Visible'}
-              </button>
+                className="filter-action-btn select-btn"
+                  onClick={handleToggleSelectVisible}
+                >
+                  {showClearVisible ? 'Clear All Visible' : 'Select All Visible'}
+                </button>
+              </div>
             </div>
 
-            <div className="filter-field filter-actions">
+            <div className="filter-item delete-block">
               <label>Delete</label>
               <button
-                className="btn-delete-selected"
+                type="button"
+                className="filter-action-btn danger icon-only delete-btn"
                 onClick={handleDeleteSelected}
                 disabled={loading || selectedLeadIds.length === 0}
+                aria-label="Delete selected leads"
                 title={selectedLeadIds.length === 0 ? 'Select leads to delete' : `Delete ${selectedLeadIds.length} selected`}
               >
                 <Trash2 size={16} />
-                Delete Selected {selectedLeadIds.length > 0 ? `(${selectedLeadIds.length})` : ''}
               </button>
             </div>
           </div>
@@ -440,7 +488,7 @@ const LeadsPage = () => {
         {loading ? (
           <div className="loading-state">Loading leads...</div>
         ) : (
-          <table className="leads-table">
+          <table className={`leads-table ${selectionMode ? 'selection-mode' : ''}`}>
             <thead>
               <tr>
                 <th className="checkbox-col">
@@ -605,3 +653,20 @@ const LeadsPage = () => {
 };
 
 export default LeadsPage;
+  const handleSelectAll = (e) => {
+    if (e.target.checked) {
+      setSelectedLeadIds(leads.map((lead) => lead._id));
+      return;
+    }
+    setSelectedLeadIds([]);
+  };
+
+  const handleSelectLead = (leadId, checked) => {
+    setSelectedLeadIds((prev) => {
+      if (checked) {
+        if (prev.includes(leadId)) return prev;
+        return [...prev, leadId];
+      }
+      return prev.filter((id) => id !== leadId);
+    });
+  };

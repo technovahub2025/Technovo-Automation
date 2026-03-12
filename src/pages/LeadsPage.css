@@ -207,34 +207,120 @@
 .filters-panel {
     background: #ffffff;
     border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 14px;
+    border-radius: 12px;
+    padding: 8px 12px;
     margin-top: -8px;
     margin-bottom: 16px;
-    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    box-shadow: none;
+    width: 100%;
 }
 
-.filters-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
+.filter-row {
+  display: grid;
+  grid-template-columns: max-content max-content 1fr max-content max-content;
+  column-gap: 10px;
+  row-gap: 14px;
+  align-items: end;
+  width: 100%;
+  background: #ffffff;
+  padding: 0;
 }
 
-.filter-field {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+.filter-left {
+    display: contents;
 }
 
-.filter-field label {
+.filter-item {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.filter-item.select-block {
+  justify-self: end;
+  align-items: flex-start;
+}
+
+.filter-item.delete-block {
+  justify-self: end;
+  align-items: flex-start;
+}
+
+.filter-item.select-block .filter-action-btn,
+.filter-item.delete-block .filter-action-btn {
+  margin-top: 6px;
+}
+
+.filter-item label,
+.filter-item span {
     font-size: 12px;
     font-weight: 600;
     color: #64748b;
 }
 
-.filter-actions .btn-delete-selected {
-    width: 100%;
+.filters-panel .filter-item select {
+    width: 220px;
+    height: 40px;
+}
+
+.select-btn {
+    margin-top: 20px;
+    width: 220px;
+}
+
+.filter-action-btn.icon-only {
+    width: 40px;
+    padding: 0;
+}
+
+.delete-btn {
+    background: #ffecec;
+    border: 1px solid #ffbdbd;
+    padding: 8px 12px;
+    border-radius: 8px;
+}
+
+.filter-action-btn {
+    display: inline-flex;
+    align-items: center;
     justify-content: center;
+    height: 40px;
+    padding: 0 12px;
+    border-radius: 10px;
+    border: 1px solid #dbe3ee;
+    background: #fff;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+
+.filter-action-btn:hover {
+    border-color: #2563eb;
+    color: #1d4ed8;
+    background: #eff6ff;
+}
+
+.filter-action-btn.danger:hover {
+    border-color: #ef4444;
+    color: #b91c1c;
+    background: #fee2e2;
+}
+
+.filter-action-btn.danger {
+    border-color: #fecaca;
+    color: #b91c1c;
+    background: #fff5f5;
+}
+
+.filter-action-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.leads-table:not(.selection-mode) .checkbox-col input {
+    visibility: hidden;
 }
 
 .btn-refresh:hover,
