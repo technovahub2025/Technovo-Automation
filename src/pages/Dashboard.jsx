@@ -4,7 +4,7 @@ const Dashboard = () => {
     return (
         <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
             <iframe
-                src="https://nexion-ruby.vercel.app/"
+                src="https://technovahub.in/nexion/landingpage"
                 title="Nexion Dashboard"
                 style={{
                     width: '100%',
