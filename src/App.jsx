@@ -27,7 +27,11 @@ import AdminMultiStep from "./pages/admin";
 import ForgotPassword from "./pages/forgotpassword";
 import ResetPassword from "./pages/resetpassword";
 import BroadcastDashboard from "./pages/BroadcastDashboard";
-import MetaAdsManager from "./pages/MetaAdsManager";
+import CampaignManagement from "./pages/campaignmanagement";
+
+
+
+
 
 function App() {
   return (
@@ -42,7 +46,7 @@ function App() {
         {/* App layout with nested routes */}
         <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}> 
           <Route index element={<Dashboard />} />
-          <Route path="ads-manager" element={<MetaAdsManager />} />
+          <Route path="ads-manager" element={<CampaignManagement />} />
           <Route path="inbox" element={<TeamInbox />} />
           <Route path="inbox/:conversationId" element={<TeamInbox />} />
           <Route path="broadcast-dashboard" element={<BroadcastDashboard />} />
@@ -53,6 +57,7 @@ function App() {
           <Route path="templates" element={<Templates />} />
           <Route path="templates/create" element={<CreateTemplate />} />
           <Route path="contacts" element={<Contacts />} />
+          <Route path="campaignmanagement" element={<CampaignManagement />} />
           <Route path="voice-automation" element={<VoiceAutomation />} />
           <Route path="voice-automation/inbound" element={<InboundCalls />} />
           <Route path="voice-automation/outbound" element={<OutboundCall />} />
@@ -74,6 +79,7 @@ function App() {
               </ProtectedRoute>
             }
           />
+       
         </Route>
 
         {/* Fallback route */}

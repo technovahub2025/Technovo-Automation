@@ -20,7 +20,8 @@ import {
     ChevronLeft,
     ChevronRight,
     Menu,
-    X
+    X,
+    UserPlus // Added for Audience Manager icon
 } from 'lucide-react';
 import logo from '../../src/assets/logo.png';
 import './Sidebar.css';
@@ -223,6 +224,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         isRouteActive('/broadcast') ||
         isRouteActive('/templates') ||
         isRouteActive('/contacts') ||
+        isRouteActive('/campaignmanagement') || // Audience maintenance (Campaign Management)
         currentPath.startsWith('/inbox');
 
     const isMissedCallsRouteActive = currentPath.startsWith('/missedcalls');
@@ -280,6 +282,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                             <span className="icon-label">Admin</span>
                         </div>
                     )}
+                  
 
                     {/* Dashboard Icon */}
                     <div
@@ -433,6 +436,12 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                         </>
                     )}
 
+
+                    
+
+
+                    
+
                     <div
                         className={`icon-item ${openMenu === 'settings' ? 'active' : ''}`}
                         onMouseEnter={(e) => {
@@ -550,6 +559,23 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                     <span>Team Inbox</span>
                                 </NavLink>
 
+                                {/* Audience Manager - New Button */}
+                                <NavLink
+                                    to="/campaignmanagement"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onClick={() => {
+                                        setLastBulkMessageItem('/campaignmanagement');
+                                        closeMobileMenusAfterNavigate();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        setOpenMenu(null);
+                                    }}
+                                >
+                                    <UserPlus size={20} />
+                                    <span>Audience Maintenance</span>
+                                </NavLink>
+
                                 <NavLink
                                     to="/broadcast"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -626,6 +652,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 </div>
                             </nav>
                         </>
+           
                     )}
                 </div>
             )}
