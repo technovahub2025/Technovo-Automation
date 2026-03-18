@@ -27,7 +27,6 @@ import AdminMultiStep from "./pages/admin";
 import ForgotPassword from "./pages/forgotpassword";
 import ResetPassword from "./pages/resetpassword";
 import BroadcastDashboard from "./pages/BroadcastDashboard";
-import MetaAdsManager from "./pages/MetaAdsManager";
 
 function App() {
   return (
@@ -42,7 +41,6 @@ function App() {
         {/* App layout with nested routes */}
         <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}> 
           <Route index element={<Dashboard />} />
-          <Route path="ads-manager" element={<MetaAdsManager />} />
           <Route path="inbox" element={<TeamInbox />} />
           <Route path="inbox/:conversationId" element={<TeamInbox />} />
           <Route path="broadcast-dashboard" element={<BroadcastDashboard />} />

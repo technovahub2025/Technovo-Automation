@@ -46,11 +46,6 @@ apiService.interceptors.request.use(
 apiService.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (!error.response) {
-      error.message =
-        "Backend unavailable. Start the backend server on http://localhost:3001 and try again.";
-    }
-
     console.error("API Error:", error.response?.data || error.message);
 
     if (error.response?.status === 401 && !error.config?.skipAuthRedirect) {
