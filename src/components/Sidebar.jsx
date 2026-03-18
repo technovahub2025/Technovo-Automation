@@ -16,6 +16,7 @@ import {
     LogIn,
     MessageCircle,
     Settings,
+    Megaphone,
     ChevronLeft,
     ChevronRight,
     Menu,
@@ -225,6 +226,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         currentPath.startsWith('/inbox');
 
     const isMissedCallsRouteActive = currentPath.startsWith('/missedcalls');
+    const isAdsManagerRouteActive = isRouteActive('/ads-manager');
 
     return (
         <div className={`sidebar-container ${isCompactMobile ? 'compact-mobile' : ''}`}>
@@ -290,6 +292,26 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                     >
                         <LayoutDashboard size={24} />
                         <span className="icon-label">Dashboard</span>
+                    </div>
+
+                    <div
+                        className={`icon-item ${isAdsManagerRouteActive ? 'active' : ''}`}
+                        onMouseEnter={() => {
+                            if (!isMobile) {
+                                setOpenMenu(null);
+                            }
+                        }}
+                        onClick={() => {
+                            setOpenMenu(null);
+                            navigate('/ads-manager');
+                        }}
+                        title="Ads Manager"
+                    >
+                        <Megaphone size={24} />
+                        <span className="icon-label icon-label-multiline">
+                            <span>Ads</span>
+                            <span>Manager</span>
+                        </span>
                     </div>
 
                     {/* Bulk Message Icon - Opens submenu */}
