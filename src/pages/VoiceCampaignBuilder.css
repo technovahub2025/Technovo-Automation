@@ -1,0 +1,63 @@
+.builder-page {
+  padding: 32px;
+  font-family: "Manrope", sans-serif;
+}
+
+.locked-banner {
+  background: #fee2e2;
+  color: #b91c1c;
+  padding: 10px 14px;
+  border-radius: 10px;
+  margin-bottom: 16px;
+  font-size: 13px;
+}
+
+.builder-steps {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.builder-step {
+  background: #fff;
+  border: 1px solid var(--nx-border);
+  border-radius: 12px;
+  padding: 12px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--nx-muted);
+}
+
+.builder-step.active {
+  border-color: var(--nx-primary);
+  color: var(--nx-text);
+  box-shadow: var(--nx-shadow);
+}
+
+.builder-step span {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #eff6ff;
+  color: var(--nx-primary);
+  font-weight: 700;
+}
+
+.builder-card {
+  background: var(--nx-card);
+  border-radius: var(--nx-radius);
+  border: 1px solid var(--nx-border);
+  box-shadow: var(--nx-shadow);
+  padding: 20px;
+}
+
+.builder-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 16px;
+}

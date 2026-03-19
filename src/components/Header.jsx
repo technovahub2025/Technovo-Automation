@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
-import { Search, Bell } from "lucide-react";
+import { Search, Bell, UserPlus } from "lucide-react";
 import { useNavigate } from "react-router-dom";
+import axios from "axios";
 import { whatsappService } from "../services/whatsappService";
 import "./Header.css";
 
@@ -8,9 +9,20 @@ const Header = () => {
   const navigate = useNavigate();
   const [showNotificationBox, setShowNotificationBox] = useState(false);
   const [notifications, setNotifications] = useState([]);
+  const [docNotifications, setDocNotifications] = useState([]);
+  const [systemNotifications, setSystemNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const notificationRef = useRef(null);
   const closeTimerRef = useRef(null);
+  const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+  const token = localStorage.getItem("authToken") || localStorage.getItem("token");
+  const storedUser = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
+  })();
 
   const normalizePhone = (value) => String(value || "").replace(/\D/g, "");
   const isRealName = (value) => {
@@ -55,10 +67,22 @@ const Header = () => {
 
     const loadNotifications = async () => {
       try {
-        const [conversations, contacts] = await Promise.all([
+        const requests = [
           whatsappService.getConversations(),
           whatsappService.getContacts()
-        ]);
+        ];
+        if (API_URL && token) {
+          requests.push(
+            axios.get(`${API_URL}/api/meta-documents?status=rejected`, {
+              headers: { Authorization: `Bearer ${token}` }
+            })
+          );
+        }
+
+        const results = await Promise.all(requests);
+        const conversations = results[0];
+        const contacts = results[1];
+        const rejectedDocs = results[2]?.data?.data || [];
 
         const contactNameMap = new Map();
         (Array.isArray(contacts) ? contacts : []).forEach((contact) => {
@@ -145,10 +169,42 @@ const Header = () => {
           })
         );
         setNotifications(mapped);
+
+        const docAlerts = (Array.isArray(rejectedDocs) ? rejectedDocs : []).map((doc) => ({
+          id: doc._id || `${doc.docType}-${doc.createdAt || ""}`,
+          docType: doc.docType || "Document",
+          message:
+            "Document rejected. Please reupload or contact support at technovahubcarrer@gmail.com.",
+          time: doc.updatedAt || doc.createdAt || null
+        }));
+        setDocNotifications(docAlerts);
+
+        const adminNoticeKey = storedUser?.email
+          ? `adminApprovedNotified:${storedUser.email.toLowerCase()}`
+          : storedUser?.username
+            ? `adminApprovedNotified:${storedUser.username.toLowerCase()}`
+            : "adminApprovedNotified";
+        const shouldShowAdminNotice =
+          storedUser?.role === "admin" && !localStorage.getItem(adminNoticeKey);
+        setSystemNotifications(
+          shouldShowAdminNotice
+            ? [
+                {
+                  id: `admin-approved-${storedUser?.email || storedUser?.username || "user"}`,
+                  title: "Account Approved",
+                  message:
+                    "Your verification is complete and your admin access is now active.",
+                  time: new Date().toISOString()
+                }
+              ]
+            : []
+        );
       } catch (error) {
         console.error("Failed to load notifications:", error);
         setNotifications([]);
         setUnreadCount(0);
+        setDocNotifications([]);
+        setSystemNotifications([]);
       }
     };
 
@@ -170,6 +226,19 @@ const Header = () => {
       closeTimerRef.current = null;
     }
     setShowNotificationBox(true);
+    if (systemNotifications.length > 0 && storedUser) {
+      const adminNoticeKey = storedUser?.email
+        ? `adminApprovedNotified:${storedUser.email.toLowerCase()}`
+        : storedUser?.username
+          ? `adminApprovedNotified:${storedUser.username.toLowerCase()}`
+          : "adminApprovedNotified";
+      try {
+        localStorage.setItem(adminNoticeKey, "1");
+      } catch {
+        // ignore storage issues
+      }
+      setSystemNotifications([]);
+    }
   };
 
   const closeNotificationBoxWithDelay = () => {
@@ -185,6 +254,26 @@ const Header = () => {
     navigate(`/inbox/${item.conversationId}`);
   };
 
+  const handleSystemNotificationClick = () => {
+    if (storedUser) {
+      const adminNoticeKey = storedUser?.email
+        ? `adminApprovedNotified:${storedUser.email.toLowerCase()}`
+        : storedUser?.username
+          ? `adminApprovedNotified:${storedUser.username.toLowerCase()}`
+          : "adminApprovedNotified";
+      try {
+        localStorage.setItem(adminNoticeKey, "1");
+      } catch {
+        // ignore storage issues
+      }
+    }
+    setSystemNotifications([]);
+    setShowNotificationBox(false);
+  };
+
+  const totalNotifications = unreadCount + docNotifications.length + systemNotifications.length;
+
+
   return (
     <header className="header">
       <div className="header-left">
@@ -197,11 +286,18 @@ const Header = () => {
           <input type="text" placeholder="Search..." />
         </div>
 
+        <button
+          type="button"
+          className="register-btn"
+          onClick={() => navigate("/register-docs")}
+        >
+          <UserPlus size={16} />
+          Register
+        </button>
+
         <div
           className="notification-wrap"
           ref={notificationRef}
-          onMouseEnter={openNotificationBox}
-          onMouseLeave={closeNotificationBoxWithDelay}
         >
           <button
             className="icon-button"
@@ -209,8 +305,8 @@ const Header = () => {
             onClick={() => setShowNotificationBox((prev) => !prev)}
           >
             <Bell size={20} />
-            {unreadCount > 0 ? (
-              <span className="notification-count">{unreadCount > 99 ? "99+" : unreadCount}</span>
+            {totalNotifications > 0 ? (
+              <span className="notification-count">{totalNotifications > 99 ? "99+" : totalNotifications}</span>
             ) : (
               <span className="notification-dot"></span>
             )}
@@ -219,33 +315,80 @@ const Header = () => {
           {showNotificationBox && (
             <div className="notification-box">
               <div className="notification-box-title">Notifications</div>
-              {notifications.length === 0 ? (
+              {docNotifications.length === 0 &&
+              notifications.length === 0 &&
+              systemNotifications.length === 0 ? (
                 <div className="notification-box-item muted">
                   <span>No unread messages</span>
                 </div>
               ) : (
-                notifications.map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    className="notification-box-item"
-                    onClick={() => handleNotificationClick(item)}
-                  >
-                    <span className={`notification-mini-dot ${item.unread > 0 ? "active" : ""}`}></span>
-                    <div className="notification-content">
-                      <div className="notification-top-row">
-                        <strong>{item.name}</strong>
-                        <span>{formatNotificationTime(item.time)}</span>
+                <>
+                  {systemNotifications.length > 0 && (
+                    <div className="notification-box-section">Account Updates</div>
+                  )}
+                  {systemNotifications.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="notification-box-item"
+                      onClick={handleSystemNotificationClick}
+                    >
+                      <span className="notification-mini-dot active"></span>
+                      <div className="notification-content">
+                        <div className="notification-top-row">
+                          <strong>{item.title}</strong>
+                          <span>{formatNotificationTime(item.time)}</span>
+                        </div>
+                        <div className="notification-message">{item.message}</div>
                       </div>
-                      <div className="notification-message">{item.message}</div>
+                    </button>
+                  ))}
+
+                  {docNotifications.length > 0 && (
+                    <div className="notification-box-section">Document Alerts</div>
+                  )}
+                  {docNotifications.map((item) => (
+                    <div key={item.id} className="notification-box-item">
+                      <span className="notification-mini-dot active"></span>
+                      <div className="notification-content">
+                        <div className="notification-top-row">
+                          <strong>{item.docType}</strong>
+                          <span>{formatNotificationTime(item.time)}</span>
+                        </div>
+                        <div className="notification-message">
+                          {item.message}
+                        </div>
+                      </div>
                     </div>
-                  </button>
-                ))
+                  ))}
+
+                  {notifications.length > 0 && (
+                    <div className="notification-box-section">Unread Messages</div>
+                  )}
+                  {notifications.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="notification-box-item"
+                      onClick={() => handleNotificationClick(item)}
+                    >
+                      <span className={`notification-mini-dot ${item.unread > 0 ? "active" : ""}`}></span>
+                      <div className="notification-content">
+                        <div className="notification-top-row">
+                          <strong>{item.name}</strong>
+                          <span>{formatNotificationTime(item.time)}</span>
+                        </div>
+                        <div className="notification-message">{item.message}</div>
+                      </div>
+                    </button>
+                  ))}
+                </>
               )}
             </div>
           )}
         </div>
       </div>
+
     </header>
   );
 };

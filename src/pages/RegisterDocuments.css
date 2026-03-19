@@ -1,0 +1,173 @@
+.register-docs {
+  padding: 32px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.register-docs__header {
+  margin-bottom: 20px;
+}
+
+.register-docs__header h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  color: #111827;
+}
+
+.register-docs__header p {
+  margin: 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.register-docs__card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+}
+
+.register-docs__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.register-docs__grid label,
+.register-docs__doc-row {
+  display: grid;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.register-docs__grid input,
+.register-docs__doc-row input[type="file"] {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.register-docs__grid select {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  background: #ffffff;
+}
+
+.register-docs__section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111827;
+  margin-bottom: 12px;
+}
+
+.register-docs__note {
+  font-size: 12px;
+  color: #0f172a;
+  margin-top: -6px;
+  margin-bottom: 12px;
+  background: #fff4d6;
+  border: 1px solid #facc15;
+  padding: 6px 10px;
+  border-radius: 8px;
+  display: inline-block;
+  font-weight: 600;
+}
+
+.register-docs__docs {
+  display: grid;
+  gap: 12px;
+}
+
+.register-docs__doc-row span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.register-docs__doc-row em {
+  font-size: 11px;
+  color: #6b7280;
+  font-style: normal;
+  font-weight: 500;
+}
+
+.register-docs__actions {
+  margin-top: 24px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.register-docs__terms {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #374151;
+  margin-right: auto;
+}
+
+.terms-link {
+  color: #2563eb;
+  text-decoration: underline;
+}
+
+.register-docs__terms input {
+  width: 16px;
+  height: 16px;
+  accent-color: #2563eb;
+}
+
+
+.primary-btn,
+.secondary-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary-btn {
+  background: #2563eb;
+  color: #ffffff;
+}
+
+.secondary-btn {
+  background: #f3f4f6;
+  color: #374151;
+}
+
+.field-error {
+  color: #dc2626;
+  font-size: 12px;
+}
+
+.register-docs__error {
+  background: #fee2e2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}
+
+.register-docs__success {
+  background: #dcfce7;
+  border: 1px solid #bbf7d0;
+  color: #15803d;
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 12px;
+  margin-bottom: 12px;
+}

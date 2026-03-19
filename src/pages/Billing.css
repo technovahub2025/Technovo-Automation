@@ -1,0 +1,60 @@
+.billing-page {
+  padding: 32px;
+  font-family: "Manrope", sans-serif;
+}
+
+.nx-page__header {
+  margin-bottom: 24px;
+}
+
+.nx-subtitle {
+  color: var(--nx-muted);
+  margin-top: 6px;
+}
+
+.billing-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.billing-card {
+  background: var(--nx-card);
+  border: 1px solid var(--nx-border);
+  border-radius: var(--nx-radius);
+  padding: 20px;
+  box-shadow: var(--nx-shadow);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.billing-card h3 {
+  margin: 0;
+  font-family: "Sora", sans-serif;
+}
+
+.billing-price {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.billing-note {
+  color: var(--nx-muted);
+  font-size: 13px;
+}
+
+.billing-card ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  color: var(--nx-muted);
+  font-size: 13px;
+  display: grid;
+  gap: 6px;
+}
+
+.billing-card li::before {
+  content: "• ";
+  color: var(--nx-primary);
+}

@@ -1,0 +1,76 @@
+@import url("https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700&family=Sora:wght@500;600;700&display=swap");
+
+:root {
+  --nx-primary: #2563eb;
+  --nx-secondary: #0ea5e9;
+  --nx-accent: #6366f1;
+  --nx-bg: #f8fafc;
+  --nx-card: #ffffff;
+  --nx-text: #0f172a;
+  --nx-muted: #64748b;
+  --nx-border: #e2e8f0;
+  --nx-shadow: 0 8px 32px rgba(0, 0, 0, 0.08);
+  --nx-radius: 12px;
+}
+
+.nx-card {
+  background: var(--nx-card);
+  border-radius: var(--nx-radius);
+  box-shadow: var(--nx-shadow);
+  border: 1px solid var(--nx-border);
+}
+
+.nx-title {
+  font-family: "Sora", sans-serif;
+  color: var(--nx-text);
+}
+
+.nx-body {
+  font-family: "Manrope", sans-serif;
+  color: var(--nx-text);
+}
+
+.primary-btn {
+  background: linear-gradient(135deg, var(--nx-primary), var(--nx-accent));
+  color: #fff;
+  border: none;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.primary-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(37, 99, 235, 0.25);
+}
+
+.ghost-btn {
+  background: #fff;
+  border: 1px solid var(--nx-border);
+  color: var(--nx-text);
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.ghost-btn:hover {
+  transform: translateY(-1px);
+}
+
+.nx-page {
+  background: var(--nx-bg);
+  min-height: 100%;
+}
+
+.nx-page__header {
+  margin-bottom: 20px;
+}
+
+.nx-subtitle {
+  color: var(--nx-muted);
+  margin-top: 6px;
+}

@@ -1,146 +1,148 @@
-import React, { useContext } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import React, { useState } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
-import { AuthContext } from "../pages/authcontext";
-import {
-  LayoutDashboard,
-  MessageSquare,
-  Radio,
-  Users,
-  LogOut,
-  FileText,
-  Phone,
-  PhoneMissed,
-  Mail,
-  LogIn,
-} from "lucide-react";
-import logo from "../../src/assets/logo.png";
+import "./login.css";
+import "../styles/theme.css";
+import { Mail, ArrowLeft } from "lucide-react";
+import authPageLogo from "../assets/logo(new).png";
 
-
-const SidebarItem = ({ icon: Icon, label, to, onClick }) => (
-  <NavLink
-    to={to}
-    onClick={onClick}
-    className={({ isActive }) => `sidebar-item ${isActive ? "active" : ""}`}
-  >
-    <Icon size={20} />
-    <span>{label}</span>
-  </NavLink>
-);
-
-const Sidebar = () => {
+const ForgotPassword = () => {
+  const [email, setEmail] = useState("");
+  const [errors, setErrors] = useState({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [success, setSuccess] = useState(false);
+  const [sentTo, setSentTo] = useState("");
   const navigate = useNavigate();
-  const { user, logout } = useContext(AuthContext);
 
-  const isLoggedIn = !!user;
-  const userName = user?.username || user?.name || "Guest";
-  const userRole = user?.role || "guest";
-
-  // ✅ Take API URL from ENV
   const API_URL = import.meta.env.VITE_API_ADMIN_URL;
 
-  // ✅ Take token key name from ENV
-  const TOKEN_KEY = import.meta.env.VITE_TOKEN_KEY || "authToken";
+  const validateForm = () => {
+    const newErrors = {};
+    if (!email.trim()) newErrors.email = "Email is required";
+    else if (!/\S+@\S+\.\S+/.test(email)) newErrors.email = "Email is invalid";
 
-  const getInitials = (name) => {
-    if (!name || name === "Guest") return "GU";
-    const words = name.split(" ");
-    if (words.length === 1) return name.substring(0, 2).toUpperCase();
-    return (words[0][0] + words[1][0]).toUpperCase();
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
   };
 
-  const handleLogout = async () => {
-    const token = localStorage.getItem(TOKEN_KEY);
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!validateForm()) return;
 
-    if (token) {
-      try {
-        await axios.post(
-          `${API_URL}/api/nexion/logout`,
-          {},
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-      } catch (err) {
-        console.log("Logout API failed:", err?.message);
-      }
+    setIsLoading(true);
+    try {
+      await axios.post(`${API_URL}/api/forgot-password`, { email });
+      setSuccess(true);
+      setSentTo(email);
+      setEmail("");
+      setErrors({});
+    } catch (err) {
+      setErrors({
+        general: err.response?.data?.message || "Failed to send reset email. Please try again.",
+      });
+    } finally {
+      setIsLoading(false);
     }
-
-    logout();
-    navigate("/login", { replace: true });
   };
+
+  if (success) {
+    return (
+      <div className="auth-shell auth-shell--center">
+        <div className="auth-card auth-card--center">
+          <div className="auth-brand__center">
+            <div className="auth-brand__logo-center">
+              <img src={authPageLogo} alt="Nexion" className="logo-image" />
+            </div>
+            <p className="auth-brand__subtitle">Intelligent communication cloud</p>
+          </div>
+
+          <div className="auth-card__header">
+            <h2>Check your email</h2>
+            <p>We sent a reset link to {sentTo || "your inbox"}.</p>
+          </div>
+
+          <div className="auth-success">
+            <div className="auth-success__icon">
+              <Mail size={28} />
+            </div>
+            <div>
+              <h3>Reset link sent</h3>
+              <p>Follow the instructions in the email to set a new password.</p>
+            </div>
+          </div>
+
+          <div className="auth-section">
+            <button
+              type="button"
+              className="primary-btn"
+              onClick={() => navigate("/login")}
+            >
+              Return to Login
+            </button>
+          </div>
+
+          <p className="auth-card__footer-note">Did not receive it? Check spam or try again.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <aside className="sidebar">
-      <div className="logo-container">
-        <div className="logo-icon">
-          <img src={logo} alt="Logo" />
-        </div>
-        <span className="logo-text">Technovo Hub</span>
-      </div>
-
-      <nav className="nav-menu">
-        {/* USER */}
-        {userRole === "user" && (
-          <>
-            <SidebarItem icon={LayoutDashboard} label="Dashboard" to="/" />
-            <SidebarItem icon={MessageSquare} label="Team Inbox" to="/inbox" />
-            <SidebarItem icon={FileText} label="Templates" to="/templates" />
-            <SidebarItem icon={Users} label="Contacts" to="/contacts" />
-          </>
-        )}
-
-        {/* ADMIN */}
-        {userRole === "admin" && (
-          <>
-            <SidebarItem icon={LayoutDashboard} label="Dashboard" to="/" />
-            <SidebarItem icon={Radio} label="Broadcast" to="/broadcast" />
-            <SidebarItem icon={MessageSquare} label="Team Inbox" to="/inbox" />
-            <SidebarItem icon={FileText} label="Templates" to="/templates" />
-            <SidebarItem icon={Users} label="Contacts" to="/contacts" />
-            <SidebarItem icon={Phone} label="Voice Automation" to="/voice-automation" />
-            <SidebarItem icon={PhoneMissed} label="MissedCalls" to="/missedcalls" />
-            <SidebarItem icon={Mail} label="Email Automation" to="/email-automation" />
-          </>
-        )}
-
-        {/* SUPER ADMIN */}
-        {userRole === "superadmin" && (
-          <>
-            <SidebarItem icon={LayoutDashboard} label="Admin" to="/admin" />
-            <SidebarItem icon={LayoutDashboard} label="Dashboard" to="/" />
-            <SidebarItem icon={Radio} label="Broadcast" to="/broadcast" />
-            <SidebarItem icon={MessageSquare} label="Team Inbox" to="/inbox" />
-            <SidebarItem icon={FileText} label="Templates" to="/templates" />
-            <SidebarItem icon={Users} label="Contacts" to="/contacts" />
-            <SidebarItem icon={Phone} label="Voice Automation" to="/voice-automation" />
-            <SidebarItem icon={PhoneMissed} label="MissedCalls" to="/missedcalls" />
-            <SidebarItem icon={Mail} label="Email Automation" to="/email-automation" />
-          </>
-        )}
-      </nav>
-
-      <div className="sidebar-footer">
-        {isLoggedIn ? (
-          <>
-            <div className="user-profile logged-in">
-              <div className="avatar">{getInitials(userName)}</div>
-              <span className="user-name">{userName}</span>
-            </div>
-
-            <div className="sidebar-item" onClick={handleLogout}>
-              <LogOut size={20} />
-              <span>Logout</span>
-            </div>
-          </>
-        ) : (
-          <div className="sidebar-item" onClick={() => navigate("/login")}>
-            <LogIn size={20} />
-            <span>Login</span>
+    <div className="auth-shell auth-shell--center">
+      <form className="auth-card auth-card--center" onSubmit={handleSubmit}>
+        <div className="auth-brand__center">
+          <div className="auth-brand__logo-center">
+            <img src={authPageLogo} alt="Nexion" className="logo-image" />
           </div>
-        )}
-      </div>
-    </aside>
+          <p className="auth-brand__subtitle">Intelligent communication cloud</p>
+        </div>
+
+        <div className="auth-card__header">
+          <h2>Reset your password</h2>
+          <p>Enter your email to receive a reset link.</p>
+        </div>
+
+        {errors.general && <div className="auth-error">{errors.general}</div>}
+
+        <div className="auth-section">
+          <div className="input-group">
+            <label>Email address</label>
+            <input
+              type="email"
+              placeholder="you@company.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              className={errors.email ? "error" : ""}
+              autoComplete="email"
+            />
+            {errors.email && <span className="error-text">{errors.email}</span>}
+          </div>
+
+          <button type="submit" className="primary-btn" disabled={isLoading}>
+            {isLoading ? "Sending..." : "Send Reset Link"}
+          </button>
+        </div>
+
+        <div className="auth-divider">
+          <span>OR</span>
+        </div>
+
+        <div className="auth-social">
+          <button
+            type="button"
+            className="social-btn"
+            onClick={() => navigate("/login")}
+          >
+            <ArrowLeft size={18} />
+            Back to Login
+          </button>
+        </div>
+
+        <p className="auth-card__footer-note">Remember your password? <Link to="/login">Sign In</Link></p>
+      </form>
+    </div>
   );
 };
 
-export default Sidebar;
+export default ForgotPassword;
 

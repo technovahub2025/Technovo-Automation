@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useContext } from "react";
+import { useNavigate } from "react-router-dom";
 import { AuthContext } from "./authcontext";
 import apiService from "../services/api";
-import { Lock, ArrowLeft, Eye, EyeOff, X, ShieldCheck } from "lucide-react";
+import { ArrowLeft, EyeOff, Eye, X, ShieldCheck, CreditCard, Users, FileCheck } from "lucide-react";
 import "./admin.css";
+import "../styles/theme.css";
 
 const AdminMultiStep = () => {
   const [step, setStep] = useState(0);
-  const { user } = useContext(AuthContext);
+  const { user, refreshSession } = useContext(AuthContext);
   const currentUserRole = user?.role || "user";
+  const navigate = useNavigate();
 
   // ------------------- USER REGISTRATION -------------------
   const [username, setUsername] = useState("");
@@ -35,6 +38,8 @@ const AdminMultiStep = () => {
 
   const [errors, setErrors] = useState({});
   const [loading, setLoading] = useState(false);
+  const [refreshingSession, setRefreshingSession] = useState(false);
+  const [refreshMessage, setRefreshMessage] = useState("");
 
   const backendUrl = import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_API_URL || "";
 
@@ -52,6 +57,39 @@ const AdminMultiStep = () => {
   useEffect(() => {
     fetchUsers();
   }, []);
+
+  useEffect(() => {
+    try {
+      const pending = localStorage.getItem("pendingAdminRegistration");
+      if (pending) {
+        const parsed = JSON.parse(pending);
+        if (parsed?.username || parsed?.email) {
+          setUsername(parsed.username || "");
+          setEmail(parsed.email || "");
+          setPassword(parsed.password || "");
+          if (parsed.password) {
+            setShowPassword(true);
+          }
+          setStep(1);
+        }
+      }
+    } catch {
+      // ignore invalid data
+    }
+  }, []);
+
+  const handleRefreshSession = async () => {
+    setRefreshMessage("");
+    setRefreshingSession(true);
+    try {
+      const result = await refreshSession();
+      setRefreshMessage(result.message || (result.ok ? "Session refreshed" : "Refresh failed"));
+    } catch (err) {
+      setRefreshMessage(err?.message || "Refresh failed");
+    } finally {
+      setRefreshingSession(false);
+    }
+  };
 
   // ------------------- REGISTER / EDIT ADMIN -------------------
   const handleRegisterSubmit = async (e) => {
@@ -115,6 +153,7 @@ const AdminMultiStep = () => {
         if (!createdAdminId) {
           throw new Error("Admin created but user id is missing in response");
         }
+        localStorage.removeItem("pendingAdminRegistration");
         setEditingUserId(createdAdminId);
         setPassword("");
         setShowPassword(false);
@@ -180,6 +219,7 @@ const AdminMultiStep = () => {
     if (!window.confirm("Are you sure you want to delete this user?")) return;
     try {
       await apiService.delete(`${backendUrl}/api/delete/${id}`);
+      setUsers((prev) => prev.filter((user) => user._id !== id));
       fetchUsers();
     } catch (err) {
       console.error("Delete error:", err);
@@ -236,7 +276,7 @@ const AdminMultiStep = () => {
   };
 
   return (
-    <div className="admin-multistep-page">
+    <div className="superadmin-shell">
       {/* EDIT MODAL */}
       {showEditModal && (
         <div className="modal-overlay" onClick={closeModal}>
@@ -374,40 +414,74 @@ const AdminMultiStep = () => {
         </div>
       )}
 
-      {/* USERS LIST */}
-      <div className="user-list">
-        <h2>All Admins</h2>
+      <header className="superadmin-header">
+        <div>
+          <h1 className="nx-title">Superadmin Control Center</h1>
+          <p className="superadmin-subtitle">
+            Manage platform admins, billing, approvals, and operational settings.
+          </p>
+        </div>
+        <div className="superadmin-actions">
+          {currentUserRole !== "user" && (
+            <button
+              type="button"
+              className="ghost-btn"
+              onClick={handleRefreshSession}
+              disabled={refreshingSession}
+              title="Refresh Firebase session"
+            >
+              {refreshingSession ? "Refreshing..." : "Refresh session"}
+            </button>
+          )}
+          <button type="button" className="primary-btn" onClick={handleCreateNewAdmin}>
+            Create Admin
+          </button>
+        </div>
+      </header>
 
+      {refreshMessage && <div className="inline-alert">{refreshMessage}</div>}
 
-        {/* USER ROLE: SHOW SPECIFIC DATA (Example) */}
-        {currentUserRole === "user" && (
-          <div className="user-specific-data" style={{ marginBottom: "20px", padding: "15px", background: "#f5f5f5", borderRadius: "8px" }}>
-            <h3>Your Performance</h3>
-            <p>Access Level: Standard User</p>
-            <p>No admin actions available.</p>
+      <div className="superadmin-grid">
+        {/* USERS LIST */}
+        <section className="superadmin-panel">
+          <div className="panel-header">
+            <h2>Admins</h2>
+            <span className="panel-meta">{users.length} total</span>
           </div>
-        )}
 
-        {users.length === 0 && <p className="no-data">No admins found.</p>}
-        {users.map((user) => (
-          <div key={user._id} className="user-card admin-details-card">
-            <div className="user-card-content">
-              <div className="user-header-info">
-                <strong>{user.username}</strong> <span className="user-email">({user.email})</span>
+          {currentUserRole === "user" && (
+            <div className="user-specific-data">
+              <h3>Your Performance</h3>
+              <p>Access Level: Standard User</p>
+              <p>No admin actions available.</p>
+            </div>
+          )}
+
+          <div className="user-list">
+            {users.length === 0 && <p className="no-data">No admins found.</p>}
+            {users.map((user) => (
+              <div key={user._id} className="user-card admin-details-card">
+                <div className="user-card-content">
+                  <div className="user-header-info">
+                    <strong>{user.username}</strong> <span className="user-email">({user.email})</span>
+                  </div>
+                </div>
+                <div className="user-card-actions">
+                  <button className="edit-btn" onClick={() => handleEdit(user)}>Edit</button>
+                  <button className="delete-btn" onClick={() => handleDelete(user._id)}>Delete</button>
+                </div>
               </div>
-            </div>
-            <div className="user-card-actions">
-
-              <button className="edit-btn" onClick={() => handleEdit(user)}>Edit</button>
-              <button className="delete-btn" onClick={() => handleDelete(user._id)}>Delete</button>
-
-            </div>
+            ))}
           </div>
-        ))}
-      </div>
+        </section>
 
+        <section className="superadmin-panel">
+          <div className="panel-header">
+            <h2>Admin Setup</h2>
+            <span className="panel-meta">Step-based onboarding</span>
+          </div>
 
-      <div className="admin-steps">
+          <div className="admin-steps">
         {step === 0 && (
           <div className="initial-screen admin-welcome-container">
             <div className="welcome-icon-box">
@@ -525,6 +599,35 @@ const AdminMultiStep = () => {
             </button>
           </form>
         )}
+          </div>
+        </section>
+      </div>
+
+      <div className="superadmin-control-grid">
+        <div className="control-card">
+          <div className="control-icon"><Users size={20} /></div>
+          <div>
+            <h4>Users & Companies</h4>
+            <p>View and manage onboarded companies and admins.</p>
+          </div>
+          <button className="ghost-btn">Open</button>
+        </div>
+        <div className="control-card">
+          <div className="control-icon"><FileCheck size={20} /></div>
+          <div>
+            <h4>Document Approvals</h4>
+            <p>Review Meta verification uploads and approve accounts.</p>
+          </div>
+          <button className="ghost-btn" onClick={() => navigate("/verification")}>Review</button>
+        </div>
+        <div className="control-card">
+          <div className="control-icon"><CreditCard size={20} /></div>
+          <div>
+            <h4>Plans & Payments</h4>
+            <p>Track subscriptions, invoices, and plan upgrades.</p>
+          </div>
+          <button className="ghost-btn">Manage</button>
+        </div>
       </div>
     </div>
   );

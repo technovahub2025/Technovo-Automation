@@ -24,6 +24,27 @@
     gap: 24px;
 }
 
+.register-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    border: 1px solid var(--color-border);
+    background: #ffffff;
+    color: var(--color-text-primary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.register-btn:hover {
+    border-color: rgba(59, 130, 246, 0.4);
+    box-shadow: 0 10px 20px rgba(59, 130, 246, 0.12);
+    transform: translateY(-1px);
+}
+
 .search-bar {
     display: flex;
     align-items: center;
@@ -128,6 +149,15 @@
     padding: 2px 4px;
 }
 
+.notification-box-section {
+    font-size: 11px;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin: 10px 8px 6px;
+}
+
 .notification-box-item {
     display: flex;
     align-items: flex-start;
@@ -202,6 +232,7 @@
     overflow: visible;
 }
 
+
 .user-profile {
     display: flex;
     align-items: center;
@@ -264,6 +295,11 @@
     .header-right {
         gap: 12px;
     }
+
+    .register-btn {
+        padding: 6px 10px;
+        font-size: 12px;
+    }
     
     .search-bar {
         width: 200px;
@@ -297,6 +333,10 @@
     
     .header-right {
         gap: 8px;
+    }
+
+    .register-btn {
+        display: none;
     }
     
     .search-bar {
