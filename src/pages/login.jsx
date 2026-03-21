@@ -308,7 +308,6 @@ const Login = () => {
               </button>
               {errors.password && <span className="error-text">{errors.password}</span>}
             </div>
-
             <div className="login-options">
               <label className="remember-me">
                 <input
@@ -322,7 +321,6 @@ const Login = () => {
                 Forgot Password?
               </Link>
             </div>
-
             <button type="submit" className="primary-btn" disabled={isLoading}>
               {isLoading ? "Signing In..." : "Sign In"}
             </button>

@@ -29,12 +29,25 @@ const AuthCallback = () => {
           const data = res?.data?.data || {};
           const user = {
             id: data.userId,
+            userId: data.userId,
+            username: data.username || "",
             email: data.email,
             role: data.role || "user",
             companyId: data.companyId,
-            companyRole: data.companyRole
+            companyRole: data.companyRole,
+            planCode: data.planCode,
+            featureFlags: data.featureFlags || {},
+            subscriptionStatus: data.subscriptionStatus,
+            trialStart: data.trialStart || null,
+            trialEnd: data.trialEnd || null,
+            trialUsage: data.trialUsage || null,
+            trialLimits: data.trialLimits || null,
+            documentStatus: data.documentStatus || "not_required",
+            workspaceAccessState: data.workspaceAccessState || "",
+            canPerformActions: data.canPerformActions !== false,
+            canViewAnalytics: data.canViewAnalytics !== false
           };
-          login(user, token);
+          login(user, token, "local");
           navigate("/", { replace: true });
         })
         .catch(() => {

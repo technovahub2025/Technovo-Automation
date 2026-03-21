@@ -61,6 +61,31 @@ export const AuthProvider = ({ children }) => {
     return { ok: false, message: "Refresh failed" };
   };
 
+  const refreshFromBackend = async () => {
+    const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+    const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
+    const token = localStorage.getItem(tokenKey) || localStorage.getItem("authToken");
+    if (!token) return { ok: false, message: "No token found" };
+    try {
+      const res = await axios.get(`${API_URL}/api/user/credentials`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = res?.data?.data;
+      if (data) {
+        const nextUser = {
+          ...(user || {}),
+          ...data,
+          id: data.userId || user?.id
+        };
+        login(nextUser, token, localStorage.getItem("authProvider") || "local");
+        return { ok: true, message: "Session refreshed" };
+      }
+      return { ok: false, message: "No user data" };
+    } catch (err) {
+      return { ok: false, message: err?.response?.data?.message || "Refresh failed" };
+    }
+  };
+
   useEffect(() => {
     const API_URL = import.meta.env.VITE_API_ADMIN_URL;
     let refreshTimer = null;
@@ -104,8 +129,16 @@ export const AuthProvider = ({ children }) => {
     };
   }, []);
 
+  useEffect(() => {
+    const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
+    const token = localStorage.getItem(tokenKey) || localStorage.getItem("authToken");
+    const provider = localStorage.getItem("authProvider");
+    if (!token || provider === "firebase") return;
+    refreshFromBackend();
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, refreshSession, loading: false }}>
+    <AuthContext.Provider value={{ user, login, logout, refreshSession, refreshFromBackend, loading: false }}>
       {children}
     </AuthContext.Provider>
   );

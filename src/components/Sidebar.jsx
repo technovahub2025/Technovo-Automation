@@ -102,6 +102,17 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
     const isLoggedIn = !!user;
     const userName = user?.username || user?.name || "Guest";
     const userRole = user?.role || "guest";
+    const subscriptionStatus = String(user?.subscriptionStatus || '').toLowerCase();
+    const workspaceAccessState = String(user?.workspaceAccessState || '').toLowerCase();
+    const featureFlags = user?.featureFlags || {};
+    const canViewAnalytics = user?.canViewAnalytics !== false;
+    const canUseBroadcast = Boolean(featureFlags.broadcastMessaging || featureFlags.teamInbox);
+    const canUseVoiceAutomation = Boolean(
+        featureFlags.voiceCampaign || featureFlags.inboundAutomation || featureFlags.outboundVoice
+    );
+    const canUseMissedCalls = Boolean(featureFlags.missedCall);
+    const canUseEmailAutomation = Boolean(featureFlags.workflowAutomation || featureFlags.analytics);
+    const canUseAdsManager = Boolean(featureFlags.adsManager) && canViewAnalytics;
 
     useEffect(() => {
         if (!isLoggedIn && openMenu === 'bulkMessage') {
@@ -341,7 +352,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                     </div>
 
                     {/* Bulk Message Icon - Opens submenu */}
-                    {isLoggedIn && (
+                    {isLoggedIn && canUseBroadcast && (
                         <div
                             className={`icon-item ${isBulkRouteActive ? 'active' : ''} ${openMenu === 'bulkMessage' ? 'expanded' : ''}`}
                             onMouseEnter={(e) => {
@@ -392,7 +403,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                     )}
 
                     {/* Other Icons */}
-                    {(userRole === "admin" || userRole === "superadmin") && (
+                    {isLoggedIn && (
                         <>
                             {/* <div
                                 className={`icon-item ${isRouteActive('/automation') ? 'active' : ''}`}
@@ -406,56 +417,62 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 <span className="icon-label">Automation</span>
                             </div> */}
 
-                    <div
-                        className={`icon-item ${isRouteActive('/voice-automation') ? 'active' : ''}`}
-                        onMouseEnter={() => {
-                            if (!isMobile) {
+                    {canUseVoiceAutomation && (
+                        <div
+                            className={`icon-item ${isRouteActive('/voice-automation') ? 'active' : ''}`}
+                            onMouseEnter={() => {
+                                if (!isMobile) {
+                                    setOpenMenu(null);
+                                }
+                            }}
+                            onClick={() => {
                                 setOpenMenu(null);
-                            }
-                        }}
-                        onClick={() => {
-                            setOpenMenu(null); // Close any open panel
-                            navigate('/voice-automation');
-                                }}
-                                title="Voice Automation"
-                            >
-                                <Phone size={24} />
-                                <span className="icon-label">Voice</span>
-                            </div>
+                                navigate('/voice-automation');
+                            }}
+                            title="Voice Automation"
+                        >
+                            <Phone size={24} />
+                            <span className="icon-label">Voice</span>
+                        </div>
+                    )}
 
-                    <div
-                        className={`icon-item ${isMissedCallsRouteActive ? 'active' : ''}`}
-                        onMouseEnter={() => {
-                            if (!isMobile) {
+                    {canUseMissedCalls && (
+                        <div
+                            className={`icon-item ${isMissedCallsRouteActive ? 'active' : ''}`}
+                            onMouseEnter={() => {
+                                if (!isMobile) {
+                                    setOpenMenu(null);
+                                }
+                            }}
+                            onClick={() => {
                                 setOpenMenu(null);
-                            }
-                        }}
-                        onClick={() => {
-                            setOpenMenu(null); // Close any open panel
-                            navigate('/missedcalls/overview');
-                                }}
-                                title="Missed Calls"
-                            >
-                                <PhoneMissed size={24} />
-                                <span className="icon-label">Missed</span>
-                            </div>
+                                navigate('/missedcalls/overview');
+                            }}
+                            title="Missed Calls"
+                        >
+                            <PhoneMissed size={24} />
+                            <span className="icon-label">Missed</span>
+                        </div>
+                    )}
 
-                    <div
-                        className={`icon-item ${isRouteActive('/email-automation') ? 'active' : ''}`}
-                        onMouseEnter={() => {
-                            if (!isMobile) {
+                    {canUseEmailAutomation && (
+                        <div
+                            className={`icon-item ${isRouteActive('/email-automation') ? 'active' : ''}`}
+                            onMouseEnter={() => {
+                                if (!isMobile) {
+                                    setOpenMenu(null);
+                                }
+                            }}
+                            onClick={() => {
                                 setOpenMenu(null);
-                            }
-                        }}
-                        onClick={() => {
-                            setOpenMenu(null); // Close any open panel
-                            navigate('/email-automation');
-                                }}
-                                title="Email Automation"
-                            >
-                                <Mail size={24} />
-                                <span className="icon-label">Email</span>
-                            </div>
+                                navigate('/email-automation');
+                            }}
+                            title="Email Automation"
+                        >
+                            <Mail size={24} />
+                            <span className="icon-label">Email</span>
+                        </div>
+                    )}
                         </>
                     )}
 

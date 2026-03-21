@@ -1,9 +1,10 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useContext } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import axios from "axios";
 import "./login.css";
 import "../styles/theme.css";
 import { Eye, EyeOff } from "lucide-react";
+import { AuthContext } from "./authcontext";
 import { auth, googleProvider } from "../firebase/firebase";
 import { signInWithPopup } from "firebase/auth";
 import authPageLogo from "../assets/logo(new).png";
@@ -14,6 +15,7 @@ const Register = () => {
   const [password, setPassword] = useState("");
   const [errors, setErrors] = useState({});
   const navigate = useNavigate();
+  const { login: loginUser } = useContext(AuthContext);
   const [showPassword, setShowPassword] = useState(false);
   const [activeTab, setActiveTab] = useState("email");
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -43,6 +45,7 @@ const Register = () => {
     localStorage.setItem("authToken", token);
     localStorage.setItem("authProvider", "firebase");
     localStorage.setItem(USER_KEY, JSON.stringify(user));
+    loginUser(user, token, "firebase");
 
     if (user.role === "superadmin") {
       navigate("/admin", { replace: true });
@@ -102,6 +105,12 @@ const Register = () => {
 
       if (res.data.token) {
         localStorage.setItem(TOKEN_KEY, res.data.token);
+        localStorage.setItem("authToken", res.data.token);
+      }
+
+      if (res.data.user && res.data.token) {
+        localStorage.setItem("authProvider", "local");
+        loginUser(res.data.user, res.data.token, "local");
       }
 
       setUsername("");
@@ -109,9 +118,9 @@ const Register = () => {
       setPassword("");
       setErrors({});
 
-      alert(`Registration successful! Welcome ${username}`);
+      alert(`Registration successful! Trial activated for ${username}`);
 
-      navigate("/login");
+      navigate("/", { replace: true });
     } catch (err) {
       console.error("Registration error:", err);
       setErrors({
@@ -183,6 +192,7 @@ const Register = () => {
       localStorage.setItem("authToken", token);
       localStorage.setItem("authProvider", "local");
       localStorage.setItem(USER_KEY, JSON.stringify(user));
+      loginUser(user, token, "local");
       navigate("/", { replace: true });
     } catch (err) {
       setErrors((prev) => ({

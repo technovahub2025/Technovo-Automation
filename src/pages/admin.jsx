@@ -1,16 +1,60 @@
-import React, { useState, useEffect, useContext } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AuthContext } from "./authcontext";
-import apiService from "../services/api";
-import { ArrowLeft, EyeOff, Eye, X, ShieldCheck, CreditCard, Users, FileCheck } from "lucide-react";
+import socketService from "../services/socketService";
+import { ArrowUpRight, BadgeCheck, CreditCard, Fingerprint, Settings2, Shield, ShieldCheck, UsersRound, WalletCards } from "lucide-react";
 import "./admin.css";
 import "../styles/theme.css";
 
-const AdminMultiStep = () => {
-  const [step, setStep] = useState(0);
-  const { user, refreshSession } = useContext(AuthContext);
-  const currentUserRole = user?.role || "user";
+const ADMIN_CARDS = [
+  {
+    key: "users",
+    icon: UsersRound,
+    label: "User operations",
+    title: "Users List",
+    description: "Open the full users and admins list, review account status, and manage edits from one place.",
+    path: "/admin/users",
+    action: "Open Users",
+    meta: "Search + role filters",
+    accent: "superadmin-dashboard-card--users"
+  },
+  {
+    key: "setup",
+    icon: Settings2,
+    label: "Admin onboarding",
+    title: "Admin Creation",
+    description: "Create a new admin account and finish Twilio and WhatsApp setup in a dedicated workflow.",
+    path: "/admin/admin-setup",
+    action: "Create Admin",
+    meta: "Guided setup flow",
+    accent: "superadmin-dashboard-card--setup"
+  },
+  {
+    key: "payments",
+    icon: WalletCards,
+    label: "Billing control",
+    title: "Payments Details",
+    description: "Manage plan pricing and review the live payments ledger with socket-based refresh updates.",
+    path: "/admin/payments",
+    action: "Open Payments",
+    meta: "Pricing + ledger tabs",
+    accent: "superadmin-dashboard-card--payments"
+  },
+  {
+    key: "verification",
+    icon: ShieldCheck,
+    label: "Verification review",
+    title: "Verification Docs",
+    description: "Review submitted registration documents, approve verification items, and move verified users into admin setup.",
+    path: "/verification",
+    action: "Open Verification",
+    meta: "Document review queue",
+    accent: "superadmin-dashboard-card--verification"
+  }
+];
+
+const AdminDashboard = () => {
   const navigate = useNavigate();
+  const [socketConnected, setSocketConnected] = useState(false);
 
   // ------------------- USER REGISTRATION -------------------
   const [username, setUsername] = useState("");
@@ -62,41 +106,19 @@ const AdminMultiStep = () => {
   };
 
   useEffect(() => {
-    fetchUsers();
-  }, []);
+    const socket = socketService.connect(import.meta.env.VITE_SOCKET_URL);
+    setSocketConnected(Boolean(socket?.connected));
 
-  useEffect(() => {
-    try {
-      const pending = localStorage.getItem("pendingAdminRegistration");
-      if (pending) {
-        const parsed = JSON.parse(pending);
-        if (parsed?.username || parsed?.email) {
-          setUsername(parsed.username || "");
-          setEmail(parsed.email || "");
-          setPassword(parsed.password || "");
-          if (parsed.password) {
-            setShowPassword(true);
-          }
-          setStep(1);
-        }
-      }
-    } catch {
-      // ignore invalid data
-    }
-  }, []);
+    const syncSocketStatus = () => setSocketConnected(Boolean(socketService.getSocket()?.connected));
+    socket?.on("connect", syncSocketStatus);
+    socket?.on("disconnect", syncSocketStatus);
 
-  const handleRefreshSession = async () => {
-    setRefreshMessage("");
-    setRefreshingSession(true);
-    try {
-      const result = await refreshSession();
-      setRefreshMessage(result.message || (result.ok ? "Session refreshed" : "Refresh failed"));
-    } catch (err) {
-      setRefreshMessage(err?.message || "Refresh failed");
-    } finally {
-      setRefreshingSession(false);
-    }
-  };
+    return () => {
+      socket?.off("connect", syncSocketStatus);
+      socket?.off("disconnect", syncSocketStatus);
+      socketService.disconnect();
+    };
+  }, []);
 
   // ------------------- REGISTER / EDIT ADMIN -------------------
   const handleRegisterSubmit = async (e) => {
@@ -165,7 +187,6 @@ const AdminMultiStep = () => {
         if (!createdAdminId) {
           throw new Error("Admin created but user id is missing in response");
         }
-        localStorage.removeItem("pendingAdminRegistration");
         setEditingUserId(createdAdminId);
         setPassword("");
         setShowPassword(false);
@@ -236,7 +257,6 @@ const AdminMultiStep = () => {
     if (!window.confirm("Are you sure you want to delete this user?")) return;
     try {
       await apiService.delete(`${backendUrl}/api/delete/${id}`);
-      setUsers((prev) => prev.filter((user) => user._id !== id));
       fetchUsers();
     } catch (err) {
       console.error("Delete error:", err);
@@ -299,106 +319,41 @@ const AdminMultiStep = () => {
 
   return (
     <div className="superadmin-shell">
-      {/* EDIT MODAL */}
-      {showEditModal && (
-        <div className="modal-overlay" onClick={closeModal}>
-          <div className="modal-content" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <h2>Edit Admin</h2>
-              <button className="modal-close" onClick={closeModal}>
-                <X size={20} />
-              </button>
+      <header className="superadmin-header">
+        <div className="superadmin-hero">
+          <div className="superadmin-hero__eyebrow">
+            <BadgeCheck size={16} />
+            <span>Superadmin workspace</span>
+          </div>
+          <div className="superadmin-hero__heading">
+            <div>
+              <h1 className="nx-title">Superadmin Control Center</h1>
+              <p className="superadmin-subtitle">
+                A full-width operations hub for user control, admin onboarding, and billing workflows with live system visibility.
+              </p>
             </div>
-
-            <form className="login-box" onSubmit={handleRegisterSubmit}>
-              <div className="form-row">
-                <label>Username</label>
-                <input
-                  type="text"
-                  placeholder="Username"
-                  value={username}
-                  onChange={(e) => setUsername(e.target.value)}
-                />
+            <div className="superadmin-hero__pulse">
+              <div className="superadmin-hero__pulse-ring" />
+              <span>{socketConnected ? "System online" : "Reconnecting services"}</span>
+            </div>
+          </div>
+          <div className="superadmin-overview-grid">
+            <article className="superadmin-overview-card">
+              <div className="superadmin-overview-card__icon">
+                <UsersRound size={18} />
               </div>
-
-              <div className="form-row">
-                <label>Email</label>
-                <input
-                  type="email"
-                  placeholder="Email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                />
+              <div>
+                <strong>User governance</strong>
+                <span>Account review, access control, and role-level management.</span>
               </div>
-
-
-
-              <div className="form-row">
-                <label>Twilio Account SID</label>
-                <input
-                  type="text"
-                  placeholder="Twilio Account SID"
-                  value={twilioAccountSid}
-                  onChange={(e) => setTwilioAccountSid(e.target.value)}
-                />
+            </article>
+            <article className="superadmin-overview-card">
+              <div className="superadmin-overview-card__icon">
+                <Fingerprint size={18} />
               </div>
-              <div className="form-row">
-                <label>Twilio Auth Token</label>
-                <div className="password-field">
-                  <input
-                    type={showTwilioToken ? "text" : "password"}
-                    placeholder="Twilio Auth Token"
-                    value={twilioAuthToken}
-                    onChange={(e) => setTwilioAuthToken(e.target.value)}
-                  />
-                  <span className="eye-icon" onClick={() => setShowTwilioToken(!showTwilioToken)}>
-                    {showTwilioToken ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </span>
-                </div>
-              </div>
-              <div className="form-row">
-                <label>Twilio Phone Number</label>
-                <input
-                  type="text"
-                  placeholder="Twilio Phone Number"
-                  value={twilioPhoneNumber}
-                  onChange={(e) => setTwilioPhoneNumber(e.target.value)}
-                />
-              </div>
-
-              <div className="form-row">
-                <label>WhatsApp ID</label>
-                <input
-                  type="text"
-                  placeholder="WhatsApp ID"
-                  value={whatsappId}
-                  onChange={(e) => setWhatsappId(e.target.value)}
-                />
-              </div>
-
-              <div className="form-row">
-                <label>WhatsApp Token</label>
-                <div className="password-field">
-                  <input
-                    type={showToken ? "text" : "password"}
-                    placeholder="WhatsApp Token"
-                    value={whatsappToken}
-                    onChange={(e) => setWhatsappToken(e.target.value)}
-                  />
-                  <span className="eye-icon" onClick={() => setShowToken(!showToken)}>
-                    {showToken ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </span>
-                </div>
-              </div>
-
-              <div className="form-row">
-                <label>WhatsApp Business</label>
-                <input
-                  type="text"
-                  placeholder="WhatsApp Business"
-                  value={whatsappBusiness}
-                  onChange={(e) => setWhatsappBusiness(e.target.value)}
-                />
+              <div>
+                <strong>Secure onboarding</strong>
+                <span>Provision new admins with setup steps aligned to your workflow.</span>
               </div>
 
               <div className="form-row">
@@ -470,281 +425,49 @@ const AdminMultiStep = () => {
                   onChange={(e) => setPhoneNumber(e.target.value)}
                 />
               </div>
-
-              <div className="form-row">
-                <label>Missed Call Webhook</label>
-                <input
-                  type="text"
-                  placeholder="Missed Call Webhook URL"
-                  value={missedCallWebhook}
-                  onChange={(e) => setMissedCallWebhook(e.target.value)}
-                />
+              <div>
+                <strong>Billing visibility</strong>
+                <span>Keep pricing controls and live payment activity in one place.</span>
               </div>
-
-              {errors.register && <span className="error-text">{errors.register}</span>}
-
-              <div className="modal-actions">
-                <button type="button" className="btn-cancel" onClick={closeModal}>
-                  Cancel
-                </button>
-                <button type="submit" disabled={loading} className="btn-submit">
-                  {loading ? "Updating..." : "Update Admin"}
-                </button>
-              </div>
-            </form>
+            </article>
           </div>
-        </div>
-      )}
-
-      <header className="superadmin-header">
-        <div>
-          <h1 className="nx-title">Superadmin Control Center</h1>
-          <p className="superadmin-subtitle">
-            Manage platform admins, billing, approvals, and operational settings.
-          </p>
-        </div>
-        <div className="superadmin-actions">
-          {currentUserRole !== "user" && (
-            <button
-              type="button"
-              className="ghost-btn"
-              onClick={handleRefreshSession}
-              disabled={refreshingSession}
-              title="Refresh Firebase session"
-            >
-              {refreshingSession ? "Refreshing..." : "Refresh session"}
-            </button>
-          )}
-          <button type="button" className="primary-btn" onClick={handleCreateNewAdmin}>
-            Create Admin
-          </button>
         </div>
       </header>
 
-      {refreshMessage && <div className="inline-alert">{refreshMessage}</div>}
-
-      <div className="superadmin-grid">
-        {/* USERS LIST */}
-        <section className="superadmin-panel">
-          <div className="panel-header">
-            <h2>Admins</h2>
-            <span className="panel-meta">{users.length} total</span>
-          </div>
-
-          {currentUserRole === "user" && (
-            <div className="user-specific-data">
-              <h3>Your Performance</h3>
-              <p>Access Level: Standard User</p>
-              <p>No admin actions available.</p>
-            </div>
-          )}
-
-          <div className="user-list">
-            {users.length === 0 && <p className="no-data">No admins found.</p>}
-            {users.map((user) => (
-              <div key={user._id} className="user-card admin-details-card">
-                <div className="user-card-content">
-                  <div className="user-header-info">
-                    <strong>{user.username}</strong> <span className="user-email">({user.email})</span>
+      <div className="superadmin-dashboard-grid">
+        {ADMIN_CARDS.map((card) => {
+          const Icon = card.icon;
+          return (
+            <section key={card.key} className={`superadmin-dashboard-card ${card.accent}`}>
+              <div className="superadmin-dashboard-card__top">
+                <div className="superadmin-dashboard-card__icon-wrap">
+                  <div className="superadmin-dashboard-card__icon">
+                    <Icon size={20} />
                   </div>
+                  <span className="superadmin-dashboard-card__label">{card.label}</span>
                 </div>
-                <div className="user-card-actions">
-                  <button className="edit-btn" onClick={() => handleEdit(user)}>Edit</button>
-                  <button className="delete-btn" onClick={() => handleDelete(user._id)}>Delete</button>
-                </div>
+                <span className="superadmin-dashboard-card__meta">{card.meta}</span>
               </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="superadmin-panel">
-          <div className="panel-header">
-            <h2>Admin Setup</h2>
-            <span className="panel-meta">Step-based onboarding</span>
-          </div>
-
-          <div className="admin-steps">
-        {step === 0 && (
-          <div className="initial-screen admin-welcome-container">
-            <div className="welcome-icon-box">
-              <ShieldCheck size={60} strokeWidth={1.5} />
-            </div>
-            <h3>Create Admin Account</h3>
-            <p>You can create login credentials for your admin</p>
-            <button onClick={handleCreateNewAdmin}>Create Admin</button>
-          </div>
-        )}
-
-        {step === 1 && (
-          <form className="login-box" onSubmit={handleRegisterSubmit}>
-            <div className="step-header">
-              <ArrowLeft className="back-icon" onClick={() => setStep(0)} />
-              <h2>Admin Registration</h2>
-            </div>
-
-            <input
-              type="text"
-              placeholder="Username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-            />
-
-            <div className="password-field">
-              <input
-                type={showPassword ? "text" : "password"}
-                placeholder="Enter password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-              <span className="eye-icon" onClick={togglePasswordVisibility}>
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-              </span>
-            </div>
-
-            {errors.register && <span className="error-text">{errors.register}</span>}
-            <button type="submit" disabled={loading}>
-              {loading ? "Saving..." : "Register"}
-            </button>
-          </form>
-        )}
-
-        {step === 2 && (
-          <form className="login-box" onSubmit={handleTwilioSubmit}>
-            <div className="step-header">
-              <ArrowLeft className="back-icon" onClick={() => setStep(1)} />
-              <h2>Twilio & WhatsApp Info</h2>
-            </div>
-
-            <input
-              type="text"
-              placeholder="Twilio Account SID"
-              value={twilioAccountSid}
-              onChange={(e) => setTwilioAccountSid(e.target.value)}
-            />
-            <div className="password-field">
-              <input
-                type={showTwilioToken ? "text" : "password"}
-                placeholder="Twilio Auth Token"
-                value={twilioAuthToken}
-                onChange={(e) => setTwilioAuthToken(e.target.value)}
-              />
-              <span className="eye-icon" onClick={() => setShowTwilioToken(!showTwilioToken)}>
-                {showTwilioToken ? <EyeOff size={18} /> : <Eye size={18} />}
-              </span>
-            </div>
-            <input
-              type="text"
-              placeholder="Twilio Phone Number"
-              value={twilioPhoneNumber}
-              onChange={(e) => setTwilioPhoneNumber(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="WhatsApp ID"
-              value={whatsappId}
-              onChange={(e) => setWhatsappId(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="WhatsApp Token"
-              value={whatsappToken}
-              onChange={(e) => setWhatsappToken(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="WhatsApp Business"
-              value={whatsappBusiness}
-              onChange={(e) => setWhatsappBusiness(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="Meta App ID"
-              value={metaAppId}
-              onChange={(e) => setMetaAppId(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="Meta App Secret"
-              value={metaAppSecret}
-              onChange={(e) => setMetaAppSecret(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="Meta Redirect URI"
-              value={metaRedirectUri}
-              onChange={(e) => setMetaRedirectUri(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="Meta User Access Token"
-              value={metaUserAccessToken}
-              onChange={(e) => setMetaUserAccessToken(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="Meta Ad Account ID"
-              value={metaAdAccountId}
-              onChange={(e) => setMetaAdAccountId(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="Phone Number"
-              value={phoneNumber}
-              onChange={(e) => setPhoneNumber(e.target.value)}
-            />
-            <input
-              type="text"
-              placeholder="Missed Call Webhook URL"
-              value={missedCallWebhook}
-              onChange={(e) => setMissedCallWebhook(e.target.value)}
-            />
-
-            {errors.twilio && <span className="error-text">{errors.twilio}</span>}
-            <button type="submit" disabled={loading}>
-              {loading ? "Saving..." : "Save Info"}
-            </button>
-          </form>
-        )}
-          </div>
-        </section>
-      </div>
-
-      <div className="superadmin-control-grid">
-        <div className="control-card">
-          <div className="control-icon"><Users size={20} /></div>
-          <div>
-            <h4>Users & Companies</h4>
-            <p>View and manage onboarded companies and admins.</p>
-          </div>
-          <button className="ghost-btn">Open</button>
-        </div>
-        <div className="control-card">
-          <div className="control-icon"><FileCheck size={20} /></div>
-          <div>
-            <h4>Document Approvals</h4>
-            <p>Review Meta verification uploads and approve accounts.</p>
-          </div>
-          <button className="ghost-btn" onClick={() => navigate("/verification")}>Review</button>
-        </div>
-        <div className="control-card">
-          <div className="control-icon"><CreditCard size={20} /></div>
-          <div>
-            <h4>Plans & Payments</h4>
-            <p>Track subscriptions, invoices, and plan upgrades.</p>
-          </div>
-          <button className="ghost-btn">Manage</button>
-        </div>
+              <div className="superadmin-dashboard-card__content">
+                <h2>{card.title}</h2>
+                <p>{card.description}</p>
+              </div>
+              <div className="superadmin-dashboard-card__footer">
+                <div className="superadmin-dashboard-card__hint">
+                  <Shield size={15} />
+                  <span>Production-ready workflow</span>
+                </div>
+                <button className="primary-btn superadmin-dashboard-card__action" onClick={() => navigate(card.path)}>
+                  <span>{card.action}</span>
+                  <ArrowUpRight size={16} />
+                </button>
+              </div>
+            </section>
+          );
+        })}
       </div>
     </div>
   );
 };
 
-export default AdminMultiStep;
-
-
+export default AdminDashboard;

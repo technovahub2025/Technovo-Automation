@@ -1,12 +1,15 @@
-import React, { useEffect, useRef, useState } from "react";
-import { Search, Bell, UserPlus } from "lucide-react";
+import React, { useContext, useEffect, useRef, useState } from "react";
+import { Search, Bell } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { whatsappService } from "../services/whatsappService";
+import socketService from "../services/socketService";
+import { AuthContext } from "../pages/authcontext";
 import "./Header.css";
 
 const Header = () => {
   const navigate = useNavigate();
+  const { user, refreshFromBackend } = useContext(AuthContext);
   const [showNotificationBox, setShowNotificationBox] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [docNotifications, setDocNotifications] = useState([]);
@@ -16,7 +19,7 @@ const Header = () => {
   const closeTimerRef = useRef(null);
   const API_URL = import.meta.env.VITE_API_ADMIN_URL;
   const token = localStorage.getItem("authToken") || localStorage.getItem("token");
-  const storedUser = (() => {
+  const storedUser = user || (() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "null");
     } catch {
@@ -58,6 +61,24 @@ const Header = () => {
       if (closeTimerRef.current) clearTimeout(closeTimerRef.current);
     };
   }, []);
+
+  useEffect(() => {
+    const socket = socketService.connect(import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_SOCKET_URL);
+    const refreshNotifications = async () => {
+      await refreshFromBackend();
+    };
+
+    socketService.on("documents.updated", refreshNotifications);
+    socketService.on("workspace.access.updated", refreshNotifications);
+
+    return () => {
+      socketService.off("documents.updated", refreshNotifications);
+      socketService.off("workspace.access.updated", refreshNotifications);
+      if (!socketService.isConnected()) {
+        socket?.disconnect?.();
+      }
+    };
+  }, [refreshFromBackend]);
 
   useEffect(() => {
     const toCount = (value) => {
@@ -179,6 +200,27 @@ const Header = () => {
         }));
         setDocNotifications(docAlerts);
 
+        const normalizedWorkspaceAccessState = String(
+          storedUser?.workspaceAccessState || storedUser?.subscriptionStatus || ""
+        ).toLowerCase();
+        const normalizedDocumentStatus = String(storedUser?.documentStatus || "").toLowerCase();
+        const approvalNotifications = [];
+
+        if (
+          storedUser &&
+          storedUser?.role !== "superadmin" &&
+          normalizedWorkspaceAccessState === "active" &&
+          normalizedDocumentStatus === "approved"
+        ) {
+          approvalNotifications.push({
+            id: `documents-approved-${storedUser?.companyId || storedUser?.email || storedUser?.username || "user"}`,
+            title: "Documents Approved",
+            message: "Your documents have been approved by the superadmin. Your workspace is now fully active.",
+            time: new Date().toISOString(),
+            persistent: true
+          });
+        }
+
         const adminNoticeKey = storedUser?.email
           ? `adminApprovedNotified:${storedUser.email.toLowerCase()}`
           : storedUser?.username
@@ -187,17 +229,20 @@ const Header = () => {
         const shouldShowAdminNotice =
           storedUser?.role === "admin" && !localStorage.getItem(adminNoticeKey);
         setSystemNotifications(
-          shouldShowAdminNotice
-            ? [
-                {
-                  id: `admin-approved-${storedUser?.email || storedUser?.username || "user"}`,
-                  title: "Account Approved",
-                  message:
-                    "Your verification is complete and your admin access is now active.",
-                  time: new Date().toISOString()
-                }
-              ]
-            : []
+          [
+            ...approvalNotifications,
+            ...(shouldShowAdminNotice
+              ? [
+                  {
+                    id: `admin-approved-${storedUser?.email || storedUser?.username || "user"}`,
+                    title: "Account Approved",
+                    message:
+                      "Your verification is complete and your admin access is now active.",
+                    time: new Date().toISOString()
+                  }
+                ]
+              : [])
+          ]
         );
       } catch (error) {
         console.error("Failed to load notifications:", error);
@@ -211,7 +256,7 @@ const Header = () => {
     loadNotifications();
     const timerId = setInterval(loadNotifications, 20000);
     return () => clearInterval(timerId);
-  }, []);
+  }, [API_URL, token, storedUser]);
 
   const formatNotificationTime = (value) => {
     if (!value) return "";
@@ -226,7 +271,7 @@ const Header = () => {
       closeTimerRef.current = null;
     }
     setShowNotificationBox(true);
-    if (systemNotifications.length > 0 && storedUser) {
+    if (systemNotifications.some((item) => !item.persistent) && storedUser) {
       const adminNoticeKey = storedUser?.email
         ? `adminApprovedNotified:${storedUser.email.toLowerCase()}`
         : storedUser?.username
@@ -237,7 +282,7 @@ const Header = () => {
       } catch {
         // ignore storage issues
       }
-      setSystemNotifications([]);
+      setSystemNotifications((prev) => prev.filter((item) => item.persistent));
     }
   };
 
@@ -255,6 +300,7 @@ const Header = () => {
   };
 
   const handleSystemNotificationClick = () => {
+    const hasDismissableSystemNotice = systemNotifications.some((item) => !item.persistent);
     if (storedUser) {
       const adminNoticeKey = storedUser?.email
         ? `adminApprovedNotified:${storedUser.email.toLowerCase()}`
@@ -267,7 +313,9 @@ const Header = () => {
         // ignore storage issues
       }
     }
-    setSystemNotifications([]);
+    if (hasDismissableSystemNotice) {
+      setSystemNotifications((prev) => prev.filter((item) => item.persistent));
+    }
     setShowNotificationBox(false);
   };
 
@@ -285,15 +333,6 @@ const Header = () => {
           <Search size={18} className="search-icon" />
           <input type="text" placeholder="Search..." />
         </div>
-
-        <button
-          type="button"
-          className="register-btn"
-          onClick={() => navigate("/register-docs")}
-        >
-          <UserPlus size={16} />
-          Register
-        </button>
 
         <div
           className="notification-wrap"

@@ -1,11 +1,27 @@
-import React, { useState, useEffect } from "react";
+import React, { useContext, useMemo, useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
+import { AuthContext } from "./authcontext";
 import "./RegisterDocuments.css";
 
-const RegisterDocuments = () => {
+const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = null }) => {
   const navigate = useNavigate();
+  const { refreshFromBackend } = useContext(AuthContext);
   const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+  const storedUser = useMemo(() => {
+    try {
+      return JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      return null;
+    }
+  }, []);
+  const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
+  const existingToken =
+    localStorage.getItem(tokenKey) ||
+    localStorage.getItem("authToken") ||
+    localStorage.getItem("token") ||
+    "";
+  const isExistingWorkspaceUser = Boolean(existingToken && storedUser?.companyId);
 
   const [formData, setFormData] = useState(() => {
     let storedUsername = "";
@@ -18,13 +34,13 @@ const RegisterDocuments = () => {
       storedUsername = "";
     }
     return {
-      companyName: "",
-      username: storedUsername,
-      email: "",
+      companyName: storedUser?.companyName || storedUser?.company?.name || "Workspace",
+      username: storedUser?.username || storedUser?.name || storedUsername,
+      email: storedUser?.email || "",
       password: ""
     };
   });
-  const [teamSize, setTeamSize] = useState("");
+  const [teamSize, setTeamSize] = useState(storedUser?.teamSize || "");
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [docs, setDocs] = useState({});
   const [errors, setErrors] = useState({});
@@ -52,13 +68,15 @@ const RegisterDocuments = () => {
 
   const validate = () => {
     const next = {};
-    if (!formData.companyName.trim()) next.companyName = "Company name is required";
-    if (!formData.username.trim()) next.username = "Username is required";
-    if (!formData.email.trim()) next.email = "Email is required";
-    else if (!/\S+@\S+\.\S+/.test(formData.email)) next.email = "Email is invalid";
-    if (!formData.password) next.password = "Password is required";
-    else if (formData.password.length < 6) next.password = "Minimum 6 characters";
-    if (!teamSize) next.teamSize = "Select team size";
+    if (!isExistingWorkspaceUser && !formData.companyName.trim()) next.companyName = "Company name is required";
+    if (!isExistingWorkspaceUser) {
+      if (!formData.username.trim()) next.username = "Username is required";
+      if (!formData.email.trim()) next.email = "Email is required";
+      else if (!/\S+@\S+\.\S+/.test(formData.email)) next.email = "Email is invalid";
+      if (!formData.password) next.password = "Password is required";
+      else if (formData.password.length < 6) next.password = "Minimum 6 characters";
+      if (!teamSize) next.teamSize = "Select team size";
+    }
     if (!acceptedTerms) next.terms = "You must accept the terms";
     documentFields.forEach((doc) => {
       if (doc.required && !docs[doc.key]) next[doc.key] = "Required document";
@@ -67,52 +85,39 @@ const RegisterDocuments = () => {
     return Object.keys(next).length === 0;
   };
 
-  const refreshSuccessMessage = (nextEmail, nextCompany, nextUsername) => {
-    try {
-      const map = JSON.parse(localStorage.getItem("registerDocsSuccessMap") || "{}");
-      const key = `${(nextEmail || "").trim().toLowerCase()}|${(nextCompany || "").trim().toLowerCase()}`;
-      const usernameKey = `user:${(nextUsername || "").trim().toLowerCase()}`;
-      setSuccessMessage(map[key] || map[usernameKey] || "");
-    } catch {
-      setSuccessMessage("");
-    }
-  };
-
-  useEffect(() => {
-    refreshSuccessMessage(formData.email, formData.companyName, formData.username);
-  }, [formData.email, formData.companyName, formData.username]);
-
   const handleSubmit = async (event) => {
     event.preventDefault();
     if (!validate()) return;
     setLoading(true);
     try {
-      let token = localStorage.getItem("authToken") || localStorage.getItem("token") || "";
-      try {
-        const res = await axios.post(`${API_URL}/api/nexion/register`, {
-          companyName: formData.companyName.trim(),
-          username: formData.username.trim(),
-          email: formData.email.trim(),
-          password: formData.password,
-          role: "user",
-          teamSize
-        });
-        token = res?.data?.token || token;
-      } catch (registerError) {
-        if (registerError?.response?.status === 409) {
-          // User exists: use current session token if available, otherwise try login
-          if (!token) {
-            const loginRes = await axios.post(`${API_URL}/api/nexion/login`, {
-              email: formData.email.trim(),
-              password: formData.password
-            });
-            token = loginRes?.data?.token || "";
+      const resolvedCompanyName = formData.companyName.trim() || storedUser?.companyName || storedUser?.company?.name || "Workspace";
+      let token = existingToken;
+      if (!isExistingWorkspaceUser) {
+        try {
+          const res = await axios.post(`${API_URL}/api/nexion/register`, {
+            companyName: resolvedCompanyName,
+            username: formData.username.trim(),
+            email: formData.email.trim(),
+            password: formData.password,
+            role: "user",
+            teamSize
+          });
+          token = res?.data?.token || token;
+        } catch (registerError) {
+          if (registerError?.response?.status === 409) {
+            if (!token) {
+              const loginRes = await axios.post(`${API_URL}/api/nexion/login`, {
+                email: formData.email.trim(),
+                password: formData.password
+              });
+              token = loginRes?.data?.token || "";
+            }
+          } else {
+            throw registerError;
           }
-        } else {
-          throw registerError;
         }
       }
-      const companyLabel = formData.companyName.trim() || "company";
+      const companyLabel = resolvedCompanyName || "company";
       const uploads = documentFields
         .map((doc) => ({
           ...doc,
@@ -142,21 +147,9 @@ const RegisterDocuments = () => {
         return;
       }
 
-      const notice = "Your documents will be manually approved in 24 to 48 hours. You will get access once verification is complete.";
-      const successKey = `${formData.email.trim().toLowerCase()}|${formData.companyName.trim().toLowerCase()}`;
-      const usernameKey = `user:${formData.username.trim().toLowerCase()}`;
+      const notice = "Your documents were submitted successfully. Verification usually completes within 24 to 48 hours.";
       setLoading(false);
       setSuccessMessage(notice);
-      try {
-        const map = JSON.parse(localStorage.getItem("registerDocsSuccessMap") || "{}");
-        map[successKey] = notice;
-        if (formData.username.trim()) {
-          map[usernameKey] = notice;
-        }
-        localStorage.setItem("registerDocsSuccessMap", JSON.stringify(map));
-      } catch {
-        // ignore storage failures
-      }
       setFormData((prev) => ({
         ...prev,
         password: ""
@@ -165,7 +158,16 @@ const RegisterDocuments = () => {
       setAcceptedTerms(false);
       setDocs({});
       setErrors({});
-      // Keep success message visible and stay on the page
+      await refreshFromBackend();
+      if (typeof onComplete === "function") {
+        onComplete({ status: "submitted", message: notice });
+      }
+      if (embedded && window.parent && window.parent !== window) {
+        window.parent.postMessage({ type: "nexion-documents-submitted" }, "*");
+      }
+      if (!embedded) {
+        navigate("/", { replace: true });
+      }
     } catch (error) {
       const serverMessage = error.response?.data?.error || error.response?.data?.message;
       setErrors((prev) => ({
@@ -179,91 +181,111 @@ const RegisterDocuments = () => {
 
   const isSubmitted = !!successMessage;
   return (
-    <div className="register-docs">
-      <div className="register-docs__header">
-        <h1>Register New User</h1>
-        <p>Fill in the details and upload required documents. Items 14-16 are optional.</p>
-      </div>
+    <div className={`register-docs ${embedded ? "register-docs--embedded" : ""}`}>
+      {!embedded ? (
+        <div className="register-docs__header">
+          <h1>{isExistingWorkspaceUser ? "Document Upload" : "Register New User"}</h1>
+          {!isExistingWorkspaceUser ? (
+            <p>Fill in the details and upload required documents. Items 14-16 are optional.</p>
+          ) : (
+            <p>Upload the required documents below. Our team will review them and activate your workspace after verification.</p>
+          )}
+        </div>
+      ) : null}
 
       <form className="register-docs__card" onSubmit={handleSubmit} autoComplete="off">
         {errors.general && <div className="register-docs__error">{errors.general}</div>}
         {successMessage && <div className="register-docs__success">{successMessage}</div>}
 
-        <div className="register-docs__grid" autoComplete="off">
-          <label>
-            Company Name
-            <input
-              type="text"
-              name="companyName"
-              autoComplete="organization"
-              value={formData.companyName}
-              onChange={(e) => {
-                const nextValue = e.target.value;
-                setFormData((prev) => ({ ...prev, companyName: nextValue }));
-                refreshSuccessMessage(formData.email, nextValue);
-              }}
-            />
-            {errors.companyName && <span className="field-error">{errors.companyName}</span>}
-          </label>
-          <label>
-            Username
-            <input
-              type="text"
-              name="new-username"
-              autoComplete="off"
-              readOnly
-              onFocus={(e) => e.target.removeAttribute("readOnly")}
-              value={formData.username}
-              onChange={(e) => setFormData((prev) => ({ ...prev, username: e.target.value }))}
-            />
-            {errors.username && <span className="field-error">{errors.username}</span>}
-          </label>
-          <label>
-            Email
-            <input
-              type="email"
-              name="new-email"
-              autoComplete="off"
-              readOnly
-              onFocus={(e) => e.target.removeAttribute("readOnly")}
-              value={formData.email}
-              onChange={(e) => {
-                const nextValue = e.target.value;
-                setFormData((prev) => ({ ...prev, email: nextValue }));
-                refreshSuccessMessage(nextValue, formData.companyName);
-              }}
-            />
-            {errors.email && <span className="field-error">{errors.email}</span>}
-          </label>
-          <label>
-            Password
-            <input
-              type="password"
-              name="new-password"
-              autoComplete="new-password"
-              readOnly
-              onFocus={(e) => e.target.removeAttribute("readOnly")}
-              value={formData.password}
-              onChange={(e) => setFormData((prev) => ({ ...prev, password: e.target.value }))}
-            />
-            {errors.password && <span className="field-error">{errors.password}</span>}
-          </label>
-          <label>
-            Team Size
-            <select
-              value={teamSize}
-              onChange={(e) => setTeamSize(e.target.value)}
-            >
-              <option value="">Select team size</option>
-              <option value="1-5">1-5</option>
-              <option value="6-20">6-20</option>
-              <option value="21-50">21-50</option>
-              <option value="51-200">51-200</option>
-              <option value="200+">200+</option>
-            </select>
-            {errors.teamSize && <span className="field-error">{errors.teamSize}</span>}
-          </label>
-        </div>
+        {isExistingWorkspaceUser ? (
+          <div className="register-docs__summary">
+            <div>
+              <span>Company</span>
+              <strong>{formData.companyName || storedUser?.companyName || storedUser?.company?.name || "Workspace"}</strong>
+            </div>
+            <div>
+              <span>User</span>
+              <strong>{formData.username || formData.email || "Current user"}</strong>
+            </div>
+            <div>
+              <span>Email</span>
+              <strong>{formData.email || "-"}</strong>
+            </div>
+          </div>
+        ) : (
+          <div className="register-docs__grid" autoComplete="off">
+            <label>
+              Company Name
+              <input
+                type="text"
+                name="companyName"
+                autoComplete="organization"
+                value={formData.companyName}
+                onChange={(e) => {
+                  const nextValue = e.target.value;
+                  setFormData((prev) => ({ ...prev, companyName: nextValue }));
+                }}
+              />
+              {errors.companyName && <span className="field-error">{errors.companyName}</span>}
+            </label>
+            <label>
+              Username
+              <input
+                type="text"
+                name="new-username"
+                autoComplete="off"
+                readOnly
+                onFocus={(e) => e.target.removeAttribute("readOnly")}
+                value={formData.username}
+                onChange={(e) => setFormData((prev) => ({ ...prev, username: e.target.value }))}
+              />
+              {errors.username && <span className="field-error">{errors.username}</span>}
+            </label>
+            <label>
+              Email
+              <input
+                type="email"
+                name="new-email"
+                autoComplete="off"
+                readOnly
+                onFocus={(e) => e.target.removeAttribute("readOnly")}
+                value={formData.email}
+                onChange={(e) => {
+                  setFormData((prev) => ({ ...prev, email: e.target.value }));
+                }}
+              />
+              {errors.email && <span className="field-error">{errors.email}</span>}
+            </label>
+            <label>
+              Password
+              <input
+                type="password"
+                name="new-password"
+                autoComplete="new-password"
+                readOnly
+                onFocus={(e) => e.target.removeAttribute("readOnly")}
+                value={formData.password}
+                onChange={(e) => setFormData((prev) => ({ ...prev, password: e.target.value }))}
+              />
+              {errors.password && <span className="field-error">{errors.password}</span>}
+            </label>
+            <label>
+              Team Size
+              <select
+                value={teamSize}
+                onChange={(e) => setTeamSize(e.target.value)}
+              >
+                <option value="">Select team size</option>
+                <option value="1-5">1-5</option>
+                <option value="6-20">6-20</option>
+                <option value="21-50">21-50</option>
+                <option value="51-200">51-200</option>
+                <option value="200+">200+</option>
+              </select>
+              {errors.teamSize && <span className="field-error">{errors.teamSize}</span>}
+            </label>
+          </div>
+        )}
 
         <div className="register-docs__section-title">Document Uploads</div>
         <div className="register-docs__note">Max file size: 10 MB per document.</div>
@@ -302,11 +324,27 @@ const RegisterDocuments = () => {
             </span>
           </label>
           {errors.terms && <span className="field-error">{errors.terms}</span>}
-          <button type="button" className="secondary-btn" onClick={() => navigate(-1)}>
-            Cancel
+          <button
+            type="button"
+            className="secondary-btn"
+            onClick={() => {
+              if (embedded && typeof onCancel === "function") {
+                onCancel();
+                return;
+              }
+              navigate(-1);
+            }}
+          >
+            {embedded ? "Back" : "Cancel"}
           </button>
           <button type="submit" className="primary-btn" disabled={loading || isSubmitted}>
-            {loading ? "Creating..." : isSubmitted ? "Submitted" : "Create Account"}
+            {loading
+              ? "Submitting..."
+              : isSubmitted
+                ? "Submitted"
+                : isExistingWorkspaceUser
+                  ? "Submit Documents"
+                  : "Create Account"}
           </button>
         </div>
       </form>

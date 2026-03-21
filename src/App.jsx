@@ -24,15 +24,14 @@ import PDFExtractor from "./pages/PDFExtractor";
 import Login from "./pages/login";
 import Register from "./pages/register";
 import AdminMultiStep from "./pages/admin";
+import UsersListPage from "./pages/superadmin/UsersListPage";
+import AdminSetupPage from "./pages/superadmin/AdminSetupPage";
+import PaymentsDetailsPage from "./pages/superadmin/PaymentsDetailsPage";
 import ForgotPassword from "./pages/forgotpassword";
 import ResetPassword from "./pages/resetpassword";
 import BroadcastDashboard from "./pages/BroadcastDashboard";
 import AuthCallback from "./pages/AuthCallback";
-import Billing from "./pages/Billing";
-import Analytics from "./pages/Analytics";
 import MetaVerification from "./pages/MetaVerification";
-import WhatsAppCampaignBuilder from "./pages/WhatsAppCampaignBuilder";
-import VoiceCampaignBuilder from "./pages/VoiceCampaignBuilder";
 import RegisterDocuments from "./pages/RegisterDocuments";
 import CampaignManagement from "./pages/campaignmanagement";
 import Insights from "./pages/Insights";
@@ -83,12 +82,8 @@ function App() {
           <Route path="missedcalls/automation" element={<MissedCallsAutomationPage />} />
           <Route path="email-automation" element={<EmailAutomation />} />
           <Route path="pdf-extractor" element={<PDFExtractor />} />
-          <Route path="billing" element={<Billing />} />
-          <Route path="analytics" element={<Analytics />} />
           <Route path="verification" element={<MetaVerification />} />
           <Route path="register-docs" element={<RegisterDocuments />} />
-          <Route path="whatsapp-builder" element={<WhatsAppCampaignBuilder />} />
-          <Route path="voice-builder" element={<VoiceCampaignBuilder />} />
           <Route
             path="admin"
             element={
@@ -97,7 +92,30 @@ function App() {
               </ProtectedRoute>
             }
           />
-       
+          <Route
+            path="admin/users"
+            element={
+              <ProtectedRoute requiredRole="superadmin">
+                <UsersListPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/admin-setup"
+            element={
+              <ProtectedRoute requiredRole="superadmin">
+                <AdminSetupPage />
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/payments"
+            element={
+              <ProtectedRoute requiredRole="superadmin">
+                <PaymentsDetailsPage />
+              </ProtectedRoute>
+            }
+          />
         </Route>
 
         {/* Fallback route */}
