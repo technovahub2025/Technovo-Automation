@@ -158,7 +158,15 @@ const DemographicsChart = ({ data = [] }) => {
           </div>
         ) : null}
 
-        <div className="custom-chart-bars">
+        <div
+          className="custom-chart-bars"
+          style={{
+            gridTemplateColumns:
+              activeView === 'platform'
+                ? `repeat(${chartData.length}, minmax(56px, 1fr))`
+                : `repeat(${chartData.length}, minmax(42px, 1fr))`
+          }}
+        >
           {chartData.map((item) => {
             const label = activeView === 'platform' ? item.placement : item.age;
             const menHeight = `${Math.max(2, (Number(item.male || 0) / demographicMax) * 100)}%`;

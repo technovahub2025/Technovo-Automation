@@ -40,6 +40,11 @@ import './campaignmanagement.css';
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
 const USE_MOCK = String(import.meta.env.VITE_META_ADS_USE_MOCK || 'false').toLowerCase() === 'true';
 const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
+const getTodayDateValue = () => {
+    const now = new Date();
+    const offsetMs = now.getTimezoneOffset() * 60000;
+    return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
+};
 const api = axios.create({
     baseURL: API_BASE_URL,
     headers: { 'Content-Type': 'application/json' }
@@ -308,7 +313,11 @@ const CampaignManagement = () => {
             const responseData = err?.response?.data || {};
             const detailMessage = responseData?.details?.error?.error_user_msg;
             const stageMessage = responseData?.metaStage ? `${responseData.metaStage}: ` : '';
+            const validationMessage = Array.isArray(responseData?.errors) && responseData.errors.length
+                ? responseData.errors.map((item) => item?.message || item?.msg).filter(Boolean).join(', ')
+                : '';
             setError(
+                validationMessage ||
                 responseData?.message ||
                 (detailMessage ? `${stageMessage}${detailMessage}` : 'Create campaign failed.')
             );
@@ -1007,7 +1016,7 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
         objective: campaign?.objective || 'awareness',
         dailyBudget: campaign?.dailyBudget || 50,
         lifetimeBudget: campaign?.lifetimeBudget || '',
-        startDate: campaign?.startDate || '',
+        startDate: campaign?.startDate || getTodayDateValue(),
         endDate: campaign?.endDate || '',
         targeting: campaign?.targeting || '',
         status: campaign?.status || 'draft',

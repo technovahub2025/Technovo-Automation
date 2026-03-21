@@ -1,11 +1,16 @@
 .meta-connect-page {
-  padding: 24px;
+  padding: clamp(12px, 2vw, 24px);
+  min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .meta-connect-shell {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  width: 100%;
 }
 
 .meta-connect-hero,
@@ -22,6 +27,7 @@
   justify-content: space-between;
   gap: 24px;
   align-items: flex-start;
+  flex-wrap: wrap;
 }
 
 .meta-connect-kicker {
@@ -52,6 +58,7 @@
   gap: 12px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  align-self: stretch;
 }
 
 .meta-btn {
@@ -108,6 +115,7 @@
   display: grid;
   grid-template-columns: minmax(300px, 0.95fr) minmax(420px, 1.4fr);
   gap: 20px;
+  align-items: start;
 }
 
 .meta-card {
@@ -120,6 +128,7 @@
   align-items: center;
   gap: 12px;
   margin-bottom: 18px;
+  flex-wrap: wrap;
 }
 
 .meta-card-header h2 {
@@ -200,6 +209,8 @@
   padding: 13px 14px;
   color: #172b57;
   background: #ffffff;
+  width: 100%;
+  min-width: 0;
 }
 
 .meta-field-full {
@@ -210,6 +221,7 @@
   margin-top: 18px;
   display: flex;
   justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .meta-inline-link {
@@ -242,6 +254,14 @@
   .meta-connect-grid {
     grid-template-columns: 1fr;
   }
+
+  .meta-connect-hero {
+    align-items: stretch;
+  }
+
+  .meta-connect-actions {
+    justify-content: flex-start;
+  }
 }
 
 @media (max-width: 768px) {
@@ -269,10 +289,61 @@
   .meta-connect-actions,
   .meta-selection-actions {
     justify-content: stretch;
+    width: 100%;
   }
 
   .meta-btn {
     width: 100%;
     justify-content: center;
+  }
+
+  .meta-card-header {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 560px) {
+  .meta-connect-page {
+    padding: 12px;
+  }
+
+  .meta-connect-hero,
+  .meta-card,
+  .meta-banner {
+    border-radius: 18px;
+  }
+
+  .meta-connect-hero {
+    padding: 18px 16px;
+    gap: 16px;
+  }
+
+  .meta-card {
+    padding: 16px;
+  }
+
+  .meta-connect-copy h1 {
+    font-size: 1.45rem;
+  }
+
+  .meta-connect-copy p,
+  .meta-status-item span,
+  .meta-field span {
+    font-size: 0.95rem;
+  }
+
+  .meta-status-item {
+    padding: 12px 14px;
+    border-radius: 14px;
+  }
+
+  .meta-pill {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .meta-inline-link {
+    width: 100%;
+    justify-content: flex-start;
   }
 }
