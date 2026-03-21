@@ -1043,6 +1043,9 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
         { key: 'targeting', label: 'Targeting', step: 3 },
         { key: 'advanced', label: 'Advanced', step: 4 }
     ];
+    const activeTabIndex = tabSteps.findIndex((tab) => tab.key === activeTab);
+    const isFirstTab = activeTabIndex <= 0;
+    const isLastTab = activeTabIndex === tabSteps.length - 1;
 
     useEffect(() => {
         const allowedOptions = getOptimizationGoalOptions(formData.objective);
@@ -1058,7 +1061,28 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        if (!isLastTab) {
+            const nextTab = tabSteps[activeTabIndex + 1];
+            if (nextTab) {
+                setActiveTab(nextTab.key);
+            }
+            return;
+        }
         onSave(formData);
+    };
+
+    const handleNextTab = () => {
+        const nextTab = tabSteps[activeTabIndex + 1];
+        if (nextTab) {
+            setActiveTab(nextTab.key);
+        }
+    };
+
+    const handlePreviousTab = () => {
+        const previousTab = tabSteps[activeTabIndex - 1];
+        if (previousTab) {
+            setActiveTab(previousTab.key);
+        }
     };
 
     return (
@@ -1457,10 +1481,21 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
                         <button type="button" className="btn btn-secondary campaign-create-cancel" onClick={onClose}>
                             Cancel
                         </button>
-                        <button type="submit" className="btn btn-primary campaign-create-submit">
-                            <Save size={16} />
-                            {mode === 'create' ? 'Create Campaign' : 'Save Changes'}
-                        </button>
+                        {!isFirstTab ? (
+                            <button type="button" className="btn btn-secondary campaign-create-cancel" onClick={handlePreviousTab}>
+                                Back
+                            </button>
+                        ) : null}
+                        {isLastTab ? (
+                            <button type="submit" className="btn btn-primary campaign-create-submit">
+                                <Save size={16} />
+                                {mode === 'create' ? 'Create Campaign' : 'Save Changes'}
+                            </button>
+                        ) : (
+                            <button type="button" className="btn btn-primary campaign-create-submit" onClick={handleNextTab}>
+                                Next
+                            </button>
+                        )}
                     </div>
                 </form>
             </div>

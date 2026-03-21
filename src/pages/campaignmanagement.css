@@ -604,26 +604,30 @@
   gap: 0;
   padding: 16px 28px 0;
   border-bottom: 1px solid #e2e8f0;
-  overflow-x: auto;
+  overflow: visible;
 }
 .step-tabs {
-  flex-wrap: nowrap;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  align-items: stretch;
 }
 .step-tab {
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  padding: 0 0 14px;
+  border: 1px solid #dbe4f0;
+  border-radius: 14px;
+  background: #fff;
+  padding: 12px 14px;
   color: #64748b;
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   position: relative;
-  white-space: nowrap;
+  min-width: 0;
 }
 .step-tab.active {
-  background: transparent;
-  border-color: transparent;
+  background: #f8fbff;
+  border-color: #bfd3fb;
   color: #2563eb;
 }
 .step-tab.active::after {
@@ -631,7 +635,7 @@
   position: absolute;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: -1px;
   height: 3px;
   border-radius: 999px;
   background: #2563eb;
@@ -653,15 +657,15 @@
   color: #fff;
 }
 .step-label {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 600;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .step-divider {
-  width: 40px;
-  height: 2px;
-  border-radius: 999px;
-  background: #d7deea;
-  margin: 0 10px 14px;
+  display: none;
 }
 .campaign-create-content {
   flex: 1;
@@ -824,6 +828,7 @@
   color: #334155;
   font-size: 15px;
   font-weight: 600;
+  justify-content: flex-start;
 }
 .budget-option input[type="radio"],
 .schedule-option input[type="checkbox"] {
@@ -831,6 +836,8 @@
   height: 18px;
   min-width: 18px;
   margin: 0;
+  margin-left: 2px;
+  margin-right: 4px;
   padding: 0;
   border: none;
   border-radius: 999px;
@@ -843,7 +850,10 @@
 }
 .budget-option span,
 .schedule-option span {
+  display: inline-flex;
+  align-items: center;
   line-height: 1.35;
+  padding-left: 2px;
 }
 .campaign-create-footer {
   display: flex;
@@ -929,6 +939,26 @@
   .campaign-create-footer {
     padding: 16px 20px 20px;
   }
+
+  .modal-tabs.step-tabs {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .modal-tabs.step-tabs .step-tab {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .modal-tabs.step-tabs .step-label {
+    font-size: 14px;
+  }
+
+  .modal-tabs.step-tabs .step-number {
+    width: 30px;
+    height: 30px;
+    font-size: 14px;
+  }
 }
 
 @media (max-width: 768px) {
@@ -999,20 +1029,79 @@
     border-radius: 12px;
   }
   .modal-tabs {
-    padding: 14px 18px 0;
+    padding: 12px 16px 0;
+  }
+
+  .modal-tabs.step-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .modal-tabs.step-tabs .step-tab {
+    width: 100%;
+    min-width: 0;
+    padding: 10px 12px;
+    border: 1px solid #dbe4f0;
+    border-radius: 14px;
+    justify-content: center;
+  }
+
+  .modal-tabs.step-tabs .step-tab.active::after {
+    display: none;
+  }
+
+  .modal-tabs.step-tabs .step-label {
+    font-size: 13px;
+    white-space: nowrap;
+  }
+
+  .modal-tabs.step-tabs .step-number {
+    width: 28px;
+    height: 28px;
+    font-size: 13px;
+    flex-shrink: 0;
   }
   .campaign-create-content {
-    padding: 20px 18px 16px;
+    padding: 16px 16px 14px;
   }
   .modal-header {
-    padding: 18px 18px 14px;
+    padding: 16px 16px 12px;
   }
   .modal-header h2 {
-    font-size: 20px;
+    font-size: 18px;
   }
   .card-header, .card-footer {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .card-header {
+    width: 100%;
+    gap: 10px;
+  }
+
+  .platform-status {
+    width: 100%;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .card-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .action-btn,
+  .more-btn {
+    width: 34px;
+    height: 34px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
   .card-actions,
   .footer-actions {
@@ -1043,10 +1132,11 @@
   .form-group input,
   .form-group select,
   .form-group textarea {
-    font-size: 16px;
+    padding: 11px 14px;
+    font-size: 14px;
   }
   .campaign-create-footer {
-    padding: 16px 18px 20px;
+    padding: 14px 16px 18px;
     justify-content: space-between;
     flex-direction: column-reverse;
   }
@@ -1061,6 +1151,58 @@
     width: 100%;
     min-width: 0;
     justify-content: center;
+  }
+
+  .basic-panel-section {
+    padding: 20px 0;
+  }
+
+  .platform-card {
+    min-height: 72px;
+    padding: 12px;
+    gap: 8px;
+    font-size: 14px;
+  }
+
+  .platform-card svg,
+  .platform-card-icons svg {
+    width: 24px;
+    height: 24px;
+  }
+
+  .form-group label,
+  .step-label {
+    font-size: 13px;
+  }
+
+  .budget-option,
+  .schedule-option {
+    padding: 12px 16px;
+    gap: 10px;
+    font-size: 14px;
+    border-radius: 12px;
+  }
+
+  .budget-option input[type="radio"],
+  .schedule-option input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    min-width: 16px;
+    flex-basis: 16px;
+    margin-right: 4px;
+  }
+
+  .budget-option span,
+  .schedule-option span {
+    line-height: 1.2;
+  }
+
+  .btn,
+  .campaign-create-submit,
+  .campaign-create-cancel {
+    padding-top: 9px;
+    padding-bottom: 9px;
+    font-size: 14px;
   }
 }
 
@@ -1079,6 +1221,72 @@
 
   .campaign-name {
     font-size: 15px;
+  }
+
+  .campaign-card {
+    padding: 14px;
+    gap: 10px;
+  }
+
+  .card-header {
+    gap: 8px;
+  }
+
+  .platform-status {
+    align-items: flex-start;
+  }
+
+  .platform-status > svg,
+  .platform-status .platform-icon,
+  .platform-status svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .status-badge {
+    padding: 4px 10px;
+    font-size: 11px;
+  }
+
+  .card-actions {
+    gap: 6px;
+  }
+
+  .action-btn,
+  .more-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 9px;
+  }
+
+  .action-btn svg,
+  .more-btn svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .campaign-modal {
+    min-height: calc(100vh - 16px);
+  }
+
+  .modal-header {
+    padding: 14px 14px 10px;
+  }
+
+  .modal-header h2 {
+    font-size: 17px;
+  }
+
+  .modal-tabs {
+    padding: 10px 14px 0;
+  }
+
+  .campaign-create-content {
+    padding: 14px 14px 12px;
+  }
+
+  .campaign-create-footer {
+    padding: 12px 14px 16px;
   }
 
   .campaign-objective,
@@ -1102,8 +1310,25 @@
     min-width: 180px;
   }
 
-  .step-label {
-    display: none;
+  .modal-tabs.step-tabs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .modal-tabs.step-tabs .step-tab {
+    padding: 9px 10px;
+    gap: 8px;
+  }
+
+  .modal-tabs.step-tabs .step-label {
+    display: inline;
+    font-size: 12px;
+  }
+
+  .modal-tabs.step-tabs .step-number {
+    width: 26px;
+    height: 26px;
+    font-size: 12px;
   }
 
   .step-divider {
@@ -1120,14 +1345,32 @@
   }
 
   .platform-card {
-    min-height: 84px;
-    padding: 14px;
-    gap: 10px;
+    min-height: 64px;
+    padding: 10px;
+    gap: 6px;
+    font-size: 13px;
   }
 
   .platform-card svg,
   .platform-card-icons svg {
-    width: 26px;
-    height: 26px;
+    width: 20px;
+    height: 20px;
+  }
+
+  .budget-option,
+  .schedule-option {
+    padding: 10px 16px;
+    gap: 10px;
+    font-size: 13px;
+  }
+
+  .budget-option input[type="radio"],
+  .schedule-option input[type="checkbox"] {
+    width: 15px;
+    height: 15px;
+    min-width: 15px;
+    flex-basis: 15px;
+    margin-left: 0;
+    margin-right: 4px;
   }
 }
