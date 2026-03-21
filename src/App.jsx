@@ -35,6 +35,8 @@ import WhatsAppCampaignBuilder from "./pages/WhatsAppCampaignBuilder";
 import VoiceCampaignBuilder from "./pages/VoiceCampaignBuilder";
 import RegisterDocuments from "./pages/RegisterDocuments";
 import CampaignManagement from "./pages/campaignmanagement";
+import Insights from "./pages/Insights";
+import MetaConnect from "./pages/MetaConnect";
 
 
 
@@ -55,6 +57,8 @@ function App() {
         <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}> 
           <Route index element={<Dashboard />} />
           <Route path="ads-manager" element={<CampaignManagement />} />
+          <Route path="meta-connect" element={<MetaConnect />} />
+          <Route path="insights" element={<Insights />} />
           <Route path="inbox" element={<TeamInbox />} />
           <Route path="inbox/:conversationId" element={<TeamInbox />} />
           <Route path="broadcast-dashboard" element={<BroadcastDashboard />} />

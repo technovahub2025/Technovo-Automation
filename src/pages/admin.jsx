@@ -26,10 +26,17 @@ const AdminMultiStep = () => {
   const [whatsappId, setWhatsappId] = useState("");
   const [whatsappToken, setWhatsappToken] = useState("");
   const [whatsappBusiness, setWhatsappBusiness] = useState("");
+  const [metaAppId, setMetaAppId] = useState("");
+  const [metaAppSecret, setMetaAppSecret] = useState("");
+  const [metaRedirectUri, setMetaRedirectUri] = useState("");
+  const [metaUserAccessToken, setMetaUserAccessToken] = useState("");
+  const [metaAdAccountId, setMetaAdAccountId] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [missedCallWebhook, setMissedCallWebhook] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [showTwilioToken, setShowTwilioToken] = useState(false);
+  const [showMetaSecret, setShowMetaSecret] = useState(false);
+  const [showMetaUserToken, setShowMetaUserToken] = useState(false);
 
   // ------------------- USERS LIST -------------------
   const [users, setUsers] = useState([]);
@@ -132,6 +139,11 @@ const AdminMultiStep = () => {
           whatsappId: String(whatsappId || "").trim(),
           whatsappToken: String(whatsappToken || "").trim(),
           whatsappBusiness: String(whatsappBusiness || "").trim(),
+          metaAppId: String(metaAppId || "").trim(),
+          metaAppSecret: String(metaAppSecret || "").trim(),
+          metaRedirectUri: String(metaRedirectUri || "").trim(),
+          metaUserAccessToken: String(metaUserAccessToken || "").trim(),
+          metaAdAccountId: String(metaAdAccountId || "").trim(),
           phoneNumber: String(phoneNumber || "").trim(),
           missedCallWebhook: String(missedCallWebhook || "").trim(),
         });
@@ -140,7 +152,7 @@ const AdminMultiStep = () => {
 
         // Reset fields after edit flow
         setUsername(""); setEmail(""); setPassword(""); setShowPassword(false);
-        setTwilioAccountSid(""); setTwilioAuthToken(""); setTwilioPhoneNumber(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setPhoneNumber(""); setMissedCallWebhook("");
+        setTwilioAccountSid(""); setTwilioAuthToken(""); setTwilioPhoneNumber(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setMetaAppId(""); setMetaAppSecret(""); setMetaRedirectUri(""); setMetaUserAccessToken(""); setMetaAdAccountId(""); setPhoneNumber(""); setMissedCallWebhook("");
         setEditingUserId(null);
         setResettingPassword(false);
         setErrors({});
@@ -191,6 +203,11 @@ const AdminMultiStep = () => {
           whatsappId: String(whatsappId || "").trim(),
           whatsappToken: String(whatsappToken || "").trim(),
           whatsappBusiness: String(whatsappBusiness || "").trim(),
+          metaAppId: String(metaAppId || "").trim(),
+          metaAppSecret: String(metaAppSecret || "").trim(),
+          metaRedirectUri: String(metaRedirectUri || "").trim(),
+          metaUserAccessToken: String(metaUserAccessToken || "").trim(),
+          metaAdAccountId: String(metaAdAccountId || "").trim(),
           phoneNumber: String(phoneNumber || "").trim(),
           missedCallWebhook: String(missedCallWebhook || "").trim(),
         }
@@ -200,11 +217,11 @@ const AdminMultiStep = () => {
       alert("Admin & Twilio info saved successfully!");
       localStorage.setItem(
         "twilioData",
-        JSON.stringify({ twilioAccountSid, twilioAuthToken, twilioPhoneNumber, whatsappId, whatsappToken, whatsappBusiness, phoneNumber, missedCallWebhook })
+        JSON.stringify({ twilioAccountSid, twilioAuthToken, twilioPhoneNumber, whatsappId, whatsappToken, whatsappBusiness, metaAppId, metaAppSecret, metaRedirectUri, metaUserAccessToken, metaAdAccountId, phoneNumber, missedCallWebhook })
       );
 
       setStep(0);
-      setTwilioAccountSid(""); setTwilioAuthToken(""); setTwilioPhoneNumber(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setPhoneNumber(""); setMissedCallWebhook("");
+      setTwilioAccountSid(""); setTwilioAuthToken(""); setTwilioPhoneNumber(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setMetaAppId(""); setMetaAppSecret(""); setMetaRedirectUri(""); setMetaUserAccessToken(""); setMetaAdAccountId(""); setPhoneNumber(""); setMissedCallWebhook("");
       setErrors({});
       fetchUsers();
     } catch (err) {
@@ -243,6 +260,11 @@ const AdminMultiStep = () => {
     setWhatsappId(user.whatsappId ?? user.whatsappid ?? "");
     setWhatsappToken(user.whatsappToken ?? user.whatsapptoken ?? "");
     setWhatsappBusiness(user.whatsappBusiness ?? user.whatsappbussiness ?? "");
+    setMetaAppId(user.metaAppId ?? user.metaappid ?? "");
+    setMetaAppSecret(user.metaAppSecret ?? user.metaappsecret ?? "");
+    setMetaRedirectUri(user.metaRedirectUri ?? user.metaredirecturi ?? "");
+    setMetaUserAccessToken(user.metaUserAccessToken ?? user.metauseraccesstoken ?? "");
+    setMetaAdAccountId(user.metaAdAccountId ?? user.metaadaccountid ?? "");
     setPhoneNumber(user.phoneNumber ?? user.phonenumber ?? "");
     setMissedCallWebhook(user.missedCallWebhook ?? user.missedcallwebhook ?? "");
 
@@ -256,7 +278,7 @@ const AdminMultiStep = () => {
     setShowEditModal(false);
     setEditingUserId(null);
     setUsername(""); setEmail(""); setPassword(""); setShowPassword(false);
-    setTwilioAccountSid(""); setTwilioAuthToken(""); setTwilioPhoneNumber(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setPhoneNumber(""); setMissedCallWebhook("");
+    setTwilioAccountSid(""); setTwilioAuthToken(""); setTwilioPhoneNumber(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setMetaAppId(""); setMetaAppSecret(""); setMetaRedirectUri(""); setMetaUserAccessToken(""); setMetaAdAccountId(""); setPhoneNumber(""); setMissedCallWebhook("");
     setErrors({});
   };
 
@@ -269,7 +291,7 @@ const AdminMultiStep = () => {
   const handleCreateNewAdmin = () => {
     setEditingUserId(null);
     setUsername(""); setEmail(""); setPassword(""); setShowPassword(false);
-    setTwilioAccountSid(""); setTwilioAuthToken(""); setTwilioPhoneNumber(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setPhoneNumber(""); setMissedCallWebhook("");
+    setTwilioAccountSid(""); setTwilioAuthToken(""); setTwilioPhoneNumber(""); setWhatsappId(""); setWhatsappToken(""); setWhatsappBusiness(""); setMetaAppId(""); setMetaAppSecret(""); setMetaRedirectUri(""); setMetaUserAccessToken(""); setMetaAdAccountId(""); setPhoneNumber(""); setMissedCallWebhook("");
     setResettingPassword(false);
     setErrors({});
     setStep(1);
@@ -376,6 +398,66 @@ const AdminMultiStep = () => {
                   placeholder="WhatsApp Business"
                   value={whatsappBusiness}
                   onChange={(e) => setWhatsappBusiness(e.target.value)}
+                />
+              </div>
+
+              <div className="form-row">
+                <label>Meta App ID</label>
+                <input
+                  type="text"
+                  placeholder="Meta App ID"
+                  value={metaAppId}
+                  onChange={(e) => setMetaAppId(e.target.value)}
+                />
+              </div>
+
+              <div className="form-row">
+                <label>Meta App Secret</label>
+                <div className="password-field">
+                  <input
+                    type={showMetaSecret ? "text" : "password"}
+                    placeholder="Meta App Secret"
+                    value={metaAppSecret}
+                    onChange={(e) => setMetaAppSecret(e.target.value)}
+                  />
+                  <span className="eye-icon" onClick={() => setShowMetaSecret(!showMetaSecret)}>
+                    {showMetaSecret ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </span>
+                </div>
+              </div>
+
+              <div className="form-row">
+                <label>Meta Redirect URI</label>
+                <input
+                  type="text"
+                  placeholder="Meta Redirect URI"
+                  value={metaRedirectUri}
+                  onChange={(e) => setMetaRedirectUri(e.target.value)}
+                />
+              </div>
+
+              <div className="form-row">
+                <label>Meta User Access Token</label>
+                <div className="password-field">
+                  <input
+                    type={showMetaUserToken ? "text" : "password"}
+                    placeholder="Meta User Access Token"
+                    value={metaUserAccessToken}
+                    onChange={(e) => setMetaUserAccessToken(e.target.value)}
+                  />
+                  <span className="eye-icon" onClick={() => setShowMetaUserToken(!showMetaUserToken)}>
+                    {showMetaUserToken ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </span>
+                </div>
+              </div>
+
+              <div className="form-row">
+                <label>Meta Ad Account ID</label>
+                <input
+                  type="text"
+                  placeholder="Meta Ad Account ID"
+                  value={metaAdAccountId}
+                  onChange={(e) => setMetaAdAccountId(e.target.value)}
                 />
               </div>
 
@@ -579,6 +661,36 @@ const AdminMultiStep = () => {
               placeholder="WhatsApp Business"
               value={whatsappBusiness}
               onChange={(e) => setWhatsappBusiness(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Meta App ID"
+              value={metaAppId}
+              onChange={(e) => setMetaAppId(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Meta App Secret"
+              value={metaAppSecret}
+              onChange={(e) => setMetaAppSecret(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Meta Redirect URI"
+              value={metaRedirectUri}
+              onChange={(e) => setMetaRedirectUri(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Meta User Access Token"
+              value={metaUserAccessToken}
+              onChange={(e) => setMetaUserAccessToken(e.target.value)}
+            />
+            <input
+              type="text"
+              placeholder="Meta Ad Account ID"
+              value={metaAdAccountId}
+              onChange={(e) => setMetaAdAccountId(e.target.value)}
             />
             <input
               type="text"

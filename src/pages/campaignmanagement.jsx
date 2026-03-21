@@ -1,6 +1,7 @@
 // CampaignManagement.jsx
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
 import {
     Plus,
     Search,
@@ -44,7 +45,49 @@ const api = axios.create({
     headers: { 'Content-Type': 'application/json' }
 });
 
+const getOptimizationGoalOptions = (objective) => {
+    switch (String(objective || '').toLowerCase()) {
+        case 'traffic':
+            return [
+                { value: 'LINK_CLICKS', label: 'Clicks' },
+                { value: 'LANDING_PAGE_VIEWS', label: 'Landing page views' },
+                { value: 'REACH', label: 'Reach' },
+                { value: 'IMPRESSIONS', label: 'Impressions' }
+            ];
+        case 'engagement':
+            return [
+                { value: 'POST_ENGAGEMENT', label: 'Post engagement' },
+                { value: 'REACH', label: 'Reach' },
+                { value: 'IMPRESSIONS', label: 'Impressions' }
+            ];
+        case 'leads':
+            return [
+                { value: 'LEADS', label: 'Leads' },
+                { value: 'QUALITY_LEAD', label: 'Quality leads' },
+                { value: 'CONVERSATIONS', label: 'Conversations' }
+            ];
+        case 'sales':
+            return [
+                { value: 'OFFSITE_CONVERSIONS', label: 'Conversions' },
+                { value: 'VALUE', label: 'Value' },
+                { value: 'LINK_CLICKS', label: 'Clicks' }
+            ];
+        case 'awareness':
+        default:
+            return [
+                { value: 'REACH', label: 'Reach' },
+                { value: 'IMPRESSIONS', label: 'Impressions' }
+            ];
+    }
+};
+
+const getDefaultOptimizationGoal = (objective) => {
+    const options = getOptimizationGoalOptions(objective);
+    return options[0]?.value || 'REACH';
+};
+
 const CampaignManagement = () => {
+    const navigate = useNavigate();
     const [campaigns, setCampaigns] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -56,6 +99,9 @@ const CampaignManagement = () => {
     const [selectedCampaign, setSelectedCampaign] = useState(null);
     const [viewMode, setViewMode] = useState('grid'); // grid or list
     const [dateRange, setDateRange] = useState('last30days');
+    const [metaSetupReady, setMetaSetupReady] = useState(true);
+    const [metaSetupLoading, setMetaSetupLoading] = useState(true);
+    const [metaSetupMessage, setMetaSetupMessage] = useState('');
 
     const getAuthHeaders = useCallback(() => {
         const token =
@@ -80,19 +126,65 @@ const CampaignManagement = () => {
         clicks: campaign.clicks || 0,
         ctr: campaign.ctr || 0,
         cpc: campaign.cpc || 0,
-        revenue: campaign.revenue || 0
+        revenue: campaign.revenue || 0,
+        ageMin: campaign.ageMin || 18,
+        ageMax: campaign.ageMax || 65,
+        gender: campaign.gender || 'all',
+        interests: campaign.interests || '',
+        behaviors: campaign.behaviors || '',
+        primaryText: campaign.primaryText || '',
+        headline: campaign.headline || '',
+        description: campaign.description || '',
+        destinationUrl: campaign.destinationUrl || '',
+        imageUrl: campaign.imageUrl || '',
+        callToAction: campaign.callToAction || 'LEARN_MORE',
+        optimizationGoal: campaign.optimizationGoal || getDefaultOptimizationGoal(campaign.objective || 'awareness'),
+        bidStrategy: campaign.bidStrategy || 'LOWEST_COST_WITHOUT_CAP',
+        metaCampaignId: campaign.metaCampaignId || '',
+        metaAdSetId: campaign.metaAdSetId || '',
+        metaAdId: campaign.metaAdId || '',
+        lifecycleStatus: campaign.lifecycleStatus || (campaign.status === 'active' ? 'running' : campaign.status === 'paused' ? 'paused' : 'draft'),
+        paymentStatus: campaign.paymentStatus || 'verified',
+        reviewStatus: campaign.reviewStatus || 'approved',
+        deliveryStatus: campaign.deliveryStatus || (campaign.status === 'active' ? 'active' : campaign.status === 'paused' ? 'paused' : 'not_published'),
+        reviewNotes: campaign.reviewNotes || '',
+        source: campaign.source || 'local',
+        readOnly: Boolean(campaign.readOnly),
+        syncedFromMeta: Boolean(campaign.syncedFromMeta)
     });
+
+    const getSafeRatio = (numerator, denominator) => {
+        const top = Number(numerator || 0);
+        const bottom = Number(denominator || 0);
+        if (!Number.isFinite(top) || !Number.isFinite(bottom) || bottom <= 0) {
+            return 0;
+        }
+        return top / bottom;
+    };
 
     const sanitizePayload = (data) => {
         const payload = { ...data };
 
         // Remove empty strings
-        ['startDate', 'endDate', 'targeting'].forEach((key) => {
+        [
+            'startDate',
+            'endDate',
+            'targeting',
+            'interests',
+            'behaviors',
+            'primaryText',
+            'headline',
+            'description',
+            'destinationUrl',
+            'imageUrl'
+        ].forEach((key) => {
             if (!payload[key]) delete payload[key];
         });
 
+        delete payload.creativeImage;
+
         // Numbers
-        ['dailyBudget', 'lifetimeBudget', 'spent', 'impressions', 'clicks', 'ctr', 'cpc', 'revenue'].forEach((key) => {
+        ['dailyBudget', 'lifetimeBudget', 'spent', 'impressions', 'clicks', 'ctr', 'cpc', 'revenue', 'ageMin', 'ageMax'].forEach((key) => {
             if (payload[key] === '' || payload[key] === null || payload[key] === undefined) {
                 delete payload[key];
             } else {
@@ -107,6 +199,22 @@ const CampaignManagement = () => {
         }
 
         return payload;
+    };
+
+    const buildCampaignPayload = (data) => {
+        const payload = sanitizePayload(data);
+        if (!data?.creativeImage) {
+            return payload;
+        }
+
+        const formData = new FormData();
+        Object.entries(payload).forEach(([key, value]) => {
+            if (value !== undefined && value !== null && value !== '') {
+                formData.append(key, value);
+            }
+        });
+        formData.append('creativeImage', data.creativeImage);
+        return formData;
     };
 
     const fetchCampaigns = useCallback(async () => {
@@ -138,9 +246,37 @@ const CampaignManagement = () => {
         }
     }, [api, getAuthHeaders, searchQuery, selectedPlatform, selectedStatus]);
 
+    const fetchMetaSetupState = useCallback(async () => {
+        setMetaSetupLoading(true);
+        try {
+            const response = await api.get('/api/meta-ads/overview', {
+                headers: getAuthHeaders()
+            });
+            const setup = response?.data?.setup || {};
+            const isReady = Boolean(setup.connected && setup.adAccountId && setup.pageId);
+            setMetaSetupReady(isReady);
+            setMetaSetupMessage(
+                setup.setupError || 'Connect Meta, select an ad account and Facebook page to continue.'
+            );
+        } catch (loadError) {
+            setMetaSetupReady(false);
+            setMetaSetupMessage(
+                loadError?.response?.data?.error ||
+                loadError?.response?.data?.message ||
+                'Connect Meta to unlock Ads Manager.'
+            );
+        } finally {
+            setMetaSetupLoading(false);
+        }
+    }, [getAuthHeaders]);
+
     useEffect(() => {
         fetchCampaigns();
     }, [fetchCampaigns]);
+
+    useEffect(() => {
+        fetchMetaSetupState();
+    }, [fetchMetaSetupState]);
 
     const filteredCampaigns = campaigns.filter(campaign => {
         const matchesPlatform = selectedPlatform === 'all' || campaign.platform === selectedPlatform;
@@ -159,12 +295,23 @@ const CampaignManagement = () => {
 
         try {
             setLoading(true);
-            await api.post('/api/campaigns', sanitizePayload(campaignData), { headers: getAuthHeaders() });
+            const payload = buildCampaignPayload(campaignData);
+            const headers = {
+                ...getAuthHeaders(),
+                ...(payload instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {})
+            };
+            await api.post('/api/campaigns', payload, { headers });
             await fetchCampaigns();
             setShowCreateModal(false);
         } catch (err) {
             console.error('Create failed', err?.response?.data || err.message);
-            setError(err?.response?.data?.message || 'Create campaign failed.');
+            const responseData = err?.response?.data || {};
+            const detailMessage = responseData?.details?.error?.error_user_msg;
+            const stageMessage = responseData?.metaStage ? `${responseData.metaStage}: ` : '';
+            setError(
+                responseData?.message ||
+                (detailMessage ? `${stageMessage}${detailMessage}` : 'Create campaign failed.')
+            );
         } finally {
             setLoading(false);
         }
@@ -186,9 +333,12 @@ const CampaignManagement = () => {
 
         try {
             setLoading(true);
-            await api.put(`/api/campaigns/${selectedCampaign.id}`, sanitizePayload(campaignData), {
-                headers: getAuthHeaders()
-            });
+            const payload = buildCampaignPayload(campaignData);
+            const headers = {
+                ...getAuthHeaders(),
+                ...(payload instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {})
+            };
+            await api.put(`/api/campaigns/${selectedCampaign.id}`, payload, { headers });
             await fetchCampaigns();
         } catch (err) {
             console.error('Update failed', err?.response?.data || err.message);
@@ -200,8 +350,12 @@ const CampaignManagement = () => {
         }
     };
 
-    const handleDeleteCampaign = async (campaignId) => {
-        if (!campaignId || !window.confirm('Are you sure you want to delete this campaign?')) return;
+    const handleDeleteCampaign = async (campaign) => {
+        const campaignId = typeof campaign === 'object' ? campaign?.id : campaign;
+        if (
+            !campaignId ||
+            !window.confirm('Are you sure you want to delete this campaign? This will also archive the linked Meta campaign assets before removing it from the database.')
+        ) return;
 
         if (USE_MOCK) {
             setCampaigns(prev => prev.filter(c => c.id !== campaignId));
@@ -210,7 +364,14 @@ const CampaignManagement = () => {
 
         try {
             setLoading(true);
-            await api.delete(`/api/campaigns/${campaignId}`, { headers: getAuthHeaders() });
+            await api.delete(`/api/campaigns/${campaignId}`, {
+                headers: getAuthHeaders(),
+                data: typeof campaign === 'object' ? {
+                    metaCampaignId: campaign.metaCampaignId || '',
+                    metaAdSetId: campaign.metaAdSetId || '',
+                    metaAdId: campaign.metaAdId || ''
+                } : undefined
+            });
             await fetchCampaigns();
         } catch (err) {
             console.error('Delete failed', err?.response?.data || err.message);
@@ -254,7 +415,16 @@ const CampaignManagement = () => {
 
     const handleDuplicateCampaign = async (campaign) => {
         if (USE_MOCK) {
-            setCampaigns(prev => [...prev, { ...campaign, id: Date.now(), status: 'draft', name: `${campaign.name} (Copy)` }]);
+            setCampaigns(prev => [...prev, normalizeCampaign({
+                ...campaign,
+                id: Date.now(),
+                status: 'draft',
+                name: `${campaign.name} (Copy)`,
+                lifecycleStatus: 'draft',
+                paymentStatus: 'verified',
+                reviewStatus: 'approved',
+                deliveryStatus: 'not_published'
+            })]);
             return;
         }
         try {
@@ -266,20 +436,112 @@ const CampaignManagement = () => {
         }
     };
 
-    const getStatusBadge = (status) => {
+    const runWorkflowAction = async (campaignId, endpoint, fallbackMessage, options = {}) => {
+        if (USE_MOCK) return;
+
+        try {
+            setLoading(true);
+            setError('');
+            await api.post(`/api/campaigns/${campaignId}/${endpoint}`, options.body || {}, {
+                headers: getAuthHeaders()
+            });
+            await fetchCampaigns();
+        } catch (err) {
+            console.error(`${endpoint} failed`, err?.response?.data || err.message);
+            const responseData = err?.response?.data || {};
+            const detailMessage =
+                responseData?.details?.error?.error_user_msg ||
+                responseData?.details?.error?.message;
+            const composedMessage =
+                responseData?.message ||
+                (detailMessage ? `${responseData?.metaStage ? `${responseData.metaStage}: ` : ''}${detailMessage}` : fallbackMessage);
+            setError(composedMessage);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handlePublishCampaign = (campaignId) => {
+        if (!window.confirm('Publish this campaign to Meta now? This will create live ad assets.')) return;
+        runWorkflowAction(campaignId, 'publish', 'Publish campaign failed.');
+    };
+
+    const getStatusBadge = (campaignOrStatus) => {
+        const status = typeof campaignOrStatus === 'string' ? campaignOrStatus : campaignOrStatus?.status;
+        const lifecycleStatus = typeof campaignOrStatus === 'object' ? campaignOrStatus?.lifecycleStatus : null;
+        const statusKey = lifecycleStatus || status;
         const statusConfig = {
             active: { icon: <Play size={14} />, class: 'status-active', label: 'Active' },
+            running: { icon: <Play size={14} />, class: 'status-active', label: 'Running' },
             paused: { icon: <Pause size={14} />, class: 'status-paused', label: 'Paused' },
             draft: { icon: <Clock size={14} />, class: 'status-draft', label: 'Draft' },
+            publishing: { icon: <RefreshCw size={14} />, class: 'status-review', label: 'Publishing' },
+            rejected: { icon: <XCircle size={14} />, class: 'status-ended', label: 'Rejected' },
+            completed: { icon: <CheckCircle size={14} />, class: 'status-approved', label: 'Completed' },
             ended: { icon: <XCircle size={14} />, class: 'status-ended', label: 'Ended' }
         };
-        const config = statusConfig[status] || statusConfig.draft;
+        const config = statusConfig[statusKey] || statusConfig.draft;
         return (
             <span className={`status-badge ${config.class}`}>
                 {config.icon}
                 {config.label}
             </span>
         );
+    };
+
+    const getMiniBadge = (label, tone = 'neutral') => (
+        <span className={`mini-badge mini-${tone}`}>{label}</span>
+    );
+
+    const getCampaignStageMeta = (campaign) => {
+        const deliveryMap = {
+            active: getMiniBadge('Live on Meta', 'success'),
+            paused: getMiniBadge('Delivery Paused', 'warning'),
+            publishing: getMiniBadge('Publishing', 'info'),
+            rejected: getMiniBadge('Delivery Rejected', 'danger'),
+            not_published: getMiniBadge('Not Published', 'neutral')
+        };
+
+        return [
+            deliveryMap[campaign.deliveryStatus] || deliveryMap.not_published
+        ];
+    };
+
+    const getWorkflowActions = (campaign, variant = 'card') => {
+        if (campaign.readOnly) return [];
+
+        const actionClass = variant === 'table' ? 'table-workflow-btn' : 'workflow-btn';
+        const actions = [];
+
+        if (campaign.lifecycleStatus === 'draft' || campaign.lifecycleStatus === 'approved' || campaign.lifecycleStatus === 'pending_review') {
+            actions.push({
+                key: 'publish',
+                label: 'Publish',
+                className: `${actionClass} workflow-primary`,
+                icon: <Play size={14} />,
+                onClick: () => handlePublishCampaign(campaign.id)
+            });
+        }
+
+        if (campaign.status === 'active') {
+            actions.push({
+                key: 'pause',
+                label: 'Pause',
+                className: `${actionClass} workflow-secondary`,
+                icon: <Pause size={14} />,
+                onClick: () => handlePauseCampaign(campaign.id)
+            });
+        } else if (campaign.status === 'paused' && campaign.metaCampaignId) {
+            actions.push({
+                key: 'resume',
+                label: 'Resume',
+                className: `${actionClass} workflow-secondary`,
+                icon: <Play size={14} />,
+                onClick: () => handleResumeCampaign(campaign.id)
+            });
+        }
+
+        return actions;
     };
 
     const getPlatformIcon = (platform) => {
@@ -301,12 +563,13 @@ const CampaignManagement = () => {
     };
 
     const getPerformanceMetric = (campaign) => {
-        const roi = ((campaign.revenue - campaign.spent) / campaign.spent * 100).toFixed(1);
+        const roi = (getSafeRatio(campaign.revenue - campaign.spent, campaign.spent) * 100).toFixed(1);
+        const roas = getSafeRatio(campaign.revenue, campaign.spent).toFixed(2);
         return (
             <div className="performance-metric">
                 <div className="metric-row">
                     <span className="metric-label">ROAS:</span>
-                    <span className="metric-value">{(campaign.revenue / campaign.spent).toFixed(2)}x</span>
+                    <span className="metric-value">{roas}x</span>
                 </div>
                 <div className="metric-row">
                     <span className="metric-label">CTR:</span>
@@ -327,7 +590,8 @@ const CampaignManagement = () => {
     };
 
     return (
-        <div className="campaign-management">
+        <div className="meta-access-shell">
+        <div className={`campaign-management ${!metaSetupLoading && !metaSetupReady ? 'meta-access-blurred' : ''}`}>
             {/* Header */}
             <div className="campaign-header">
                 <div className="header-left">
@@ -337,6 +601,12 @@ const CampaignManagement = () => {
                     </p>
                 </div>
                 <div className="header-actions">
+                    {!metaSetupLoading && !metaSetupReady ? (
+                        <button className="btn btn-secondary" onClick={() => navigate('/meta-connect')}>
+                            <Facebook size={18} />
+                            Connect Meta
+                        </button>
+                    ) : null}
                     <button className="btn btn-secondary" onClick={() => console.log('Export data')}>
                         <Download size={18} />
                         Export
@@ -438,7 +708,7 @@ const CampaignManagement = () => {
                     <div className="stat-details">
                         <span className="stat-label">Active Campaigns</span>
                         <span className="stat-value">
-                            {campaigns.filter(c => c.status === 'active').length}
+                            {campaigns.filter(c => c.lifecycleStatus === 'running' || c.status === 'active').length}
                         </span>
                     </div>
                 </div>
@@ -506,28 +776,47 @@ const CampaignManagement = () => {
                                 <div className="card-header">
                                     <div className="platform-status">
                                         {getPlatformIcon(campaign.platform)}
-                                        {getStatusBadge(campaign.status)}
+                                        {getStatusBadge(campaign)}
                                     </div>
                                     <div className="card-actions">
-                                        <button className="action-btn" onClick={() => {
-                                            setSelectedCampaign(campaign);
-                                            setShowEditModal(true);
-                                        }}>
-                                            <Edit size={16} />
-                                        </button>
-                                        <button className="action-btn" onClick={() => handleDuplicateCampaign(campaign)}>
-                                            <Copy size={16} />
-                                        </button>
-                                        <button className="action-btn" onClick={() => handleDeleteCampaign(campaign.id)}>
-                                            <Trash2 size={16} />
-                                        </button>
+                                        {campaign.readOnly ? (
+                                            <>
+                                                <span className="status-badge status-draft">Meta</span>
+                                                <button className="action-btn" onClick={() => handleDeleteCampaign(campaign)}>
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </>
+                                        ) : (
+                                            <>
+                                                <button className="action-btn" onClick={() => {
+                                                    setSelectedCampaign(campaign);
+                                                    setShowEditModal(true);
+                                                }}>
+                                                    <Edit size={16} />
+                                                </button>
+                                                <button className="action-btn" onClick={() => handleDuplicateCampaign(campaign)}>
+                                                    <Copy size={16} />
+                                                </button>
+                                                <button className="action-btn" onClick={() => handleDeleteCampaign(campaign)}>
+                                                    <Trash2 size={16} />
+                                                </button>
+                                            </>
+                                        )}
                                     </div>
                                 </div>
 
                                 <div className="card-content">
                                     <h3 className="campaign-name">{campaign.name}</h3>
-                                    <p className="campaign-objective">{campaign.objective}</p>
-                                    
+                                    <p className="campaign-objective">
+                                        {campaign.objective}
+                                        {campaign.readOnly ? ' • Synced from Meta Ads' : ''}
+                                    </p>
+                                    <div className="campaign-stage-row">
+                                        {getCampaignStageMeta(campaign).map((badge, index) => (
+                                            <React.Fragment key={`${campaign.id}-stage-${index}`}>{badge}</React.Fragment>
+                                        ))}
+                                    </div>
+
                                     <div className="campaign-details">
                                         <div className="detail-item">
                                             <DollarSign size={14} />
@@ -546,12 +835,12 @@ const CampaignManagement = () => {
                                     <div className="campaign-progress">
                                         <div className="progress-header">
                                             <span>Budget Used</span>
-                                            <span>{((campaign.spent / (campaign.dailyBudget * 30)) * 100).toFixed(1)}%</span>
+                                            <span>{(getSafeRatio(campaign.spent, campaign.dailyBudget * 30) * 100).toFixed(1)}%</span>
                                         </div>
                                         <div className="progress-bar">
                                             <div 
                                                 className="progress-fill"
-                                                style={{ width: `${(campaign.spent / (campaign.dailyBudget * 30)) * 100}%` }}
+                                                style={{ width: `${Math.min(100, getSafeRatio(campaign.spent, campaign.dailyBudget * 30) * 100)}%` }}
                                             ></div>
                                         </div>
                                     </div>
@@ -560,23 +849,17 @@ const CampaignManagement = () => {
 
                                     <div className="card-footer">
                                         <div className="footer-actions">
-                                            {campaign.status === 'active' ? (
-                                                <button 
-                                                    className="pause-btn"
-                                                    onClick={() => handlePauseCampaign(campaign.id)}
+                                            {getWorkflowActions(campaign).map((action) => (
+                                                <button
+                                                    key={action.key}
+                                                    className={action.className}
+                                                    onClick={action.onClick}
+                                                    type="button"
                                                 >
-                                                    <Pause size={14} />
-                                                    Pause
+                                                    {action.icon}
+                                                    {action.label}
                                                 </button>
-                                            ) : campaign.status === 'paused' ? (
-                                                <button 
-                                                    className="resume-btn"
-                                                    onClick={() => handleResumeCampaign(campaign.id)}
-                                                >
-                                                    <Play size={14} />
-                                                    Resume
-                                                </button>
-                                            ) : null}
+                                            ))}
                                         </div>
                                         <button className="more-btn">
                                             <MoreVertical size={16} />
@@ -612,10 +895,15 @@ const CampaignManagement = () => {
                                             <div className="campaign-cell">
                                                 <strong>{campaign.name}</strong>
                                                 <small>{campaign.objective}</small>
+                                                <div className="table-stage-row">
+                                                    {getCampaignStageMeta(campaign).map((badge, index) => (
+                                                        <React.Fragment key={`${campaign.id}-table-stage-${index}`}>{badge}</React.Fragment>
+                                                    ))}
+                                                </div>
                                             </div>
                                         </td>
                                         <td>{getPlatformIcon(campaign.platform)}</td>
-                                        <td>{getStatusBadge(campaign.status)}</td>
+                                        <td>{getStatusBadge(campaign)}</td>
                                         <td>${campaign.dailyBudget}/day</td>
                                         <td>${campaign.spent.toLocaleString()}</td>
                                         <td>{(campaign.impressions / 1000).toFixed(1)}K</td>
@@ -623,30 +911,43 @@ const CampaignManagement = () => {
                                         <td>{campaign.ctr}%</td>
                                         <td>${campaign.cpc}</td>
                                         <td>${campaign.revenue.toLocaleString()}</td>
-                                        <td>{(campaign.revenue / campaign.spent).toFixed(2)}x</td>
+                                        <td>{getSafeRatio(campaign.revenue, campaign.spent).toFixed(2)}x</td>
                                         <td>
                                             <div className="table-actions">
-                                                <button className="table-action" onClick={() => {
-                                                    setSelectedCampaign(campaign);
-                                                    setShowEditModal(true);
-                                                }}>
-                                                    <Edit size={14} />
-                                                </button>
-                                                {campaign.status === 'active' ? (
-                                                    <button className="table-action" onClick={() => handlePauseCampaign(campaign.id)}>
-                                                        <Pause size={14} />
-                                                    </button>
-                                                ) : campaign.status === 'paused' ? (
-                                                    <button className="table-action" onClick={() => handleResumeCampaign(campaign.id)}>
-                                                        <Play size={14} />
-                                                    </button>
-                                                ) : null}
-                                                <button className="table-action" onClick={() => handleDuplicateCampaign(campaign)}>
-                                                    <Copy size={14} />
-                                                </button>
-                                                <button className="table-action" onClick={() => handleDeleteCampaign(campaign.id)}>
-                                                    <Trash2 size={14} />
-                                                </button>
+                                                {campaign.readOnly ? (
+                                                    <>
+                                                        <span className="status-badge status-draft">Meta</span>
+                                                        <button className="table-action" onClick={() => handleDeleteCampaign(campaign)}>
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </>
+                                                ) : (
+                                                    <>
+                                                        {getWorkflowActions(campaign, 'table').map((action) => (
+                                                            <button
+                                                                key={action.key}
+                                                                className={action.className}
+                                                                onClick={action.onClick}
+                                                                type="button"
+                                                                title={action.label}
+                                                            >
+                                                                {action.icon}
+                                                            </button>
+                                                        ))}
+                                                        <button className="table-action" onClick={() => {
+                                                            setSelectedCampaign(campaign);
+                                                            setShowEditModal(true);
+                                                        }}>
+                                                            <Edit size={14} />
+                                                        </button>
+                                                        <button className="table-action" onClick={() => handleDuplicateCampaign(campaign)}>
+                                                            <Copy size={14} />
+                                                        </button>
+                                                        <button className="table-action" onClick={() => handleDeleteCampaign(campaign)}>
+                                                            <Trash2 size={14} />
+                                                        </button>
+                                                    </>
+                                                )}
                                             </div>
                                         </td>
                                     </tr>
@@ -679,6 +980,22 @@ const CampaignManagement = () => {
                 />
             )}
         </div>
+        {!metaSetupLoading && !metaSetupReady ? (
+            <div className="meta-access-overlay">
+                <div className="meta-access-card">
+                    <div className="meta-access-icon">
+                        <Facebook size={24} />
+                    </div>
+                    <h2>Connect Meta to unlock Ads Manager</h2>
+                    <p>{metaSetupMessage}</p>
+                    <button className="btn btn-primary" onClick={() => navigate('/meta-connect')} type="button">
+                        <Facebook size={18} />
+                        Connect Meta
+                    </button>
+                </div>
+            </div>
+        ) : null}
+        </div>
     );
 };
 
@@ -693,10 +1010,42 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
         startDate: campaign?.startDate || '',
         endDate: campaign?.endDate || '',
         targeting: campaign?.targeting || '',
-        status: campaign?.status || 'draft'
+        status: campaign?.status || 'draft',
+        ageMin: campaign?.ageMin || 18,
+        ageMax: campaign?.ageMax || 65,
+        gender: campaign?.gender || 'all',
+        interests: campaign?.interests || '',
+        behaviors: campaign?.behaviors || '',
+        primaryText: campaign?.primaryText || '',
+        headline: campaign?.headline || '',
+        description: campaign?.description || '',
+        destinationUrl: campaign?.destinationUrl || '',
+        imageUrl: campaign?.imageUrl || '',
+        creativeImage: null,
+        callToAction: campaign?.callToAction || 'LEARN_MORE',
+        optimizationGoal: campaign?.optimizationGoal || getDefaultOptimizationGoal(campaign?.objective || 'awareness'),
+        bidStrategy: campaign?.bidStrategy || 'LOWEST_COST_WITHOUT_CAP'
     });
 
     const [activeTab, setActiveTab] = useState('basic');
+    const tabSteps = [
+        { key: 'basic', label: 'Basic Info', step: 1 },
+        { key: 'budget', label: 'Budget & Schedule', step: 2 },
+        { key: 'targeting', label: 'Targeting', step: 3 },
+        { key: 'advanced', label: 'Advanced', step: 4 }
+    ];
+
+    useEffect(() => {
+        const allowedOptions = getOptimizationGoalOptions(formData.objective);
+        const allowedValues = allowedOptions.map((option) => option.value);
+
+        if (!allowedValues.includes(formData.optimizationGoal)) {
+            setFormData((prev) => ({
+                ...prev,
+                optimizationGoal: allowedOptions[0]?.value || prev.optimizationGoal
+            }));
+        }
+    }, [formData.objective, formData.optimizationGoal]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -713,116 +1062,102 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
                     </button>
                 </div>
 
-                <div className="modal-tabs">
-                    <button 
-                        className={`tab-btn ${activeTab === 'basic' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('basic')}
-                    >
-                        Basic Info
-                    </button>
-                    <button 
-                        className={`tab-btn ${activeTab === 'budget' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('budget')}
-                    >
-                        Budget & Schedule
-                    </button>
-                    <button 
-                        className={`tab-btn ${activeTab === 'targeting' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('targeting')}
-                    >
-                        Targeting
-                    </button>
-                    <button 
-                        className={`tab-btn ${activeTab === 'advanced' ? 'active' : ''}`}
-                        onClick={() => setActiveTab('advanced')}
-                    >
-                        Advanced
-                    </button>
+                <div className="modal-tabs step-tabs">
+                    {tabSteps.map((tab, index) => (
+                        <React.Fragment key={tab.key}>
+                            <button 
+                                type="button"
+                                className={`tab-btn step-tab ${activeTab === tab.key ? 'active' : ''}`}
+                                onClick={() => setActiveTab(tab.key)}
+                            >
+                                <span className="step-number">{tab.step}</span>
+                                <span className="step-label">{tab.label}</span>
+                            </button>
+                            {index < tabSteps.length - 1 ? <span className="step-divider" aria-hidden="true" /> : null}
+                        </React.Fragment>
+                    ))}
                 </div>
 
                 <form onSubmit={handleSubmit}>
-                    <div className="modal-content">
+                    <div className="campaign-create-content">
                         {activeTab === 'basic' && (
-                            <div className="tab-panel">
-                                <div className="form-group">
-                                    <label>Campaign Name</label>
-                                    <input
-                                        type="text"
-                                        value={formData.name}
-                                        onChange={(e) => setFormData({...formData, name: e.target.value})}
-                                        placeholder="e.g., Summer Sale 2024"
-                                        required
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Platform</label>
-                                    <div className="platform-options">
-                                        <label className="platform-option">
-                                            <input
-                                                type="radio"
-                                                name="platform"
-                                                value="facebook"
-                                                checked={formData.platform === 'facebook'}
-                                                onChange={(e) => setFormData({...formData, platform: e.target.value})}
-                                            />
-                                            <Facebook size={20} />
-                                            <span>Facebook</span>
-                                        </label>
-                                        <label className="platform-option">
-                                            <input
-                                                type="radio"
-                                                name="platform"
-                                                value="instagram"
-                                                checked={formData.platform === 'instagram'}
-                                                onChange={(e) => setFormData({...formData, platform: e.target.value})}
-                                            />
-                                            <Instagram size={20} />
-                                            <span>Instagram</span>
-                                        </label>
-                                        <label className="platform-option">
-                                            <input
-                                                type="radio"
-                                                name="platform"
-                                                value="both"
-                                                checked={formData.platform === 'both'}
-                                                onChange={(e) => setFormData({...formData, platform: e.target.value})}
-                                            />
-                                            <div className="both-icons">
-                                                <Facebook size={20} />
-                                                <Instagram size={20} />
-                                            </div>
-                                            <span>Both</span>
-                                        </label>
+                            <div className="tab-panel basic-tab-panel">
+                                <section className="basic-panel-section">
+                                    <div className="form-group">
+                                        <label>Campaign Name</label>
+                                        <input
+                                            type="text"
+                                            value={formData.name}
+                                            onChange={(e) => setFormData({...formData, name: e.target.value})}
+                                            placeholder="Enter campaign name"
+                                            required
+                                        />
                                     </div>
-                                </div>
+                                </section>
 
-                                <div className="form-group">
-                                    <label>Campaign Objective</label>
-                                    <select
-                                        value={formData.objective}
-                                        onChange={(e) => setFormData({...formData, objective: e.target.value})}
-                                    >
-                                        <option value="awareness">Brand Awareness</option>
-                                        <option value="traffic">Traffic</option>
-                                        <option value="engagement">Engagement</option>
-                                        <option value="leads">Lead Generation</option>
-                                        <option value="sales">Conversions</option>
-                                        <option value="catalog">Catalog Sales</option>
-                                    </select>
-                                </div>
+                                <section className="basic-panel-section">
+                                    <div className="form-group">
+                                        <label>Select Platform</label>
+                                        <div className="platform-card-grid">
+                                            <button
+                                                type="button"
+                                                className={`platform-card ${formData.platform === 'facebook' ? 'selected' : ''}`}
+                                                onClick={() => setFormData({ ...formData, platform: 'facebook' })}
+                                            >
+                                                <Facebook size={34} />
+                                                <span>Facebook</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`platform-card instagram-card ${formData.platform === 'instagram' ? 'selected' : ''}`}
+                                                onClick={() => setFormData({ ...formData, platform: 'instagram' })}
+                                            >
+                                                <Instagram size={34} />
+                                                <span>Instagram</span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className={`platform-card ${formData.platform === 'both' ? 'selected' : ''}`}
+                                                onClick={() => setFormData({ ...formData, platform: 'both' })}
+                                            >
+                                                <div className="platform-card-icons">
+                                                    <Facebook size={34} />
+                                                    <Instagram size={34} />
+                                                </div>
+                                                <span>Facebook + Instagram</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </section>
 
-                                <div className="form-group">
-                                    <label>Status</label>
-                                    <select
-                                        value={formData.status}
-                                        onChange={(e) => setFormData({...formData, status: e.target.value})}
-                                    >
-                                        <option value="draft">Draft</option>
-                                        <option value="active">Active</option>
-                                        <option value="paused">Paused</option>
-                                    </select>
-                                </div>
+                                <section className="basic-panel-section compact-fields">
+                                    <div className="form-group">
+                                        <label>Campaign Objective</label>
+                                        <select
+                                            value={formData.objective}
+                                            onChange={(e) => setFormData({...formData, objective: e.target.value})}
+                                        >
+                                            <option value="awareness">Brand Awareness</option>
+                                            <option value="traffic">Traffic</option>
+                                            <option value="engagement">Engagement</option>
+                                            <option value="leads">Lead Generation</option>
+                                            <option value="sales">Conversions</option>
+                                            <option value="catalog">Catalog Sales</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="form-group">
+                                        <label>Status</label>
+                                        <select
+                                            value={formData.status}
+                                            onChange={(e) => setFormData({...formData, status: e.target.value})}
+                                        >
+                                            <option value="draft">Draft</option>
+                                            <option value="active">Active</option>
+                                            <option value="paused">Paused</option>
+                                        </select>
+                                    </div>
+                                </section>
                             </div>
                         )}
 
@@ -932,18 +1267,35 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
                                 <div className="form-group">
                                     <label>Age Range</label>
                                     <div className="age-range">
-                                        <input type="number" placeholder="18" min="13" max="65" />
+                                        <input
+                                            type="number"
+                                            value={formData.ageMin}
+                                            onChange={(e) => setFormData({...formData, ageMin: parseInt(e.target.value || '18', 10)})}
+                                            placeholder="18"
+                                            min="13"
+                                            max="65"
+                                        />
                                         <span>to</span>
-                                        <input type="number" placeholder="65" min="13" max="65" />
+                                        <input
+                                            type="number"
+                                            value={formData.ageMax}
+                                            onChange={(e) => setFormData({...formData, ageMax: parseInt(e.target.value || '65', 10)})}
+                                            placeholder="65"
+                                            min="13"
+                                            max="65"
+                                        />
                                     </div>
                                 </div>
 
                                 <div className="form-group">
                                     <label>Gender</label>
-                                    <select>
-                                        <option>All</option>
-                                        <option>Male</option>
-                                        <option>Female</option>
+                                    <select
+                                        value={formData.gender}
+                                        onChange={(e) => setFormData({...formData, gender: e.target.value})}
+                                    >
+                                        <option value="all">All</option>
+                                        <option value="male">Male</option>
+                                        <option value="female">Female</option>
                                     </select>
                                 </div>
 
@@ -951,6 +1303,8 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
                                     <label>Interests</label>
                                     <input
                                         type="text"
+                                        value={formData.interests}
+                                        onChange={(e) => setFormData({...formData, interests: e.target.value})}
                                         placeholder="e.g., Fitness, Technology, Fashion"
                                     />
                                 </div>
@@ -959,6 +1313,8 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
                                     <label>Behaviors</label>
                                     <input
                                         type="text"
+                                        value={formData.behaviors}
+                                        onChange={(e) => setFormData({...formData, behaviors: e.target.value})}
                                         placeholder="e.g., Frequent travelers, Online shoppers"
                                     />
                                 </div>
@@ -974,30 +1330,106 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
                             <div className="tab-panel">
                                 <div className="form-group">
                                     <label>Optimization Goal</label>
-                                    <select>
-                                        <option>Impressions</option>
-                                        <option>Clicks</option>
-                                        <option>Conversions</option>
-                                        <option>Reach</option>
+                                    <select
+                                        value={formData.optimizationGoal}
+                                        onChange={(e) => setFormData({...formData, optimizationGoal: e.target.value})}
+                                    >
+                                        {getOptimizationGoalOptions(formData.objective).map((option) => (
+                                            <option key={option.value} value={option.value}>
+                                                {option.label}
+                                            </option>
+                                        ))}
                                     </select>
                                 </div>
 
                                 <div className="form-group">
                                     <label>Bid Strategy</label>
-                                    <select>
-                                        <option>Lowest cost</option>
-                                        <option>Target cost</option>
-                                        <option>Bid cap</option>
-                                        <option>Cost cap</option>
+                                    <select
+                                        value={formData.bidStrategy}
+                                        onChange={(e) => setFormData({...formData, bidStrategy: e.target.value})}
+                                    >
+                                        <option value="LOWEST_COST_WITHOUT_CAP">Lowest cost</option>
+                                        <option value="TARGET_COST">Target cost</option>
+                                        <option value="LOWEST_COST_WITH_BID_CAP">Bid cap</option>
+                                        <option value="COST_CAP">Cost cap</option>
                                     </select>
                                 </div>
 
                                 <div className="form-group">
-                                    <label>Ad Scheduling</label>
-                                    <div className="ad-scheduling">
-                                        {/* Add scheduling interface */}
-                                        <p>Set specific times for ads to run</p>
-                                    </div>
+                                    <label>Primary Text</label>
+                                    <textarea
+                                        value={formData.primaryText}
+                                        onChange={(e) => setFormData({...formData, primaryText: e.target.value})}
+                                        placeholder="Write the main ad copy"
+                                        rows="4"
+                                        required={mode === 'create'}
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Headline</label>
+                                    <input
+                                        type="text"
+                                        value={formData.headline}
+                                        onChange={(e) => setFormData({...formData, headline: e.target.value})}
+                                        placeholder="Ad headline"
+                                        required={mode === 'create'}
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Description</label>
+                                    <input
+                                        type="text"
+                                        value={formData.description}
+                                        onChange={(e) => setFormData({...formData, description: e.target.value})}
+                                        placeholder="Optional short description"
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Destination URL</label>
+                                    <input
+                                        type="url"
+                                        value={formData.destinationUrl}
+                                        onChange={(e) => setFormData({...formData, destinationUrl: e.target.value})}
+                                        placeholder="https://example.com/landing-page"
+                                        required={mode === 'create'}
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label>CTA Button</label>
+                                    <select
+                                        value={formData.callToAction}
+                                        onChange={(e) => setFormData({...formData, callToAction: e.target.value})}
+                                    >
+                                        <option value="LEARN_MORE">Learn More</option>
+                                        <option value="SHOP_NOW">Shop Now</option>
+                                        <option value="SIGN_UP">Sign Up</option>
+                                        <option value="CONTACT_US">Contact Us</option>
+                                        <option value="APPLY_NOW">Apply Now</option>
+                                    </select>
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Image URL</label>
+                                    <input
+                                        type="url"
+                                        value={formData.imageUrl}
+                                        onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
+                                        placeholder="https://example.com/ad-image.jpg"
+                                    />
+                                </div>
+
+                                <div className="form-group">
+                                    <label>Upload Image</label>
+                                    <input
+                                        type="file"
+                                        accept="image/*"
+                                        onChange={(e) => setFormData({...formData, creativeImage: e.target.files?.[0] || null})}
+                                    />
+                                    {formData.creativeImage ? <small>{formData.creativeImage.name}</small> : null}
                                 </div>
 
                                 <div className="form-group">
@@ -1012,11 +1444,11 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
                         )}
                     </div>
 
-                    <div className="modal-footer">
-                        <button type="button" className="btn btn-secondary" onClick={onClose}>
+                    <div className="campaign-create-footer">
+                        <button type="button" className="btn btn-secondary campaign-create-cancel" onClick={onClose}>
                             Cancel
                         </button>
-                        <button type="submit" className="btn btn-primary">
+                        <button type="submit" className="btn btn-primary campaign-create-submit">
                             <Save size={16} />
                             {mode === 'create' ? 'Create Campaign' : 'Save Changes'}
                         </button>

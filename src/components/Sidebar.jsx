@@ -17,11 +17,12 @@ import {
     MessageCircle,
     Settings,
     Megaphone,
+    BarChart3,
+    Facebook,
     ChevronLeft,
     ChevronRight,
     Menu,
-    X,
-    UserPlus // Added for Audience Manager icon
+    X
 } from 'lucide-react';
 import logo from '../../src/assets/logo.png';
 import './Sidebar.css';
@@ -224,11 +225,13 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         isRouteActive('/broadcast') ||
         isRouteActive('/templates') ||
         isRouteActive('/contacts') ||
-        isRouteActive('/campaignmanagement') || // Audience maintenance (Campaign Management)
         currentPath.startsWith('/inbox');
 
     const isMissedCallsRouteActive = currentPath.startsWith('/missedcalls');
-    const isAdsManagerRouteActive = isRouteActive('/ads-manager');
+    const isMetaAdsRouteActive =
+        isRouteActive('/ads-manager') ||
+        isRouteActive('/insights') ||
+        isRouteActive('/meta-connect');
 
     return (
         <div className={`sidebar-container ${isCompactMobile ? 'compact-mobile' : ''}`}>
@@ -253,7 +256,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
             <aside
                 className={`sidebar-dark ${isCompactMobile ? (isMobileSidebarOpen ? 'open' : 'closed') : ''}`}
                 onMouseLeave={() => {
-                    if (!isMobile && (openMenu === 'bulkMessage' || openMenu === 'settings')) {
+                    if (!isMobile && (openMenu === 'bulkMessage' || openMenu === 'metaAds' || openMenu === 'settings')) {
                         scheduleDesktopFlyoutClose();
                     }
                 }}
@@ -298,22 +301,42 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                     </div>
 
                     <div
-                        className={`icon-item ${isAdsManagerRouteActive ? 'active' : ''}`}
-                        onMouseEnter={() => {
+                        className={`icon-item ${isMetaAdsRouteActive ? 'active' : ''} ${openMenu === 'metaAds' ? 'expanded' : ''}`}
+                        onMouseEnter={(e) => {
                             if (!isMobile) {
-                                setOpenMenu(null);
+                                cancelDesktopFlyoutClose();
+                                openDesktopFlyout('metaAds', e);
                             }
                         }}
-                        onClick={() => {
-                            setOpenMenu(null);
-                            navigate('/ads-manager');
+                        onClick={(e) => {
+                            if (isMobile) {
+                                if (openMenu === 'metaAds' && isOverlayOpen) {
+                                    setIsOverlayOpen(false);
+                                    setOpenMenu(null);
+                                } else {
+                                    setOpenMenu('metaAds');
+                                    setIsOverlayOpen(true);
+                                    if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                }
+                                return;
+                            }
+                            if (isCompactMobile) setIsMobileSidebarOpen(true);
+                            if (!isMobile) {
+                                openDesktopFlyout('metaAds', e);
+                            } else {
+                                toggleMenu('metaAds');
+                                setIsOverlayOpen(true);
+                            }
                         }}
-                        title="Ads Manager"
+                        title="Meta Ads"
                     >
                         <Megaphone size={24} />
                         <span className="icon-label icon-label-multiline">
+                            <span>Meta</span>
                             <span>Ads</span>
-                            <span>Manager</span>
+                        </span>
+                        <span className="submenu-arrow-indicator" aria-hidden="true">
+                            {openMenu === 'metaAds' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
                         </span>
                     </div>
 
@@ -558,24 +581,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                     <MessageSquare size={20} />
                                     <span>Team Inbox</span>
                                 </NavLink>
-
-                                {/* Audience Manager - New Button */}
-                                <NavLink
-                                    to="/campaignmanagement"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={() => {
-                                        setLastBulkMessageItem('/campaignmanagement');
-                                        closeMobileMenusAfterNavigate();
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.preventDefault();
-                                        setOpenMenu(null);
-                                    }}
-                                >
-                                    <UserPlus size={20} />
-                                    <span>Audience Maintenance</span>
-                                </NavLink>
-
                                 <NavLink
                                     to="/broadcast"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -622,6 +627,49 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 >
                                     <Users size={20} />
                                     <span>Contacts</span>
+                                </NavLink>
+                            </nav>
+                        </>
+                    )}
+
+                    {openMenu === 'metaAds' && (
+                        <>
+                            <div className="panel-header">
+                                <h3>Meta Ads</h3>
+                                {isMobile && (
+                                    <button
+                                        className="panel-close-btn"
+                                        onClick={toggleOverlay}
+                                        title="Close menu"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                )}
+                            </div>
+                            <nav className="panel-menu">
+                                <NavLink
+                                    to="/ads-manager"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onClick={closeMobileMenusAfterNavigate}
+                                >
+                                    <Megaphone size={20} />
+                                    <span>Ads Manager</span>
+                                </NavLink>
+                                <NavLink
+                                    to="/insights"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onClick={closeMobileMenusAfterNavigate}
+                                >
+                                    <BarChart3 size={20} />
+                                    <span>Insights</span>
+                                </NavLink>
+                                <NavLink
+                                    to="/meta-connect"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onClick={closeMobileMenusAfterNavigate}
+                                >
+                                    <Facebook size={20} />
+                                    <span>Connect Meta</span>
                                 </NavLink>
                             </nav>
                         </>
