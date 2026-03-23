@@ -57,8 +57,9 @@
   display: flex;
   gap: 12px;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
-  align-self: stretch;
+  align-self: flex-start;
 }
 
 .meta-btn {
@@ -261,6 +262,7 @@
 
   .meta-connect-actions {
     justify-content: flex-start;
+    align-self: stretch;
   }
 }
 
@@ -289,6 +291,7 @@
   .meta-connect-actions,
   .meta-selection-actions {
     justify-content: stretch;
+    align-items: stretch;
     width: 100%;
   }
 
