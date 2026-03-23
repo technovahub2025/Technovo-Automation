@@ -26,9 +26,16 @@ const AdminSetupPage = () => {
   const [whatsappId, setWhatsappId] = useState("");
   const [whatsappToken, setWhatsappToken] = useState("");
   const [whatsappBusiness, setWhatsappBusiness] = useState("");
+  const [metaAppId, setMetaAppId] = useState("");
+  const [metaAppSecret, setMetaAppSecret] = useState("");
+  const [metaRedirectUri, setMetaRedirectUri] = useState("");
+  const [metaUserAccessToken, setMetaUserAccessToken] = useState("");
+  const [metaAdAccountId, setMetaAdAccountId] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [missedCallWebhook, setMissedCallWebhook] = useState("");
   const [showTwilioToken, setShowTwilioToken] = useState(false);
+  const [showMetaSecret, setShowMetaSecret] = useState(false);
+  const [showMetaUserToken, setShowMetaUserToken] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
   const [message, setMessage] = useState("");
@@ -68,8 +75,16 @@ const AdminSetupPage = () => {
     setWhatsappId("");
     setWhatsappToken("");
     setWhatsappBusiness("");
+    setMetaAppId("");
+    setMetaAppSecret("");
+    setMetaRedirectUri("");
+    setMetaUserAccessToken("");
+    setMetaAdAccountId("");
     setPhoneNumber("");
     setMissedCallWebhook("");
+    setShowTwilioToken(false);
+    setShowMetaSecret(false);
+    setShowMetaUserToken(false);
     setErrors({});
   };
 
@@ -134,6 +149,11 @@ const AdminSetupPage = () => {
         whatsappId: String(whatsappId || "").trim(),
         whatsappToken: String(whatsappToken || "").trim(),
         whatsappBusiness: String(whatsappBusiness || "").trim(),
+        metaAppId: String(metaAppId || "").trim(),
+        metaAppSecret: String(metaAppSecret || "").trim(),
+        metaRedirectUri: String(metaRedirectUri || "").trim(),
+        metaUserAccessToken: String(metaUserAccessToken || "").trim(),
+        metaAdAccountId: String(metaAdAccountId || "").trim(),
         phoneNumber: String(phoneNumber || "").trim(),
         missedCallWebhook: String(missedCallWebhook || "").trim()
       });
@@ -331,6 +351,31 @@ const AdminSetupPage = () => {
                   <input value={whatsappId} onChange={(e) => setWhatsappId(e.target.value)} placeholder="WhatsApp ID" />
                   <input value={whatsappToken} onChange={(e) => setWhatsappToken(e.target.value)} placeholder="WhatsApp Token" />
                   <input value={whatsappBusiness} onChange={(e) => setWhatsappBusiness(e.target.value)} placeholder="WhatsApp Business" />
+                  <input value={metaAppId} onChange={(e) => setMetaAppId(e.target.value)} placeholder="Meta App ID" />
+                  <div className="password-field">
+                    <input
+                      type={showMetaSecret ? "text" : "password"}
+                      value={metaAppSecret}
+                      onChange={(e) => setMetaAppSecret(e.target.value)}
+                      placeholder="Meta App Secret"
+                    />
+                    <span className="eye-icon" onClick={() => setShowMetaSecret((prev) => !prev)}>
+                      {showMetaSecret ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </span>
+                  </div>
+                  <input value={metaRedirectUri} onChange={(e) => setMetaRedirectUri(e.target.value)} placeholder="Meta Redirect URI" />
+                  <div className="password-field">
+                    <input
+                      type={showMetaUserToken ? "text" : "password"}
+                      value={metaUserAccessToken}
+                      onChange={(e) => setMetaUserAccessToken(e.target.value)}
+                      placeholder="Meta User Access Token"
+                    />
+                    <span className="eye-icon" onClick={() => setShowMetaUserToken((prev) => !prev)}>
+                      {showMetaUserToken ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </span>
+                  </div>
+                  <input value={metaAdAccountId} onChange={(e) => setMetaAdAccountId(e.target.value)} placeholder="Meta Ad Account ID" />
                   <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number" />
                   <input value={missedCallWebhook} onChange={(e) => setMissedCallWebhook(e.target.value)} placeholder="Missed Call Webhook URL" />
 

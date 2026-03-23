@@ -170,6 +170,7 @@ const Dashboard = () => {
 
   const handleDocumentsComplete = async () => {
     setDocumentsSubmitted(true);
+    setViewMode("landing");
     await refreshFromBackend();
   };
 

@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import socketService from "../services/socketService";
-import { ArrowUpRight, BadgeCheck, CreditCard, Eye, EyeOff, Fingerprint, Settings2, Shield, ShieldCheck, UsersRound, WalletCards } from "lucide-react";
+import { ArrowUpRight, BadgeCheck, CreditCard, Fingerprint, Settings2, Shield, ShieldCheck, UsersRound, WalletCards } from "lucide-react";
 import "./admin.css";
 import "../styles/theme.css";
 
@@ -356,75 +356,6 @@ const AdminDashboard = () => {
                 <span>Provision new admins with setup steps aligned to your workflow.</span>
               </div>
 
-              <div className="form-row">
-                <label>Meta App ID</label>
-                <input
-                  type="text"
-                  placeholder="Meta App ID"
-                  value={metaAppId}
-                  onChange={(e) => setMetaAppId(e.target.value)}
-                />
-              </div>
-
-              <div className="form-row">
-                <label>Meta App Secret</label>
-                <div className="password-field">
-                  <input
-                    type={showMetaSecret ? "text" : "password"}
-                    placeholder="Meta App Secret"
-                    value={metaAppSecret}
-                    onChange={(e) => setMetaAppSecret(e.target.value)}
-                  />
-                  <span className="eye-icon" onClick={() => setShowMetaSecret(!showMetaSecret)}>
-                    {showMetaSecret ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </span>
-                </div>
-              </div>
-
-              <div className="form-row">
-                <label>Meta Redirect URI</label>
-                <input
-                  type="text"
-                  placeholder="Meta Redirect URI"
-                  value={metaRedirectUri}
-                  onChange={(e) => setMetaRedirectUri(e.target.value)}
-                />
-              </div>
-
-              <div className="form-row">
-                <label>Meta User Access Token</label>
-                <div className="password-field">
-                  <input
-                    type={showMetaUserToken ? "text" : "password"}
-                    placeholder="Meta User Access Token"
-                    value={metaUserAccessToken}
-                    onChange={(e) => setMetaUserAccessToken(e.target.value)}
-                  />
-                  <span className="eye-icon" onClick={() => setShowMetaUserToken(!showMetaUserToken)}>
-                    {showMetaUserToken ? <EyeOff size={18} /> : <Eye size={18} />}
-                  </span>
-                </div>
-              </div>
-
-              <div className="form-row">
-                <label>Meta Ad Account ID</label>
-                <input
-                  type="text"
-                  placeholder="Meta Ad Account ID"
-                  value={metaAdAccountId}
-                  onChange={(e) => setMetaAdAccountId(e.target.value)}
-                />
-              </div>
-
-              <div className="form-row">
-                <label>Phone Number</label>
-                <input
-                  type="text"
-                  placeholder="Phone Number"
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                />
-              </div>
               <div>
                 <strong>Billing visibility</strong>
                 <span>Keep pricing controls and live payment activity in one place.</span>

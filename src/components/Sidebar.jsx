@@ -102,17 +102,18 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
     const isLoggedIn = !!user;
     const userName = user?.username || user?.name || "Guest";
     const userRole = user?.role || "guest";
+    const isSuperAdmin = userRole === "superadmin";
     const subscriptionStatus = String(user?.subscriptionStatus || '').toLowerCase();
     const workspaceAccessState = String(user?.workspaceAccessState || '').toLowerCase();
     const featureFlags = user?.featureFlags || {};
     const canViewAnalytics = user?.canViewAnalytics !== false;
-    const canUseBroadcast = Boolean(featureFlags.broadcastMessaging || featureFlags.teamInbox);
-    const canUseVoiceAutomation = Boolean(
+    const canUseBroadcast = isSuperAdmin || Boolean(featureFlags.broadcastMessaging || featureFlags.teamInbox);
+    const canUseVoiceAutomation = isSuperAdmin || Boolean(
         featureFlags.voiceCampaign || featureFlags.inboundAutomation || featureFlags.outboundVoice
     );
-    const canUseMissedCalls = Boolean(featureFlags.missedCall);
-    const canUseEmailAutomation = Boolean(featureFlags.workflowAutomation || featureFlags.analytics);
-    const canUseAdsManager = Boolean(featureFlags.adsManager) && canViewAnalytics;
+    const canUseMissedCalls = isSuperAdmin || Boolean(featureFlags.missedCall);
+    const canUseEmailAutomation = isSuperAdmin || Boolean(featureFlags.workflowAutomation || featureFlags.analytics);
+    const canUseAdsManager = isSuperAdmin || (Boolean(featureFlags.adsManager) && canViewAnalytics);
 
     useEffect(() => {
         if (!isLoggedIn && openMenu === 'bulkMessage') {
@@ -283,7 +284,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
 
                 <nav className="icon-menu">
                     {/* Admin Icon */}
-                    {userRole === "superadmin" && (
+                    {isSuperAdmin && (
                         <div
                             className={`icon-item ${isRouteActive('/admin') ? 'active' : ''}`}
                             onClick={() => {

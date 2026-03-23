@@ -41,10 +41,17 @@ const UsersListPage = () => {
   const [whatsappId, setWhatsappId] = useState("");
   const [whatsappToken, setWhatsappToken] = useState("");
   const [whatsappBusiness, setWhatsappBusiness] = useState("");
+  const [metaAppId, setMetaAppId] = useState("");
+  const [metaAppSecret, setMetaAppSecret] = useState("");
+  const [metaRedirectUri, setMetaRedirectUri] = useState("");
+  const [metaUserAccessToken, setMetaUserAccessToken] = useState("");
+  const [metaAdAccountId, setMetaAdAccountId] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [missedCallWebhook, setMissedCallWebhook] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [showTwilioToken, setShowTwilioToken] = useState(false);
+  const [showMetaSecret, setShowMetaSecret] = useState(false);
+  const [showMetaUserToken, setShowMetaUserToken] = useState(false);
 
   const resetForm = () => {
     setUsername("");
@@ -55,8 +62,17 @@ const UsersListPage = () => {
     setWhatsappId("");
     setWhatsappToken("");
     setWhatsappBusiness("");
+    setMetaAppId("");
+    setMetaAppSecret("");
+    setMetaRedirectUri("");
+    setMetaUserAccessToken("");
+    setMetaAdAccountId("");
     setPhoneNumber("");
     setMissedCallWebhook("");
+    setShowToken(false);
+    setShowTwilioToken(false);
+    setShowMetaSecret(false);
+    setShowMetaUserToken(false);
     setErrors({});
   };
 
@@ -141,6 +157,11 @@ const UsersListPage = () => {
     setWhatsappId(selectedUser.whatsappId ?? selectedUser.whatsappid ?? "");
     setWhatsappToken(selectedUser.whatsappToken ?? selectedUser.whatsapptoken ?? "");
     setWhatsappBusiness(selectedUser.whatsappBusiness ?? selectedUser.whatsappbussiness ?? "");
+    setMetaAppId(selectedUser.metaAppId ?? selectedUser.metaappid ?? "");
+    setMetaAppSecret(selectedUser.metaAppSecret ?? selectedUser.metaappsecret ?? "");
+    setMetaRedirectUri(selectedUser.metaRedirectUri ?? selectedUser.metaredirecturi ?? "");
+    setMetaUserAccessToken(selectedUser.metaUserAccessToken ?? selectedUser.metauseraccesstoken ?? "");
+    setMetaAdAccountId(selectedUser.metaAdAccountId ?? selectedUser.metaadaccountid ?? "");
     setPhoneNumber(selectedUser.phoneNumber ?? selectedUser.phonenumber ?? "");
     setMissedCallWebhook(selectedUser.missedCallWebhook ?? selectedUser.missedcallwebhook ?? "");
     setErrors({});
@@ -216,6 +237,11 @@ const UsersListPage = () => {
         whatsappId: String(whatsappId || "").trim(),
         whatsappToken: String(whatsappToken || "").trim(),
         whatsappBusiness: String(whatsappBusiness || "").trim(),
+        metaAppId: String(metaAppId || "").trim(),
+        metaAppSecret: String(metaAppSecret || "").trim(),
+        metaRedirectUri: String(metaRedirectUri || "").trim(),
+        metaUserAccessToken: String(metaUserAccessToken || "").trim(),
+        metaAdAccountId: String(metaAdAccountId || "").trim(),
         phoneNumber: String(phoneNumber || "").trim(),
         missedCallWebhook: String(missedCallWebhook || "").trim()
       });
@@ -290,6 +316,44 @@ const UsersListPage = () => {
               <div className="form-row">
                 <label>WhatsApp Business</label>
                 <input value={whatsappBusiness} onChange={(e) => setWhatsappBusiness(e.target.value)} />
+              </div>
+              <div className="form-row">
+                <label>Meta App ID</label>
+                <input value={metaAppId} onChange={(e) => setMetaAppId(e.target.value)} />
+              </div>
+              <div className="form-row">
+                <label>Meta App Secret</label>
+                <div className="password-field password-field--compact">
+                  <input
+                    type={showMetaSecret ? "text" : "password"}
+                    value={metaAppSecret}
+                    onChange={(e) => setMetaAppSecret(e.target.value)}
+                  />
+                  <span className="eye-icon" onClick={() => setShowMetaSecret((prev) => !prev)}>
+                    {showMetaSecret ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </span>
+                </div>
+              </div>
+              <div className="form-row">
+                <label>Meta Redirect URI</label>
+                <input value={metaRedirectUri} onChange={(e) => setMetaRedirectUri(e.target.value)} />
+              </div>
+              <div className="form-row">
+                <label>Meta User Access Token</label>
+                <div className="password-field password-field--compact">
+                  <input
+                    type={showMetaUserToken ? "text" : "password"}
+                    value={metaUserAccessToken}
+                    onChange={(e) => setMetaUserAccessToken(e.target.value)}
+                  />
+                  <span className="eye-icon" onClick={() => setShowMetaUserToken((prev) => !prev)}>
+                    {showMetaUserToken ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </span>
+                </div>
+              </div>
+              <div className="form-row">
+                <label>Meta Ad Account ID</label>
+                <input value={metaAdAccountId} onChange={(e) => setMetaAdAccountId(e.target.value)} />
               </div>
               <div className="form-row">
                 <label>Phone Number</label>
