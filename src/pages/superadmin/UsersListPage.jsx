@@ -34,6 +34,7 @@ const UsersListPage = () => {
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
+  const [selectedRole, setSelectedRole] = useState("user");
   const [twilioAccountSid, setTwilioAccountSid] = useState("");
   const [twilioAuthToken, setTwilioAuthToken] = useState("");
   const [twilioPhoneNumber, setTwilioPhoneNumber] = useState("");
@@ -55,6 +56,7 @@ const UsersListPage = () => {
   const resetForm = () => {
     setUsername("");
     setEmail("");
+    setSelectedRole("user");
     setTwilioAccountSid("");
     setTwilioAuthToken("");
     setTwilioPhoneNumber("");
@@ -143,6 +145,7 @@ const UsersListPage = () => {
   const handleEdit = (selectedUser) => {
     setUsername(selectedUser.username || "");
     setEmail(selectedUser.email || "");
+    setSelectedRole(String(selectedUser.role || "user"));
     setEditingUserId(selectedUser._id);
     setTwilioAccountSid(selectedUser.twilioAccountSid ?? selectedUser.twilioaccountsid ?? "");
     setTwilioAuthToken(selectedUser.twilioAuthToken ?? selectedUser.twilioauthtoken ?? "");
@@ -227,9 +230,9 @@ const UsersListPage = () => {
 
     setLoading(true);
     try {
-      await apiService.updateAdmin(editingUserId, { username, email, role: "admin" });
+      await apiService.updateAdmin(editingUserId, { username, email, role: selectedRole });
       await apiService.saveAdminCredentials({
-        adminId: editingUserId,
+        userId: editingUserId,
         twilioAccountSid: String(twilioAccountSid || "").trim(),
         ...(twilioAuthToken ? { twilioAuthToken: String(twilioAuthToken).trim() } : {}),
         twilioPhoneNumber: String(twilioPhoneNumber || "").trim(),
@@ -259,7 +262,7 @@ const UsersListPage = () => {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal-content" onClick={(e) => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>Edit Admin</h2>
+              <h2>Edit User</h2>
               <button className="modal-close" onClick={closeModal}>
                 <X size={20} />
               </button>
@@ -273,6 +276,13 @@ const UsersListPage = () => {
               <div className="form-row">
                 <label>Email</label>
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+              </div>
+              <div className="form-row">
+                <label>Role</label>
+                <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}>
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
               </div>
               <div className="form-row">
                 <label>Twilio Account SID</label>
@@ -370,7 +380,7 @@ const UsersListPage = () => {
                   Cancel
                 </button>
                 <button type="submit" disabled={loading} className="btn-submit">
-                  {loading ? "Updating..." : "Update Admin"}
+                  {loading ? "Updating..." : "Update User"}
                 </button>
               </div>
             </form>
