@@ -319,6 +319,11 @@ apiService.initializeSocket = () => socketService.connect();
 
 // Superadmin / Admin management APIs
 apiService.getAdmins = () => apiService.get(`${ADMIN_API_BASE_URL}/api/getadmin`);
+apiService.getAdminUsers = (config = {}) =>
+  apiService.get(`${ADMIN_API_BASE_URL}/api/admin/users`, {
+    timeout: Number(import.meta.env.VITE_ADMIN_USERS_TIMEOUT_MS || 90000),
+    ...config
+  });
 apiService.registerAdmin = (payload) => apiService.post(`${ADMIN_API_BASE_URL}/registeradmin`, payload);
 apiService.updateAdmin = (adminId, payload) => apiService.put(`${ADMIN_API_BASE_URL}/api/edit/${adminId}`, payload);
 apiService.deleteAdmin = (adminId) => apiService.delete(`${ADMIN_API_BASE_URL}/api/delete/${adminId}`);

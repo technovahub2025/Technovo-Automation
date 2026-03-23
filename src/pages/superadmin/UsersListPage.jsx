@@ -19,7 +19,6 @@ import "../../styles/theme.css";
 
 const UsersListPage = () => {
   const navigate = useNavigate();
-  const backendUrl = import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_API_URL || "";
 
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(true);
@@ -79,7 +78,7 @@ const UsersListPage = () => {
   const fetchUsers = async () => {
     setUsersLoading(true);
     try {
-      const res = await apiService.get(`${backendUrl}/api/admin/users`);
+      const res = await apiService.getAdminUsers();
       setUsers(res?.data?.data || []);
     } catch (err) {
       console.error("Failed to fetch users:", err);
