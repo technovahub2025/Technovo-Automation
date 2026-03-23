@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import socketService from "../services/socketService";
-import { ArrowUpRight, BadgeCheck, CreditCard, Fingerprint, Settings2, Shield, ShieldCheck, UsersRound, WalletCards } from "lucide-react";
+import { ArrowUpRight, BadgeCheck, CreditCard, Eye, EyeOff, Fingerprint, Settings2, Shield, ShieldCheck, UsersRound, WalletCards } from "lucide-react";
 import "./admin.css";
 import "../styles/theme.css";
 
