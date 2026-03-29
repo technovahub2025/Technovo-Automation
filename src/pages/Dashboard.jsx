@@ -4,7 +4,8 @@ import RegisterDocuments from "./RegisterDocuments";
 import socketService from "../services/socketService";
 import { AuthContext } from "./authcontext";
 
-const FALLBACK_LANDING_URL = "http://localhost:5173/nexion/landingpage/";
+const FALLBACK_LANDING_URL =
+  import.meta.env.VITE_LANDING_FALLBACK_URL || "http://localhost:5173/nexion/landingpage/";
 
 const cleanUrl = (value) => String(value || "").trim();
 
