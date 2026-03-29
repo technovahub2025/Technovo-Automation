@@ -22,7 +22,10 @@ import {
     ChevronLeft,
     ChevronRight,
     Menu,
-    X
+    X,
+    PhoneIncoming,
+    PhoneOutgoing,
+    LineChart
 } from 'lucide-react';
 import logo from '../../src/assets/logo.png';
 import './Sidebar.css';
@@ -107,12 +110,22 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
     const workspaceAccessState = String(user?.workspaceAccessState || '').toLowerCase();
     const featureFlags = user?.featureFlags || {};
     const canViewAnalytics = user?.canViewAnalytics !== false;
-    const canUseBroadcast = isSuperAdmin || Boolean(featureFlags.broadcastMessaging || featureFlags.teamInbox);
+    const canUseMetaAds = isSuperAdmin || Boolean(featureFlags.adsManager || featureFlags.analytics || featureFlags.metaConnect);
+    const canUseBroadcast = isSuperAdmin || Boolean(
+        featureFlags.broadcastDashboard ||
+        featureFlags.teamInbox ||
+        featureFlags.broadcastMessaging ||
+        featureFlags.templates ||
+        featureFlags.contacts
+    );
     const canUseVoiceAutomation = isSuperAdmin || Boolean(
-        featureFlags.voiceCampaign || featureFlags.inboundAutomation || featureFlags.outboundVoice
+        featureFlags.voiceCampaign ||
+        featureFlags.inboundAutomation ||
+        featureFlags.outboundVoice ||
+        featureFlags.callAnalytics
     );
     const canUseMissedCalls = isSuperAdmin || Boolean(featureFlags.missedCall);
-    const canUseEmailAutomation = isSuperAdmin || Boolean(featureFlags.workflowAutomation || featureFlags.analytics);
+    const canUseEmailAutomation = isSuperAdmin || Boolean(featureFlags.workflowAutomation);
     const canUseAdsManager = isSuperAdmin || (Boolean(featureFlags.adsManager) && canViewAnalytics);
 
     useEffect(() => {
@@ -238,12 +251,28 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         isRouteActive('/templates') ||
         isRouteActive('/contacts') ||
         currentPath.startsWith('/inbox');
+    const isVoiceRouteActive =
+        isRouteActive('/voice-broadcast') ||
+        currentPath.startsWith('/voice-automation/inbound') ||
+        currentPath.startsWith('/voice-automation/outbound') ||
+        currentPath.startsWith('/voice-automation/history');
 
     const isMissedCallsRouteActive = currentPath.startsWith('/missedcalls');
     const isMetaAdsRouteActive =
         isRouteActive('/ads-manager') ||
         isRouteActive('/insights') ||
         isRouteActive('/meta-connect');
+    const getPreferredBulkRoute = () => {
+        const preferredRoutes = [
+            [featureFlags.broadcastDashboard, '/broadcast-dashboard'],
+            [featureFlags.teamInbox, '/inbox'],
+            [featureFlags.broadcastMessaging, '/broadcast'],
+            [featureFlags.templates, '/templates'],
+            [featureFlags.contacts, '/contacts']
+        ];
+        const selectedRoute = preferredRoutes.find(([enabled, route]) => isSuperAdmin || enabled)?.[1];
+        return selectedRoute || '/broadcast-dashboard';
+    };
 
     return (
         <div className={`sidebar-container ${isCompactMobile ? 'compact-mobile' : ''}`}>
@@ -268,7 +297,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
             <aside
                 className={`sidebar-dark ${isCompactMobile ? (isMobileSidebarOpen ? 'open' : 'closed') : ''}`}
                 onMouseLeave={() => {
-                    if (!isMobile && (openMenu === 'bulkMessage' || openMenu === 'metaAds' || openMenu === 'settings')) {
+                    if (!isMobile && (openMenu === 'bulkMessage' || openMenu === 'metaAds' || openMenu === 'voice' || openMenu === 'settings')) {
                         scheduleDesktopFlyoutClose();
                     }
                 }}
@@ -312,45 +341,47 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                         <span className="icon-label">Dashboard</span>
                     </div>
 
-                    <div
-                        className={`icon-item ${isMetaAdsRouteActive ? 'active' : ''} ${openMenu === 'metaAds' ? 'expanded' : ''}`}
-                        onMouseEnter={(e) => {
-                            if (!isMobile) {
-                                cancelDesktopFlyoutClose();
-                                openDesktopFlyout('metaAds', e);
-                            }
-                        }}
-                        onClick={(e) => {
-                            if (isMobile) {
-                                if (openMenu === 'metaAds' && isOverlayOpen) {
-                                    setIsOverlayOpen(false);
-                                    setOpenMenu(null);
-                                } else {
-                                    setOpenMenu('metaAds');
-                                    setIsOverlayOpen(true);
-                                    if (isCompactMobile) setIsMobileSidebarOpen(true);
+                    {canUseMetaAds && (
+                        <div
+                            className={`icon-item ${isMetaAdsRouteActive ? 'active' : ''} ${openMenu === 'metaAds' ? 'expanded' : ''}`}
+                            onMouseEnter={(e) => {
+                                if (!isMobile) {
+                                    cancelDesktopFlyoutClose();
+                                    openDesktopFlyout('metaAds', e);
                                 }
-                                return;
-                            }
-                            if (isCompactMobile) setIsMobileSidebarOpen(true);
-                            if (!isMobile) {
-                                openDesktopFlyout('metaAds', e);
-                            } else {
-                                toggleMenu('metaAds');
-                                setIsOverlayOpen(true);
-                            }
-                        }}
-                        title="Meta Ads"
-                    >
-                        <Megaphone size={24} />
-                        <span className="icon-label icon-label-multiline">
-                            <span>Meta</span>
-                            <span>Ads</span>
-                        </span>
-                        <span className="submenu-arrow-indicator" aria-hidden="true">
-                            {openMenu === 'metaAds' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
-                        </span>
-                    </div>
+                            }}
+                            onClick={(e) => {
+                                if (isMobile) {
+                                    if (openMenu === 'metaAds' && isOverlayOpen) {
+                                        setIsOverlayOpen(false);
+                                        setOpenMenu(null);
+                                    } else {
+                                        setOpenMenu('metaAds');
+                                        setIsOverlayOpen(true);
+                                        if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                    }
+                                    return;
+                                }
+                                if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                if (!isMobile) {
+                                    openDesktopFlyout('metaAds', e);
+                                } else {
+                                    toggleMenu('metaAds');
+                                    setIsOverlayOpen(true);
+                                }
+                            }}
+                            title="Meta Ads"
+                        >
+                            <Megaphone size={24} />
+                            <span className="icon-label icon-label-multiline">
+                                <span>Meta</span>
+                                <span>Ads</span>
+                            </span>
+                            <span className="submenu-arrow-indicator" aria-hidden="true">
+                                {openMenu === 'metaAds' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+                            </span>
+                        </div>
+                    )}
 
                     {/* Bulk Message Icon - Opens submenu */}
                     {isLoggedIn && canUseBroadcast && (
@@ -375,10 +406,11 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                     return;
                                 }
                                 if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                const targetRoute = getPreferredBulkRoute();
                                 if (openMenu === 'bulkMessage') {
                                     if (isMobile) setIsOverlayOpen(true);
                                     // If already open, navigate to last active item
-                                    navigate(lastBulkMessageItem);
+                                    navigate(targetRoute === lastBulkMessageItem ? lastBulkMessageItem : targetRoute);
                                 } else {
                                     // If closed, open and navigate to last active item
                                     if (!isMobile) {
@@ -387,7 +419,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                         setOpenMenu('bulkMessage');
                                         setIsOverlayOpen(true);
                                     }
-                                    navigate(lastBulkMessageItem);
+                                    navigate(targetRoute === lastBulkMessageItem ? lastBulkMessageItem : targetRoute);
                                 }
                             }}
                             title="Bulk Message"
@@ -420,20 +452,35 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
 
                     {canUseVoiceAutomation && (
                         <div
-                            className={`icon-item ${isRouteActive('/voice-automation') ? 'active' : ''}`}
-                            onMouseEnter={() => {
+                            className={`icon-item ${isVoiceRouteActive ? 'active' : ''} ${openMenu === 'voice' ? 'expanded' : ''}`}
+                            onMouseEnter={(e) => {
                                 if (!isMobile) {
-                                    setOpenMenu(null);
+                                    cancelDesktopFlyoutClose();
+                                    openDesktopFlyout('voice', e);
                                 }
                             }}
-                            onClick={() => {
-                                setOpenMenu(null);
-                                navigate('/voice-automation');
+                            onClick={(e) => {
+                                if (isMobile) {
+                                    if (openMenu === 'voice' && isOverlayOpen) {
+                                        setIsOverlayOpen(false);
+                                        setOpenMenu(null);
+                                    } else {
+                                        setOpenMenu('voice');
+                                        setIsOverlayOpen(true);
+                                        if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                    }
+                                    return;
+                                }
+                                if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                openDesktopFlyout('voice', e);
                             }}
-                            title="Voice Automation"
+                            title="Voice"
                         >
                             <Phone size={24} />
                             <span className="icon-label">Voice</span>
+                            <span className="submenu-arrow-indicator" aria-hidden="true">
+                                {openMenu === 'voice' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+                            </span>
                         </div>
                     )}
 
@@ -569,88 +616,96 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 )}
                             </div>
                             <nav className="panel-menu">
-                                <NavLink
-                                    to="/broadcast-dashboard"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={() => {
-                                        setLastBulkMessageItem('/broadcast-dashboard');
-                                        closeMobileMenusAfterNavigate();
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.preventDefault();
-                                        setOpenMenu(null);
-                                    }}
-                                >
-                                    <LayoutDashboard size={20} />
-                                    <span>Broadcast Dashboard</span>
-                                </NavLink>
-                                <NavLink
-                                    to="/inbox"
-                                    className={() => `panel-item ${currentPath.startsWith('/inbox') ? 'active' : ''}`}
-                                    onClick={() => {
-                                        setLastBulkMessageItem('/inbox');
-                                        closeMobileMenusAfterNavigate();
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.preventDefault();
-                                        setOpenMenu(null);
-                                    }}
-                                >
-                                    <MessageSquare size={20} />
-                                    <span>Team Inbox</span>
-                                </NavLink>
-                                <NavLink
-                                    to="/broadcast"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={() => {
-                                        setLastBulkMessageItem('/broadcast');
-                                        closeMobileMenusAfterNavigate();
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.preventDefault();
-                                        setOpenMenu(null);
-                                    }}
-                                >
-                                    <Radio size={20} />
-                                    <span>Broadcast</span>
-                                </NavLink>
-
-                                <NavLink
-                                    to="/templates"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={() => {
-                                        setLastBulkMessageItem('/templates');
-                                        closeMobileMenusAfterNavigate();
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.preventDefault();
-                                        setOpenMenu(null);
-                                    }}
-                                >
-                                    <FileText size={20} />
-                                    <span>Templates</span>
-                                </NavLink>
-
-                                <NavLink
-                                    to="/contacts"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={() => {
-                                        setLastBulkMessageItem('/contacts');
-                                        closeMobileMenusAfterNavigate();
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.preventDefault();
-                                        setOpenMenu(null);
-                                    }}
-                                >
-                                    <Users size={20} />
-                                    <span>Contacts</span>
-                                </NavLink>
+                                {(isSuperAdmin || featureFlags.broadcastDashboard) && (
+                                    <NavLink
+                                        to="/broadcast-dashboard"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setLastBulkMessageItem('/broadcast-dashboard');
+                                            closeMobileMenusAfterNavigate();
+                                        }}
+                                        onDoubleClick={(e) => {
+                                            e.preventDefault();
+                                            setOpenMenu(null);
+                                        }}
+                                    >
+                                        <LayoutDashboard size={20} />
+                                        <span>Broadcast Dashboard</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.teamInbox) && (
+                                    <NavLink
+                                        to="/inbox"
+                                        className={() => `panel-item ${currentPath.startsWith('/inbox') ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setLastBulkMessageItem('/inbox');
+                                            closeMobileMenusAfterNavigate();
+                                        }}
+                                        onDoubleClick={(e) => {
+                                            e.preventDefault();
+                                            setOpenMenu(null);
+                                        }}
+                                    >
+                                        <MessageSquare size={20} />
+                                        <span>Team Inbox</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.broadcastMessaging) && (
+                                    <NavLink
+                                        to="/broadcast"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setLastBulkMessageItem('/broadcast');
+                                            closeMobileMenusAfterNavigate();
+                                        }}
+                                        onDoubleClick={(e) => {
+                                            e.preventDefault();
+                                            setOpenMenu(null);
+                                        }}
+                                    >
+                                        <Radio size={20} />
+                                        <span>Broadcast</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.templates) && (
+                                    <NavLink
+                                        to="/templates"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setLastBulkMessageItem('/templates');
+                                            closeMobileMenusAfterNavigate();
+                                        }}
+                                        onDoubleClick={(e) => {
+                                            e.preventDefault();
+                                            setOpenMenu(null);
+                                        }}
+                                    >
+                                        <FileText size={20} />
+                                        <span>Templates</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.contacts) && (
+                                    <NavLink
+                                        to="/contacts"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={() => {
+                                            setLastBulkMessageItem('/contacts');
+                                            closeMobileMenusAfterNavigate();
+                                        }}
+                                        onDoubleClick={(e) => {
+                                            e.preventDefault();
+                                            setOpenMenu(null);
+                                        }}
+                                    >
+                                        <Users size={20} />
+                                        <span>Contacts</span>
+                                    </NavLink>
+                                )}
                             </nav>
                         </>
                     )}
 
-                    {openMenu === 'metaAds' && (
+                    {openMenu === 'metaAds' && canUseMetaAds && (
                         <>
                             <div className="panel-header">
                                 <h3>Meta Ads</h3>
@@ -665,30 +720,95 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 )}
                             </div>
                             <nav className="panel-menu">
-                                <NavLink
-                                    to="/ads-manager"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={closeMobileMenusAfterNavigate}
-                                >
-                                    <Megaphone size={20} />
-                                    <span>Ads Manager</span>
-                                </NavLink>
-                                <NavLink
-                                    to="/insights"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={closeMobileMenusAfterNavigate}
-                                >
-                                    <BarChart3 size={20} />
-                                    <span>Insights</span>
-                                </NavLink>
-                                <NavLink
-                                    to="/meta-connect"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={closeMobileMenusAfterNavigate}
-                                >
-                                    <Facebook size={20} />
-                                    <span>Connect Meta</span>
-                                </NavLink>
+                                {(isSuperAdmin || featureFlags.adsManager) && (
+                                    <NavLink
+                                        to="/ads-manager"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <Megaphone size={20} />
+                                        <span>Ads Manager</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.analytics) && (
+                                    <NavLink
+                                        to="/insights"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <BarChart3 size={20} />
+                                        <span>Insights</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.metaConnect) && (
+                                    <NavLink
+                                        to="/meta-connect"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <Facebook size={20} />
+                                        <span>Connect Meta</span>
+                                    </NavLink>
+                                )}
+                            </nav>
+                        </>
+                    )}
+
+                    {openMenu === 'voice' && canUseVoiceAutomation && (
+                        <>
+                            <div className="panel-header">
+                                <h3>Voice</h3>
+                                {isMobile && (
+                                    <button
+                                        className="panel-close-btn"
+                                        onClick={toggleOverlay}
+                                        title="Close menu"
+                                    >
+                                        <X size={20} />
+                                    </button>
+                                )}
+                            </div>
+                            <nav className="panel-menu">
+                                {(isSuperAdmin || featureFlags.voiceCampaign) && (
+                                    <NavLink
+                                        to="/voice-broadcast"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <Megaphone size={20} />
+                                        <span>Voice Broadcast</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.inboundAutomation) && (
+                                    <NavLink
+                                        to="/voice-automation/inbound"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <PhoneIncoming size={20} />
+                                        <span>Inbound / IVR</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.outboundVoice) && (
+                                    <NavLink
+                                        to="/voice-automation/outbound"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <PhoneOutgoing size={20} />
+                                        <span>Outbound</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.callAnalytics) && (
+                                    <NavLink
+                                        to="/voice-automation/history"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <LineChart size={20} />
+                                        <span>Call Analytics</span>
+                                    </NavLink>
+                                )}
                             </nav>
                         </>
                     )}

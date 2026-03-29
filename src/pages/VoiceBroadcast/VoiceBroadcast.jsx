@@ -7,6 +7,7 @@ import BroadcastMonitor from "../VoiceBroadcast/components/BroadcastMonitor";
 import { broadcastAPI } from '../../services/broadcastAPI';
 import { useBroadcast } from '../VoiceBroadcast/hooks/useBroadcast';
 import socketService from '../../services/socketService';
+import apiService from '../../services/api';
 import './VoiceBroadcast.css';
 
 const VoiceBroadcast = () => {
@@ -14,6 +15,10 @@ const VoiceBroadcast = () => {
   const [activeTab, setActiveTab] = useState('create');
   const [activeBroadcastId, setActiveBroadcastId] = useState(null);
   const [realtimeStats, setRealtimeStats] = useState({ total: 0, active: 0 });
+  const [healthStatus, setHealthStatus] = useState({
+    backend: false,
+    ai: false
+  });
 
   // Initialize with safe defaults
   const { broadcasts = [], loading = false, error = null, refreshBroadcasts = () => { } } = useBroadcast() || {};
@@ -25,28 +30,59 @@ const VoiceBroadcast = () => {
       refreshBroadcasts();
     }
 
+    const checkHealth = async () => {
+      try {
+        const [backendHealth, aiHealth] = await Promise.all([
+          apiService.checkBackendHealth(),
+          apiService.checkAIHealth()
+        ]);
+
+        setHealthStatus({
+          backend: backendHealth?.data?.status === 'online',
+          ai: aiHealth?.data?.status === 'healthy'
+        });
+      } catch (err) {
+        console.error('Failed to fetch voice service health', err);
+      }
+    };
+
+    checkHealth();
+
     const socket = socketService.connect();
 
-    socket.on('connect', () => {
+    const handleConnect = () => {
       console.log('Connected to dashboard socket');
-    });
+    };
 
-    socket.on('stats_update', (data) => {
+    const handleStatsUpdate = (data) => {
       setRealtimeStats({
         total: data.totalCampaigns,
         active: data.activeCampaigns
       });
-    });
+    };
 
-    socket.on('broadcast_list_update', () => {
+    const handleBroadcastListUpdate = () => {
       if (refreshBroadcasts) refreshBroadcasts();
-    });
+    };
+
+    const handleHealthUpdate = (data = {}) => {
+      setHealthStatus({
+        backend: Boolean(data.backend),
+        ai: Boolean(data.ai)
+      });
+    };
+
+    socket.on('connect', handleConnect);
+    socket.on('stats_update', handleStatsUpdate);
+    socket.on('broadcast_list_update', handleBroadcastListUpdate);
+    socket.on('health_update', handleHealthUpdate);
 
     // Cleanup on unmount - only remove listeners, keep socket connected
     return () => {
-      socket.off('stats_update');
-      socket.off('broadcast_list_update');
-      socket.off('connect');
+      socket.off('connect', handleConnect);
+      socket.off('stats_update', handleStatsUpdate);
+      socket.off('broadcast_list_update', handleBroadcastListUpdate);
+      socket.off('health_update', handleHealthUpdate);
     };
   }, [refreshBroadcasts]);
 
@@ -113,11 +149,11 @@ const VoiceBroadcast = () => {
           gap: '8px',
           paddingLeft: 0
         }}
-        onClick={() => navigate('/voice-automation')}
-        aria-label="Back to Voice Automation"
+        onClick={() => navigate('/')}
+        aria-label="Back to Dashboard"
       >
         <ArrowLeft size={20} />
-        Back to Voice Automation
+        Back to Dashboard
       </button>
 
       {/* Header */}
@@ -127,6 +163,16 @@ const VoiceBroadcast = () => {
           <p className="subtitle">
             Send automated voice messages to multiple contacts
           </p>
+          <div className="voice-health-status">
+            <div className={`voice-status-badge ${healthStatus.backend ? 'online' : 'offline'}`}>
+              <span className="voice-pulse-dot" aria-hidden="true" />
+              Backend: {healthStatus.backend ? 'Online' : 'Offline'}
+            </div>
+            <div className={`voice-status-badge ${healthStatus.ai ? 'online' : 'offline'}`}>
+              <span className="voice-pulse-dot" aria-hidden="true" />
+              AI Service: {healthStatus.ai ? 'Healthy' : 'Unhealthy'}
+            </div>
+          </div>
         </div>
 
         <div className="header-stats">

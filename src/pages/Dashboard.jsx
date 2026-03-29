@@ -4,8 +4,19 @@ import RegisterDocuments from "./RegisterDocuments";
 import socketService from "../services/socketService";
 import { AuthContext } from "./authcontext";
 
-const resolveLandingUrl = () =>
-  import.meta.env.VITE_LANDING_DASHBOARD_URL || "http://localhost:5174/nexion/landingpage/";
+const FALLBACK_LANDING_URL = "http://localhost:5173/nexion/landingpage/";
+
+const cleanUrl = (value) => String(value || "").trim();
+
+const resolveLandingUrl = () => {
+  const dashboardUrl = cleanUrl(import.meta.env.VITE_LANDING_DASHBOARD_URL);
+  if (dashboardUrl) return dashboardUrl;
+
+  const pricingUrl = cleanUrl(import.meta.env.VITE_LANDING_PRICING_URL);
+  if (pricingUrl) return pricingUrl.replace(/#.*$/, "");
+
+  return FALLBACK_LANDING_URL;
+};
 
 const getStoredToken = () => {
   const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
@@ -28,6 +39,7 @@ const Dashboard = () => {
   const { user, refreshFromBackend } = useContext(AuthContext);
   const [viewMode, setViewMode] = useState("landing");
   const [documentsSubmitted, setDocumentsSubmitted] = useState(false);
+  const [embedError, setEmbedError] = useState("");
   const landingUrl = useMemo(() => resolveLandingUrl(), []);
   const landingOrigin = useMemo(() => {
     try {
@@ -44,6 +56,23 @@ const Dashboard = () => {
     workspaceAccessState
   );
   const shouldAutoOpenPricing = Boolean(location.state?.openPricing);
+  const shouldShowEmbeddedLanding = viewMode !== "documents" && !embedError;
+
+  const handleIframeLoad = () => {
+    try {
+      const frameWindow = iframeRef.current?.contentWindow;
+      if (!frameWindow) return;
+
+      if (frameWindow.__TECHNOVO_AUTOMATION_APP__) {
+        setEmbedError("Embedded landing URL is pointing to this app itself. Update VITE_LANDING_DASHBOARD_URL to the landing app URL.");
+        return;
+      }
+
+      setEmbedError("");
+    } catch (error) {
+      // Cross-origin iframe: cannot inspect window marker, which is expected in production.
+    }
+  };
 
   useEffect(() => {
     if (workspaceAccessState === "paid_pending_documents" || workspaceAccessState === "documents_rejected") {
@@ -154,6 +183,7 @@ const Dashboard = () => {
   }, [refreshFromBackend]);
 
   const openPricing = () => {
+    if (embedError) return;
     setViewMode("landing");
     const frameWindow = iframeRef.current?.contentWindow;
     if (!frameWindow) {
@@ -215,7 +245,7 @@ const Dashboard = () => {
           </div>
           <RegisterDocuments embedded onComplete={handleDocumentsComplete} onCancel={() => setViewMode("landing")} />
         </div>
-      ) : (
+      ) : shouldShowEmbeddedLanding ? (
         <div
           style={{
             width: "100%",
@@ -230,6 +260,7 @@ const Dashboard = () => {
           <iframe
             ref={iframeRef}
             src={landingUrl}
+            onLoad={handleIframeLoad}
             title="Nexion Dashboard"
             style={{
               width: "100%",
@@ -239,9 +270,28 @@ const Dashboard = () => {
             }}
           />
         </div>
+      ) : (
+        <div
+          style={{
+            width: "100%",
+            borderRadius: "18px",
+            border: "1px solid #fecaca",
+            background: "linear-gradient(180deg, #fff5f5 0%, #ffffff 100%)",
+            boxShadow: "0 18px 40px rgba(220, 38, 38, 0.08)",
+            padding: "20px"
+          }}
+        >
+          <h3 style={{ margin: 0, color: "#b91c1c", fontSize: "20px" }}>Embedded Landing Misconfiguration</h3>
+          <p style={{ margin: "10px 0 0", color: "#7f1d1d", lineHeight: 1.6 }}>
+            {embedError}
+          </p>
+          <p style={{ margin: "8px 0 0", color: "#7f1d1d", lineHeight: 1.6 }}>
+            Current value: <strong>{landingUrl}</strong>
+          </p>
+        </div>
       )}
 
-      {isTrialing && viewMode !== "documents" ? (
+      {isTrialing && viewMode !== "documents" && !embedError ? (
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             type="button"

@@ -4,7 +4,19 @@ import { useContext } from 'react';
 import { AuthContext } from '../../pages/authcontext';
 import LoadingSpinner from '../common/LoadingSpinner';
 
-const ProtectedRoute = ({ children, requiredRole, requireAuth = true }) => {
+const hasFeatureAccess = (user, requiredFeature) => {
+    if (!requiredFeature) return true;
+    if (user?.role === 'superadmin') return true;
+
+    const featureFlags = user?.featureFlags || {};
+    if (Array.isArray(requiredFeature)) {
+        return requiredFeature.some((feature) => Boolean(featureFlags?.[feature]));
+    }
+
+    return Boolean(featureFlags?.[requiredFeature]);
+};
+
+const ProtectedRoute = ({ children, requiredRole, requiredFeature, requireAuth = true }) => {
     const context = useContext(AuthContext);
 
     if (!context) {
@@ -27,6 +39,10 @@ const ProtectedRoute = ({ children, requiredRole, requireAuth = true }) => {
         if (requiredRole === 'admin' && !['admin', 'superadmin'].includes(user?.role)) {
             return <Navigate to="/" replace />;
         }
+    }
+
+    if (requireAuth && isAuthenticated && requiredFeature && !hasFeatureAccess(user, requiredFeature)) {
+        return <Navigate to="/" replace />;
     }
 
     return children;

@@ -1,25 +1,64 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   Building2,
   Check,
+  CheckCircle2,
   ChevronDown,
+  Copy,
   Eye,
   EyeOff,
   Mail,
   Search,
   SlidersHorizontal,
   Trash2,
+  Upload,
   X
 } from "lucide-react";
-import { useNavigate } from "react-router-dom";
 import apiService from "../../services/api";
+import socketService from "../../services/socketService";
 import "../admin.css";
 import "../../styles/theme.css";
 
-const UsersListPage = () => {
-  const navigate = useNavigate();
+const FEATURE_GROUPS = [
+  {
+    label: "Meta Ads",
+    features: ["Ads Manager", "Insights", "Connect Meta"]
+  },
+  {
+    label: "Bulk Message",
+    features: ["Broadcast Dashboard", "Team Inbox", "Broadcast", "Templates", "Contacts"]
+  },
+  {
+    label: "Voice",
+    features: ["Voice Broadcast", "Inbound Calls / IVR", "Outbound Voice", "Call Analytics"]
+  },
+  {
+    label: "Other",
+    features: ["Missed Call", "Email Automation"]
+  }
+];
 
+const DOCUMENT_UPLOAD_OPTIONS = [
+  "GST Registration Certificate",
+  "PAN Card (Business)",
+  "Certificate of Incorporation (mandatory for Pvt Ltd / LLP)",
+  "Shop & Establishment License",
+  "Business Bank Statement (last 3 months)",
+  "Utility Bill (Electricity / Phone / Internet)",
+  "Udyam/MSME Certificate",
+  "Articles of Incorporation",
+  "Website Screenshot",
+  "Address Proof (if mismatch or extra verification needed)",
+  "Passport Photo",
+  "CAF Form (Customer Application Form)",
+  "Aadhaar Card",
+  "Voter ID",
+  "Driving License",
+  "Passport"
+];
+
+const UsersListPage = () => {
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -52,6 +91,27 @@ const UsersListPage = () => {
   const [showTwilioToken, setShowTwilioToken] = useState(false);
   const [showMetaSecret, setShowMetaSecret] = useState(false);
   const [showMetaUserToken, setShowMetaUserToken] = useState(false);
+  const [showCustomizeModal, setShowCustomizeModal] = useState(false);
+  const [customizingUser, setCustomizingUser] = useState(null);
+  const [customFeatureLabels, setCustomFeatureLabels] = useState([]);
+  const [customAmount, setCustomAmount] = useState("");
+  const [customCurrency, setCustomCurrency] = useState("INR");
+  const [customBillingCycle, setCustomBillingCycle] = useState("monthly");
+  const [customRole, setCustomRole] = useState("user");
+  const [customPaymentLink, setCustomPaymentLink] = useState(null);
+  const [customPackageId, setCustomPackageId] = useState("");
+  const [customizeLoading, setCustomizeLoading] = useState(false);
+  const [customizeMessage, setCustomizeMessage] = useState("");
+  const [customizeError, setCustomizeError] = useState("");
+  const [adminDocType, setAdminDocType] = useState(DOCUMENT_UPLOAD_OPTIONS[0]);
+  const [adminDocFile, setAdminDocFile] = useState(null);
+  const [adminDocUploading, setAdminDocUploading] = useState(false);
+  const [expandedFeatureGroups, setExpandedFeatureGroups] = useState({
+    "Meta Ads": false,
+    "Bulk Message": false,
+    Voice: false,
+    Other: false
+  });
 
   const resetForm = () => {
     setUsername("");
@@ -77,7 +137,49 @@ const UsersListPage = () => {
     setErrors({});
   };
 
-  const fetchUsers = async () => {
+  const resetCustomizeForm = () => {
+    setShowCustomizeModal(false);
+    setCustomizingUser(null);
+    setCustomFeatureLabels([]);
+    setCustomAmount("");
+    setCustomCurrency("INR");
+    setCustomBillingCycle("monthly");
+    setCustomRole("user");
+    setCustomPaymentLink(null);
+    setCustomPackageId("");
+    setCustomizeMessage("");
+    setCustomizeError("");
+    setAdminDocType(DOCUMENT_UPLOAD_OPTIONS[0]);
+    setAdminDocFile(null);
+  };
+
+  const applyCustomizeSnapshot = (user) => {
+    const userCustomFeatures = Array.isArray(user?.customFeatureLabels) ? user.customFeatureLabels : [];
+    const activePkg = user?.activeCustomPackage || null;
+    setCustomizingUser(user);
+    setCustomFeatureLabels(userCustomFeatures);
+    setCustomAmount(activePkg?.amount ? String(activePkg.amount) : "");
+    setCustomCurrency(activePkg?.currency || "INR");
+    setCustomBillingCycle(activePkg?.billingCycle || "monthly");
+    setCustomRole(String(user?.role || "user"));
+    setCustomPackageId(activePkg?.id || "");
+    setCustomPaymentLink(
+      activePkg
+        ? {
+            customPackageId: activePkg.id || "",
+            paymentLinkId: "",
+            paymentLinkUrl: ""
+          }
+        : null
+    );
+    setCustomizeMessage("");
+    setCustomizeError("");
+    setAdminDocType(DOCUMENT_UPLOAD_OPTIONS[0]);
+    setAdminDocFile(null);
+    setShowCustomizeModal(true);
+  };
+
+  const fetchUsers = useCallback(async () => {
     setUsersLoading(true);
     try {
       const res = await apiService.getAdminUsers();
@@ -87,11 +189,39 @@ const UsersListPage = () => {
     } finally {
       setUsersLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     fetchUsers();
-  }, []);
+  }, [fetchUsers]);
+
+  useEffect(() => {
+    const socket = socketService.connect(import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_SOCKET_URL);
+    if (!socket) return undefined;
+
+    const handleRefresh = () => {
+      fetchUsers();
+    };
+
+    socketService.on("custom.package.updated", handleRefresh);
+    socketService.on("custom.package.link.created", handleRefresh);
+    socketService.on("custom.package.activated", handleRefresh);
+    socketService.on("custom.package.reset", handleRefresh);
+    socketService.on("payment.updated", handleRefresh);
+    socketService.on("documents.updated", handleRefresh);
+    socketService.on("workspace.access.updated", handleRefresh);
+
+    return () => {
+      socketService.off("custom.package.updated", handleRefresh);
+      socketService.off("custom.package.link.created", handleRefresh);
+      socketService.off("custom.package.activated", handleRefresh);
+      socketService.off("custom.package.reset", handleRefresh);
+      socketService.off("payment.updated", handleRefresh);
+      socketService.off("documents.updated", handleRefresh);
+      socketService.off("workspace.access.updated", handleRefresh);
+      socketService.disconnect();
+    };
+  }, [fetchUsers]);
 
   const filteredUsers = useMemo(
     () =>
@@ -124,6 +254,17 @@ const UsersListPage = () => {
     deletableVisibleUsers.every((user) => selectedUserIds.includes(user._id));
 
   const isDeletableUser = (user) => String(user.role || "user") !== "superadmin";
+
+  const selectedUsers = useMemo(
+    () => users.filter((user) => selectedUserIds.includes(user._id)),
+    [selectedUserIds, users]
+  );
+
+  const selectedCustomTarget = useMemo(() => {
+    if (selectedUsers.length !== 1) return null;
+    if (String(selectedUsers[0]?.role || "").toLowerCase() === "superadmin") return null;
+    return selectedUsers[0];
+  }, [selectedUsers]);
 
   const toggleUserSelection = (userId, canSelect = true) => {
     if (!canSelect) return;
@@ -174,6 +315,178 @@ const UsersListPage = () => {
     setShowEditModal(false);
     setEditingUserId(null);
     resetForm();
+  };
+
+  const toggleCustomFeature = (featureLabel) => {
+    setCustomFeatureLabels((prev) =>
+      prev.includes(featureLabel) ? prev.filter((label) => label !== featureLabel) : [...prev, featureLabel]
+    );
+  };
+
+  const handleOpenCustomizeFromFilter = () => {
+    if (selectedUsers.length !== 1) {
+      window.alert("Please select exactly one user to customize package access.");
+      return;
+    }
+    const user = selectedUsers[0];
+    if (String(user.role || "").toLowerCase() === "superadmin") {
+      window.alert("Superadmin account cannot be customized.");
+      return;
+    }
+    applyCustomizeSnapshot(user);
+  };
+
+  const handleOpenCustomize = (selectedUser) => {
+    if (String(selectedUser?.role || "").toLowerCase() === "superadmin") {
+      window.alert("Superadmin account cannot be customized.");
+      return;
+    }
+    applyCustomizeSnapshot(selectedUser);
+  };
+
+  const handleSaveCustomDraft = async () => {
+    if (!customizingUser?._id) return;
+    if (!customFeatureLabels.length) {
+      setCustomizeError("Select at least one feature before saving draft.");
+      return;
+    }
+    if (!Number(customAmount)) {
+      setCustomizeError("Enter a valid amount greater than zero.");
+      return;
+    }
+    setCustomizeLoading(true);
+    setCustomizeError("");
+    setCustomizeMessage("");
+    try {
+      if (String(customRole || "") !== String(customizingUser?.role || "")) {
+        await apiService.updateAdmin(customizingUser._id, {
+          username: customizingUser.username || "",
+          email: customizingUser.email || "",
+          role: customRole
+        });
+      }
+      const payload = {
+        featureLabels: customFeatureLabels,
+        amount: Number(customAmount),
+        billingCycle: customBillingCycle,
+        currency: customCurrency
+      };
+      const response = await apiService.saveCustomPackageDraft(customizingUser._id, payload);
+      setCustomPackageId(String(response?.data?.data?._id || customPackageId || ""));
+      setCustomizeMessage("Custom package draft saved. You can now generate payment link.");
+      await fetchUsers();
+    } catch (err) {
+      setCustomizeError(err?.response?.data?.message || "Failed to save custom package draft.");
+    } finally {
+      setCustomizeLoading(false);
+    }
+  };
+
+  const handleGeneratePaymentLink = async () => {
+    if (!customizingUser?._id) return;
+    setCustomizeLoading(true);
+    setCustomizeError("");
+    setCustomizeMessage("");
+    try {
+      const response = await apiService.generateCustomPackagePaymentLink(customizingUser._id);
+      const payload = response?.data?.data || {};
+      setCustomPackageId(String(payload.customPackageId || customPackageId || ""));
+      setCustomPaymentLink({
+        customPackageId: payload.customPackageId || customPackageId || "",
+        paymentLinkId: payload.paymentLinkId || "",
+        paymentLinkUrl: payload.paymentLinkUrl || ""
+      });
+      setCustomizeMessage("Payment link generated. Share this link with the user.");
+      await fetchUsers();
+    } catch (err) {
+      setCustomizeError(err?.response?.data?.message || "Failed to generate payment link.");
+    } finally {
+      setCustomizeLoading(false);
+    }
+  };
+
+  const handleVerifyPackagePayment = async () => {
+    if (!customPackageId || !customPaymentLink?.paymentLinkId) {
+      setCustomizeError("Generate payment link first, then verify payment.");
+      return;
+    }
+    setCustomizeLoading(true);
+    setCustomizeError("");
+    setCustomizeMessage("");
+    try {
+      await apiService.verifyCustomPackagePayment({
+        customPackageId,
+        paymentLinkId: customPaymentLink.paymentLinkId
+      });
+      setCustomizeMessage("Payment verified. User custom package is now active.");
+      await fetchUsers();
+    } catch (err) {
+      setCustomizeError(err?.response?.data?.message || "Payment verification failed.");
+    } finally {
+      setCustomizeLoading(false);
+    }
+  };
+
+  const handleResetCustomPackage = async () => {
+    if (!customizingUser?._id) return;
+    if (!window.confirm("Reset this user to plan defaults?")) return;
+    setCustomizeLoading(true);
+    setCustomizeError("");
+    setCustomizeMessage("");
+    try {
+      await apiService.resetCustomPackage(customizingUser._id);
+      setCustomFeatureLabels([]);
+      setCustomAmount("");
+      setCustomPackageId("");
+      setCustomPaymentLink(null);
+      setCustomizeMessage("Custom package reset. Plan defaults are now active.");
+      await fetchUsers();
+    } catch (err) {
+      setCustomizeError(err?.response?.data?.message || "Failed to reset custom package.");
+    } finally {
+      setCustomizeLoading(false);
+    }
+  };
+
+  const handleCopyPaymentLink = async () => {
+    if (!customPaymentLink?.paymentLinkUrl) return;
+    try {
+      await navigator.clipboard.writeText(customPaymentLink.paymentLinkUrl);
+      setCustomizeMessage("Payment link copied.");
+    } catch {
+      setCustomizeError("Unable to copy payment link on this browser.");
+    }
+  };
+
+  const handleUploadAdminDocument = async () => {
+    if (!customizingUser?._id) return;
+    if (!adminDocFile) {
+      setCustomizeError("Select a document file before uploading.");
+      return;
+    }
+    setAdminDocUploading(true);
+    setCustomizeError("");
+    setCustomizeMessage("");
+    try {
+      const payload = new FormData();
+      payload.append("file", adminDocFile);
+      payload.append("docType", adminDocType);
+      await apiService.uploadAdminMetaDocumentForUser(customizingUser._id, payload);
+      setAdminDocFile(null);
+      setCustomizeMessage("Document uploaded successfully for this user.");
+      await fetchUsers();
+    } catch (err) {
+      setCustomizeError(err?.response?.data?.message || "Document upload failed.");
+    } finally {
+      setAdminDocUploading(false);
+    }
+  };
+
+  const toggleFeatureGroup = (groupLabel) => {
+    setExpandedFeatureGroups((prev) => ({
+      ...prev,
+      [groupLabel]: !prev[groupLabel]
+    }));
   };
 
   const handleDelete = async (id) => {
@@ -276,13 +589,6 @@ const UsersListPage = () => {
               <div className="form-row">
                 <label>Email</label>
                 <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              </div>
-              <div className="form-row">
-                <label>Role</label>
-                <select value={selectedRole} onChange={(e) => setSelectedRole(e.target.value)}>
-                  <option value="user">User</option>
-                  <option value="admin">Admin</option>
-                </select>
               </div>
               <div className="form-row">
                 <label>Twilio Account SID</label>
@@ -388,6 +694,203 @@ const UsersListPage = () => {
         </div>
       )}
 
+      {showCustomizeModal && customizingUser && (
+        <div className="modal-overlay" onClick={resetCustomizeForm}>
+          <div className="modal-content modal-content--wide" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>Customize Package Access</h2>
+              <button className="modal-close" onClick={resetCustomizeForm}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="customize-modal-user-strip">
+              <div className="customize-modal-user-chip">
+                <strong>{customizingUser.username || "User"}</strong>
+                <span>{customizingUser.email || "No email"}</span>
+              </div>
+              <div className="customize-modal-user-chip">
+                <strong>Current Plan</strong>
+                <span>{String(customizingUser.planCode || "trial").toUpperCase()}</span>
+              </div>
+              <div className="customize-modal-user-chip">
+                <strong>Workspace State</strong>
+                <span>{customizingUser.workspaceAccessState || "N/A"}</span>
+              </div>
+            </div>
+
+            <div className="customize-form-grid">
+              <div className="form-row form-row--customize">
+                <label>Amount</label>
+                <div className="customize-input-wrap">
+                  <span className="customize-input-prefix">₹</span>
+                  <input
+                    type="number"
+                    min="0"
+                    value={customAmount}
+                    onChange={(e) => setCustomAmount(e.target.value)}
+                    placeholder="Enter package amount"
+                    className="customize-input"
+                  />
+                </div>
+              </div>
+              <div className="form-row form-row--customize">
+                <label>Billing Cycle</label>
+                <select
+                  value={customBillingCycle}
+                  onChange={(e) => setCustomBillingCycle(e.target.value)}
+                  className="customize-select"
+                >
+                  <option value="monthly">Monthly</option>
+                  <option value="yearly">Yearly</option>
+                </select>
+              </div>
+              <div className="form-row form-row--customize">
+                <label>Role</label>
+                <select value={customRole} onChange={(e) => setCustomRole(e.target.value)} className="customize-select">
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+              <div className="form-row form-row--customize">
+                <label>Currency</label>
+                <div className="customize-input-wrap customize-input-wrap--currency">
+                  <input
+                    value={customCurrency}
+                    onChange={(e) => setCustomCurrency(e.target.value.toUpperCase())}
+                    className="customize-input"
+                    placeholder="INR"
+                  />
+                  <span className="customize-input-suffix">ISO</span>
+                </div>
+              </div>
+            </div>
+
+            <section className="customize-feature-section">
+              <h3>Feature Access</h3>
+              <p>Select the feature set to assign for this custom package.</p>
+              <div className="customize-feature-groups">
+                {FEATURE_GROUPS.map((group) => {
+                  const expanded = Boolean(expandedFeatureGroups[group.label]);
+                  return (
+                    <div key={group.label} className="customize-feature-group">
+                      <button
+                        type="button"
+                        className="customize-feature-group__toggle"
+                        onClick={() => toggleFeatureGroup(group.label)}
+                      >
+                        <span>{group.label}</span>
+                        <ChevronDown size={16} className={expanded ? "rotate-180" : ""} />
+                      </button>
+                      {expanded && (
+                        <div className="customize-feature-group__grid">
+                          {group.features.map((feature) => (
+                            <button
+                              type="button"
+                              key={feature}
+                              className={`custom-feature-chip ${customFeatureLabels.includes(feature) ? "custom-feature-chip--active" : ""}`}
+                              onClick={() => toggleCustomFeature(feature)}
+                            >
+                              {customFeatureLabels.includes(feature) ? <Check size={14} /> : null}
+                              <span>{feature}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+
+            <section className="customize-feature-section">
+              <h3>Documents Upload (Admin)</h3>
+              <p>Upload user verification files from superadmin for faster approval workflow.</p>
+              <div className="customize-doc-upload">
+                <select value={adminDocType} onChange={(e) => setAdminDocType(e.target.value)}>
+                  {DOCUMENT_UPLOAD_OPTIONS.map((docType) => (
+                    <option key={docType} value={docType}>
+                      {docType}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  type="file"
+                  onChange={(event) => setAdminDocFile(event.target.files?.[0] || null)}
+                />
+                <button
+                  type="button"
+                  className="users-select-all-btn"
+                  onClick={handleUploadAdminDocument}
+                  disabled={adminDocUploading}
+                >
+                  <Upload size={15} />
+                  <span>{adminDocUploading ? "Uploading..." : "Upload Document"}</span>
+                </button>
+              </div>
+            </section>
+
+            <section className="customize-feature-section">
+              <h3>Payment Link</h3>
+              <p>Save draft, generate Razorpay payment link, and verify after user payment.</p>
+              <div className="customize-payment-actions">
+                <button
+                  type="button"
+                  className="users-select-all-btn"
+                  onClick={handleSaveCustomDraft}
+                  disabled={customizeLoading}
+                >
+                  {customizeLoading ? "Saving..." : "Save Draft"}
+                </button>
+                <button
+                  type="button"
+                  className="users-select-all-btn"
+                  onClick={handleGeneratePaymentLink}
+                  disabled={customizeLoading}
+                >
+                  {customizeLoading ? "Working..." : "Generate Payment Link"}
+                </button>
+                <button
+                  type="button"
+                  className="users-select-all-btn"
+                  onClick={handleVerifyPackagePayment}
+                  disabled={customizeLoading}
+                >
+                  {customizeLoading ? "Verifying..." : "Verify Payment"}
+                </button>
+                <button
+                  type="button"
+                  className="users-bulk-delete-btn users-bulk-delete-btn--wide"
+                  onClick={handleResetCustomPackage}
+                  disabled={customizeLoading}
+                >
+                  Reset To Plan
+                </button>
+              </div>
+              {customPaymentLink?.paymentLinkUrl ? (
+                <div className="customize-payment-link-box">
+                  <a href={customPaymentLink.paymentLinkUrl} target="_blank" rel="noreferrer">
+                    {customPaymentLink.paymentLinkUrl}
+                  </a>
+                  <button type="button" className="users-select-all-btn" onClick={handleCopyPaymentLink}>
+                    <Copy size={14} />
+                    <span>Copy Link</span>
+                  </button>
+                </div>
+              ) : null}
+            </section>
+
+            {customizeError ? <div className="pricing-feedback pricing-feedback--error">{customizeError}</div> : null}
+            {customizeMessage ? (
+              <div className="pricing-feedback pricing-feedback--success">
+                <CheckCircle2 size={16} />
+                <span>{customizeMessage}</span>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      )}
+
       <header className="superadmin-header">
         <div className="superadmin-hero superadmin-hero--page">
           <div className="superadmin-hero__heading">
@@ -449,6 +952,15 @@ const UsersListPage = () => {
                 <span className="users-bulk-select__label">Select</span>
                 <button type="button" className="users-select-all-btn" onClick={toggleSelectAllVisible}>
                   {allVisibleSelected ? "Clear All Visible" : "Select All Visible"}
+                </button>
+                <button
+                  type="button"
+                  className="users-select-all-btn"
+                  onClick={handleOpenCustomizeFromFilter}
+                  disabled={!selectedCustomTarget}
+                  title={selectedCustomTarget ? "Customize selected user package" : "Select one user to customize"}
+                >
+                  Customize
                 </button>
                 <button
                   type="button"

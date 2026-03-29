@@ -324,6 +324,18 @@ apiService.getAdminUsers = (config = {}) =>
     timeout: Number(import.meta.env.VITE_ADMIN_USERS_TIMEOUT_MS || 90000),
     ...config
   });
+apiService.saveCustomPackageDraft = (userId, payload) =>
+  apiService.post(`${ADMIN_API_BASE_URL}/api/admin/users/${userId}/custom-package/draft`, payload);
+apiService.generateCustomPackagePaymentLink = (userId) =>
+  apiService.post(`${ADMIN_API_BASE_URL}/api/admin/users/${userId}/custom-package/payment-link`);
+apiService.verifyCustomPackagePayment = (payload) =>
+  apiService.post(`${ADMIN_API_BASE_URL}/api/admin/custom-package/payments/verify`, payload);
+apiService.resetCustomPackage = (userId) =>
+  apiService.post(`${ADMIN_API_BASE_URL}/api/admin/users/${userId}/custom-package/reset`);
+apiService.uploadAdminMetaDocumentForUser = (userId, formData) =>
+  apiService.post(`${ADMIN_API_BASE_URL}/api/admin/users/${userId}/meta-documents`, formData, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
 apiService.registerAdmin = (payload) => apiService.post(`${ADMIN_API_BASE_URL}/registeradmin`, payload);
 apiService.updateAdmin = (adminId, payload) => apiService.put(`${ADMIN_API_BASE_URL}/api/edit/${adminId}`, payload);
 apiService.deleteAdmin = (adminId) => apiService.delete(`${ADMIN_API_BASE_URL}/api/delete/${adminId}`);

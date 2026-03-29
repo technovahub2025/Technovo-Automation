@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowLeft, Check, ChevronDown, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import apiService from "../../services/api";
 import socketService from "../../services/socketService";
@@ -12,13 +12,95 @@ const PLAN_LABELS = {
   enterprise: "Enterprise"
 };
 
+const PLAN_DISPLAY_ORDER = {
+  basic: 0,
+  growth: 1,
+  enterprise: 2
+};
+
+const FEATURE_LABEL_ALIASES = {
+  Inbound: "Inbound Calls / IVR",
+  Outbound: "Outbound Voice",
+  Missed: "Missed Call",
+  Email: "Email Automation"
+};
+
+const normalizeFeatureLabel = (label) => FEATURE_LABEL_ALIASES[String(label || "").trim()] || String(label || "").trim();
+
+const FEATURE_GROUPS = [
+  {
+    id: "metaAds",
+    label: "Meta Ads",
+    features: ["Ads Manager", "Insights", "Connect Meta"],
+    defaultExpanded: false
+  },
+  {
+    id: "bulkMessage",
+    label: "Bulk Message",
+    features: ["Broadcast Dashboard", "Team Inbox", "Broadcast", "Templates", "Contacts"],
+    defaultExpanded: false
+  },
+  {
+    id: "voice",
+    label: "Voice",
+    features: ["Voice Broadcast", "Inbound Calls / IVR", "Outbound Voice", "Call Analytics"],
+    defaultExpanded: false
+  },
+  {
+    id: "other",
+    label: "Other",
+    features: ["Missed Call", "Email Automation"],
+    defaultExpanded: false
+  }
+];
+
+const DEFAULT_PLAN_FEATURES = {
+  basic: ["Broadcast Dashboard", "Team Inbox", "Broadcast", "Templates", "Contacts", "Voice Broadcast", "Missed Call"],
+  growth: [
+    "Ads Manager",
+    "Insights",
+    "Connect Meta",
+    "Broadcast Dashboard",
+    "Team Inbox",
+    "Broadcast",
+    "Templates",
+    "Contacts",
+    "Voice Broadcast",
+    "Inbound Calls / IVR",
+    "Call Analytics",
+    "Missed Call",
+    "Email Automation"
+  ],
+  enterprise: [
+    "Ads Manager",
+    "Insights",
+    "Connect Meta",
+    "Broadcast Dashboard",
+    "Team Inbox",
+    "Broadcast",
+    "Templates",
+    "Contacts",
+    "Voice Broadcast",
+    "Inbound Calls / IVR",
+    "Outbound Voice",
+    "Call Analytics",
+    "Missed Call",
+    "Email Automation"
+  ]
+};
+
 const normalizePricingRows = (rows = []) =>
-  rows.map((row) => ({
-    planCode: String(row?.planCode || "").toLowerCase(),
-    monthlyPrice: String(Number(row?.monthlyPrice || 0)),
-    yearlyPrice: String(Number(row?.yearlyPrice || 0)),
-    currency: String(row?.currency || "INR").toUpperCase()
-  }));
+  rows
+    .map((row) => ({
+      planCode: String(row?.planCode || "").toLowerCase(),
+      monthlyPrice: String(Number(row?.monthlyPrice || 0)),
+      yearlyPrice: String(Number(row?.yearlyPrice || 0)),
+      currency: String(row?.currency || "INR").toUpperCase(),
+      features: Array.isArray(row?.features)
+        ? row.features.map((feature) => normalizeFeatureLabel(feature))
+        : DEFAULT_PLAN_FEATURES[String(row?.planCode || "").toLowerCase()] || []
+    }))
+    .sort((a, b) => (PLAN_DISPLAY_ORDER[a.planCode] ?? 999) - (PLAN_DISPLAY_ORDER[b.planCode] ?? 999));
 
 const buildPricingMap = (rows = []) =>
   rows.reduce((acc, row) => {
@@ -44,6 +126,10 @@ const validatePricingRows = (rows = []) => {
 
     if (!String(row.currency || "").trim()) {
       rowErrors.currency = "Currency is required";
+    }
+
+    if (!Array.isArray(row.features)) {
+      rowErrors.features = "Select valid features";
     }
 
     if (Object.keys(rowErrors).length > 0) {
@@ -78,6 +164,12 @@ const PaymentsDetailsPage = () => {
   const [showPaymentFilters, setShowPaymentFilters] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
+  const [expandedFeatureGroups, setExpandedFeatureGroups] = useState(() =>
+    FEATURE_GROUPS.reduce((acc, group) => {
+      acc[group.id] = group.defaultExpanded;
+      return acc;
+    }, {})
+  );
 
   const markUpdated = () => setLastUpdated(new Date());
 
@@ -162,7 +254,8 @@ const PaymentsDetailsPage = () => {
         return (
           String(original.monthlyPrice) !== String(row.monthlyPrice) ||
           String(original.yearlyPrice) !== String(row.yearlyPrice) ||
-          String(original.currency) !== String(row.currency)
+          String(original.currency) !== String(row.currency) ||
+          JSON.stringify([...(original.features || [])].sort()) !== JSON.stringify([...(row.features || [])].sort())
         );
       }),
     [planPricing, originalMap]
@@ -189,6 +282,27 @@ const PaymentsDetailsPage = () => {
     );
   };
 
+  const handleFeatureToggle = (planCode, feature) => {
+    setPricingMessage("");
+    setPlanPricing((prev) =>
+      prev.map((row) => {
+        if (row.planCode !== planCode) return row;
+        const nextFeatures = new Set(row.features || []);
+        const normalizedFeature = normalizeFeatureLabel(feature);
+        if (nextFeatures.has(normalizedFeature)) nextFeatures.delete(normalizedFeature);
+        else nextFeatures.add(normalizedFeature);
+        return { ...row, features: Array.from(nextFeatures) };
+      })
+    );
+  };
+
+  const toggleFeatureGroup = (groupId) => {
+    setExpandedFeatureGroups((prev) => ({ ...prev, [groupId]: !prev[groupId] }));
+  };
+
+  const isFeatureSelected = (planCode, feature) =>
+    Boolean(planPricing.find((row) => row.planCode === planCode)?.features?.includes(normalizeFeatureLabel(feature)));
+
   const handleSavePricing = async () => {
     const nextErrors = validatePricingRows(planPricing);
     setPricingErrors(nextErrors);
@@ -207,7 +321,8 @@ const PaymentsDetailsPage = () => {
           planCode: row.planCode,
           monthlyPrice: Number(row.monthlyPrice || 0),
           yearlyPrice: Number(row.yearlyPrice || 0),
-          currency: row.currency || "INR"
+          currency: row.currency || "INR",
+          features: row.features || []
         }))
       };
 
@@ -296,7 +411,11 @@ const PaymentsDetailsPage = () => {
           </div>
         </div>
 
-        <div className="plans-tabs" role="tablist" aria-label="Pricing and payments">
+        <div
+          className={`plans-tabs ${plansTab === "payments" ? "plans-tabs--payments" : "plans-tabs--pricing"}`}
+          role="tablist"
+          aria-label="Pricing and payments"
+        >
           <button type="button" className={`tab-btn ${plansTab === "pricing" ? "active" : ""}`} onClick={() => setPlansTab("pricing")}>
             Pricing
           </button>
@@ -392,6 +511,61 @@ const PaymentsDetailsPage = () => {
                       </div>
                     );
                   })}
+                </div>
+
+                <div className="pricing-feature-matrix">
+                  <div className="pricing-feature-matrix__header">
+                    <div>
+                      <h3>Plan Features</h3>
+                      <p>Select each feature and assign it to Basic, Growth, or Enterprise.</p>
+                    </div>
+                  </div>
+
+                  {FEATURE_GROUPS.map((group) => (
+                    <div className="pricing-feature-section" key={group.id}>
+                      <button
+                        type="button"
+                        className="pricing-feature-section__toggle"
+                        onClick={() => toggleFeatureGroup(group.id)}
+                      >
+                        <span className="pricing-feature-section__title">
+                          {expandedFeatureGroups[group.id] ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                          {group.label}
+                        </span>
+                        <span className="pricing-feature-section__count">{group.features.length} features</span>
+                      </button>
+
+                      {expandedFeatureGroups[group.id] && (
+                        <div className="pricing-feature-matrix__table">
+                          <div className="pricing-feature-matrix__row pricing-feature-matrix__row--header">
+                            <span>Feature</span>
+                            <span>Basic</span>
+                            <span>Growth</span>
+                            <span>Enterprise</span>
+                          </div>
+
+                          {group.features.map((feature) => (
+                            <div className="pricing-feature-matrix__row" key={`${group.id}-${feature}`}>
+                              <span className="pricing-feature-matrix__feature">{feature}</span>
+                              {["basic", "growth", "enterprise"].map((planCode) => {
+                                const selected = isFeatureSelected(planCode, feature);
+                                return (
+                                  <button
+                                    type="button"
+                                    key={`${feature}-${planCode}`}
+                                    className={`pricing-feature-matrix__cell ${selected ? "pricing-feature-matrix__cell--active" : ""}`}
+                                    onClick={() => handleFeatureToggle(planCode, feature)}
+                                  >
+                                    {selected ? <Check size={14} /> : null}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
 
                 <div className="pricing-actions pricing-actions--space-between">

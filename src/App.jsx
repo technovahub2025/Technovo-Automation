@@ -9,7 +9,6 @@ import Broadcast from "./pages/Broadcast";
 import Templates from "./pages/Templates";
 import CreateTemplate from "./pages/CreateTemplate";
 import Contacts from "./pages/Contacts";
-import VoiceAutomation from "./pages/VoiceAutomation";
 import InboundCalls from "./components/inbound/InboundCalls";
 import OutboundCall from "./components/outbound/OutboundCall";
 import OutboundSchedules from "./components/outbound/OutboundSchedules";
@@ -55,32 +54,32 @@ function App() {
         {/* App layout with nested routes */}
         <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}> 
           <Route index element={<Dashboard />} />
-          <Route path="ads-manager" element={<CampaignManagement />} />
-          <Route path="meta-connect" element={<MetaConnect />} />
-          <Route path="insights" element={<Insights />} />
-          <Route path="inbox" element={<TeamInbox />} />
-          <Route path="inbox/:conversationId" element={<TeamInbox />} />
-          <Route path="broadcast-dashboard" element={<BroadcastDashboard />} />
-          <Route path="broadcast" element={<Broadcast />} />
-          <Route path="broadcast/new" element={<Broadcast chooserMode />} />
-          <Route path="broadcast/new/template" element={<Broadcast composerMode composerType="template" />} />
-          <Route path="broadcast/new/message" element={<Broadcast composerMode composerType="custom" />} />
-          <Route path="templates" element={<Templates />} />
-          <Route path="templates/create" element={<CreateTemplate />} />
-          <Route path="contacts" element={<Contacts />} />
-          <Route path="campaignmanagement" element={<CampaignManagement />} />
-          <Route path="voice-automation" element={<VoiceAutomation />} />
-          <Route path="voice-automation/inbound" element={<InboundCalls />} />
-          <Route path="voice-automation/outbound" element={<OutboundCall />} />
-          <Route path="voice-automation/outbound/schedules" element={<OutboundSchedules />} />
-          <Route path="voice-automation/history" element={<CallAnalytics />} />
+          <Route path="ads-manager" element={<ProtectedRoute requiredFeature="adsManager"><CampaignManagement /></ProtectedRoute>} />
+          <Route path="meta-connect" element={<ProtectedRoute requiredFeature="metaConnect"><MetaConnect /></ProtectedRoute>} />
+          <Route path="insights" element={<ProtectedRoute requiredFeature="analytics"><Insights /></ProtectedRoute>} />
+          <Route path="inbox" element={<ProtectedRoute requiredFeature="teamInbox"><TeamInbox /></ProtectedRoute>} />
+          <Route path="inbox/:conversationId" element={<ProtectedRoute requiredFeature="teamInbox"><TeamInbox /></ProtectedRoute>} />
+          <Route path="broadcast-dashboard" element={<ProtectedRoute requiredFeature="broadcastDashboard"><BroadcastDashboard /></ProtectedRoute>} />
+          <Route path="broadcast" element={<ProtectedRoute requiredFeature="broadcastMessaging"><Broadcast /></ProtectedRoute>} />
+          <Route path="broadcast/new" element={<ProtectedRoute requiredFeature="broadcastMessaging"><Broadcast chooserMode /></ProtectedRoute>} />
+          <Route path="broadcast/new/template" element={<ProtectedRoute requiredFeature="broadcastMessaging"><Broadcast composerMode composerType="template" /></ProtectedRoute>} />
+          <Route path="broadcast/new/message" element={<ProtectedRoute requiredFeature="broadcastMessaging"><Broadcast composerMode composerType="custom" /></ProtectedRoute>} />
+          <Route path="templates" element={<ProtectedRoute requiredFeature="templates"><Templates /></ProtectedRoute>} />
+          <Route path="templates/create" element={<ProtectedRoute requiredFeature="templates"><CreateTemplate /></ProtectedRoute>} />
+          <Route path="contacts" element={<ProtectedRoute requiredFeature="contacts"><Contacts /></ProtectedRoute>} />
+          <Route path="campaignmanagement" element={<ProtectedRoute requiredFeature="adsManager"><CampaignManagement /></ProtectedRoute>} />
+          <Route path="voice-automation" element={<Navigate to="/" replace />} />
+          <Route path="voice-automation/inbound" element={<ProtectedRoute requiredFeature="inboundAutomation"><InboundCalls /></ProtectedRoute>} />
+          <Route path="voice-automation/outbound" element={<ProtectedRoute requiredFeature="outboundVoice"><OutboundCall /></ProtectedRoute>} />
+          <Route path="voice-automation/outbound/schedules" element={<ProtectedRoute requiredFeature="outboundVoice"><OutboundSchedules /></ProtectedRoute>} />
+          <Route path="voice-automation/history" element={<ProtectedRoute requiredFeature="callAnalytics"><CallAnalytics /></ProtectedRoute>} />
 
-          <Route path="voice-broadcast" element={<VoiceBroadcast />} />
+          <Route path="voice-broadcast" element={<ProtectedRoute requiredFeature="voiceCampaign"><VoiceBroadcast /></ProtectedRoute>} />
           <Route path="missedcalls" element={<Navigate to="/missedcalls/overview" replace />} />
-          <Route path="missedcalls/overview" element={<MissedCallsOverviewPage />} />
-          <Route path="missedcalls/calls" element={<MissedCallsCallsPage />} />
-          <Route path="missedcalls/automation" element={<MissedCallsAutomationPage />} />
-          <Route path="email-automation" element={<EmailAutomation />} />
+          <Route path="missedcalls/overview" element={<ProtectedRoute requiredFeature="missedCall"><MissedCallsOverviewPage /></ProtectedRoute>} />
+          <Route path="missedcalls/calls" element={<ProtectedRoute requiredFeature="missedCall"><MissedCallsCallsPage /></ProtectedRoute>} />
+          <Route path="missedcalls/automation" element={<ProtectedRoute requiredFeature="missedCall"><MissedCallsAutomationPage /></ProtectedRoute>} />
+          <Route path="email-automation" element={<ProtectedRoute requiredFeature="workflowAutomation"><EmailAutomation /></ProtectedRoute>} />
           <Route path="pdf-extractor" element={<PDFExtractor />} />
           <Route path="verification" element={<MetaVerification />} />
           <Route path="register-docs" element={<RegisterDocuments />} />

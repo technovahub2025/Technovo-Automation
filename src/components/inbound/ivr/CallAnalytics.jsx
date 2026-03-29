@@ -442,7 +442,7 @@ const CallAnalytics = () => {
   return (
     <div className="call-analytics">
       <div className="breadcrumb-nav">
-        <button onClick={() => navigate('/voice-automation')} className="back-link-btn">
+        <button onClick={() => navigate('/')} className="back-link-btn">
           <ArrowLeft size={16} />
           Back to Dashboard
         </button>
