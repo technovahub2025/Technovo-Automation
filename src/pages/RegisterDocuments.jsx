@@ -37,7 +37,9 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
       companyName: storedUser?.companyName || storedUser?.company?.name || "Workspace",
       username: storedUser?.username || storedUser?.name || storedUsername,
       email: storedUser?.email || "",
-      password: ""
+      password: "",
+      facebookUserId: "",
+      facebookPassword: ""
     };
   });
   const [teamSize, setTeamSize] = useState(storedUser?.teamSize || "");
@@ -78,6 +80,7 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
       if (!teamSize) next.teamSize = "Select team size";
     }
     if (!acceptedTerms) next.terms = "You must accept the terms";
+    if (!formData.facebookUserId.trim()) next.facebookUserId = "Facebook user ID is required";
     documentFields.forEach((doc) => {
       if (doc.required && !docs[doc.key]) next[doc.key] = "Required document";
     });
@@ -92,6 +95,7 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
     try {
       const resolvedCompanyName = formData.companyName.trim() || storedUser?.companyName || storedUser?.company?.name || "Workspace";
       let token = existingToken;
+      let registeredUser = null;
       if (!isExistingWorkspaceUser) {
         try {
           const res = await axios.post(`${API_URL}/api/nexion/register`, {
@@ -99,10 +103,13 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
             username: formData.username.trim(),
             email: formData.email.trim(),
             password: formData.password,
+            facebookUserId: formData.facebookUserId.trim(),
+            facebookPassword: formData.facebookPassword,
             role: "user",
             teamSize
           });
           token = res?.data?.token || token;
+          registeredUser = res?.data?.user || res?.data?.data?.user || null;
         } catch (registerError) {
           if (registerError?.response?.status === 409) {
             if (!token) {
@@ -111,6 +118,7 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
                 password: formData.password
               });
               token = loginRes?.data?.token || "";
+              registeredUser = loginRes?.data?.user || loginRes?.data?.data?.user || null;
             }
           } else {
             throw registerError;
@@ -132,6 +140,8 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
             const payload = new FormData();
             payload.append("file", doc.file);
             payload.append("docType", doc.labelName);
+            payload.append("facebookUserId", formData.facebookUserId.trim());
+            payload.append("facebookPassword", formData.facebookPassword);
             return axios.post(`${API_URL}/api/meta-documents`, payload, {
               headers: {
                 Authorization: `Bearer ${token}`
@@ -146,13 +156,42 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
         }));
         return;
       }
+      try {
+        const saved = JSON.parse(localStorage.getItem("nexionFacebookCredentials") || "{}");
+        const facebookUserId = String(formData.facebookUserId || "").trim();
+        const facebookPassword = String(formData.facebookPassword || "");
+        const resolvedUserId = String(
+          registeredUser?._id ||
+            registeredUser?.id ||
+            storedUser?._id ||
+            storedUser?.id ||
+            ""
+        ).trim();
+        const resolvedEmail = String(formData.email || storedUser?.email || "")
+          .trim()
+          .toLowerCase();
+        if (facebookUserId || facebookPassword) {
+          const entry = {
+            facebookUserId,
+            facebookPassword,
+            updatedAt: new Date().toISOString()
+          };
+          if (resolvedUserId) saved[`id:${resolvedUserId}`] = entry;
+          if (resolvedEmail) saved[`email:${resolvedEmail}`] = entry;
+          localStorage.setItem("nexionFacebookCredentials", JSON.stringify(saved));
+        }
+      } catch {
+        // ignore local storage issues
+      }
 
       const notice = "Your documents were submitted successfully. Verification usually completes within 24 to 48 hours.";
       setLoading(false);
       setSuccessMessage(notice);
       setFormData((prev) => ({
         ...prev,
-        password: ""
+        password: "",
+        facebookUserId: "",
+        facebookPassword: ""
       }));
       setTeamSize("");
       setAcceptedTerms(false);
@@ -286,6 +325,32 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
             </label>
           </div>
         )}
+
+        <div className="register-docs__section-title">Facebook Details For Meta Ad</div>
+        <div className="register-docs__grid" autoComplete="off">
+          <label>
+            Facebook User ID
+            <input
+              type="text"
+              name="facebook-user-id"
+              autoComplete="off"
+              value={formData.facebookUserId}
+              onChange={(e) => setFormData((prev) => ({ ...prev, facebookUserId: e.target.value }))}
+            />
+            {errors.facebookUserId && <span className="field-error">{errors.facebookUserId}</span>}
+          </label>
+          <label>
+            Facebook Password (Optional)
+            <input
+              type="password"
+              name="facebook-password"
+              autoComplete="new-password"
+              value={formData.facebookPassword}
+              onChange={(e) => setFormData((prev) => ({ ...prev, facebookPassword: e.target.value }))}
+            />
+            {errors.facebookPassword && <span className="field-error">{errors.facebookPassword}</span>}
+          </label>
+        </div>
 
         <div className="register-docs__section-title">Document Uploads</div>
         <div className="register-docs__note">Max file size: 10 MB per document.</div>

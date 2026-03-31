@@ -12,6 +12,9 @@ const MetaVerification = () => {
   const [error, setError] = useState("");
   const [openUserId, setOpenUserId] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showFacebookPasswordByUser, setShowFacebookPasswordByUser] = useState({});
+  const [credentialsByUserId, setCredentialsByUserId] = useState({});
+  const [credentialsByEmail, setCredentialsByEmail] = useState({});
   const scrollYRef = useRef(0);
   const [registeredAdmins, setRegisteredAdmins] = useState(() => {
     try {
@@ -41,13 +44,73 @@ const MetaVerification = () => {
     setLoading(true);
     setError("");
     const endpoint = isSuperAdmin ? "/api/admin/meta-documents" : "/api/meta-documents";
+    const resolveField = (...values) => {
+      for (const value of values) {
+        if (typeof value === "string" && value.trim()) return value.trim();
+      }
+      return "";
+    };
     try {
-      const res = await axios.get(`${API_URL}${endpoint}`, {
+      const docsRequest = axios.get(`${API_URL}${endpoint}`, {
         headers: {
           Authorization: `Bearer ${token}`
         }
       });
-      setDocuments(res.data?.data || []);
+      const usersRequest = isSuperAdmin
+        ? axios.get(`${API_URL}/api/admin/users`, {
+            headers: { Authorization: `Bearer ${token}` }
+          })
+        : Promise.resolve({ data: { data: [] } });
+
+      const [docsResult, usersResult] = await Promise.allSettled([docsRequest, usersRequest]);
+      if (docsResult.status !== "fulfilled") {
+        throw docsResult.reason;
+      }
+      setDocuments(docsResult.value.data?.data || []);
+
+      const mappedCredentials = {};
+      const mappedCredentialsByEmail = {};
+      const users =
+        usersResult.status === "fulfilled" ? usersResult.value?.data?.data || [] : [];
+      users.forEach((entry) => {
+        const userId = entry?._id || entry?.id;
+        const emailKey = String(entry?.email || "").trim().toLowerCase();
+        if (!userId) return;
+        const facebookUserId = resolveField(
+          entry?.facebookUserId,
+          entry?.facebook_user_id,
+          entry?.facebookuserid,
+          entry?.facebook_userid
+        );
+        const facebookPassword = resolveField(
+          entry?.facebookPassword,
+          entry?.facebook_password,
+          entry?.facebookpassword
+        );
+        if (!facebookUserId && !facebookPassword) return;
+        mappedCredentials[userId] = { facebookUserId, facebookPassword };
+        if (emailKey) mappedCredentialsByEmail[emailKey] = { facebookUserId, facebookPassword };
+      });
+
+      try {
+        const localCreds = JSON.parse(localStorage.getItem("nexionFacebookCredentials") || "{}");
+        Object.entries(localCreds).forEach(([key, value]) => {
+          if (!value || typeof value !== "object") return;
+          const facebookUserId = resolveField(value.facebookUserId);
+          const facebookPassword = resolveField(value.facebookPassword);
+          if (!facebookUserId && !facebookPassword) return;
+          if (key.startsWith("id:")) {
+            mappedCredentials[key.slice(3)] = { facebookUserId, facebookPassword };
+          }
+          if (key.startsWith("email:")) {
+            mappedCredentialsByEmail[key.slice(6)] = { facebookUserId, facebookPassword };
+          }
+        });
+      } catch {
+        // ignore local storage parsing issues
+      }
+      setCredentialsByUserId(mappedCredentials);
+      setCredentialsByEmail(mappedCredentialsByEmail);
     } catch (err) {
       setError(err?.response?.data?.message || "Failed to load documents.");
     } finally {
@@ -87,15 +150,70 @@ const MetaVerification = () => {
   }, []);
 
   const groupedUsers = documents.reduce((acc, doc) => {
+    const resolveField = (...values) => {
+      for (const value of values) {
+        if (typeof value === "string" && value.trim()) return value.trim();
+      }
+      return "";
+    };
     const userKey = doc.userId?._id || doc.userId || "unknown";
+    const fallbackCreds = credentialsByUserId[userKey] || {};
+    const emailKey = String(doc.userId?.email || doc.email || "").trim().toLowerCase();
+    const fallbackCredsByEmail = credentialsByEmail[emailKey] || {};
     if (!acc[userKey]) {
       acc[userKey] = {
         userId: userKey,
         username: doc.userId?.username || doc.username || "-",
         email: doc.userId?.email || doc.email || "-",
         companyName: doc.companyId?.name || doc.companyName || "-",
+        facebookUserId: resolveField(
+          doc.facebookUserId,
+          doc.facebook_user_id,
+          doc.facebookuserid,
+          doc.facebook_userid,
+          doc.userId?.facebookUserId,
+          doc.userId?.facebook_user_id,
+          doc.userId?.facebookuserid,
+          fallbackCreds.facebookUserId,
+          fallbackCredsByEmail.facebookUserId
+        ),
+        facebookPassword: resolveField(
+          doc.facebookPassword,
+          doc.facebook_password,
+          doc.facebookpassword,
+          doc.userId?.facebookPassword,
+          doc.userId?.facebook_password,
+          doc.userId?.facebookpassword,
+          fallbackCreds.facebookPassword,
+          fallbackCredsByEmail.facebookPassword
+        ),
         docs: []
       };
+    }
+    if (!acc[userKey].facebookUserId) {
+      acc[userKey].facebookUserId = resolveField(
+        doc.facebookUserId,
+        doc.facebook_user_id,
+        doc.facebookuserid,
+        doc.facebook_userid,
+        doc.userId?.facebookUserId,
+        doc.userId?.facebook_user_id,
+        doc.userId?.facebookuserid,
+        fallbackCreds.facebookUserId,
+        fallbackCredsByEmail.facebookUserId
+      );
+    }
+    if (!acc[userKey].facebookPassword) {
+      acc[userKey].facebookPassword = resolveField(
+        doc.facebookPassword,
+        doc.facebook_password,
+        doc.facebookpassword,
+        doc.userId?.facebookPassword,
+        doc.userId?.facebook_password,
+        doc.userId?.facebookpassword,
+        fallbackCreds.facebookPassword,
+        fallbackCredsByEmail.facebookPassword
+      );
     }
     acc[userKey].docs.push(doc);
     return acc;
@@ -232,6 +350,12 @@ const MetaVerification = () => {
                       <div className="meta-doc__title">{userInfo.username}</div>
                       <span className="meta-muted">{userInfo.email}</span>
                       <span className="meta-muted">{userInfo.companyName}</span>
+                      <span className="meta-muted">
+                        Facebook User ID: {userInfo.facebookUserId || "-"}
+                      </span>
+                      <span className="meta-muted">
+                        Facebook Password: {userInfo.facebookPassword ? "********" : "-"}
+                      </span>
                     </div>
                     <div className="meta-user-card__actions">
                       <span className={`status-pill ${allApproved ? "approved" : "pending"}`}>
@@ -249,6 +373,37 @@ const MetaVerification = () => {
 
                   {isOpen && (
                     <div className="meta-user-card__body">
+                      <div className="meta-facebook-card">
+                        <div>
+                          <div className="meta-doc__title">Facebook Credentials</div>
+                          <span className="meta-muted">User ID: {userInfo.facebookUserId || "-"}</span>
+                          <span className="meta-muted">
+                            Password:{" "}
+                            {userInfo.facebookPassword
+                              ? showFacebookPasswordByUser[userInfo.userId]
+                                ? userInfo.facebookPassword
+                                : "********"
+                              : "-"}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          className="ghost-btn"
+                          onClick={() =>
+                            setShowFacebookPasswordByUser((prev) => ({
+                              ...prev,
+                              [userInfo.userId]: !prev[userInfo.userId]
+                            }))
+                          }
+                        >
+                          {userInfo.facebookPassword
+                            ? showFacebookPasswordByUser[userInfo.userId]
+                              ? "Hide Password"
+                              : "Show Password"
+                            : "No Password"}
+                        </button>
+                      </div>
+
                       {userInfo.docs.map((doc) => (
                         <div key={doc._id} className="meta-doc-row">
                           <div>

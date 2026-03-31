@@ -161,6 +161,17 @@
   gap: 12px;
 }
 
+.meta-facebook-card {
+  border: 1px solid var(--nx-border);
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .meta-doc-row {
   display: grid;
   grid-template-columns: 1.6fr 0.7fr 1fr 1.2fr;
