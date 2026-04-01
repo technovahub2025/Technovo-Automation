@@ -189,7 +189,11 @@ const EmailAutomation = () => {
       });
     } catch (error) {
       const message = error?.response?.data?.message || "Failed to send bulk emails.";
-      setStatusMessage({ text: message, type: "error" });
+      const details = error?.response?.data?.error;
+      setStatusMessage({
+        text: details ? `${message}: ${details}` : message,
+        type: "error"
+      });
     } finally {
       setIsSending(false);
     }
