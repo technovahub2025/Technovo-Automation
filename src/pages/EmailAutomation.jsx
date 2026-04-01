@@ -1,182 +1,349 @@
-import React, { useState } from 'react';
-import './EmailAutomation.css';
-import PDFExtractor from './PDFExtractor';
-import { FileText, Type, CheckCircle, Clock } from 'lucide-react';
+import React, { useMemo, useState } from "react";
+import axios from "axios";
+import "./EmailAutomation.css";
+
+const MAX_PREVIEW_ROWS = 10;
+
+const splitCsvLine = (line = "") => {
+  const values = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      values.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current.trim());
+  return values;
+};
+
+const parseCsvRecipients = (text = "") => {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  if (!lines.length) {
+    return { recipients: [], errors: ["CSV file is empty."] };
+  }
+
+  const header = splitCsvLine(lines[0]).map((value) => value.toLowerCase());
+  const nameIndex = header.findIndex((key) => ["name", "username", "full_name", "full name"].includes(key));
+  const emailIndex = header.findIndex((key) => ["email", "mail", "email_address", "email address"].includes(key));
+
+  if (nameIndex === -1 || emailIndex === -1) {
+    return {
+      recipients: [],
+      errors: ["CSV must include header columns: name and email."]
+    };
+  }
+
+  const recipients = [];
+  const seen = new Set();
+  const errors = [];
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  for (let i = 1; i < lines.length; i += 1) {
+    const rowNumber = i + 1;
+    const columns = splitCsvLine(lines[i]);
+    const name = (columns[nameIndex] || "").trim();
+    const email = (columns[emailIndex] || "").trim().toLowerCase();
+
+    if (!name || !email) {
+      errors.push(`Row ${rowNumber}: name or email is missing.`);
+      continue;
+    }
+
+    if (!emailRegex.test(email)) {
+      errors.push(`Row ${rowNumber}: invalid email \"${email}\".`);
+      continue;
+    }
+
+    if (seen.has(email)) {
+      errors.push(`Row ${rowNumber}: duplicate email \"${email}\".`);
+      continue;
+    }
+
+    seen.add(email);
+    recipients.push({ name, email });
+  }
+
+  return { recipients, errors };
+};
 
 const EmailAutomation = () => {
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [showFullHistory, setShowFullHistory] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [notification, setNotification] = useState(null);
-  const extractionHistory = [
-    { id: 1, filename: 'report1.pdf', date: '2025-12-30', keywords: 15, score: 8.5 },
-    { id: 2, filename: 'analysis.pdf', date: '2025-12-29', keywords: 12, score: 7.2 },
-    { id: 3, filename: 'summary.pdf', date: '2025-12-28', keywords: 18, score: 9.1 },
-    { id: 4, filename: 'data.pdf', date: '2025-12-27', keywords: 20, score: 8.8 },
-    { id: 5, filename: 'overview.pdf', date: '2025-12-26', keywords: 14, score: 7.9 },
-    { id: 6, filename: 'metrics.pdf', date: '2025-12-25', keywords: 16, score: 8.3 },
-  ];
+  const [subject, setSubject] = useState("");
+  const [templateMessage, setTemplateMessage] = useState("Hi {{name}},\n\nThank you for being with us.");
+  const [recipients, setRecipients] = useState([]);
+  const [parseErrors, setParseErrors] = useState([]);
+  const [statusMessage, setStatusMessage] = useState({ text: "", type: "info" });
+  const [isSending, setIsSending] = useState(false);
+  const [sendReport, setSendReport] = useState(null);
 
-  const stats = [
-    { label: 'Total Extractions', value: '24', change: '+12%', icon: FileText, color: '#3b82f6' },
-    { label: 'Avg. Keywords', value: '15.3', change: '+5%', icon: Type, color: '#8b5cf6' },
-    { label: 'Success Rate', value: '98.5%', change: '+2%', icon: CheckCircle, color: '#4f46e5' },
-    { label: 'Processing Time', value: '2.3s', change: '-15%', icon: Clock, color: '#f59e0b' },
-  ];
+  const previewRows = useMemo(() => recipients.slice(0, MAX_PREVIEW_ROWS), [recipients]);
 
-  const showNotification = (message, type = 'success') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
+  const handleFileUpload = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.toLowerCase().endsWith(".csv")) {
+      setStatusMessage({ text: "Please upload only a .csv file.", type: "error" });
+      return;
+    }
+
+    const fileText = await file.text();
+    const { recipients: parsedRecipients, errors } = parseCsvRecipients(fileText);
+
+    setRecipients(parsedRecipients);
+    setParseErrors(errors);
+    setSendReport(null);
+
+    if (parsedRecipients.length) {
+      setStatusMessage({ text: `Loaded ${parsedRecipients.length} recipients.`, type: "success" });
+    } else {
+      setStatusMessage({ text: "No valid recipients found in uploaded CSV.", type: "error" });
+    }
   };
 
-  const handleViewHistory = () => {
-    setShowFullHistory(!showFullHistory);
+  const handleDownloadSampleCsv = () => {
+    const csvContent = [
+      "name,email",
+      "John Doe,john.doe@example.com",
+      "Priya Sharma,priya.sharma@example.com"
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.setAttribute("download", "sample-recipients.csv");
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    window.URL.revokeObjectURL(url);
   };
 
-  const handleExportReports = async () => {
-    setIsExporting(true);
+  const handleSendBulkEmail = async () => {
+    if (!subject.trim()) {
+      setStatusMessage({ text: "Subject is required.", type: "error" });
+      return;
+    }
+
+    if (!templateMessage.trim()) {
+      setStatusMessage({ text: "Template message is required.", type: "error" });
+      return;
+    }
+
+    if (!recipients.length) {
+      setStatusMessage({ text: "Upload a valid recipient list before sending.", type: "error" });
+      return;
+    }
+
     try {
-      const csvContent = [
-        ['Filename', 'Date', 'Keywords', 'Score'],
-        ...extractionHistory.map(item => [
-          item.filename,
-          item.date,
-          item.keywords,
-          item.score
-        ])
-      ].map(row => row.join(',')).join('\n');
+      setIsSending(true);
+      setSendReport(null);
 
-      const blob = new Blob([csvContent], { type: 'text/csv' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `extraction-report-${new Date().toISOString().split('T')[0]}.csv`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+      const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
+      const token = localStorage.getItem(tokenKey) || localStorage.getItem("authToken");
+      const baseUrl = import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_API_URL || "";
 
-      showNotification('Report exported successfully!');
+      const response = await axios.post(
+        `${baseUrl}/api/email/bulk-send`,
+        {
+          subject: subject.trim(),
+          templateMessage,
+          recipients
+        },
+        {
+          headers: token
+            ? {
+                Authorization: `Bearer ${token}`
+              }
+            : {}
+        }
+      );
+
+      const data = response?.data || {};
+      setSendReport(data);
+      setStatusMessage({
+        text: data?.message || "Bulk email request completed.",
+        type: data?.failed > 0 ? "warning" : "success"
+      });
     } catch (error) {
-      showNotification('Failed to export report', 'error');
-      console.error('Export error:', error);
+      const message = error?.response?.data?.message || "Failed to send bulk emails.";
+      setStatusMessage({ text: message, type: "error" });
     } finally {
-      setIsExporting(false);
+      setIsSending(false);
     }
   };
 
   return (
-    <div className="email-automation">
-      {/* Notification */}
-      {notification && (
-        <div className={`notification ${notification.type}`}>
-          {notification.message}
+    <div className="email-automation bulk-email-page">
+      <section className="bulk-hero">
+        <div>
+          <p className="hero-kicker">Email Workflow</p>
+          <h1>Bulk Email Automation</h1>
+          <p className="subtitle">
+            Upload contacts, craft your message with placeholders, and launch a personalized campaign in one flow.
+          </p>
         </div>
+        <div className="hero-metrics">
+          <div className="metric-tile">
+            <span>Recipients</span>
+            <strong>{recipients.length}</strong>
+          </div>
+          <div className="metric-tile">
+            <span>CSV Issues</span>
+            <strong>{parseErrors.length}</strong>
+          </div>
+          <div className="metric-tile">
+            <span>Last Sent</span>
+            <strong>{sendReport?.sent ?? 0}</strong>
+          </div>
+        </div>
+      </section>
+
+      {statusMessage.text ? <div className={`status-message ${statusMessage.type}`}>{statusMessage.text}</div> : null}
+
+      <section className="compose-grid">
+        <article className="panel panel-main">
+          <div className="panel-head">
+            <h2>Compose Message</h2>
+            <p>Use placeholders to personalize each email.</p>
+          </div>
+
+          <div className="field-group">
+            <label htmlFor="subject">Email Subject</label>
+            <input
+              id="subject"
+              type="text"
+              placeholder="Enter campaign subject"
+              value={subject}
+              onChange={(event) => setSubject(event.target.value)}
+            />
+          </div>
+
+          <div className="field-group full-width">
+            <label htmlFor="templateMessage">Template Message</label>
+            <textarea
+              id="templateMessage"
+              rows={9}
+              placeholder="Use {{name}} and {{email}} placeholders"
+              value={templateMessage}
+              onChange={(event) => setTemplateMessage(event.target.value)}
+            />
+            <small>
+              Supported placeholders: <code>{"{{name}}"}</code>, <code>{"{{email}}"}</code>
+            </small>
+          </div>
+        </article>
+
+        <aside className="panel panel-side">
+          <div className="panel-head">
+            <h2>Recipients Source</h2>
+            <p>Upload a CSV with columns: name, email</p>
+          </div>
+
+          <div className="field-group">
+            <label htmlFor="csvFile">Recipient CSV</label>
+            <input id="csvFile" type="file" accept=".csv" onChange={handleFileUpload} />
+          </div>
+
+          <div className="csv-help-row">
+            <small>Need a template file?</small>
+            <button className="sample-download-btn" type="button" onClick={handleDownloadSampleCsv}>
+              Download Sample CSV
+            </button>
+          </div>
+
+          <button className="send-btn" type="button" onClick={handleSendBulkEmail} disabled={isSending || !recipients.length}>
+            {isSending ? "Sending emails..." : "Send Bulk Email"}
+          </button>
+        </aside>
+      </section>
+
+      {!!parseErrors.length && (
+        <section className="panel errors-box">
+          <h3>CSV Issues ({parseErrors.length})</h3>
+          <ul>
+            {parseErrors.slice(0, 8).map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
+          {parseErrors.length > 8 ? <p>+{parseErrors.length - 8} more issues</p> : null}
+        </section>
       )}
 
-      {/* Header */}
-      <div className="automation-header">
-        <div className="header-left">
-          <h1>Email Automation Dashboard</h1>
+      <section className="panel preview-box">
+        <div className="preview-head">
+          <h3>Recipients Preview</h3>
+          <span>{recipients.length} valid recipients</span>
         </div>
-        <div className="tab-navigation">
-          <button
-            className={`tab-btn ${activeTab === 'dashboard' ? 'active' : ''}`}
-            onClick={() => setActiveTab('dashboard')}
-          >
-            Dashboard
-          </button>
-          <button
-            className={`tab-btn ${activeTab === 'extractor' ? 'active' : ''}`}
-            onClick={() => setActiveTab('extractor')}
-          >
-            PDF Extractor
-          </button>
-        </div>
-      </div>
 
-      {}
-      <div className="automation-content">
-        {activeTab === 'dashboard' && (
-          <div className="dashboard-view">
-            {}
-            <div className="stats-grid">
-              {stats.map((stat, index) => {
-                const Icon = stat.icon;
-                return (
-                  <div key={index} className="stat-card">
-                    <div className="stat-header-flex">
-                      <h3>{stat.label}</h3>
-                      <div className="stat-icon-wrapper" style={{ backgroundColor: `${stat.color}20`, color: stat.color }}>
-                        <Icon size={20} />
-                      </div>
-                    </div>
-                    <div className="stat-value">{stat.value}</div>
-                    <div className="stat-change positive">{stat.change}</div>
-                  </div>
-                )
-              })}
-            </div>
-
-            {}
-            <div className="activity-section">
-              <div className="section-card">
-                <div className="section-header">
-                  <h2>Recent Extractions</h2>
-                  <span className="history-count">
-                    {showFullHistory ? `Showing ${extractionHistory.length} items` : `Showing 3 of ${extractionHistory.length} items`}
-                  </span>
-                </div>
-                <div className="activity-list">
-                  {extractionHistory.slice(0, showFullHistory ? extractionHistory.length : 3).map((item) => (
-                    <div key={item.id} className="activity-item">
-                      <div className="activity-info">
-                        <div className="filename">{item.filename}</div>
-                        <div className="date">{item.date}</div>
-                      </div>
-                      <div className="activity-stats">
-                        <span className="keywords">{item.keywords} keywords</span>
-                        <span className="score">Score: {item.score}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Quick Actions */}
-            <div className="quick-actions">
-              <div className="section-card">
-                <h2>Quick Actions</h2>
-                <div className="email-quick-action-buttons">
-                  <button
-                    className="email-quick-action-btn primary"
-                    onClick={() => setActiveTab('extractor')}
-                  >
-                    Extract New PDF
-                  </button>
-                  <button className="email-quick-action-btn secondary" onClick={handleViewHistory}>
-                    {showFullHistory ? 'Hide History' : 'View History'}
-                  </button>
-                  <button
-                    className="email-quick-action-btn secondary"
-                    onClick={handleExportReports}
-                    disabled={isExporting}
-                  >
-                    {isExporting ? 'Exporting...' : 'Export Reports'}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+        {recipients.length ? (
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+              </tr>
+            </thead>
+            <tbody>
+              {previewRows.map((recipient) => (
+                <tr key={recipient.email}>
+                  <td>{recipient.name}</td>
+                  <td>{recipient.email}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        ) : (
+          <p className="empty-state">No recipients loaded yet.</p>
         )}
 
-        {activeTab === 'extractor' && (
-          <div className="extractor-view">
-            <PDFExtractor />
-          </div>
-        )}
-      </div>
+        {recipients.length > MAX_PREVIEW_ROWS ? (
+          <p className="preview-note">Showing first {MAX_PREVIEW_ROWS} recipients only.</p>
+        ) : null}
+      </section>
+
+      {sendReport ? (
+        <section className="panel report-box">
+          <h3>Send Report</h3>
+          <p>Total: {sendReport.total || recipients.length}</p>
+          <p>Sent: {sendReport.sent || 0}</p>
+          <p>Failed: {sendReport.failed || 0}</p>
+          {Array.isArray(sendReport.report) && sendReport.report.some((item) => item.status === "failed") ? (
+            <div className="report-errors">
+              {sendReport.report
+                .filter((item) => item.status === "failed")
+                .slice(0, 5)
+                .map((item) => (
+                  <p key={item.email}>
+                    {item.email}: {item.error || "Failed"}
+                  </p>
+                ))}
+            </div>
+          ) : null}
+        </section>
+      ) : null}
     </div>
   );
 };
