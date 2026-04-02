@@ -173,6 +173,7 @@ const EmailAutomation = () => {
           recipients
         },
         {
+          timeout: Number(import.meta.env.VITE_BULK_EMAIL_TIMEOUT_MS || 45000),
           headers: token
             ? {
                 Authorization: `Bearer ${token}`
@@ -188,6 +189,13 @@ const EmailAutomation = () => {
         type: data?.failed > 0 ? "warning" : "success"
       });
     } catch (error) {
+      if (error?.code === "ECONNABORTED") {
+        setStatusMessage({
+          text: "Request timed out. SMTP server may be slow/unreachable. Please retry.",
+          type: "error"
+        });
+        return;
+      }
       const message = error?.response?.data?.message || "Failed to send bulk emails.";
       const details = error?.response?.data?.error;
       setStatusMessage({
