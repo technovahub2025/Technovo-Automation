@@ -287,7 +287,7 @@ const EmailAutomation = () => {
       const data = response?.data || {};
       setSendReport(data);
       setStatusMessage({
-        text: data?.message || "Bulk email request completed.",
+        text: data?.failed > 0 ? (data?.message || "Bulk email request completed.") : "Bulk email sent successfully.",
         type: data?.failed > 0 ? "warning" : "info"
       });
       setCampaignHistory((prev) => [
