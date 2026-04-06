@@ -436,7 +436,8 @@ const OutboundDialer = ({
           <p>Run a single call or switch to bulk campaign mode without leaving this workspace.</p>
         </div>
 
-        <div className="composer-mode-switch">
+        <div className={`composer-mode-switch ${mode === 'bulk' ? 'is-bulk' : 'is-single'}`}>
+          <span className="composer-mode-pill" aria-hidden="true" />
           <button
             type="button"
             className={`composer-mode-btn ${mode === 'single' ? 'active' : ''}`}

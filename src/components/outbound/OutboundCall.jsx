@@ -322,6 +322,8 @@ const OutboundCall = () => {
     setActiveTab('monitor');
   }, []);
 
+  const showMonitorTab = activeTab === 'monitor';
+
   const historyInfo = useMemo(() => {
     const start = (historyPagination.page - 1) * historyPagination.limit + 1;
     const end = Math.min(historyPagination.page * historyPagination.limit, historyPagination.total);
@@ -737,10 +739,12 @@ const OutboundCall = () => {
         <div className="header-actions" />
       </div>
       <div className="outbound-tabs">
-        <button className={`tab-btn ${activeTab === 'quick' ? 'active' : ''}`} onClick={() => setActiveTab('quick')}><PhoneOutgoing size={18} />Quick Calls</button>
-        <button className={`tab-btn ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}><History size={18} />History</button>
-        <button className={`tab-btn ${activeTab === 'campaigns' ? 'active' : ''}`} onClick={() => setActiveTab('campaigns')}><ListChecks size={18} />Campaign List</button>
-        <button className={`tab-btn ${activeTab === 'monitor' ? 'active' : ''}`} onClick={() => setActiveTab('monitor')}><BarChart3 size={18} />Monitor</button>
+        <button className={`outbound-tab-btn ${activeTab === 'quick' ? 'active' : ''}`} onClick={() => setActiveTab('quick')}><PhoneOutgoing size={18} />Quick Calls</button>
+        <button className={`outbound-tab-btn ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}><History size={18} />History</button>
+        <button className={`outbound-tab-btn ${activeTab === 'campaigns' ? 'active' : ''}`} onClick={() => setActiveTab('campaigns')}><ListChecks size={18} />Campaign List</button>
+        {showMonitorTab && (
+          <button className={`outbound-tab-btn ${activeTab === 'monitor' ? 'active' : ''}`} onClick={() => setActiveTab('monitor')}><BarChart3 size={18} />Monitor</button>
+        )}
       </div>
       {liveCallStatus && (
         <div className="live-call-banner">

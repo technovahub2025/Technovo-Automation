@@ -114,6 +114,17 @@ const createNodeData = (type) => {
 };
 
 const clamp = (value, min, max) => Math.min(max, Math.max(min, value));
+const normalizeHandleValue = (value) => (value == null || value === '' ? null : String(value));
+const edgeSignatureMatches = (edge, candidate, ignoreEdgeId = null) => {
+  if (!edge || !candidate) return false;
+  if (ignoreEdgeId && edge.id === ignoreEdgeId) return false;
+  return (
+    String(edge.source || '') === String(candidate.source || '') &&
+    String(edge.target || '') === String(candidate.target || '') &&
+    normalizeHandleValue(edge.sourceHandle) === normalizeHandleValue(candidate.sourceHandle) &&
+    normalizeHandleValue(edge.targetHandle) === normalizeHandleValue(candidate.targetHandle)
+  );
+};
 
 const WorkflowBuilderCanvas = ({
   workflow,
@@ -363,6 +374,7 @@ const WorkflowBuilderCanvas = ({
     }
 
     const incoming = new Map(currentNodes.map(n => [n.id, 0]));
+    const adjacency = new Map(currentNodes.map(n => [n.id, []]));
     const edgeKeySet = new Set();
     const sourceHandleMap = new Set();
     const audioNodeIds = new Set(
@@ -392,6 +404,34 @@ const WorkflowBuilderCanvas = ({
         }
 
         incoming.set(edge.target, (incoming.get(edge.target) || 0) + 1);
+        if (adjacency.has(edge.source)) adjacency.get(edge.source).push(edge.target);
+      }
+    });
+
+    const asNodeId = (value) => (typeof value === 'string' ? value.trim() : '');
+    const addVirtualReference = (sourceId, targetId) => {
+      if (!sourceId || !targetId) return;
+      if (!nodeIds.has(sourceId)) return;
+      if (!audioNodeIds.has(targetId)) return;
+      incoming.set(targetId, (incoming.get(targetId) || 0) + 1);
+      if (adjacency.has(sourceId) && !adjacency.get(sourceId).includes(targetId)) {
+        adjacency.get(sourceId).push(targetId);
+      }
+    };
+
+    currentNodes.forEach((node) => {
+      const nodeType = (node.type || '').toLowerCase();
+      const data = node.data || {};
+      if (nodeType === 'input') {
+        addVirtualReference(node.id, asNodeId(data.promptAudioNodeId || data.prompt_audio_node_id));
+        addVirtualReference(node.id, asNodeId(data.invalidAudioNodeId || data.invalid_audio_node_id));
+        addVirtualReference(node.id, asNodeId(data.timeoutAudioNodeId || data.timeout_audio_node_id));
+      }
+      if (nodeType === 'audio' || nodeType === 'greeting') {
+        addVirtualReference(node.id, asNodeId(data.fallbackAudioNodeId));
+      }
+      if (nodeType === 'voicemail') {
+        addVirtualReference(node.id, asNodeId(data.greetingAudioNodeId || data.greeting_audio_node_id));
       }
     });
 
@@ -400,11 +440,6 @@ const WorkflowBuilderCanvas = ({
       if (node.id !== startNode.id && incoming.get(node.id) === 0) {
         errors.push({ code: 'ORPHAN_NODE', message: 'Orphaned node detected.', nodeId: node.id });
       }
-    });
-
-    const adjacency = new Map(currentNodes.map(n => [n.id, []]));
-    currentEdges.forEach(edge => {
-      if (adjacency.has(edge.source)) adjacency.get(edge.source).push(edge.target);
     });
 
     const reachable = new Set();
@@ -429,7 +464,6 @@ const WorkflowBuilderCanvas = ({
       errors.push({ code: 'UNREACHABLE_END', message: 'No reachable end node.' });
     }
 
-    const asNodeId = (value) => (typeof value === 'string' ? value.trim() : '');
     currentNodes.forEach((node) => {
       const nodeType = (node.type || '').toLowerCase();
       const data = node.data || {};
@@ -515,6 +549,16 @@ const WorkflowBuilderCanvas = ({
   useEffect(() => {
     onValidationChange?.(validationErrors);
   }, [onValidationChange, validationErrors]);
+
+  const nodeWarningById = useMemo(() => {
+    const warningMap = new Map();
+    validationErrors.forEach((error) => {
+      const nodeId = error?.nodeId;
+      if (!nodeId || warningMap.has(nodeId)) return;
+      warningMap.set(nodeId, error.message || 'Configuration issue');
+    });
+    return warningMap;
+  }, [validationErrors]);
 
   const handleDrop = useCallback((event) => {
     event.preventDefault();
@@ -730,12 +774,21 @@ const WorkflowBuilderCanvas = ({
       sourceHandle = existing.includes('true') && !existing.includes('false') ? 'false' : 'true';
     }
 
-    const newEdge = {
-      id: createUniqueId('edge'),
+    const candidateEdge = {
       source: connectingFrom,
       target: nodeId,
       sourceHandle,
       targetHandle: null
+    };
+    const duplicateEdgeExists = edges.some((edge) => edgeSignatureMatches(edge, candidateEdge));
+    if (duplicateEdgeExists) {
+      setConnectingFrom(null);
+      return;
+    }
+
+    const newEdge = {
+      id: createUniqueId('edge'),
+      ...candidateEdge
     };
 
     applyWorkflowUpdate({
@@ -751,6 +804,22 @@ const WorkflowBuilderCanvas = ({
     if (!reconnectEdgeId) return;
     const edge = edges.find(e => e.id === reconnectEdgeId);
     if (!edge) return;
+
+    const candidateEdge = {
+      source: edge.source,
+      target: nodeId,
+      sourceHandle: edge.sourceHandle ?? null,
+      targetHandle: edge.targetHandle ?? null
+    };
+    const duplicateEdgeExists = edges.some((existingEdge) =>
+      edgeSignatureMatches(existingEdge, candidateEdge, reconnectEdgeId)
+    );
+    if (duplicateEdgeExists) {
+      setReconnectEdgeId(null);
+      setEdgeMenu(null);
+      setSelectedEdge(null);
+      return;
+    }
 
     const updatedEdges = edges.map(e => e.id === reconnectEdgeId ? { ...e, target: nodeId } : e);
     applyWorkflowUpdate({ ...workflow, edges: updatedEdges }, { recordHistory: true, saveToBackend: false });
@@ -809,72 +878,241 @@ const WorkflowBuilderCanvas = ({
 
   const applyAutoLayout = useCallback((direction = 'LR') => {
     if (!nodes.length) return;
+    const nodeById = new Map(nodes.map((node) => [node.id, node]));
+    const originalIndexById = new Map(nodes.map((node, index) => [node.id, index]));
+    const outgoing = new Map(nodes.map((node) => [node.id, []]));
+    const incoming = new Map(nodes.map((node) => [node.id, []]));
 
-    const spacingX = 280;
-    const spacingY = 180;
+    const getHandlePriority = (handle) => {
+      const normalized = String(handle ?? '').trim().toLowerCase();
+      if (!normalized) return 5;
+      if (normalized === 'true') return 0;
+      if (normalized === 'false') return 1;
+      const asDigit = Number(normalized);
+      if (Number.isFinite(asDigit)) return 2 + Math.max(0, Math.min(9, asDigit)) / 10;
+      if (normalized === 'timeout') return 3;
+      if (normalized === 'no_match') return 4;
+      if (normalized === 'default') return 4.5;
+      return 6;
+    };
 
-    // Build graph
-    const incoming = new Map(nodes.map(n => [n.id, 0]));
-    const outgoing = new Map(nodes.map(n => [n.id, []]));
+    const getTypePriority = (nodeType) => {
+      const normalized = String(nodeType || '').toLowerCase();
+      if (normalized === 'start') return 0;
+      if (normalized === 'audio' || normalized === 'greeting') return 1;
+      if (normalized === 'input') return 2;
+      if (normalized === 'conditional') return 3;
+      if (normalized === 'transfer') return 4;
+      if (normalized === 'voicemail') return 5;
+      if (normalized === 'end') return 6;
+      return 7;
+    };
 
-    edges.forEach(e => {
-      incoming.set(e.target, (incoming.get(e.target) || 0) + 1);
-      outgoing.get(e.source)?.push(e.target);
+    edges.forEach((edge) => {
+      if (!nodeById.has(edge.source) || !nodeById.has(edge.target)) return;
+      outgoing.get(edge.source)?.push(edge);
+      incoming.get(edge.target)?.push(edge);
     });
 
-    // Multiple root nodes supported
-    const roots = nodes.filter(n => incoming.get(n.id) === 0);
-    const visited = new Set();
-    const levels = new Map();
+    const indegree = new Map(nodes.map((node) => [node.id, incoming.get(node.id)?.length || 0]));
+    let roots = nodes.filter((node) => (indegree.get(node.id) || 0) === 0).map((node) => node.id);
 
-    const queue = roots.map((n, i) => ({ id: n.id, level: 0 }));
+    if (!roots.length && nodes.length) {
+      roots = [...nodes]
+        .sort((a, b) => {
+          const typeDiff = getTypePriority(a.type) - getTypePriority(b.type);
+          if (typeDiff !== 0) return typeDiff;
+          return (originalIndexById.get(a.id) || 0) - (originalIndexById.get(b.id) || 0);
+        })
+        .slice(0, 1)
+        .map((node) => node.id);
+    }
 
-    while (queue.length) {
-      const { id, level } = queue.shift();
-      if (visited.has(id)) continue;
-
-      visited.add(id);
-      levels.set(id, level);
-
-      outgoing.get(id)?.forEach(target => {
-        queue.push({ id: target, level: level + 1 });
+    const reachable = new Set();
+    const reachQueue = [...roots];
+    while (reachQueue.length) {
+      const currentId = reachQueue.shift();
+      if (reachable.has(currentId)) continue;
+      reachable.add(currentId);
+      (outgoing.get(currentId) || []).forEach((edge) => {
+        if (!reachable.has(edge.target)) {
+          reachQueue.push(edge.target);
+        }
       });
     }
 
-    // Group by level
-    const levelMap = new Map();
-    nodes.forEach(n => {
-      const level = levels.get(n.id) ?? 0;
-      if (!levelMap.has(level)) levelMap.set(level, []);
-      levelMap.get(level).push(n.id);
+    const reachableIds = [...reachable];
+    const indegreeReachable = new Map(
+      reachableIds.map((nodeId) => [
+        nodeId,
+        (incoming.get(nodeId) || []).filter((edge) => reachable.has(edge.source)).length
+      ])
+    );
+    const layerById = new Map(reachableIds.map((nodeId) => [nodeId, 0]));
+
+    const queue = [...roots]
+      .filter((nodeId) => reachable.has(nodeId))
+      .sort((a, b) => {
+        const typeDiff = getTypePriority(nodeById.get(a)?.type) - getTypePriority(nodeById.get(b)?.type);
+        if (typeDiff !== 0) return typeDiff;
+        return (originalIndexById.get(a) || 0) - (originalIndexById.get(b) || 0);
+      });
+
+    const processed = new Set();
+    while (queue.length) {
+      const nodeId = queue.shift();
+      if (processed.has(nodeId)) continue;
+      processed.add(nodeId);
+      const baseLayer = layerById.get(nodeId) || 0;
+
+      (outgoing.get(nodeId) || []).forEach((edge) => {
+        if (!reachable.has(edge.target)) return;
+        layerById.set(edge.target, Math.max(layerById.get(edge.target) || 0, baseLayer + 1));
+        indegreeReachable.set(edge.target, Math.max(0, (indegreeReachable.get(edge.target) || 0) - 1));
+        if ((indegreeReachable.get(edge.target) || 0) === 0) {
+          queue.push(edge.target);
+        }
+      });
+    }
+
+    const cycleNodeIds = reachableIds.filter((nodeId) => !processed.has(nodeId));
+    const maxAssignedLayer = [...layerById.values()].reduce((max, value) => Math.max(max, value), 0);
+    cycleNodeIds.forEach((nodeId, idx) => {
+      layerById.set(nodeId, maxAssignedLayer + 1 + idx);
     });
 
-    // Position nodes
-    const updatedNodes = nodes.map(node => {
-      const level = levels.get(node.id) ?? 0;
-      const siblings = levelMap.get(level) || [];
-      const index = siblings.indexOf(node.id);
+    const mainNodeIds = reachableIds.filter((nodeId) => !cycleNodeIds.includes(nodeId));
+    const detachedNodeIds = nodes
+      .map((node) => node.id)
+      .filter((nodeId) => !mainNodeIds.includes(nodeId));
 
-      const x =
-        direction === 'LR'
-          ? level * spacingX
-          : index * spacingX;
+    const layerBuckets = new Map();
+    mainNodeIds.forEach((nodeId) => {
+      const layer = layerById.get(nodeId) || 0;
+      if (!layerBuckets.has(layer)) layerBuckets.set(layer, []);
+      layerBuckets.get(layer).push(nodeId);
+    });
 
-      const y =
-        direction === 'LR'
-          ? index * spacingY
-          : level * spacingY;
+    const layerKeys = [...layerBuckets.keys()].sort((a, b) => a - b);
+    layerKeys.forEach((layer) => {
+      layerBuckets.get(layer).sort((a, b) => (originalIndexById.get(a) || 0) - (originalIndexById.get(b) || 0));
+    });
 
+    for (let pass = 0; pass < 3; pass += 1) {
+      layerKeys.forEach((layer) => {
+        if (layer === 0) return;
+        const previousLayer = layerBuckets.get(layer - 1) || [];
+        const previousOrder = new Map(previousLayer.map((nodeId, idx) => [nodeId, idx]));
+
+        const scored = (layerBuckets.get(layer) || []).map((nodeId) => {
+          const parentEdges = (incoming.get(nodeId) || []).filter((edge) => layerById.get(edge.source) === layer - 1);
+          const parentScore =
+            parentEdges.length > 0
+              ? parentEdges.reduce((sum, edge) => sum + (previousOrder.get(edge.source) ?? previousLayer.length), 0) /
+                parentEdges.length
+              : Number.MAX_SAFE_INTEGER;
+          const handleScore =
+            parentEdges.length > 0
+              ? parentEdges.reduce((sum, edge) => sum + getHandlePriority(edge.sourceHandle), 0) / parentEdges.length
+              : 10;
+
+          return {
+            nodeId,
+            parentScore,
+            handleScore,
+            typeScore: getTypePriority(nodeById.get(nodeId)?.type),
+            indexScore: originalIndexById.get(nodeId) || 0
+          };
+        });
+
+        scored.sort((a, b) => {
+          if (a.parentScore !== b.parentScore) return a.parentScore - b.parentScore;
+          if (a.handleScore !== b.handleScore) return a.handleScore - b.handleScore;
+          if (a.typeScore !== b.typeScore) return a.typeScore - b.typeScore;
+          return a.indexScore - b.indexScore;
+        });
+
+        layerBuckets.set(layer, scored.map((item) => item.nodeId));
+      });
+    }
+
+    const isLR = direction === 'LR';
+    const edgeDensity = edges.length / Math.max(nodes.length, 1);
+    const primaryNodeSize = isLR ? NODE_WIDTH : NODE_HEIGHT;
+    const crossNodeSize = isLR ? NODE_HEIGHT : NODE_WIDTH;
+    const layerGap = Math.max(primaryNodeSize + 140, primaryNodeSize + 120 + Math.round(edgeDensity * 30));
+    const crossGap = Math.max(crossNodeSize + 90, crossNodeSize + 60 + Math.round(edgeDensity * 24));
+    const separateAxisGap = layerGap + Math.round(crossNodeSize * 0.9);
+
+    const positions = new Map();
+    let mainMaxPrimary = 0;
+
+    layerKeys.forEach((layer) => {
+      const ids = layerBuckets.get(layer) || [];
+      if (!ids.length) return;
+      const span = (ids.length - 1) * crossGap;
+      const crossStart = -span / 2;
+      const primary = layer * layerGap;
+      mainMaxPrimary = Math.max(mainMaxPrimary, primary);
+
+      ids.forEach((nodeId, idx) => {
+        const cross = crossStart + idx * crossGap;
+        const position =
+          direction === 'LR'
+            ? { x: primary, y: cross }
+            : { x: cross, y: primary };
+        positions.set(nodeId, position);
+      });
+    });
+
+    if (detachedNodeIds.length > 0) {
+      const sortedDetached = [...detachedNodeIds].sort((a, b) => {
+        const typeDiff = getTypePriority(nodeById.get(a)?.type) - getTypePriority(nodeById.get(b)?.type);
+        if (typeDiff !== 0) return typeDiff;
+        return (originalIndexById.get(a) || 0) - (originalIndexById.get(b) || 0);
+      });
+      const wrap = Math.max(2, Math.ceil(Math.sqrt(sortedDetached.length)));
+      const primaryBase = mainMaxPrimary + separateAxisGap;
+      const detachedPrimaryStep = Math.max(primaryNodeSize + 120, primaryNodeSize + 90 + Math.round(edgeDensity * 20));
+      const detachedCrossStep = Math.max(crossNodeSize + 90, crossNodeSize + 70 + Math.round(edgeDensity * 16));
+
+      sortedDetached.forEach((nodeId, idx) => {
+        const row = Math.floor(idx / wrap);
+        const col = idx % wrap;
+        const primary = primaryBase + row * detachedPrimaryStep;
+        const cross = col * detachedCrossStep;
+        const position =
+          isLR
+            ? { x: primary, y: cross }
+            : { x: cross, y: primary };
+        positions.set(nodeId, position);
+      });
+    }
+
+    const allPositions = nodes.map((node) => positions.get(node.id)).filter(Boolean);
+    const minX = Math.min(...allPositions.map((position) => position.x), 0);
+    const minY = Math.min(...allPositions.map((position) => position.y), 0);
+    const offsetX = 80 - minX;
+    const offsetY = 80 - minY;
+
+    const updatedNodes = nodes.map((node) => {
+      const computed = positions.get(node.id) || node.position || { x: 0, y: 0 };
       return {
         ...node,
-        position: snapPoint({ x, y })
+        position: snapPoint({
+          x: computed.x + offsetX,
+          y: computed.y + offsetY
+        })
       };
     });
 
-    applyWorkflowUpdate({
-      ...workflow,
-      nodes: updatedNodes
-    }, { recordHistory: true, saveToBackend: false });
+    applyWorkflowUpdate(
+      {
+        ...workflow,
+        nodes: updatedNodes
+      },
+      { recordHistory: true, saveToBackend: false }
+    );
   }, [nodes, edges, workflow, snapPoint, applyWorkflowUpdate]);
 
 
@@ -1176,7 +1414,8 @@ const WorkflowBuilderCanvas = ({
 
             {nodes.map((node) => {
               const nodeType = NODE_TYPES.find(n => n.type === node.type);
-              const hasError = validationErrors.some(err => err.nodeId === node.id);
+              const warningText = nodeWarningById.get(node.id) || '';
+              const hasError = Boolean(warningText);
 
               // Handle legacy greeting nodes - show as Audio nodes
               const displayLabel = node.type === 'greeting'
@@ -1253,7 +1492,7 @@ const WorkflowBuilderCanvas = ({
                       Connect
                     </button>
                   </div>
-                  {hasError && <div className="node-warning">Configuration required</div>}
+                  {hasError && <div className="node-warning">{warningText}</div>}
                 </div>
               );
             })}

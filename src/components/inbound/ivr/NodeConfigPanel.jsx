@@ -146,6 +146,12 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
         // Destination is not used for voicemail input actions.
         nextConfig.destination = '';
       }
+
+      const normalizedPromptAudioNodeId = String(nextConfig.promptAudioNodeId || '').trim();
+      if (!normalizedPromptAudioNodeId) {
+        alert('Prompt Audio Node is required for User Input. Please select one audio node.');
+        return;
+      }
     }
 
     if (node?.type === 'conditional') {
@@ -257,13 +263,6 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
         label: n.data?.label || n.data?.messageText || n.data?.text || `${n.type} (${n.id})`
       }));
   }, [availableAudioNodes, node?.id]);
-
-  useEffect(() => {
-    if (!audioNodeOptions.length) return;
-    if (node?.type === 'input' && !config.promptAudioNodeId) {
-      setConfig((prev) => ({ ...prev, promptAudioNodeId: audioNodeOptions[0].id }));
-    }
-  }, [audioNodeOptions, node?.type, config.promptAudioNodeId]);
 
   const renderAudioConfig = () => (
     <div className="config-section">
@@ -552,9 +551,12 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
         return (
           <div className="config-section">
             <h4>Input Configuration</h4>
+            <small className="form-help">
+              Audio selections below are config references only. You do not need to connect edge lines to these audio nodes.
+            </small>
 
             <div className="form-group">
-              <label>Prompt Audio Node</label>
+              <label>Prompt Audio Node *</label>
               <select
                 value={config.promptAudioNodeId}
                 onChange={(e) => handleChange('promptAudioNodeId', e.target.value)}
@@ -767,7 +769,7 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
                   </option>
                 ))}
               </select>
-              <small className="form-help">Audio node to play on invalid input.</small>
+              <small className="form-help">Config reference for invalid input retry audio.</small>
             </div>
 
             <div className="form-group">
@@ -784,7 +786,7 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
                   </option>
                 ))}
               </select>
-              <small className="form-help">Audio node to play on timeout.</small>
+              <small className="form-help">Config reference for timeout retry audio.</small>
             </div>
           </div>
         );

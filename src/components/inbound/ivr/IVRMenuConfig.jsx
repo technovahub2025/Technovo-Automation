@@ -232,7 +232,14 @@ const IVRMenuConfig = () => {
           </div>
 
           <div className="menus-list-section">
-            {!Array.isArray(ivrMenus) || ivrMenus.length === 0 ? (
+            {loading && (!Array.isArray(ivrMenus) || ivrMenus.length === 0) ? (
+              <div className="empty-state">
+                <div className="empty-state-content">
+                  <h3>Loading IVR Configurations...</h3>
+                  <p>Please wait while your workflows are being fetched.</p>
+                </div>
+              </div>
+            ) : !Array.isArray(ivrMenus) || ivrMenus.length === 0 ? (
               <div className="empty-state">
                 <div className="empty-state-content">
                   <h3>No IVR Configurations Yet</h3>

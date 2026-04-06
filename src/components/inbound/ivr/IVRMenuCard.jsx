@@ -537,11 +537,13 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
       // Update local state immediately
       setCurrentStatus(newStatus);
 
-      // Update parent component if callback exists
+      // Sync parent in background without blocking UI responsiveness
       if (onUpdate) {
-        await onUpdate(menu._id, {
+        onUpdate(menu._id, {
           ...migratedWorkflow,
           status: newStatus
+        }).catch((error) => {
+          console.error('Failed to sync status update in parent:', error);
         });
       }
 
@@ -1120,7 +1122,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
               </button>
               <button
                 onClick={handleWorkflowSave}
-                className="btn btn-save"
+                className={`btn btn-save ${isDirty ? 'btn-save-dirty' : 'btn-save-stable'} ${isSavingWorkflow ? 'btn-save-saving' : ''}`}
                 disabled={!isDirty || isSavingWorkflow || !hasValidWorkflow}
               >
                 {isDirty ? <Save size={16} /> : <CheckCircle size={16} />}

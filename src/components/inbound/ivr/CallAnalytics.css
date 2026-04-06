@@ -300,6 +300,21 @@
   gap: 8px;
 }
 
+.chart-empty-state {
+  height: 280px;
+  border: 1px dashed #dbe2ea;
+  border-radius: 10px;
+  background: #f8fafc;
+  color: #64748b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-size: 13px;
+  font-weight: 500;
+  padding: 12px;
+}
+
 /* Analytics Sections */
 .analytics-section {
   background: white;

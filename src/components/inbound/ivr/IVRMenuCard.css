@@ -625,6 +625,16 @@
   gap: 12px;
 }
 
+/* Lock header action button sizing so Save/Test remain equal regardless of global .btn rules */
+.workflow-builder-full .workflow-actions .btn.btn-test,
+.workflow-builder-full .workflow-actions .btn.btn-save {
+  width: 154px;
+  min-width: 154px;
+  max-width: 154px;
+  flex: 0 0 154px;
+  justify-content: center;
+}
+
 .workflow-builder-full .workflow-builder {
   flex: 1;
   overflow: hidden;
@@ -673,6 +683,8 @@
 
 .btn-test {
   background: #10b981;
+  min-width: 106px;
+  justify-content: center;
 }
 
 .btn-test:hover {
@@ -680,11 +692,66 @@
 }
 
 .btn-save {
-  background: #8b5cf6;
+  background: #1d4ed8;
+  color: #ffffff;
+  min-width: 106px;
+  padding: 8px 12px;
+  border: 1px solid #1e40af;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.15);
 }
 
 .btn-save:hover {
-  background: #7c3aed;
+  background: #1e40af;
+  color: #ffffff;
+  border-color: #1e3a8a;
+}
+
+.btn-save:focus-visible {
+  background: #1e40af;
+  color: #ffffff;
+  border-color: #1e3a8a;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
+}
+
+.btn-save.btn-save-dirty {
+  background: #2563eb;
+  border-color: #1d4ed8;
+  box-shadow: 0 0 0 2px rgba(191, 219, 254, 0.9), 0 0 14px rgba(96, 165, 250, 0.55);
+}
+
+.btn-save.btn-save-dirty:hover {
+  background: #1d4ed8;
+  border-color: #1e40af;
+  box-shadow: 0 0 0 2px rgba(147, 197, 253, 0.9), 0 0 16px rgba(59, 130, 246, 0.6);
+}
+
+.btn-save.btn-save-stable {
+  background: #1e3a8a;
+  border-color: #1e3a8a;
+}
+
+.btn-save.btn-save-saving {
+  background: #1d4ed8;
+  border-color: #1e40af;
+}
+
+.btn-save:disabled {
+  background: #1e3a8a;
+  color: #ffffff;
+  border-color: #1e3a8a;
+  opacity: 1;
+  box-shadow: none;
+}
+
+/* Keep disabled save button blue even on hover/focus (prevent pale/white look) */
+.workflow-builder-full .workflow-actions .btn.btn-save:disabled:hover,
+.workflow-builder-full .workflow-actions .btn.btn-save:disabled:focus-visible {
+  background: #1e3a8a;
+  color: #ffffff;
+  border-color: #1e3a8a;
+  opacity: 1;
+  box-shadow: none;
+  filter: none;
 }
 
 .btn-close-builder {

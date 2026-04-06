@@ -320,11 +320,33 @@ const CallAnalytics = () => {
   const exportAnalytics = async (format) => {
     try {
       setExporting(true);
-      const response = await apiService.exportAnalytics(period, format);
-      const data = format === 'csv' ? response.data : new Blob([response.data], {
-        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      if (format !== 'csv') return;
+
+      const escapeCsv = (value) => {
+        if (value === null || value === undefined) return '';
+        const stringValue = String(value);
+        if (/[",\n]/.test(stringValue)) {
+          return `"${stringValue.replace(/"/g, '""')}"`;
+        }
+        return stringValue;
+      };
+
+      const rows = filteredCalls.map((call) => {
+        const displayType = normalizeCallType(call.type);
+        return [
+          call.callSid || '',
+          call.phoneNumber || '',
+          displayType,
+          call.status || '',
+          Number(call.duration || 0),
+          call.createdAt ? new Date(call.createdAt).toISOString() : ''
+        ];
       });
-      const url = window.URL.createObjectURL(data);
+
+      const header = ['Call ID', 'Phone Number', 'Type', 'Status', 'Duration (sec)', 'Created At'];
+      const csvContent = [header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
       a.download = `call-analytics-${period}.${format}`;
@@ -349,7 +371,38 @@ const CallAnalytics = () => {
   };
 
   const formatNumber = (num) => num ? new Intl.NumberFormat().format(num) : '0';
-  const normalizeCallType = (callType) => (callType === 'outbound_quickcalls' ? 'outbound' : callType);
+  const normalizeCallType = (callType) => {
+    const normalized = String(callType || '').toLowerCase().trim();
+
+    if (
+      [
+        'outbound',
+        'outbound_call',
+        'outbound_quickcalls',
+        'outbound_quickcall',
+        'quick_call',
+        'quickcall',
+        'voice_broadcast',
+        'voicebroadcast',
+        'outbound_broadcast',
+        'broadcast',
+        'bulk',
+        'bulk_campaign'
+      ].includes(normalized)
+    ) {
+      return 'outbound';
+    }
+
+    if (['ivr', 'inbound_ivr'].includes(normalized)) {
+      return 'ivr';
+    }
+
+    if (['inbound', 'incoming'].includes(normalized)) {
+      return 'inbound';
+    }
+
+    return normalized || 'unknown';
+  };
 
   const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16'];
 
@@ -368,7 +421,8 @@ const CallAnalytics = () => {
     if (!analytics?.recentCalls) return [];
     return analytics.recentCalls.filter(call => {
       const matchesSearch = !filters.searchQuery || 
-        call.phoneNumber?.toLowerCase().includes(filters.searchQuery.toLowerCase());
+        call.phoneNumber?.toLowerCase().includes(filters.searchQuery.toLowerCase()) ||
+        call.callSid?.toLowerCase().includes(filters.searchQuery.toLowerCase());
       const matchesType =
         filters.callType === 'all' || normalizeCallType(call.type) === filters.callType;
       const matchesStatus = filters.status === 'all' || call.status === filters.status;
@@ -413,8 +467,6 @@ const CallAnalytics = () => {
   const totalCalls = getTotalCalls();
   const successRate = getSuccessRate();
   const avgDuration = getAvgDuration();
-  const aiEngagement = analytics?.aiMetrics?.aiEngagementRate || 0;
-
   const totalCallsComp = comparisonData ? getComparisonIndicator(totalCalls, comparisonData.summary?.totalCalls) : null;
   const successRateComp = comparisonData ? getComparisonIndicator(successRate, comparisonData.summary?.successRate) : null;
 
@@ -438,6 +490,13 @@ const CallAnalytics = () => {
     completed: data.completed || 0,
     failed: data.failed || 0
   })) : [];
+
+  const hasOutboundHistory = outboundLiveMetrics.history.some((entry) =>
+    Number(entry?.total || 0) > 0 || Number(entry?.initiated || 0) > 0 || Number(entry?.failed || 0) > 0
+  );
+  const hasHourlyData = hourlyData.some((entry) => Number(entry?.total || 0) > 0);
+  const hasRoutingData = routingData.some((entry) => Number(entry?.value || 0) > 0);
+  const hasDailyData = dailyData.some((entry) => Number(entry?.total || 0) > 0);
 
   return (
     <div className="call-analytics">
@@ -567,15 +626,6 @@ const CallAnalytics = () => {
           </div>
         </div>
 
-        <div className="summary-card info">
-          <div className="summary-icon"><Bot size={20} /></div>
-          <div className="summary-content">
-            <h3>{aiEngagement}%</h3>
-            <p>AI Engagement</p>
-            <span className="trend positive"><Zap size={14} /> Automated</span>
-          </div>
-        </div>
-
         <div className="summary-card danger">
           <div className="summary-icon"><PhoneMissed size={20} /></div>
           <div className="summary-content">
@@ -627,28 +677,32 @@ const CallAnalytics = () => {
 
         <div className="chart-card full-width outbound-live-chart">
           <h3>Outbound Metrics Trend</h3>
-          <ResponsiveContainer width="100%" height={280}>
-            <AreaChart data={outboundLiveMetrics.history}>
-              <defs>
-                <linearGradient id="outboundInitiatedGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
-                  <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
-                </linearGradient>
-                <linearGradient id="outboundFailedGradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
-                  <stop offset="95%" stopColor="#ef4444" stopOpacity={0.02} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="time" stroke="#64748b" fontSize={12} />
-              <YAxis stroke="#64748b" fontSize={12} allowDecimals={false} />
-              <Tooltip />
-              <Legend />
-              <Area type="monotone" dataKey="initiated" stroke="#3b82f6" fill="url(#outboundInitiatedGradient)" name="Initiated" />
-              <Area type="monotone" dataKey="failed" stroke="#ef4444" fill="url(#outboundFailedGradient)" name="Failed" />
-              <Line type="monotone" dataKey="successRate" stroke="#10b981" strokeWidth={2} name="Success %" dot={false} />
-            </AreaChart>
-          </ResponsiveContainer>
+          {hasOutboundHistory ? (
+            <ResponsiveContainer width="100%" height={280}>
+              <AreaChart data={outboundLiveMetrics.history}>
+                <defs>
+                  <linearGradient id="outboundInitiatedGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
+                  </linearGradient>
+                  <linearGradient id="outboundFailedGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="time" stroke="#64748b" fontSize={12} />
+                <YAxis stroke="#64748b" fontSize={12} allowDecimals={false} />
+                <Tooltip />
+                <Legend />
+                <Area type="monotone" dataKey="initiated" stroke="#3b82f6" fill="url(#outboundInitiatedGradient)" name="Initiated" />
+                <Area type="monotone" dataKey="failed" stroke="#ef4444" fill="url(#outboundFailedGradient)" name="Failed" />
+                <Line type="monotone" dataKey="successRate" stroke="#10b981" strokeWidth={2} name="Success %" dot={false} />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="chart-empty-state">No outbound trend data yet.</div>
+          )}
         </div>
       </div>
       )}
@@ -659,83 +713,71 @@ const CallAnalytics = () => {
 
         <div className="chart-card large">
           <h3>Hourly Call Volume</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <ComposedChart data={hourlyData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-              <XAxis dataKey="hour" stroke="#64748b" fontSize={12} />
-              <YAxis stroke="#64748b" fontSize={12} />
-              <Tooltip contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px' }} />
-              <Legend />
-              <Bar dataKey="total" fill="#3b82f6" name="Total" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="completed" fill="#10b981" name="Completed" radius={[4, 4, 0, 0]} />
-              <Line type="monotone" dataKey="successRate" stroke="#f59e0b" name="Success %" strokeWidth={2} dot={false} />
-            </ComposedChart>
-          </ResponsiveContainer>
+          {hasHourlyData ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <ComposedChart data={hourlyData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="hour" stroke="#64748b" fontSize={12} />
+                <YAxis stroke="#64748b" fontSize={12} />
+                <Tooltip contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px' }} />
+                <Legend />
+                <Bar dataKey="total" fill="#3b82f6" name="Total" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="completed" fill="#10b981" name="Completed" radius={[4, 4, 0, 0]} />
+                <Line type="monotone" dataKey="successRate" stroke="#f59e0b" name="Success %" strokeWidth={2} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="chart-empty-state">No hourly call volume data for this filter.</div>
+          )}
         </div>
 
         {/* IVR Routing */}
         <div className="chart-card">
           <h3>IVR Routing</h3>
-          <ResponsiveContainer width="100%" height={300}>
-            <PieChart>
-              <Pie data={routingData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2} dataKey="value">
-                {routingData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
-                ))}
-              </Pie>
-              <Tooltip />
-              <Legend verticalAlign="bottom" height={36}/>
-            </PieChart>
-          </ResponsiveContainer>
+          {hasRoutingData ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie data={routingData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2} dataKey="value">
+                  {routingData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend verticalAlign="bottom" height={36}/>
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="chart-empty-state">No IVR routing data yet.</div>
+          )}
         </div>
 
         {/* Daily Trend */}
         {dailyData.length > 0 && (
           <div className="chart-card full-width">
             <h3>Daily Trend</h3>
-            <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={dailyData}>
-                <defs>
-                  <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="date" stroke="#64748b" fontSize={12} />
-                <YAxis stroke="#64748b" fontSize={12} />
-                <Tooltip />
-                <Legend />
-                <Area type="monotone" dataKey="total" stroke="#3b82f6" fillOpacity={1} fill="url(#colorTotal)" name="Total" />
-                <Line type="monotone" dataKey="completed" stroke="#10b981" strokeWidth={2} name="Completed" />
-              </AreaChart>
-            </ResponsiveContainer>
+            {hasDailyData ? (
+              <ResponsiveContainer width="100%" height={300}>
+                <AreaChart data={dailyData}>
+                  <defs>
+                    <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
+                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="date" stroke="#64748b" fontSize={12} />
+                  <YAxis stroke="#64748b" fontSize={12} />
+                  <Tooltip />
+                  <Legend />
+                  <Area type="monotone" dataKey="total" stroke="#3b82f6" fillOpacity={1} fill="url(#colorTotal)" name="Total" />
+                  <Line type="monotone" dataKey="completed" stroke="#10b981" strokeWidth={2} name="Completed" />
+                </AreaChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="chart-empty-state">No daily trend data for this period.</div>
+            )}
           </div>
         )}
-      </div>
-
-      {/* Users & Agents Section */}
-      <div className="analytics-section">
-        <h3><Users size={20} /> Users & Agents</h3>
-        <div className="analytics-grid four-col">
-          <div className="stat-box">
-            <span className="stat-label">Total Agents</span>
-            <span className="stat-value">{formatNumber(analytics?.users?.totalAgents || 0)}</span>
-          </div>
-          <div className="stat-box">
-            <span className="stat-label">Active Now</span>
-            <span className="stat-value">{formatNumber(analytics?.users?.activeAgents || 0)}</span>
-          </div>
-
-          <div className="stat-box">
-            <span className="stat-label">Avg Handle Time</span>
-            <span className="stat-value">{formatDuration(analytics?.users?.avgHandleTime || 0)}</span>
-          </div>
-          <div className="stat-box">
-            <span className="stat-label">Agent Utilization</span>
-            <span className="stat-value">{analytics?.users?.utilizationRate || 0}%</span>
-          </div>
-        </div>
       </div>
 
       {/* IVR Deep Dive Section */}
@@ -775,125 +817,32 @@ const CallAnalytics = () => {
         </div>
       </div>
 
-      {/* Comprehensive Metrics Grid */}
-      <div className="analytics-details comprehensive">
-        <div className="detail-section">
-          <h3>Call Distribution</h3>
-          <div className="metric-grid">
-            <div className="metric-item">
-              <span className="metric-label">Inbound</span>
-              <span className="metric-value">{formatNumber(analytics?.summary?.inboundCalls || 0)}</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Outbound</span>
-              <span className="metric-value">{formatNumber(analytics?.summary?.outboundCalls || 0)}</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Failed</span>
-              <span className="metric-value">{formatNumber(analytics?.summary?.failedCalls || 0)}</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Missed</span>
-              <span className="metric-value">{formatNumber(analytics?.summary?.missedCalls || 0)}</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Voicemails</span>
-              <span className="metric-value">{formatNumber(analytics?.summary?.voicemails || 0)}</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Callbacks</span>
-              <span className="metric-value">{formatNumber(analytics?.summary?.callbacks || 0)}</span>
-            </div>
+      <div className="analytics-section">
+        <h3><Clock size={20} /> Queue Metrics</h3>
+        <div className="analytics-grid four-col">
+          <div className="stat-box">
+            <span className="stat-label">Avg Wait Time</span>
+            <span className="stat-value">{formatDuration(analytics?.queue?.avgWaitTime || 0)}</span>
           </div>
-        </div>
-
-        <div className="detail-section">
-          <h3>AI Performance</h3>
-          <div className="metric-grid">
-            <div className="metric-item">
-              <span className="metric-label">AI Calls</span>
-              <span className="metric-value">{formatNumber(analytics?.aiMetrics?.aiCalls || 0)}</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Response Time</span>
-              <span className="metric-value">{analytics?.aiMetrics?.avgResponseTime || 0}ms</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Exchanges</span>
-              <span className="metric-value">{formatNumber(analytics?.aiMetrics?.totalExchanges || 0)}</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Engagement</span>
-              <span className="metric-value">{analytics?.aiMetrics?.aiEngagementRate || 0}%</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Intent Match</span>
-              <span className="metric-value">{analytics?.aiMetrics?.intentMatchRate || 0}%</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Escalations</span>
-              <span className="metric-value">{formatNumber(analytics?.aiMetrics?.escalations || 0)}</span>
-            </div>
+          <div className="stat-box">
+            <span className="stat-label">Max Wait Time</span>
+            <span className="stat-value">{formatDuration(analytics?.queue?.maxWaitTime || 0)}</span>
           </div>
-        </div>
-
-        <div className="detail-section">
-          <h3>IVR Performance</h3>
-          <div className="metric-grid">
-            <div className="metric-item">
-              <span className="metric-label">Usage Rate</span>
-              <span className="metric-value">{analytics?.ivrAnalytics?.ivrUsageRate || 0}%</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Total IVR</span>
-              <span className="metric-value">{formatNumber(analytics?.ivrAnalytics?.totalIVRCalls || 0)}</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Avg Menu Time</span>
-              <span className="metric-value">{analytics?.ivrAnalytics?.avgMenuTime || 0}s</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Completion</span>
-              <span className="metric-value">{analytics?.ivrAnalytics?.menuCompletionRate || 0}%</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Drop-off Rate</span>
-              <span className="metric-value">{analytics?.ivrAnalytics?.dropOffRate || 0}%</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Repeat Calls</span>
-              <span className="metric-value">{formatNumber(analytics?.ivrAnalytics?.repeatCalls || 0)}</span>
-            </div>
+          <div className="stat-box">
+            <span className="stat-label">Service Level</span>
+            <span className="stat-value">{analytics?.queue?.serviceLevel || 0}%</span>
           </div>
-        </div>
-
-        <div className="detail-section">
-          <h3>Queue Metrics</h3>
-          <div className="metric-grid">
-            <div className="metric-item">
-              <span className="metric-label">Avg Wait Time</span>
-              <span className="metric-value">{formatDuration(analytics?.queue?.avgWaitTime || 0)}</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Max Wait Time</span>
-              <span className="metric-value">{formatDuration(analytics?.queue?.maxWaitTime || 0)}</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Service Level</span>
-              <span className="metric-value">{analytics?.queue?.serviceLevel || 0}%</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Abandon Rate</span>
-              <span className="metric-value">{analytics?.queue?.abandonRate || 0}%</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Longest Queue</span>
-              <span className="metric-value">{formatNumber(analytics?.queue?.longestQueue || 0)}</span>
-            </div>
-            <div className="metric-item">
-              <span className="metric-label">Callbacks</span>
-              <span className="metric-value">{formatNumber(analytics?.queue?.scheduledCallbacks || 0)}</span>
-            </div>
+          <div className="stat-box">
+            <span className="stat-label">Abandon Rate</span>
+            <span className="stat-value">{analytics?.queue?.abandonRate || 0}%</span>
+          </div>
+          <div className="stat-box">
+            <span className="stat-label">Longest Queue</span>
+            <span className="stat-value">{formatNumber(analytics?.queue?.longestQueue || 0)}</span>
+          </div>
+          <div className="stat-box">
+            <span className="stat-label">Callbacks</span>
+            <span className="stat-value">{formatNumber(analytics?.queue?.scheduledCallbacks || 0)}</span>
           </div>
         </div>
       </div>
