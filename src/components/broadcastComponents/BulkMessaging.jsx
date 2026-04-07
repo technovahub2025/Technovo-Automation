@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Upload, Send, FileText, AlertCircle, CheckCircle, Download, X, RefreshCw } from 'lucide-react';
+import { Send, FileText, Download, X, RefreshCw } from 'lucide-react';
 import { apiClient } from '../services/whatsappapi';
 import CampaignResults from './CampaignResults';
 import './BulkMessaging.css';
@@ -138,7 +138,7 @@ const BulkMessaging = () => {
       // Then send bulk messages
       const bulkData = {
         messageType: messageType,
-        recipients: uploadResult.data?.csvData || uploadResult.recipients || [],
+        recipients: uploadResult.data?.csvData || uploadResult.recipients || recipients || [],
         ...(messageType === 'template' 
           ? { templateName, language }
           : { customMessage }
@@ -158,23 +158,41 @@ const BulkMessaging = () => {
     }
   };
 
-  const downloadResults = () => {
-    if (!results || !results.results) return;
+  const handleRetryFailed = async (selectedFailedItems = null) => {
+    const sourceList = Array.isArray(selectedFailedItems) && selectedFailedItems.length > 0
+      ? selectedFailedItems
+      : (results?.results || []).filter((item) => !item?.success);
 
-    let csv = 'phone,status,response\n';
-    results.results.forEach(result => {
-      const status = result.success ? 'success' : 'failed';
-      const response = result.response ? JSON.stringify(result.response) : result.error || '';
-      csv += `${result.phone},${status},"${response}"\n`;
-    });
+    const retryRecipients = sourceList
+      .map((item) => ({
+        phone: String(item?.phone || '').trim(),
+        variables: Array.isArray(item?.variables) ? item.variables : []
+      }))
+      .filter((item) => item.phone);
 
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `bulk_results_${Date.now()}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    if (retryRecipients.length === 0) {
+      alert('No failed numbers available for retry.');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const retryPayload = {
+        messageType,
+        recipients: retryRecipients,
+        ...(messageType === 'template'
+          ? { templateName, language }
+          : { customMessage }),
+        broadcastName: `${broadcastName || 'Bulk Send'} - Retry ${new Date().toLocaleString()}`
+      };
+
+      const retryResult = await apiClient.sendBulkMessages(retryPayload);
+      setResults(retryResult);
+    } catch (error) {
+      alert(`Retry failed: ${error?.message || 'Unknown error'}`);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const downloadSampleCSV = () => {

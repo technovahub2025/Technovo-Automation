@@ -10,7 +10,7 @@ const BroadcastHeader = ({ activeTab, onShowBroadcastTypeChoice }) => {
       </div>
 
       {activeTab === 'overview' && (
-        <button className="primary-btn" onClick={onShowBroadcastTypeChoice}>
+        <button className="primary-btn broadcast-header-new-btn" onClick={onShowBroadcastTypeChoice}>
           New Broadcast
         </button>
       )}

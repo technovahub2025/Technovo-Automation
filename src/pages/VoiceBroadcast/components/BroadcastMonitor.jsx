@@ -7,9 +7,16 @@ import StatsChart from './StatsChart';
 import './BroadcastMonitor.css';
 
 const resolveSocketUrl = () => {
-  const configuredApi = import.meta.env.VITE_API_URL || '';
   const configuredSocket = import.meta.env.VITE_SOCKET_URL || '';
-  return configuredSocket || (configuredApi ? configuredApi.replace(/\/api\/?$/, '') : window.location.origin);
+  const configuredAdminApi = import.meta.env.VITE_API_ADMIN_URL || '';
+  const configuredApiBase = import.meta.env.VITE_API_BASE_URL || '';
+  const configuredApi = import.meta.env.VITE_API_URL || '';
+  return (
+    configuredSocket ||
+    configuredAdminApi ||
+    (configuredApiBase ? configuredApiBase.replace(/\/api\/?$/, '') : '') ||
+    (configuredApi ? configuredApi.replace(/\/api\/?$/, '') : window.location.origin)
+  );
 };
 
 const resolveSocketAuth = () => {

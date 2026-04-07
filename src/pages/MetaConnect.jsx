@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, ExternalLink, Facebook, RefreshCw, ShieldCheck, UserCircle2 } from "lucide-react";
 import metaAdsApi from "../services/metaAdsApi";
+import { setMetaApiRuntimeBaseUrl } from "../services/metaAdsApi";
 import "./MetaConnect.css";
 
 const emptySetup = {
@@ -67,8 +68,10 @@ const MetaConnect = () => {
       ]);
 
       syncState(overview, diagnosticsData);
+      return overview?.setup || emptySetup;
     } catch (loadError) {
       setError(extractErrorMessage(loadError, "Unable to load Meta connection details."));
+      return null;
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -86,12 +89,25 @@ const MetaConnect = () => {
 
       if (payload.type === "meta_oauth_success") {
         setConnecting(false);
-        setStatusMessage("Meta account connected successfully. Review your ad account and page selection below.");
-        await loadMetaState({ silent: true });
+        if (payload.backendOrigin) {
+          setMetaApiRuntimeBaseUrl(payload.backendOrigin);
+        }
+        const refreshedSetup = await loadMetaState({ silent: true });
+        if (refreshedSetup?.connected) {
+          setStatusMessage("Meta account connected successfully. Review your ad account and page selection below.");
+        } else {
+          setStatusMessage("");
+          setError(
+            "Meta login completed, but this workspace still shows disconnected. Click Refresh. If it remains disconnected, verify you are using the same backend environment for login and dashboard."
+          );
+        }
       }
 
       if (payload.type === "meta_oauth_error") {
         setConnecting(false);
+        if (payload.backendOrigin) {
+          setMetaApiRuntimeBaseUrl(payload.backendOrigin);
+        }
         setError(String(payload.error || "Meta connection failed."));
       }
     };

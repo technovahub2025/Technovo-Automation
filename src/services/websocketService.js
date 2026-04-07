@@ -63,6 +63,16 @@ class EventEmitter {
   }
 }
 
+const deriveWsUrlFromApiBase = (apiBaseUrl) => {
+  const trimmed = String(apiBaseUrl || '').trim();
+  if (!trimmed) return '';
+
+  const normalized = trimmed.replace(/\/api\/?$/i, '');
+  if (/^https:\/\//i.test(normalized)) return normalized.replace(/^https:\/\//i, 'wss://');
+  if (/^http:\/\//i.test(normalized)) return normalized.replace(/^http:\/\//i, 'ws://');
+  return normalized;
+};
+
 /**
  * Enhanced WebSocket Service - WhatsApp Business Platform
  * Provides real-time communication with automatic reconnection and event handling
@@ -82,8 +92,20 @@ class WebSocketService extends EventEmitter {
     this.isConnecting = false;
     this.connectionPromise = null;
     
-    // WebSocket URL from environment or default
-    this.wsUrl = import.meta.env.VITE_WS_URL || 'ws://localhost:3001';
+    // WebSocket URL from env, with API base fallback
+    const explicitWsUrl =
+      import.meta.env.VITE_WS_URL ||
+      import.meta.env.VITE_SOCKET_URL ||
+      '';
+    const apiBaseForFallback =
+      import.meta.env.VITE_API_BASE_URL ||
+      import.meta.env.VITE_API_URL ||
+      '';
+
+    this.wsUrl =
+      String(explicitWsUrl || '').trim() ||
+      deriveWsUrlFromApiBase(apiBaseForFallback) ||
+      'ws://localhost:3001';
     console.log('🔌 WebSocket URL:', this.wsUrl);
     
     // Bind methods to maintain context

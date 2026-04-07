@@ -164,7 +164,7 @@ const Dashboard = () => {
   }, [location.pathname, navigate, shouldAutoOpenPricing]);
 
   useEffect(() => {
-    const socket = socketService.connect(import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_SOCKET_URL);
+    socketService.connect(import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_SOCKET_URL);
     const refreshSession = async () => {
       await refreshFromBackend();
     };
@@ -177,9 +177,6 @@ const Dashboard = () => {
       socketService.off("payment.updated", refreshSession);
       socketService.off("documents.updated", refreshSession);
       socketService.off("workspace.access.updated", refreshSession);
-      if (!socketService.isConnected()) {
-        socket?.disconnect?.();
-      }
     };
   }, [refreshFromBackend]);
 

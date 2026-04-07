@@ -1,6 +1,7 @@
 import axios from 'axios';
+import { resolveApiBaseUrl } from './apiBaseUrl';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE_URL = resolveApiBaseUrl();
 const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
 const USE_MOCK =
   String(import.meta.env.VITE_INSIGHTS_USE_MOCK || 'false').toLowerCase() === 'true';

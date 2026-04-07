@@ -27,7 +27,17 @@ const MainLayout = () => {
   const documentStatus = String(user?.documentStatus || "").toLowerCase();
   // Track last active bulk message item when navigating to bulk message routes
   useEffect(() => {
-    const bulkMessageRoutes = ['/broadcast-dashboard', '/broadcast', '/broadcast/new', '/broadcast/new/template', '/broadcast/new/message', '/templates', '/contacts'];
+    const bulkMessageRoutes = [
+      '/broadcast-dashboard',
+      '/broadcast',
+      '/broadcast/new',
+      '/broadcast/new/template',
+      '/broadcast/new/message',
+      '/templates',
+      '/contacts',
+      '/crm/pipeline',
+      '/crm/tasks'
+    ];
     const isInboxRoute = currentPath.startsWith('/inbox');
     if (bulkMessageRoutes.includes(currentPath) || isInboxRoute) {
       setLastBulkMessageItem(currentPath);
@@ -122,9 +132,9 @@ const MainLayout = () => {
           <div className="plan-expired-banner">
             <div>
               <strong>3-Day Trial Active</strong>
-              {` • Ends ${trialEnd ? trialEnd.toLocaleString() : "soon"}`}
-              {trialCountdown ? ` • Time Left: ${trialCountdown}` : ""}
-              {" — Unlock the full experience"}
+              {" | Ends " + (trialEnd ? trialEnd.toLocaleString() : "soon")}
+              {trialCountdown ? " | Time Left: " + trialCountdown : ""}
+              {" - Unlock the full experience"}
             </div>
             <button type="button" onClick={openEmbeddedPricing} className="plan-expired-cta">
               View Plans

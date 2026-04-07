@@ -112,7 +112,7 @@ const BroadcastDashboard = () => {
                         <h1>Broadcast Dashboard</h1>
                         <p>Here's what's happening with your WhatsApp platform today.</p>
                     </div>
-                    <button className="primary-btn" onClick={() => { window.location.href = `${baseUrl}broadcast`; }}>
+                    <button className="primary-btn dashboard-new-broadcast-btn" onClick={() => { window.location.href = `${baseUrl}broadcast`; }}>
                         <Plus size={18} />
                         New Broadcast
                     </button>

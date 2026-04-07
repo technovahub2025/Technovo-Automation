@@ -1,11 +1,45 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
-import { Search, Bell } from "lucide-react";
+import { Search, Bell, BellOff, VolumeX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { whatsappService } from "../services/whatsappService";
 import socketService from "../services/socketService";
 import { AuthContext } from "../pages/authcontext";
+import {
+  TEAM_INBOX_NOTIFICATION_MODES,
+  getTeamInboxNotificationMode,
+  setTeamInboxNotificationMode,
+  TEAM_INBOX_NOTIFICATION_MODE_CHANGED_EVENT
+} from "../pages/teamInbox/teamInboxNotificationUtils";
 import "./Header.css";
+
+const NOTIFICATION_MODE_OPTIONS = [
+  {
+    value: TEAM_INBOX_NOTIFICATION_MODES.NOTIFICATION,
+    label: "Notification",
+    icon: Bell,
+    showDot: true
+  },
+  {
+    value: TEAM_INBOX_NOTIFICATION_MODES.SILENT,
+    label: "Notification Silent",
+    icon: VolumeX
+  },
+  {
+    value: TEAM_INBOX_NOTIFICATION_MODES.OFF,
+    label: "Notification Off",
+    icon: BellOff
+  }
+];
+
+const NOTIFICATION_MODE_HELP_TEXT = {
+  [TEAM_INBOX_NOTIFICATION_MODES.NOTIFICATION]:
+    "System notifications appear normally with sound.",
+  [TEAM_INBOX_NOTIFICATION_MODES.SILENT]:
+    "System notifications appear silently without sound.",
+  [TEAM_INBOX_NOTIFICATION_MODES.OFF]:
+    "System notifications are turned off for Team Inbox."
+};
 
 const Header = () => {
   const navigate = useNavigate();
@@ -15,6 +49,9 @@ const Header = () => {
   const [docNotifications, setDocNotifications] = useState([]);
   const [systemNotifications, setSystemNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [notificationMode, setNotificationModeState] = useState(() =>
+    getTeamInboxNotificationMode()
+  );
   const notificationRef = useRef(null);
   const closeTimerRef = useRef(null);
   const API_URL = import.meta.env.VITE_API_ADMIN_URL;
@@ -63,7 +100,25 @@ const Header = () => {
   }, []);
 
   useEffect(() => {
-    const socket = socketService.connect(import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_SOCKET_URL);
+    const handleNotificationModePreferenceChange = (event) => {
+      setNotificationModeState(String(event?.detail?.mode || getTeamInboxNotificationMode()));
+    };
+
+    window.addEventListener(
+      TEAM_INBOX_NOTIFICATION_MODE_CHANGED_EVENT,
+      handleNotificationModePreferenceChange
+    );
+
+    return () => {
+      window.removeEventListener(
+        TEAM_INBOX_NOTIFICATION_MODE_CHANGED_EVENT,
+        handleNotificationModePreferenceChange
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    socketService.connect(import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_SOCKET_URL);
     const refreshNotifications = async () => {
       await refreshFromBackend();
     };
@@ -74,9 +129,6 @@ const Header = () => {
     return () => {
       socketService.off("documents.updated", refreshNotifications);
       socketService.off("workspace.access.updated", refreshNotifications);
-      if (!socketService.isConnected()) {
-        socket?.disconnect?.();
-      }
     };
   }, [refreshFromBackend]);
 
@@ -299,6 +351,10 @@ const Header = () => {
     navigate(`/inbox/${item.conversationId}`);
   };
 
+  const handleNotificationModeChange = (mode) => {
+    setNotificationModeState(setTeamInboxNotificationMode(mode));
+  };
+
   const handleSystemNotificationClick = () => {
     const hasDismissableSystemNotice = systemNotifications.some((item) => !item.persistent);
     if (storedUser) {
@@ -320,6 +376,13 @@ const Header = () => {
   };
 
   const totalNotifications = unreadCount + docNotifications.length + systemNotifications.length;
+  const notificationModeIndex = Math.max(
+    0,
+    NOTIFICATION_MODE_OPTIONS.findIndex((option) => option.value === notificationMode)
+  );
+  const notificationModeHelp =
+    NOTIFICATION_MODE_HELP_TEXT[notificationMode] ||
+    NOTIFICATION_MODE_HELP_TEXT[TEAM_INBOX_NOTIFICATION_MODES.SILENT];
 
 
   return (
@@ -361,7 +424,65 @@ const Header = () => {
 
           {showNotificationBox && (
             <div className="notification-box">
-              <div className="notification-box-title">Notifications</div>
+              <div className="notification-box-header">
+                <div className="notification-box-title">Notifications</div>
+                <div className="notification-settings-panel">
+                  <span className="notification-settings-label">Notification mode</span>
+                  <span className="notification-settings-help">{notificationModeHelp}</span>
+                  <div className="notification-mode-selector">
+                    <div
+                      className="notification-mode-track"
+                      role="radiogroup"
+                      aria-label="Team Inbox notification mode"
+                      style={{ "--notification-mode-index": notificationModeIndex }}
+                    >
+                      <span className="notification-mode-thumb" aria-hidden="true" />
+                      {NOTIFICATION_MODE_OPTIONS.map((option) => {
+                        const Icon = option.icon;
+                        const isActive = notificationMode === option.value;
+
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            role="radio"
+                            aria-checked={isActive}
+                            aria-label={option.label}
+                            className={`notification-mode-option ${
+                              isActive ? "is-active" : ""
+                            }`}
+                            onClick={() => handleNotificationModeChange(option.value)}
+                          >
+                            <span
+                              className={`notification-mode-option-icon ${
+                                option.showDot ? "has-status-dot" : ""
+                              }`}
+                              aria-hidden="true"
+                            >
+                              <Icon size={22} strokeWidth={2.2} />
+                              {option.showDot ? (
+                                <span className="notification-mode-option-dot" />
+                              ) : null}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <div className="notification-mode-labels" aria-hidden="true">
+                      {NOTIFICATION_MODE_OPTIONS.map((option) => (
+                        <span
+                          key={option.value}
+                          className={`notification-mode-label ${
+                            notificationMode === option.value ? "is-active" : ""
+                          }`}
+                        >
+                          {option.label}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
               {docNotifications.length === 0 &&
               notifications.length === 0 &&
               systemNotifications.length === 0 ? (

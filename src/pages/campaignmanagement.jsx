@@ -35,9 +35,10 @@ import {
     X
 } from 'lucide-react';
 import './campaignmanagement.css';
+import { resolveApiBaseUrl } from '../services/apiBaseUrl';
 
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE_URL = resolveApiBaseUrl();
 const USE_MOCK = String(import.meta.env.VITE_META_ADS_USE_MOCK || 'false').toLowerCase() === 'true';
 const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
 const getTodayDateValue = () => {
@@ -142,6 +143,8 @@ const CampaignManagement = () => {
         description: campaign.description || '',
         destinationUrl: campaign.destinationUrl || '',
         imageUrl: campaign.imageUrl || '',
+        videoUrl: campaign.videoUrl || '',
+        mediaType: campaign.mediaType || (campaign.videoUrl ? 'video' : 'image'),
         callToAction: campaign.callToAction || 'LEARN_MORE',
         optimizationGoal: campaign.optimizationGoal || getDefaultOptimizationGoal(campaign.objective || 'awareness'),
         bidStrategy: campaign.bidStrategy || 'LOWEST_COST_WITHOUT_CAP',
@@ -181,12 +184,22 @@ const CampaignManagement = () => {
             'headline',
             'description',
             'destinationUrl',
-            'imageUrl'
+            'imageUrl',
+            'videoUrl'
         ].forEach((key) => {
             if (!payload[key]) delete payload[key];
         });
 
         delete payload.creativeImage;
+        delete payload.creativeVideo;
+
+        const normalizedMediaType = String(payload.mediaType || 'image').toLowerCase();
+        payload.mediaType = normalizedMediaType === 'video' ? 'video' : 'image';
+        if (payload.mediaType === 'video') {
+            delete payload.imageUrl;
+        } else {
+            delete payload.videoUrl;
+        }
 
         // Numbers
         ['dailyBudget', 'lifetimeBudget', 'spent', 'impressions', 'clicks', 'ctr', 'cpc', 'revenue', 'ageMin', 'ageMax'].forEach((key) => {
@@ -208,7 +221,11 @@ const CampaignManagement = () => {
 
     const buildCampaignPayload = (data) => {
         const payload = sanitizePayload(data);
-        if (!data?.creativeImage) {
+        const normalizedMediaType = String(data?.mediaType || payload.mediaType || 'image').toLowerCase();
+        const hasImageFile = normalizedMediaType !== 'video' && Boolean(data?.creativeImage);
+        const hasVideoFile = normalizedMediaType === 'video' && Boolean(data?.creativeVideo);
+
+        if (!hasImageFile && !hasVideoFile) {
             return payload;
         }
 
@@ -218,7 +235,12 @@ const CampaignManagement = () => {
                 formData.append(key, value);
             }
         });
-        formData.append('creativeImage', data.creativeImage);
+        if (hasImageFile) {
+            formData.append('creativeImage', data.creativeImage);
+        }
+        if (hasVideoFile) {
+            formData.append('creativeVideo', data.creativeVideo);
+        }
         return formData;
     };
 
@@ -342,7 +364,13 @@ const CampaignManagement = () => {
 
         try {
             setLoading(true);
-            const payload = buildCampaignPayload(campaignData);
+            const publishSafeData = selectedCampaign?.metaCampaignId
+                ? {
+                    name: campaignData?.name || selectedCampaign?.name || '',
+                    status: campaignData?.status || selectedCampaign?.status || 'draft'
+                }
+                : campaignData;
+            const payload = buildCampaignPayload(publishSafeData);
             const headers = {
                 ...getAuthHeaders(),
                 ...(payload instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {})
@@ -598,6 +626,27 @@ const CampaignManagement = () => {
         );
     };
 
+    const getCampaignBudgetBase = (campaign) => {
+        const dailyBudget = Number(campaign?.dailyBudget || 0);
+        if (dailyBudget > 0) {
+            return dailyBudget * 30;
+        }
+        const lifetimeBudget = Number(campaign?.lifetimeBudget || 0);
+        return lifetimeBudget > 0 ? lifetimeBudget : 0;
+    };
+
+    const getCampaignBudgetLabel = (campaign) => {
+        const dailyBudget = Number(campaign?.dailyBudget || 0);
+        if (dailyBudget > 0) {
+            return `$${dailyBudget}/day`;
+        }
+        const lifetimeBudget = Number(campaign?.lifetimeBudget || 0);
+        if (lifetimeBudget > 0) {
+            return `$${lifetimeBudget} lifetime`;
+        }
+        return '$0';
+    };
+
     return (
         <div className="meta-access-shell">
         <div className={`campaign-management ${!metaSetupLoading && !metaSetupReady ? 'meta-access-blurred' : ''}`}>
@@ -797,12 +846,14 @@ const CampaignManagement = () => {
                                             </>
                                         ) : (
                                             <>
-                                                <button className="action-btn" onClick={() => {
-                                                    setSelectedCampaign(campaign);
-                                                    setShowEditModal(true);
-                                                }}>
-                                                    <Edit size={16} />
-                                                </button>
+                                                {!campaign.metaCampaignId ? (
+                                                    <button className="action-btn" onClick={() => {
+                                                        setSelectedCampaign(campaign);
+                                                        setShowEditModal(true);
+                                                    }}>
+                                                        <Edit size={16} />
+                                                    </button>
+                                                ) : null}
                                                 <button className="action-btn" onClick={() => handleDuplicateCampaign(campaign)}>
                                                     <Copy size={16} />
                                                 </button>
@@ -829,7 +880,7 @@ const CampaignManagement = () => {
                                     <div className="campaign-details">
                                         <div className="detail-item">
                                             <DollarSign size={14} />
-                                            <span>${campaign.dailyBudget}/day</span>
+                                            <span>{getCampaignBudgetLabel(campaign)}</span>
                                         </div>
                                         <div className="detail-item">
                                             <Calendar size={14} />
@@ -844,12 +895,12 @@ const CampaignManagement = () => {
                                     <div className="campaign-progress">
                                         <div className="progress-header">
                                             <span>Budget Used</span>
-                                            <span>{(getSafeRatio(campaign.spent, campaign.dailyBudget * 30) * 100).toFixed(1)}%</span>
+                                            <span>{(getSafeRatio(campaign.spent, getCampaignBudgetBase(campaign)) * 100).toFixed(1)}%</span>
                                         </div>
                                         <div className="progress-bar">
                                             <div 
                                                 className="progress-fill"
-                                                style={{ width: `${Math.min(100, getSafeRatio(campaign.spent, campaign.dailyBudget * 30) * 100)}%` }}
+                                                style={{ width: `${Math.min(100, getSafeRatio(campaign.spent, getCampaignBudgetBase(campaign)) * 100)}%` }}
                                             ></div>
                                         </div>
                                     </div>
@@ -913,7 +964,7 @@ const CampaignManagement = () => {
                                         </td>
                                         <td>{getPlatformIcon(campaign.platform)}</td>
                                         <td>{getStatusBadge(campaign)}</td>
-                                        <td>${campaign.dailyBudget}/day</td>
+                                        <td>{getCampaignBudgetLabel(campaign)}</td>
                                         <td>${campaign.spent.toLocaleString()}</td>
                                         <td>{(campaign.impressions / 1000).toFixed(1)}K</td>
                                         <td>{campaign.clicks.toLocaleString()}</td>
@@ -943,12 +994,14 @@ const CampaignManagement = () => {
                                                                 {action.icon}
                                                             </button>
                                                         ))}
-                                                        <button className="table-action" onClick={() => {
-                                                            setSelectedCampaign(campaign);
-                                                            setShowEditModal(true);
-                                                        }}>
-                                                            <Edit size={14} />
-                                                        </button>
+                                                        {!campaign.metaCampaignId ? (
+                                                            <button className="table-action" onClick={() => {
+                                                                setSelectedCampaign(campaign);
+                                                                setShowEditModal(true);
+                                                            }}>
+                                                                <Edit size={14} />
+                                                            </button>
+                                                        ) : null}
                                                         <button className="table-action" onClick={() => handleDuplicateCampaign(campaign)}>
                                                             <Copy size={14} />
                                                         </button>
@@ -1030,7 +1083,10 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
         description: campaign?.description || '',
         destinationUrl: campaign?.destinationUrl || '',
         imageUrl: campaign?.imageUrl || '',
+        videoUrl: campaign?.videoUrl || '',
+        mediaType: campaign?.mediaType || (campaign?.videoUrl ? 'video' : 'image'),
         creativeImage: null,
+        creativeVideo: null,
         callToAction: campaign?.callToAction || 'LEARN_MORE',
         optimizationGoal: campaign?.optimizationGoal || getDefaultOptimizationGoal(campaign?.objective || 'awareness'),
         bidStrategy: campaign?.bidStrategy || 'LOWEST_COST_WITHOUT_CAP'
@@ -1259,29 +1315,16 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
                                         />
                                     </div>
                                     <div className="form-group">
-                                        <label>End Date (Optional)</label>
+                                        <label>{formData.lifetimeBudget ? 'End Date (Required for Lifetime Budget)' : 'End Date (Optional)'}</label>
                                         <input
                                             type="date"
                                             value={formData.endDate}
                                             onChange={(e) => setFormData({...formData, endDate: e.target.value})}
+                                            required={Boolean(formData.lifetimeBudget)}
                                         />
                                     </div>
                                 </div>
 
-                                <div className="form-group">
-                                    <label>Schedule</label>
-                                    <div className="schedule-options">
-                                        <label className="schedule-option">
-                                            <input type="checkbox" /> Run continuously
-                                        </label>
-                                        <label className="schedule-option">
-                                            <input type="checkbox" /> Run only on weekdays
-                                        </label>
-                                        <label className="schedule-option">
-                                            <input type="checkbox" /> Set specific hours
-                                        </label>
-                                    </div>
-                                </div>
                             </div>
                         )}
 
@@ -1293,7 +1336,7 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
                                         type="text"
                                         value={formData.targeting}
                                         onChange={(e) => setFormData({...formData, targeting: e.target.value})}
-                                        placeholder="e.g., United States, Canada"
+                                        placeholder="e.g., United States, Canada or US, CA"
                                     />
                                 </div>
 
@@ -1352,10 +1395,6 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
                                     />
                                 </div>
 
-                                <button type="button" className="btn btn-secondary">
-                                    <Plus size={16} />
-                                    Add Targeting Layer
-                                </button>
                             </div>
                         )}
 
@@ -1446,33 +1485,70 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
                                 </div>
 
                                 <div className="form-group">
-                                    <label>Image URL</label>
-                                    <input
-                                        type="url"
-                                        value={formData.imageUrl}
-                                        onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
-                                        placeholder="https://example.com/ad-image.jpg"
-                                    />
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Upload Image</label>
-                                    <input
-                                        type="file"
-                                        accept="image/*"
-                                        onChange={(e) => setFormData({...formData, creativeImage: e.target.files?.[0] || null})}
-                                    />
-                                    {formData.creativeImage ? <small>{formData.creativeImage.name}</small> : null}
-                                </div>
-
-                                <div className="form-group">
-                                    <label>Conversion Tracking</label>
-                                    <select>
-                                        <option>Pixel: Standard Events</option>
-                                        <option>Pixel: Custom Conversions</option>
-                                        <option>Offline Conversions</option>
+                                    <label>Media Type</label>
+                                    <select
+                                        value={formData.mediaType}
+                                        onChange={(e) => {
+                                            const nextType = e.target.value === 'video' ? 'video' : 'image';
+                                            setFormData((prev) => ({
+                                                ...prev,
+                                                mediaType: nextType,
+                                                creativeImage: nextType === 'image' ? prev.creativeImage : null,
+                                                creativeVideo: nextType === 'video' ? prev.creativeVideo : null
+                                            }));
+                                        }}
+                                    >
+                                        <option value="image">Image</option>
+                                        <option value="video">Video</option>
                                     </select>
                                 </div>
+
+                                {formData.mediaType === 'video' ? (
+                                    <>
+                                        <div className="form-group">
+                                            <label>Video URL</label>
+                                            <input
+                                                type="url"
+                                                value={formData.videoUrl}
+                                                onChange={(e) => setFormData({...formData, videoUrl: e.target.value})}
+                                                placeholder="https://example.com/ad-video.mp4"
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>Upload Video</label>
+                                            <input
+                                                type="file"
+                                                accept="video/*"
+                                                onChange={(e) => setFormData({...formData, creativeVideo: e.target.files?.[0] || null})}
+                                            />
+                                            {formData.creativeVideo ? <small>{formData.creativeVideo.name}</small> : null}
+                                        </div>
+                                    </>
+                                ) : (
+                                    <>
+                                        <div className="form-group">
+                                            <label>Image URL</label>
+                                            <input
+                                                type="url"
+                                                value={formData.imageUrl}
+                                                onChange={(e) => setFormData({...formData, imageUrl: e.target.value})}
+                                                placeholder="https://example.com/ad-image.jpg"
+                                            />
+                                        </div>
+
+                                        <div className="form-group">
+                                            <label>Upload Image</label>
+                                            <input
+                                                type="file"
+                                                accept="image/*"
+                                                onChange={(e) => setFormData({...formData, creativeImage: e.target.files?.[0] || null})}
+                                            />
+                                            {formData.creativeImage ? <small>{formData.creativeImage.name}</small> : null}
+                                        </div>
+                                    </>
+                                )}
+
                             </div>
                         )}
                     </div>

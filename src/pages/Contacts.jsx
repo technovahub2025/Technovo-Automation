@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X } from 'lucide-react';
 import { apiClient } from '../services/whatsappapi';
+import { normalizePhone } from './teamInbox/teamInboxIdentityUtils.js';
 import './Contacts.css';
 
 const Contacts = () => {
@@ -219,7 +220,13 @@ const loadContacts = async () => {
 
     const handleMessage = (contact) => {
         // Navigate to team inbox with the contact's phone number
-        navigate('/inbox', { state: { phoneNumber: contact.phone, contactName: contact.name } });
+        navigate('/inbox', {
+            state: {
+                phoneNumber: contact.phone,
+                normalizedPhoneNumber: normalizePhone(contact.phone),
+                contactName: contact.name
+            }
+        });
     };
 
     const formatLastActive = (timestamp) => {

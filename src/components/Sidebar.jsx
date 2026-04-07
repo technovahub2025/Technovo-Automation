@@ -1,7 +1,16 @@
-import React, { useContext, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import axios from "axios";
 import { AuthContext } from '../pages/authcontext';
+import { whatsappService } from '../services/whatsappService';
+import { googleCalendarService } from '../services/googleCalendarService';
+import { resolveApiBaseUrl } from '../services/apiBaseUrl';
+import {
+    buildGoogleOAuthTrustedOrigins,
+    isGoogleOAuthEventOriginTrusted,
+    isOAuthPopupOpen,
+    resolveGoogleOAuthEvent
+} from '../utils/googleOAuthEvents';
 import {
     LayoutDashboard,
     MessageSquare,
@@ -16,6 +25,7 @@ import {
     LogIn,
     MessageCircle,
     Settings,
+    CalendarDays,
     Megaphone,
     BarChart3,
     Facebook,
@@ -29,6 +39,45 @@ import {
 } from 'lucide-react';
 import logo from '../../src/assets/logo.png';
 import './Sidebar.css';
+
+const ROUTE_PREFETCHERS = {
+    '/': () => import('../pages/Dashboard'),
+    '/broadcast-dashboard': () => import('../pages/BroadcastDashboard'),
+    '/inbox': () => import('../pages/TeamInbox'),
+    '/broadcast': () => import('../pages/Broadcast'),
+    '/templates': () => import('../pages/Templates'),
+    '/contacts': () => import('../pages/Contacts'),
+    '/crm/pipeline': () => import('../pages/CrmPipeline'),
+    '/crm/tasks': () => import('../pages/CrmTasks'),
+    '/ads-manager': () => import('../pages/campaignmanagement'),
+    '/insights': () => import('../pages/Insights'),
+    '/meta-connect': () => import('../pages/MetaConnect'),
+    '/whatsapp-workflow': () => import('../pages/WhatsAppWorkflow'),
+    '/voice-automation': () => import('../components/inbound/InboundCalls'),
+    '/voice-automation/inbound': () => import('../components/inbound/InboundCalls'),
+    '/voice-automation/outbound': () => import('../components/outbound/OutboundCall'),
+    '/voice-automation/outbound/schedules': () => import('../components/outbound/OutboundSchedules'),
+    '/voice-automation/history': () => import('../components/inbound/ivr/CallAnalytics'),
+    '/missedcalls/overview': () => import('../pages/MissedCallsOverviewPage'),
+    '/email-automation': () => import('../pages/EmailAutomation'),
+};
+
+const defaultGoogleCalendarStatus = {
+    connected: false,
+    hasBackendGoogleAuth: false,
+    source: 'none',
+    envMode: 'none',
+    profile: {
+        email: '',
+        name: '',
+        picture: ''
+    },
+    connectionMeta: {
+        connectedAt: null,
+        expiresAt: null,
+        hasRefreshToken: false
+    }
+};
 
 const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLastBulkMessageItem }) => {
     const navigate = useNavigate();
@@ -49,7 +98,27 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
     const [isCompactMobile, setIsCompactMobile] = useState(false);
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
     const [flyoutTop, setFlyoutTop] = useState(120);
+    const [showLeadScoringModal, setShowLeadScoringModal] = useState(false);
+    const [leadScoringLoading, setLeadScoringLoading] = useState(false);
+    const [leadScoringSaving, setLeadScoringSaving] = useState(false);
+    const [leadScoringMessage, setLeadScoringMessage] = useState('');
+    const [leadScoringMessageTone, setLeadScoringMessageTone] = useState('info');
+    const [leadScoringForm, setLeadScoringForm] = useState({
+        isEnabled: true,
+        readScore: '2',
+        replyScore: '5',
+        keywordRules: [{ keyword: '', score: '1' }]
+    });
+    const [showGoogleCalendarModal, setShowGoogleCalendarModal] = useState(false);
+    const [googleCalendarLoading, setGoogleCalendarLoading] = useState(false);
+    const [googleCalendarConnecting, setGoogleCalendarConnecting] = useState(false);
+    const [googleCalendarDisconnecting, setGoogleCalendarDisconnecting] = useState(false);
+    const [googleCalendarMessage, setGoogleCalendarMessage] = useState('');
+    const [googleCalendarMessageTone, setGoogleCalendarMessageTone] = useState('info');
+    const [googleCalendarStatus, setGoogleCalendarStatus] = useState(defaultGoogleCalendarStatus);
     const closeTimerRef = useRef(null);
+    const prefetchedRoutesRef = useRef(new Set());
+    const googleOAuthPopupRef = useRef(null);
 
     // Wrapper to handle closing logic if needed
     const setOpenMenu = (menuName) => {
@@ -125,7 +194,10 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         featureFlags.callAnalytics
     );
     const canUseMissedCalls = isSuperAdmin || Boolean(featureFlags.missedCall);
-    const canUseEmailAutomation = isSuperAdmin || Boolean(featureFlags.workflowAutomation);
+    const canUseEmailAutomation = isSuperAdmin || Boolean(featureFlags.workflowAutomation || featureFlags.analytics);
+    const canUseWhatsAppWorkflow = isSuperAdmin || Boolean(
+        featureFlags.workflowAutomation || featureFlags.teamInbox || featureFlags.broadcastMessaging
+    );
     const canUseAdsManager = isSuperAdmin || (Boolean(featureFlags.adsManager) && canViewAnalytics);
 
     useEffect(() => {
@@ -135,6 +207,32 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
     }, [isLoggedIn, openMenu]);
 
     const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+
+    const toSafeNonNegativeNumber = (value, fallback = 0) => {
+        const parsed = Number(value);
+        if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+        return parsed;
+    };
+
+    const normalizeKeywordRulesForForm = (rules = []) => {
+        const normalized = Array.isArray(rules)
+            ? rules
+                .map((rule) => ({
+                    keyword: String(rule?.keyword || '').trim(),
+                    score: String(toSafeNonNegativeNumber(rule?.score, 1))
+                }))
+                .filter((rule) => rule.keyword)
+            : [];
+
+        return normalized.length > 0 ? normalized : [{ keyword: '', score: '1' }];
+    };
+
+    const buildLeadScoringFormFromSettings = (settings = {}) => ({
+        isEnabled: settings?.isEnabled !== false,
+        readScore: String(toSafeNonNegativeNumber(settings?.readScore, 2)),
+        replyScore: String(toSafeNonNegativeNumber(settings?.replyScore, 5)),
+        keywordRules: normalizeKeywordRulesForForm(settings?.keywordRules || [])
+    });
 
     const getInitials = (name) => {
         if (!name || name === "Guest") return "GU";
@@ -165,6 +263,255 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         logout();
         navigate("/login", { replace: true });
     };
+
+    const loadLeadScoringSettings = async () => {
+        try {
+            setLeadScoringLoading(true);
+            setLeadScoringMessage('');
+            const result = await whatsappService.getLeadScoringSettings();
+            if (result?.success === false) {
+                throw new Error(result?.error || 'Failed to load lead scoring settings');
+            }
+            const settings = result?.data || result || {};
+            setLeadScoringForm(buildLeadScoringFormFromSettings(settings));
+            if (result?.fallback) {
+                setLeadScoringMessage('Backend endpoint is not available yet. Showing default values.');
+                setLeadScoringMessageTone('error');
+            }
+        } catch (error) {
+            setLeadScoringMessage(error?.message || 'Failed to load lead scoring settings');
+            setLeadScoringMessageTone('error');
+        } finally {
+            setLeadScoringLoading(false);
+        }
+    };
+
+    const openLeadScoringModal = async () => {
+        setOpenMenu(null);
+        if (isMobile) {
+            setIsOverlayOpen(false);
+            if (isCompactMobile) {
+                setIsMobileSidebarOpen(false);
+            }
+        }
+        setShowLeadScoringModal(true);
+        await loadLeadScoringSettings();
+    };
+
+    const closeLeadScoringModal = () => {
+        if (leadScoringSaving) return;
+        setShowLeadScoringModal(false);
+        setLeadScoringMessage('');
+        setLeadScoringMessageTone('info');
+    };
+
+    const updateLeadScoringField = (field, value) => {
+        setLeadScoringForm((prev) => ({
+            ...prev,
+            [field]: value
+        }));
+    };
+
+    const updateLeadKeywordRule = (index, field, value) => {
+        setLeadScoringForm((prev) => ({
+            ...prev,
+            keywordRules: prev.keywordRules.map((rule, ruleIndex) =>
+                ruleIndex === index
+                    ? { ...rule, [field]: value }
+                    : rule
+            )
+        }));
+    };
+
+    const addLeadKeywordRule = () => {
+        setLeadScoringForm((prev) => ({
+            ...prev,
+            keywordRules: [...prev.keywordRules, { keyword: '', score: '1' }]
+        }));
+    };
+
+    const removeLeadKeywordRule = (index) => {
+        setLeadScoringForm((prev) => {
+            const remainingRules = prev.keywordRules.filter((_, ruleIndex) => ruleIndex !== index);
+            return {
+                ...prev,
+                keywordRules: remainingRules.length > 0 ? remainingRules : [{ keyword: '', score: '1' }]
+            };
+        });
+    };
+
+    const saveLeadScoringSettings = async () => {
+        try {
+            setLeadScoringSaving(true);
+            setLeadScoringMessage('');
+
+            const payload = {
+                isEnabled: Boolean(leadScoringForm.isEnabled),
+                readScore: toSafeNonNegativeNumber(leadScoringForm.readScore, 0),
+                replyScore: toSafeNonNegativeNumber(leadScoringForm.replyScore, 0),
+                keywordRules: (leadScoringForm.keywordRules || [])
+                    .map((rule) => ({
+                        keyword: String(rule?.keyword || '').trim(),
+                        score: toSafeNonNegativeNumber(rule?.score, 1)
+                    }))
+                    .filter((rule) => rule.keyword)
+            };
+
+            const result = await whatsappService.updateLeadScoringSettings(payload);
+            if (result?.success === false) {
+                throw new Error(result?.error || 'Failed to update lead scoring settings');
+            }
+
+            setLeadScoringForm(buildLeadScoringFormFromSettings(result?.data || payload));
+            setLeadScoringMessage('Lead scoring settings saved successfully.');
+            setLeadScoringMessageTone('success');
+        } catch (error) {
+            setLeadScoringMessage(error?.message || 'Failed to update lead scoring settings');
+            setLeadScoringMessageTone('error');
+        } finally {
+            setLeadScoringSaving(false);
+        }
+    };
+
+    const loadGoogleCalendarStatus = async () => {
+        try {
+            setGoogleCalendarLoading(true);
+            setGoogleCalendarMessage('');
+            const result = await googleCalendarService.getAuthStatus();
+            if (result?.success === false) {
+                throw new Error(result?.error || 'Failed to load Google Calendar status');
+            }
+            setGoogleCalendarStatus({
+                ...defaultGoogleCalendarStatus,
+                ...(result?.data || {})
+            });
+        } catch (error) {
+            setGoogleCalendarStatus(defaultGoogleCalendarStatus);
+            setGoogleCalendarMessage(error?.message || 'Failed to load Google Calendar status.');
+            setGoogleCalendarMessageTone('error');
+        } finally {
+            setGoogleCalendarLoading(false);
+        }
+    };
+
+    const openGoogleCalendarModal = async () => {
+        setOpenMenu(null);
+        if (isMobile) {
+            setIsOverlayOpen(false);
+            if (isCompactMobile) {
+                setIsMobileSidebarOpen(false);
+            }
+        }
+        setShowGoogleCalendarModal(true);
+        await loadGoogleCalendarStatus();
+    };
+
+    const closeGoogleCalendarModal = () => {
+        if (googleCalendarConnecting || googleCalendarDisconnecting) return;
+        setShowGoogleCalendarModal(false);
+        setGoogleCalendarMessage('');
+        setGoogleCalendarMessageTone('info');
+    };
+
+    const handleGoogleCalendarConnect = async () => {
+        try {
+            setGoogleCalendarConnecting(true);
+            setGoogleCalendarMessage('');
+            const result = await googleCalendarService.getConnectAuthUrl(window.location.origin);
+            if (result?.success === false || !result?.authUrl) {
+                throw new Error(result?.error || 'Failed to start Google OAuth.');
+            }
+
+            googleOAuthPopupRef.current = window.open(
+                result.authUrl,
+                'google-calendar-oauth',
+                'width=760,height=780,menubar=no,toolbar=no,status=no'
+            );
+
+            if (!googleOAuthPopupRef.current) {
+                throw new Error('Popup was blocked. Allow popups for this site and try again.');
+            }
+        } catch (error) {
+            setGoogleCalendarConnecting(false);
+            setGoogleCalendarMessage(error?.message || 'Unable to start Google OAuth.');
+            setGoogleCalendarMessageTone('error');
+        }
+    };
+
+    const handleGoogleCalendarDisconnect = async () => {
+        try {
+            setGoogleCalendarDisconnecting(true);
+            setGoogleCalendarMessage('');
+            const result = await googleCalendarService.disconnect();
+            if (result?.success === false) {
+                throw new Error(result?.error || 'Failed to disconnect Google Calendar.');
+            }
+            setGoogleCalendarMessage(result?.message || 'Google Calendar disconnected successfully.');
+            setGoogleCalendarMessageTone('success');
+            await loadGoogleCalendarStatus();
+        } catch (error) {
+            setGoogleCalendarMessage(error?.message || 'Failed to disconnect Google Calendar.');
+            setGoogleCalendarMessageTone('error');
+        } finally {
+            setGoogleCalendarDisconnecting(false);
+        }
+    };
+
+    useEffect(() => {
+        const trustedOrigins = buildGoogleOAuthTrustedOrigins({
+            windowOrigin: window.location.origin,
+            apiBaseUrl: resolveApiBaseUrl()
+        });
+
+        const handleGoogleOAuthMessage = async (event) => {
+            if (!isGoogleOAuthEventOriginTrusted(event?.origin, trustedOrigins)) {
+                return;
+            }
+
+            const oauthEvent = resolveGoogleOAuthEvent(event?.data);
+            if (oauthEvent.type === 'ignore') return;
+
+            if (oauthEvent.type === 'success') {
+                setGoogleCalendarConnecting(false);
+                if (isOAuthPopupOpen(googleOAuthPopupRef.current)) {
+                    googleOAuthPopupRef.current.close();
+                }
+                setGoogleCalendarMessage(oauthEvent.message);
+                setGoogleCalendarMessageTone('success');
+                await loadGoogleCalendarStatus();
+            }
+
+            if (oauthEvent.type === 'error') {
+                setGoogleCalendarConnecting(false);
+                if (isOAuthPopupOpen(googleOAuthPopupRef.current)) {
+                    googleOAuthPopupRef.current.close();
+                }
+                setGoogleCalendarMessage(oauthEvent.message);
+                setGoogleCalendarMessageTone('error');
+            }
+        };
+
+        window.addEventListener('message', handleGoogleOAuthMessage);
+        return () => {
+            window.removeEventListener('message', handleGoogleOAuthMessage);
+            if (isOAuthPopupOpen(googleOAuthPopupRef.current)) {
+                googleOAuthPopupRef.current.close();
+            }
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!googleCalendarConnecting) return undefined;
+
+        const watcher = setInterval(() => {
+            if (!googleOAuthPopupRef.current) return;
+            if (isOAuthPopupOpen(googleOAuthPopupRef.current)) return;
+            setGoogleCalendarConnecting(false);
+            googleOAuthPopupRef.current = null;
+        }, 500);
+
+        return () => clearInterval(watcher);
+    }, [googleCalendarConnecting]);
 
     const toggleMenu = (menuName) => {
         if (isMobile) {
@@ -240,6 +587,27 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         }
     };
 
+    const prefetchRoute = useCallback((route) => {
+        if (!route || isMobile) {
+            return;
+        }
+
+        const normalizedRoute = route.startsWith('/inbox') ? '/inbox' : route;
+        if (prefetchedRoutesRef.current.has(normalizedRoute)) {
+            return;
+        }
+
+        const prefetcher = ROUTE_PREFETCHERS[normalizedRoute];
+        if (!prefetcher) {
+            return;
+        }
+
+        prefetchedRoutesRef.current.add(normalizedRoute);
+        prefetcher().catch(() => {
+            prefetchedRoutesRef.current.delete(normalizedRoute);
+        });
+    }, [isMobile]);
+
     // Helper function to check if a route is currently active
     const isRouteActive = (route) => {
         return currentPath === route;
@@ -250,6 +618,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         isRouteActive('/broadcast') ||
         isRouteActive('/templates') ||
         isRouteActive('/contacts') ||
+        currentPath.startsWith('/crm/') ||
         currentPath.startsWith('/inbox');
     const isVoiceRouteActive =
         isRouteActive('/voice-broadcast') ||
@@ -273,6 +642,8 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         const selectedRoute = preferredRoutes.find(([enabled, route]) => isSuperAdmin || enabled)?.[1];
         return selectedRoute || '/broadcast-dashboard';
     };
+    const isLeadScoringSettingsActive = showLeadScoringModal;
+    const isGoogleCalendarSettingsActive = showGoogleCalendarModal;
 
     return (
         <div className={`sidebar-container ${isCompactMobile ? 'compact-mobile' : ''}`}>
@@ -331,6 +702,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                     {/* Dashboard Icon */}
                     <div
                         className={`icon-item ${isRouteActive('/') ? 'active' : ''}`}
+                        onMouseEnter={() => prefetchRoute('/')}
                         onClick={() => {
                             setOpenMenu(null); // Close any open panel
                             navigate('/');
@@ -341,48 +713,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                         <span className="icon-label">Dashboard</span>
                     </div>
 
-                    {canUseMetaAds && (
-                        <div
-                            className={`icon-item ${isMetaAdsRouteActive ? 'active' : ''} ${openMenu === 'metaAds' ? 'expanded' : ''}`}
-                            onMouseEnter={(e) => {
-                                if (!isMobile) {
-                                    cancelDesktopFlyoutClose();
-                                    openDesktopFlyout('metaAds', e);
-                                }
-                            }}
-                            onClick={(e) => {
-                                if (isMobile) {
-                                    if (openMenu === 'metaAds' && isOverlayOpen) {
-                                        setIsOverlayOpen(false);
-                                        setOpenMenu(null);
-                                    } else {
-                                        setOpenMenu('metaAds');
-                                        setIsOverlayOpen(true);
-                                        if (isCompactMobile) setIsMobileSidebarOpen(true);
-                                    }
-                                    return;
-                                }
-                                if (isCompactMobile) setIsMobileSidebarOpen(true);
-                                if (!isMobile) {
-                                    openDesktopFlyout('metaAds', e);
-                                } else {
-                                    toggleMenu('metaAds');
-                                    setIsOverlayOpen(true);
-                                }
-                            }}
-                            title="Meta Ads"
-                        >
-                            <Megaphone size={24} />
-                            <span className="icon-label icon-label-multiline">
-                                <span>Meta</span>
-                                <span>Ads</span>
-                            </span>
-                            <span className="submenu-arrow-indicator" aria-hidden="true">
-                                {openMenu === 'metaAds' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
-                            </span>
-                        </div>
-                    )}
-
                     {/* Bulk Message Icon - Opens submenu */}
                     {isLoggedIn && canUseBroadcast && (
                         <div
@@ -391,6 +721,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 if (!isMobile) {
                                     cancelDesktopFlyoutClose();
                                     openDesktopFlyout('bulkMessage', e);
+                                    prefetchRoute(lastBulkMessageItem);
                                 }
                             }}
                             onClick={(e) => {
@@ -435,6 +766,46 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                         </div>
                     )}
 
+                    {canUseMetaAds && (
+                        <div
+                            className={`icon-item ${isMetaAdsRouteActive ? 'active' : ''} ${openMenu === 'metaAds' ? 'expanded' : ''}`}
+                            onMouseEnter={(e) => {
+                                if (!isMobile) {
+                                    cancelDesktopFlyoutClose();
+                                    openDesktopFlyout('metaAds', e);
+                                    prefetchRoute('/ads-manager');
+                                    prefetchRoute('/insights');
+                                    prefetchRoute('/meta-connect');
+                                }
+                            }}
+                            onClick={(e) => {
+                                if (isMobile) {
+                                    if (openMenu === 'metaAds' && isOverlayOpen) {
+                                        setIsOverlayOpen(false);
+                                        setOpenMenu(null);
+                                    } else {
+                                        setOpenMenu('metaAds');
+                                        setIsOverlayOpen(true);
+                                        if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                    }
+                                    return;
+                                }
+                                if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                openDesktopFlyout('metaAds', e);
+                            }}
+                            title="Meta Ads"
+                        >
+                            <Megaphone size={24} />
+                            <span className="icon-label icon-label-multiline">
+                                <span>Meta</span>
+                                <span>Ads</span>
+                            </span>
+                            <span className="submenu-arrow-indicator" aria-hidden="true">
+                                {openMenu === 'metaAds' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+                            </span>
+                        </div>
+                    )}
+
                     {/* Other Icons */}
                     {isLoggedIn && (
                         <>
@@ -449,6 +820,29 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 <Zap size={24} />
                                 <span className="icon-label">Automation</span>
                             </div> */}
+
+                    {/* {canUseWhatsAppWorkflow && (
+                        <div
+                            className={`icon-item ${isRouteActive('/whatsapp-workflow') ? 'active' : ''}`}
+                            onMouseEnter={() => {
+                                if (!isMobile) {
+                                    setOpenMenu(null);
+                                }
+                                prefetchRoute('/whatsapp-workflow');
+                            }}
+                            onClick={() => {
+                                setOpenMenu(null);
+                                navigate('/whatsapp-workflow');
+                            }}
+                            title="WhatsApp Workflow"
+                        >
+                            <MessageSquare size={24} />
+                            <span className="icon-label icon-label-multiline">
+                                <span>WhatsApp</span>
+                                <span>Workflow</span>
+                            </span>
+                        </div>
+                    )} */}
 
                     {canUseVoiceAutomation && (
                         <div
@@ -491,6 +885,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 if (!isMobile) {
                                     setOpenMenu(null);
                                 }
+                                prefetchRoute('/missedcalls/overview');
                             }}
                             onClick={() => {
                                 setOpenMenu(null);
@@ -510,6 +905,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 if (!isMobile) {
                                     setOpenMenu(null);
                                 }
+                                prefetchRoute('/email-automation');
                             }}
                             onClick={() => {
                                 setOpenMenu(null);
@@ -616,91 +1012,157 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                 )}
                             </div>
                             <nav className="panel-menu">
-                                {(isSuperAdmin || featureFlags.broadcastDashboard) && (
-                                    <NavLink
-                                        to="/broadcast-dashboard"
-                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                        onClick={() => {
-                                            setLastBulkMessageItem('/broadcast-dashboard');
-                                            closeMobileMenusAfterNavigate();
-                                        }}
-                                        onDoubleClick={(e) => {
-                                            e.preventDefault();
-                                            setOpenMenu(null);
-                                        }}
-                                    >
-                                        <LayoutDashboard size={20} />
-                                        <span>Broadcast Dashboard</span>
-                                    </NavLink>
-                                )}
-                                {(isSuperAdmin || featureFlags.teamInbox) && (
-                                    <NavLink
-                                        to="/inbox"
-                                        className={() => `panel-item ${currentPath.startsWith('/inbox') ? 'active' : ''}`}
-                                        onClick={() => {
-                                            setLastBulkMessageItem('/inbox');
-                                            closeMobileMenusAfterNavigate();
-                                        }}
-                                        onDoubleClick={(e) => {
-                                            e.preventDefault();
-                                            setOpenMenu(null);
-                                        }}
-                                    >
-                                        <MessageSquare size={20} />
-                                        <span>Team Inbox</span>
-                                    </NavLink>
-                                )}
-                                {(isSuperAdmin || featureFlags.broadcastMessaging) && (
-                                    <NavLink
-                                        to="/broadcast"
-                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                        onClick={() => {
-                                            setLastBulkMessageItem('/broadcast');
-                                            closeMobileMenusAfterNavigate();
-                                        }}
-                                        onDoubleClick={(e) => {
-                                            e.preventDefault();
-                                            setOpenMenu(null);
-                                        }}
-                                    >
-                                        <Radio size={20} />
-                                        <span>Broadcast</span>
-                                    </NavLink>
-                                )}
-                                {(isSuperAdmin || featureFlags.templates) && (
-                                    <NavLink
-                                        to="/templates"
-                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                        onClick={() => {
-                                            setLastBulkMessageItem('/templates');
-                                            closeMobileMenusAfterNavigate();
-                                        }}
-                                        onDoubleClick={(e) => {
-                                            e.preventDefault();
-                                            setOpenMenu(null);
-                                        }}
-                                    >
-                                        <FileText size={20} />
-                                        <span>Templates</span>
-                                    </NavLink>
-                                )}
-                                {(isSuperAdmin || featureFlags.contacts) && (
-                                    <NavLink
-                                        to="/contacts"
-                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                        onClick={() => {
-                                            setLastBulkMessageItem('/contacts');
-                                            closeMobileMenusAfterNavigate();
-                                        }}
-                                        onDoubleClick={(e) => {
-                                            e.preventDefault();
-                                            setOpenMenu(null);
-                                        }}
-                                    >
-                                        <Users size={20} />
-                                        <span>Contacts</span>
-                                    </NavLink>
-                                )}
+                                <NavLink
+                                    to="/broadcast-dashboard"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/broadcast-dashboard')}
+                                    onFocus={() => prefetchRoute('/broadcast-dashboard')}
+                                    onClick={() => {
+                                        setLastBulkMessageItem('/broadcast-dashboard');
+                                        closeMobileMenusAfterNavigate();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        setOpenMenu(null);
+                                    }}
+                                >
+                                    <LayoutDashboard size={20} />
+                                    <span>Broadcast Dashboard</span>
+                                </NavLink>
+                                <NavLink
+                                    to="/inbox"
+                                    className={() => `panel-item ${currentPath.startsWith('/inbox') ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/inbox')}
+                                    onFocus={() => prefetchRoute('/inbox')}
+                                    onClick={() => {
+                                        setLastBulkMessageItem('/inbox');
+                                        closeMobileMenusAfterNavigate();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        setOpenMenu(null);
+                                    }}
+                                >
+                                    <MessageSquare size={20} />
+                                    <span>Team Inbox</span>
+                                </NavLink>
+                                <NavLink
+                                    to="/broadcast"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/broadcast')}
+                                    onFocus={() => prefetchRoute('/broadcast')}
+                                    onClick={() => {
+                                        setLastBulkMessageItem('/broadcast');
+                                        closeMobileMenusAfterNavigate();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        setOpenMenu(null);
+                                    }}
+                                >
+                                    <Radio size={20} />
+                                    <span>Broadcast</span>
+                                </NavLink>
+
+                                <NavLink
+                                    to="/templates"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/templates')}
+                                    onFocus={() => prefetchRoute('/templates')}
+                                    onClick={() => {
+                                        setLastBulkMessageItem('/templates');
+                                        closeMobileMenusAfterNavigate();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        setOpenMenu(null);
+                                    }}
+                                >
+                                    <FileText size={20} />
+                                    <span>Templates</span>
+                                </NavLink>
+
+                                <NavLink
+                                    to="/contacts"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/contacts')}
+                                    onFocus={() => prefetchRoute('/contacts')}
+                                    onClick={() => {
+                                        setLastBulkMessageItem('/contacts');
+                                        closeMobileMenusAfterNavigate();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        setOpenMenu(null);
+                                    }}
+                                >
+                                    <Users size={20} />
+                                    <span>Contacts</span>
+                                </NavLink>
+
+                                <div className="panel-submenu-heading">
+                                    <BarChart3 size={16} />
+                                    <span>CRM</span>
+                                </div>
+
+                                <NavLink
+                                    to="/crm/pipeline"
+                                    className={({ isActive }) => `panel-item panel-item-submenu ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/crm/pipeline')}
+                                    onFocus={() => prefetchRoute('/crm/pipeline')}
+                                    onClick={() => {
+                                        setLastBulkMessageItem('/crm/pipeline');
+                                        closeMobileMenusAfterNavigate();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        setOpenMenu(null);
+                                    }}
+                                >
+                                    <Users size={20} />
+                                    <span>CRM Pipeline</span>
+                                </NavLink>
+
+                                <NavLink
+                                    to="/crm/tasks"
+                                    className={({ isActive }) => `panel-item panel-item-submenu ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/crm/tasks')}
+                                    onFocus={() => prefetchRoute('/crm/tasks')}
+                                    onClick={() => {
+                                        setLastBulkMessageItem('/crm/tasks');
+                                        closeMobileMenusAfterNavigate();
+                                    }}
+                                    onDoubleClick={(e) => {
+                                        e.preventDefault();
+                                        setOpenMenu(null);
+                                    }}
+                                >
+                                    <FileText size={20} />
+                                    <span>CRM Tasks</span>
+                                </NavLink>
+
+                                <div className="panel-submenu-heading">
+                                    <Settings size={16} />
+                                    <span>Settings</span>
+                                </div>
+
+                                <button
+                                    type="button"
+                                    className={`panel-item panel-item-submenu panel-item-button ${isLeadScoringSettingsActive ? 'active' : ''}`}
+                                    onClick={openLeadScoringModal}
+                                >
+                                    <BarChart3 size={20} />
+                                    <span>Lead Scoring Settings</span>
+                                </button>
+
+                                <button
+                                    type="button"
+                                    className={`panel-item panel-item-submenu panel-item-button ${isGoogleCalendarSettingsActive ? 'active' : ''}`}
+                                    onClick={openGoogleCalendarModal}
+                                >
+                                    <CalendarDays size={20} />
+                                    <span>Google Calendar</span>
+                                </button>
                             </nav>
                         </>
                     )}
@@ -840,6 +1302,218 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                         </>
            
                     )}
+                </div>
+            )}
+
+            {showLeadScoringModal && (
+                <div className="bulk-lead-scoring-overlay" onClick={closeLeadScoringModal}>
+                    <div className="bulk-lead-scoring-modal" onClick={(event) => event.stopPropagation()}>
+                        <div className="bulk-lead-scoring-header">
+                            <h3>Lead Scoring Settings</h3>
+                            <button
+                                className="bulk-lead-scoring-close-btn"
+                                type="button"
+                                onClick={closeLeadScoringModal}
+                                disabled={leadScoringSaving}
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        {leadScoringLoading ? (
+                            <div className="bulk-lead-scoring-loading">Loading settings...</div>
+                        ) : (
+                            <>
+                                <label className="bulk-lead-scoring-toggle">
+                                    <input
+                                        type="checkbox"
+                                        checked={Boolean(leadScoringForm.isEnabled)}
+                                        onChange={(event) => updateLeadScoringField('isEnabled', event.target.checked)}
+                                    />
+                                    Enable lead scoring
+                                </label>
+
+                                <div className="bulk-lead-scoring-grid">
+                                    <label className="bulk-lead-scoring-field">
+                                        <span>Read Score</span>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            value={leadScoringForm.readScore}
+                                            onChange={(event) => updateLeadScoringField('readScore', event.target.value)}
+                                        />
+                                    </label>
+
+                                    <label className="bulk-lead-scoring-field">
+                                        <span>Reply Score</span>
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            step="1"
+                                            value={leadScoringForm.replyScore}
+                                            onChange={(event) => updateLeadScoringField('replyScore', event.target.value)}
+                                        />
+                                    </label>
+                                </div>
+
+                                <div className="bulk-lead-scoring-keywords-header">
+                                    <h4>Keyword Rules</h4>
+                                    <button
+                                        type="button"
+                                        className="bulk-lead-scoring-add-btn"
+                                        onClick={addLeadKeywordRule}
+                                    >
+                                        Add Keyword
+                                    </button>
+                                </div>
+
+                                <div className="bulk-lead-scoring-keyword-list">
+                                    {leadScoringForm.keywordRules.map((rule, index) => (
+                                        <div className="bulk-lead-scoring-keyword-row" key={`sidebar-keyword-rule-${index}`}>
+                                            <input
+                                                type="text"
+                                                placeholder="Keyword"
+                                                value={rule.keyword}
+                                                onChange={(event) => updateLeadKeywordRule(index, 'keyword', event.target.value)}
+                                            />
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                step="1"
+                                                value={rule.score}
+                                                onChange={(event) => updateLeadKeywordRule(index, 'score', event.target.value)}
+                                            />
+                                            <button
+                                                type="button"
+                                                className="bulk-lead-scoring-remove-btn"
+                                                onClick={() => removeLeadKeywordRule(index)}
+                                                disabled={leadScoringForm.keywordRules.length <= 1}
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                {leadScoringMessage && (
+                                    <div className={`bulk-lead-scoring-feedback bulk-lead-scoring-feedback--${leadScoringMessageTone}`}>
+                                        {leadScoringMessage}
+                                    </div>
+                                )}
+
+                                <div className="bulk-lead-scoring-actions">
+                                    <button
+                                        type="button"
+                                        className="bulk-lead-scoring-cancel-btn"
+                                        onClick={closeLeadScoringModal}
+                                        disabled={leadScoringSaving}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="bulk-lead-scoring-save-btn"
+                                        onClick={saveLeadScoringSettings}
+                                        disabled={leadScoringSaving}
+                                    >
+                                        {leadScoringSaving ? 'Saving...' : 'Save Settings'}
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {showGoogleCalendarModal && (
+                <div className="bulk-google-calendar-overlay" onClick={closeGoogleCalendarModal}>
+                    <div className="bulk-google-calendar-modal" onClick={(event) => event.stopPropagation()}>
+                        <div className="bulk-google-calendar-header">
+                            <h3>Google Calendar</h3>
+                            <button
+                                className="bulk-google-calendar-close-btn"
+                                type="button"
+                                onClick={closeGoogleCalendarModal}
+                                disabled={googleCalendarConnecting || googleCalendarDisconnecting}
+                            >
+                                Close
+                            </button>
+                        </div>
+
+                        {googleCalendarLoading ? (
+                            <div className="bulk-google-calendar-loading">Loading Google Calendar status...</div>
+                        ) : (
+                            <>
+                                <div className="bulk-google-calendar-status">
+                                    <span
+                                        className={`bulk-google-calendar-pill ${googleCalendarStatus.connected ? 'bulk-google-calendar-pill--connected' : 'bulk-google-calendar-pill--disconnected'}`}
+                                    >
+                                        {googleCalendarStatus.connected ? 'Connected' : 'Not Connected'}
+                                    </span>
+                                    <span className="bulk-google-calendar-source">
+                                        Source: {googleCalendarStatus.source || 'none'}
+                                    </span>
+                                </div>
+
+                                <div className="bulk-google-calendar-meta">
+                                    <div className="bulk-google-calendar-meta-item">
+                                        <span>Name</span>
+                                        <strong>{googleCalendarStatus.profile?.name || '-'}</strong>
+                                    </div>
+                                    <div className="bulk-google-calendar-meta-item">
+                                        <span>Email</span>
+                                        <strong>{googleCalendarStatus.profile?.email || '-'}</strong>
+                                    </div>
+                                    <div className="bulk-google-calendar-meta-item">
+                                        <span>Refresh Token</span>
+                                        <strong>{googleCalendarStatus.connectionMeta?.hasRefreshToken ? 'Available' : 'Not available'}</strong>
+                                    </div>
+                                    <div className="bulk-google-calendar-meta-item">
+                                        <span>Backend Env Fallback</span>
+                                        <strong>{googleCalendarStatus.envMode && googleCalendarStatus.envMode !== 'none' ? 'Available' : 'Not configured'}</strong>
+                                    </div>
+                                </div>
+
+                                {googleCalendarMessage && (
+                                    <div className={`bulk-google-calendar-feedback bulk-google-calendar-feedback--${googleCalendarMessageTone}`}>
+                                        {googleCalendarMessage}
+                                    </div>
+                                )}
+
+                                <div className="bulk-google-calendar-actions">
+                                    <button
+                                        type="button"
+                                        className="bulk-google-calendar-secondary-btn"
+                                        onClick={loadGoogleCalendarStatus}
+                                        disabled={googleCalendarLoading || googleCalendarConnecting || googleCalendarDisconnecting}
+                                    >
+                                        Refresh
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="bulk-google-calendar-primary-btn"
+                                        onClick={handleGoogleCalendarConnect}
+                                        disabled={googleCalendarConnecting || googleCalendarDisconnecting}
+                                    >
+                                        {googleCalendarConnecting
+                                            ? 'Opening Google...'
+                                            : googleCalendarStatus.connected
+                                                ? 'Reconnect Google'
+                                                : 'Connect Google'}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="bulk-google-calendar-danger-btn"
+                                        onClick={handleGoogleCalendarDisconnect}
+                                        disabled={!googleCalendarStatus.connected || googleCalendarDisconnecting || googleCalendarConnecting}
+                                    >
+                                        {googleCalendarDisconnecting ? 'Disconnecting...' : 'Disconnect'}
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
                 </div>
             )}
         </div>

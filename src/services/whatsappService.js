@@ -1,7 +1,15 @@
 // WhatsApp API Service
 import axios from "axios";
+import { resolveApiBaseUrl } from "./apiBaseUrl";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE_URL = resolveApiBaseUrl();
+const LEAD_SCORING_DEFAULTS = {
+  isEnabled: true,
+  readScore: 2,
+  replyScore: 5,
+  keywordRules: []
+};
+let leadScoringEndpointState = 'unknown'; // unknown | available | missing
 
 const getAuthHeaders = (includeJson = true) => {
   const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
@@ -10,6 +18,53 @@ const getAuthHeaders = (includeJson = true) => {
   if (includeJson) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
+};
+
+const normalizeServiceErrorMessage = (errorValue, fallback = 'Request failed') => {
+  if (!errorValue) return fallback;
+  if (typeof errorValue === 'string') return errorValue;
+  try {
+    return JSON.stringify(errorValue);
+  } catch (_jsonError) {
+    return fallback;
+  }
+};
+
+const extractBlobErrorMessage = async (errorValue) => {
+  if (!(errorValue instanceof Blob)) return null;
+
+  try {
+    const rawText = await errorValue.text();
+    const trimmedText = String(rawText || '').trim();
+    if (!trimmedText) return null;
+
+    try {
+      const parsed = JSON.parse(trimmedText);
+      return parsed?.error || parsed?.message || trimmedText;
+    } catch (_parseError) {
+      return trimmedText;
+    }
+  } catch (_readError) {
+    return null;
+  }
+};
+
+const resolveLeadScoringEndpointState = async ({ force = false } = {}) => {
+  if (!force && leadScoringEndpointState !== 'unknown') return leadScoringEndpointState;
+
+  try {
+    const versionResponse = await axios.get(`${API_BASE_URL}/api/version`, {
+      headers: getAuthHeaders(false)
+    });
+    const features = versionResponse?.data?.features;
+    if (Array.isArray(features)) {
+      leadScoringEndpointState = features.includes('lead-scoring') ? 'available' : 'missing';
+    }
+  } catch (error) {
+    // If version probing fails, keep unknown and allow one direct attempt.
+  }
+
+  return leadScoringEndpointState;
 };
 
 
@@ -44,13 +99,26 @@ export const whatsappService = {
 
   // Send text message
 
-  async sendMessage(to, text, conversationId) {
+  async sendMessage(to, text, conversationId, options = {}) {
 
     try {
+      const payload = {
+        to,
+        text,
+        conversationId
+      };
+      const replyToMessageId = String(options?.replyToMessageId || '').trim();
+      const whatsappContextMessageId = String(options?.whatsappContextMessageId || '').trim();
+      if (replyToMessageId) {
+        payload.replyToMessageId = replyToMessageId;
+      }
+      if (whatsappContextMessageId) {
+        payload.whatsappContextMessageId = whatsappContextMessageId;
+      }
 
       const response = await axios.post(
         `${API_BASE_URL}/api/messages/send`,
-        { to, text, conversationId },
+        payload,
         { headers: getAuthHeaders() }
       );
       return response.data;
@@ -88,6 +156,207 @@ export const whatsappService = {
 
     }
 
+  },
+
+  async sendTemplateMessage(
+    to,
+    templateName,
+    language = 'en_US',
+    variables = [],
+    conversationId,
+    components = []
+  ) {
+    try {
+      const payload = {
+        to,
+        templateName,
+        language,
+        variables,
+        conversationId,
+        ...(Array.isArray(components) && components.length > 0 ? { components } : {})
+      };
+      const response = await axios.post(
+        `${API_BASE_URL}/api/messages/send-template`,
+        payload,
+        { headers: getAuthHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Failed to send template message:', error);
+      const backendError =
+        error?.response?.data?.error ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to send template message';
+      return {
+        success: false,
+        error: normalizeServiceErrorMessage(backendError, 'Failed to send template message')
+      };
+    }
+  },
+
+  async sendAttachmentMessage(to, conversationId, file, caption = '', onProgress, options = {}) {
+    try {
+      const formData = new FormData();
+      formData.append('to', String(to || '').trim());
+      formData.append('conversationId', String(conversationId || '').trim());
+      if (caption) {
+        formData.append('caption', String(caption || '').trim());
+      }
+      const replyToMessageId = String(options?.replyToMessageId || '').trim();
+      const whatsappContextMessageId = String(options?.whatsappContextMessageId || '').trim();
+      if (replyToMessageId) {
+        formData.append('replyToMessageId', replyToMessageId);
+      }
+      if (whatsappContextMessageId) {
+        formData.append('whatsappContextMessageId', whatsappContextMessageId);
+      }
+      formData.append('file', file);
+
+      const response = await axios.post(
+        `${API_BASE_URL}/api/messages/send-attachment`,
+        formData,
+        {
+          headers: getAuthHeaders(false),
+          onUploadProgress: (event) => {
+            if (typeof onProgress !== 'function') return;
+            const total = Number(event?.total || 0);
+            const loaded = Number(event?.loaded || 0);
+            if (!total || !Number.isFinite(total)) return;
+            const progress = Math.min(1, Math.max(0, loaded / total));
+            onProgress(progress);
+          }
+        }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Failed to send attachment message:', error);
+      const backendError =
+        error?.response?.data?.error ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to send attachment message';
+      return {
+        success: false,
+        error: normalizeServiceErrorMessage(backendError, 'Failed to send attachment message')
+      };
+    }
+  },
+
+  async sendReactionMessage(
+    to,
+    conversationId,
+    targetMessageId,
+    targetWhatsAppMessageId,
+    emoji = ''
+  ) {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/messages/react`,
+        {
+          to,
+          conversationId,
+          targetMessageId,
+          targetWhatsAppMessageId,
+          emoji
+        },
+        { headers: getAuthHeaders() }
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Failed to send reaction message:', error);
+      const backendError =
+        error?.response?.data?.error ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to send reaction';
+      return {
+        success: false,
+        error: normalizeServiceErrorMessage(backendError, 'Failed to send reaction')
+      };
+    }
+  },
+
+  async listAttachmentMessages(params = {}) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/messages/attachments`, {
+        headers: getAuthHeaders(false),
+        params
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to list attachment messages:', error);
+      return {
+        success: false,
+        error: normalizeServiceErrorMessage(
+          error?.response?.data?.error || error?.message,
+          'Failed to list attachments'
+        )
+      };
+    }
+  },
+
+  async getAttachmentSignedUrl(messageId, mode = 'view', ttl = 300) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/messages/attachments/${messageId}/url`, {
+        headers: getAuthHeaders(false),
+        params: {
+          mode,
+          ttl
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to fetch attachment signed URL:', error);
+      return {
+        success: false,
+        error: normalizeServiceErrorMessage(
+          error?.response?.data?.error || error?.message,
+          'Failed to load attachment URL'
+        )
+      };
+    }
+  },
+
+  async downloadAttachmentFile(messageId) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/messages/attachments/${messageId}/download`, {
+        headers: getAuthHeaders(false),
+        responseType: 'blob'
+      });
+      return {
+        success: true,
+        data: response.data
+      };
+    } catch (error) {
+      console.error('Failed to download attachment file:', error);
+      const blobErrorMessage = await extractBlobErrorMessage(error?.response?.data);
+      return {
+        success: false,
+        error: normalizeServiceErrorMessage(
+          blobErrorMessage || error?.response?.data?.error || error?.message,
+          'Failed to download attachment'
+        )
+      };
+    }
+  },
+
+  async deleteAttachmentMessage(messageId) {
+    try {
+      const response = await axios.delete(`${API_BASE_URL}/api/messages/attachments/${messageId}`, {
+        headers: getAuthHeaders(false)
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to delete attachment message:', error);
+      return {
+        success: false,
+        error: normalizeServiceErrorMessage(
+          error?.response?.data?.error || error?.message,
+          'Failed to delete attachment'
+        )
+      };
+    }
   },
 
 
@@ -369,6 +638,73 @@ export const whatsappService = {
 
     }
 
+  },
+
+  async getLeadScoringSettings() {
+    try {
+      await resolveLeadScoringEndpointState();
+      if (leadScoringEndpointState === 'missing') {
+        await resolveLeadScoringEndpointState({ force: true });
+      }
+      if (leadScoringEndpointState === 'missing') {
+        return {
+          success: true,
+          data: LEAD_SCORING_DEFAULTS,
+          fallback: true
+        };
+      }
+
+      const response = await axios.get(`${API_BASE_URL}/api/lead-scoring/settings`, {
+        headers: getAuthHeaders(false)
+      });
+      leadScoringEndpointState = 'available';
+      return response.data;
+    } catch (error) {
+      if (error?.response?.status === 404) {
+        leadScoringEndpointState = 'missing';
+        // Backend may be on an older build; allow UI to open with defaults.
+        return {
+          success: true,
+          data: LEAD_SCORING_DEFAULTS,
+          fallback: true
+        };
+      }
+      console.error('Failed to fetch lead scoring settings:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async updateLeadScoringSettings(payload = {}) {
+    try {
+      await resolveLeadScoringEndpointState();
+      if (leadScoringEndpointState === 'missing') {
+        await resolveLeadScoringEndpointState({ force: true });
+      }
+      if (leadScoringEndpointState === 'missing') {
+        return {
+          success: false,
+          error: 'Lead scoring endpoint not found on backend. Please restart/deploy backend with latest changes.'
+        };
+      }
+
+      const response = await axios.put(
+        `${API_BASE_URL}/api/lead-scoring/settings`,
+        payload,
+        { headers: getAuthHeaders() }
+      );
+      leadScoringEndpointState = 'available';
+      return response.data;
+    } catch (error) {
+      if (error?.response?.status === 404) {
+        leadScoringEndpointState = 'missing';
+        return {
+          success: false,
+          error: 'Lead scoring endpoint not found on backend. Please restart/deploy backend with latest changes.'
+        };
+      }
+      console.error('Failed to update lead scoring settings:', error);
+      return { success: false, error: error.message };
+    }
   },
 
 

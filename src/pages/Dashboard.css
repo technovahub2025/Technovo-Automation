@@ -74,6 +74,15 @@
 
 }
 
+.welcome-banner .dashboard-new-broadcast-btn {
+    width: auto !important;
+    min-width: 0;
+    max-width: fit-content;
+    display: inline-flex !important;
+    flex: 0 0 auto;
+    white-space: nowrap;
+}
+
 
 
 .stats-grid {

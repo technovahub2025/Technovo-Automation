@@ -357,7 +357,7 @@
   background: #d9e9ff;
 }
 
-.send-btn {
+.email-send-btn {
   margin-top: 14px;
   width: 100%;
   border: 0;
@@ -371,12 +371,12 @@
   transition: transform 0.18s ease, box-shadow 0.18s ease;
 }
 
-.send-btn:hover:not(:disabled) {
+.email-send-btn:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 12px 22px rgba(13, 78, 166, 0.28);
 }
 
-.send-btn:disabled {
+.email-send-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }

@@ -25,7 +25,6 @@ import {
   CheckCircle, 
   AlertCircle,
   Calendar,
-  Filter,
   Download,
   RefreshCw
 } from 'lucide-react';
@@ -144,7 +143,13 @@ const MessageAnalytics = ({ overviewData = {} }) => {
 
     if (conversationIds.length === 0) {
       return {
-        dailyTrends: buckets.map(({ key, ...rest }) => rest),
+        dailyTrends: buckets.map((bucket) => ({
+          date: bucket.date,
+          sent: bucket.sent,
+          delivered: bucket.delivered,
+          read: bucket.read,
+          conversations: bucket.conversations
+        })),
         hourlyActivity: buildFallbackHourlyActivity()
       };
     }
@@ -190,8 +195,8 @@ const MessageAnalytics = ({ overviewData = {} }) => {
 
   const buildFallbackDailyTrends = () => {
     const { buckets } = buildDailyBuckets();
-    return buckets.map(({ key, ...rest }) => ({
-      ...rest,
+    return buckets.map((bucket) => ({
+      date: bucket.date,
       sent: 0,
       delivered: 0,
       read: 0,
@@ -213,10 +218,6 @@ const MessageAnalytics = ({ overviewData = {} }) => {
     }
     return buckets;
   };
-
-  useEffect(() => {
-    fetchMessageAnalytics();
-  }, [timeRange, overviewData]);
 
   const fetchMessageAnalytics = async () => {
     setLoading(true);
@@ -295,6 +296,14 @@ const MessageAnalytics = ({ overviewData = {} }) => {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchMessageAnalytics();
+    }, 0);
+
+    return () => clearTimeout(timer);
+  }, [timeRange, overviewData]);
 
   const handleRefresh = async () => {
     setRefreshing(true);

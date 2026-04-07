@@ -3,8 +3,9 @@
  * Provides complete integration with all backend endpoints
  */
 import axios from "axios";
+import { resolveApiBaseUrl } from "./apiBaseUrl";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001';
+const API_BASE_URL = resolveApiBaseUrl();
 
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,

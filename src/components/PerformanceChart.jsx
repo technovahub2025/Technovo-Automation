@@ -90,23 +90,16 @@ const PerformanceChart = ({ data = [], granularity = 'day', onGranularityChange 
       </div>
 
       <div className="chart-shell">
-        <ResponsiveContainer width="100%" height="100%">
+        <ResponsiveContainer width="100%" height={320}>
           <LineChart data={chartData}>
             <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" vertical={false} />
-            <XAxis
-              dataKey="date"
-              tick={{ fill: '#64748b', fontSize: 12 }}
-              tickLine={false}
-              minTickGap={18}
-              interval="preserveStartEnd"
-            />
+            <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} />
             <YAxis
               yAxisId="left"
               tick={{ fill: '#64748b', fontSize: 12 }}
               tickFormatter={formatCompactNumber}
               tickLine={false}
               axisLine={false}
-              width={34}
             />
             <YAxis
               yAxisId="right"
@@ -115,7 +108,6 @@ const PerformanceChart = ({ data = [], granularity = 'day', onGranularityChange 
               tickFormatter={formatCurrency}
               tickLine={false}
               axisLine={false}
-              width={40}
             />
             <Tooltip
               contentStyle={{

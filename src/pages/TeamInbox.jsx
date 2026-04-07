@@ -1,98 +1,99 @@
 ﻿import React, { useState, useEffect, useRef, useContext } from 'react';
-
-
-
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-
-
-
-import { Search, Filter, Send, Smile, Phone, MoreVertical, Check, CheckCheck } from 'lucide-react';
-
-
-
 import './TeamInbox.css';
-
-
-
-import { whatsappService } from '../services/whatsappService';
-
-
-
-import webSocketService from '../services/websocketService';
-import { AuthContext } from './authcontext';
-
-
-
-
-
-
+import { googleCalendarService } from '../services/googleCalendarService';
+import { AuthContext } from './authcontext'
+import TemplateSendModal from './teamInbox/TemplateSendModal';
+import ContactInfoPanel from './teamInbox/ContactInfoPanel';
+import ConversationSidebar from './teamInbox/ConversationSidebar';
+import ChatArea from './teamInbox/ChatArea';
+import { useTemplateSendModal } from './teamInbox/useTemplateSendModal';
+import { createContactCrmActions } from './teamInbox/contactCrmActions';
+import { createMeetIntegrationActions } from './teamInbox/meetIntegrationActions';
+import { createInboxDataActions } from './teamInbox/inboxDataActions';
+import { createInboxSelectionActions } from './teamInbox/inboxSelectionActions';
+import { createTeamInboxUiHandlers } from './teamInbox/teamInboxUiHandlers';
+import { useMeetOAuthEffects } from './teamInbox/useMeetOAuthEffects';
+import { useInboxRealtimeEffects } from './teamInbox/useInboxRealtimeEffects';
+import { useConversationSelectionEffects } from './teamInbox/useConversationSelectionEffects';
+import { useTeamInboxContactEffects } from './teamInbox/useTeamInboxContactEffects';
+import { useTeamInboxViewEffects } from './teamInbox/useTeamInboxViewEffects';
+import { useTeamInboxBoundUtils } from './teamInbox/useTeamInboxBoundUtils';
+import {
+  requestTeamInboxNotificationPermission,
+  TEAM_INBOX_NOTIFICATION_OPEN_EVENT,
+  TEAM_INBOX_NOTIFICATION_MODE_CHANGED_EVENT,
+  getTeamInboxNotificationMode
+} from './teamInbox/teamInboxNotificationUtils';
+import {
+  formatConversationTime,
+  filterConversations,
+  buildGroupedMessages,
+  formatMessageTime,
+  getMessageKey
+} from './teamInbox/teamInboxDisplayUtils';
 
 const TeamInbox = () => {
-
-
 
   const location = useLocation();
   const navigate = useNavigate();
   const { conversationId } = useParams();
   const { user } = useContext(AuthContext);
-
-
-
   const [conversations, setConversations] = useState([]);
-
-
-
   const [selectedConversation, setSelectedConversation] = useState(null);
-
-
-
   const [messages, setMessages] = useState([]);
-
-
-
+  const [messagesLoading, setMessagesLoading] = useState(false);
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
-
-
-
   const [loading, setLoading] = useState(true);
-
-
-
   const [searchTerm, setSearchTerm] = useState('');
-
-
-
   const [wsConnected, setWsConnected] = useState(false);
-
-
-
   const [showSelectMenu, setShowSelectMenu] = useState(false);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
   const [conversationFilter, setConversationFilter] = useState('all');
-
-
-
   const [selectedForDeletion, setSelectedForDeletion] = useState([]);
-
-
-
   const [showSelectMode, setShowSelectMode] = useState(false);
-
-
-
   const [showMessageSelectMenu, setShowMessageSelectMenu] = useState(false);
-
-
-
   const [showMessageSelectMode, setShowMessageSelectMode] = useState(false);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-
-
-
   const [selectedMessagesForDeletion, setSelectedMessagesForDeletion] = useState([]);
   const [contactNameMap, setContactNameMap] = useState({});
   const [showContactInfo, setShowContactInfo] = useState(false);
+  const [contactInfoActionBusy, setContactInfoActionBusy] = useState(false);
+  const [contactInfoMessage, setContactInfoMessage] = useState('');
+  const [contactInfoMessageTone, setContactInfoMessageTone] = useState('info');
+  const [internalNoteDraft, setInternalNoteDraft] = useState('');
+  const [internalNoteSaving, setInternalNoteSaving] = useState(false);
+  const [leadFollowUpDraft, setLeadFollowUpDraft] = useState('');
+  const [leadFollowUpSaving, setLeadFollowUpSaving] = useState(false);
+  const [crmTaskTitleDraft, setCrmTaskTitleDraft] = useState('');
+  const [crmTaskDueDraft, setCrmTaskDueDraft] = useState('');
+  const [crmTaskPriorityDraft, setCrmTaskPriorityDraft] = useState('medium');
+  const [crmTaskCreating, setCrmTaskCreating] = useState(false);
+  const [meetTokenDraft, setMeetTokenDraft] = useState('');
+  const [meetTitleDraft, setMeetTitleDraft] = useState('');
+  const [meetStartDraft, setMeetStartDraft] = useState('');
+  const [meetEndDraft, setMeetEndDraft] = useState('');
+  const [meetCreating, setMeetCreating] = useState(false);
+  const [meetSending, setMeetSending] = useState(false);
+  const [meetTemplateSending, setMeetTemplateSending] = useState(false);
+  const [meetCreateFollowUpTask, setMeetCreateFollowUpTask] = useState(false);
+  const [meetFollowUpTitleDraft, setMeetFollowUpTitleDraft] = useState('');
+  const [meetFollowUpDueDraft, setMeetFollowUpDueDraft] = useState('');
+  const [meetFollowUpPriorityDraft, setMeetFollowUpPriorityDraft] = useState('medium');
+  const [meetLink, setMeetLink] = useState('');
+  const [meetAuthConfigured, setMeetAuthConfigured] = useState(false);
+  const [meetAuthStatusLoading, setMeetAuthStatusLoading] = useState(false);
+  const [meetConnecting, setMeetConnecting] = useState(false);
+  const [meetDisconnecting, setMeetDisconnecting] = useState(false);
+  const [crmActivities, setCrmActivities] = useState([]);
+  const [crmActivitiesLoading, setCrmActivitiesLoading] = useState(false);
+  const [crmDocuments, setCrmDocuments] = useState([]);
+  const [crmDocumentsLoading, setCrmDocumentsLoading] = useState(false);
+  const [crmDocumentUploading, setCrmDocumentUploading] = useState(false);
+  const [crmDocumentTypeDraft, setCrmDocumentTypeDraft] = useState('other');
+  const [notificationMode, setNotificationMode] = useState(() => getTeamInboxNotificationMode());
+  const [teamInboxActionFeedback, setTeamInboxActionFeedback] = useState(null);
   const messagesEndRef = useRef(null);
   const chatMessagesRef = useRef(null);
   const inboxMenuRef = useRef(null);
@@ -100,16 +101,147 @@ const TeamInbox = () => {
   const filterMenuRef = useRef(null);
   const emojiPickerRef = useRef(null);
   const messageInputRef = useRef(null);
+  const googleOAuthPopupRef = useRef(null);
   const isConversationSwitchRef = useRef(false);
   const realtimeResyncTimerRef = useRef(null);
   const selectedConversationRef = useRef(null);
-  const commonEmojis = ['😀', '😁', '😂', '😊', '😍', '👍', '🙏', '🎉', '❤️', '🔥', '👏', '😎'];
+  const pendingConversationRouteSyncRef = useRef('');
+  const activeMessagesConversationIdRef = useRef('');
+  const messageLoadRequestIdRef = useRef(0);
+  const messageCacheRef = useRef(new Map());
+  const commonEmojis = [
+    '\u{1F44D}',
+    '\u2764\uFE0F',
+    '\u{1F602}',
+    '\u{1F62E}',
+    '\u{1F622}',
+    '\u{1F64F}',
+    '\u{1F60A}',
+    '\u{1F525}',
+    '\u{1F389}',
+    '\u2705',
+    '\u{1F44F}',
+    '\u{1F680}'
+  ];
   const storedUser = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; } })();
   const currentUserId = user?.id || user?._id || storedUser?.id || storedUser?._id || localStorage.getItem('userId') || null;
+  const showTeamInboxActionFeedback = (message, tone = 'info') => {
+    const nextMessage = String(message || '').trim();
+    if (!nextMessage) return;
+    setTeamInboxActionFeedback({
+      message: nextMessage,
+      tone: String(tone || 'info').trim() || 'info'
+    });
+  };
+  const confirmTeamInboxAction = async (message) =>
+    window.confirm(String(message || '').trim());
+
+  useEffect(() => {
+    const handleNotificationModeChange = (event) => {
+      setNotificationMode(String(event?.detail?.mode || getTeamInboxNotificationMode()));
+    };
+
+    window.addEventListener(
+      TEAM_INBOX_NOTIFICATION_MODE_CHANGED_EVENT,
+      handleNotificationModeChange
+    );
+
+    return () => {
+      window.removeEventListener(
+        TEAM_INBOX_NOTIFICATION_MODE_CHANGED_EVENT,
+        handleNotificationModeChange
+      );
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!teamInboxActionFeedback) return undefined;
+    const timer = window.setTimeout(() => {
+      setTeamInboxActionFeedback(null);
+    }, 2600);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [teamInboxActionFeedback]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('Notification' in window)) {
+      return undefined;
+    }
+
+    if (Notification.permission !== 'default') {
+      return undefined;
+    }
+
+    if (sessionStorage.getItem('teamInboxNotificationPermissionAttempted') === 'true') {
+      return undefined;
+    }
+
+    let isDisposed = false;
+
+    const handleFirstUserActivation = () => {
+      if (isDisposed) return;
+      sessionStorage.setItem('teamInboxNotificationPermissionAttempted', 'true');
+
+      requestTeamInboxNotificationPermission({ requireUserActivation: true }).catch((error) => {
+        console.error('Failed to prepare Team Inbox system notifications:', error);
+      });
+
+      window.removeEventListener('pointerdown', handleFirstUserActivation, true);
+      window.removeEventListener('keydown', handleFirstUserActivation, true);
+    };
+
+    window.addEventListener('pointerdown', handleFirstUserActivation, true);
+    window.addEventListener('keydown', handleFirstUserActivation, true);
+
+    return () => {
+      isDisposed = true;
+      window.removeEventListener('pointerdown', handleFirstUserActivation, true);
+      window.removeEventListener('keydown', handleFirstUserActivation, true);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!meetAuthConfigured) return;
+    if (!String(meetTokenDraft || '').trim()) return;
+    setMeetTokenDraft('');
+  }, [meetAuthConfigured, meetTokenDraft]);
+
+  useEffect(() => {
+    const handleOpenConversationFromNotification = (event) => {
+      const nextConversationId = String(event?.detail?.conversationId || '').trim();
+      const nextPath = String(event?.detail?.path || '').trim();
+      if (!nextConversationId) return;
+      pendingConversationRouteSyncRef.current = nextConversationId;
+
+      const matchingConversation = conversations.find(
+        (conversation) => String(conversation?._id || '').trim() === nextConversationId
+      );
+
+      if (matchingConversation) {
+        setSelectedConversation(matchingConversation);
+      }
+
+      navigate(nextPath || `/inbox/${nextConversationId}`);
+    };
+
+    window.addEventListener(
+      TEAM_INBOX_NOTIFICATION_OPEN_EVENT,
+      handleOpenConversationFromNotification
+    );
+
+    return () => {
+      window.removeEventListener(
+        TEAM_INBOX_NOTIFICATION_OPEN_EVENT,
+        handleOpenConversationFromNotification
+      );
+    };
+  }, [conversations, navigate]);
 
 
 
-    const appendMessageUnique = (incomingMessage) => {
+  const appendMessageUnique = (incomingMessage) => {
 
     if (!incomingMessage) return;
 
@@ -135,2467 +267,595 @@ const TeamInbox = () => {
 
   };
 
-  const getUnreadCount = (conversation) => {
-    const value =
-      conversation?.unreadCount ??
-      conversation?.unread_count ??
-      conversation?.unread ??
-      conversation?.unread_messages ??
-      conversation?.unreadMessagesCount ??
-      conversation?.unread_message_count ??
-      conversation?.unreadMessages ??
-      0;
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
-  };
-  const normalizeConversation = (conversation) => ({
-    ...conversation,
-    unreadCount: getUnreadCount(conversation)
+  const {
+    leadStageOptions,
+    getUnreadCount,
+    normalizeConversation,
+    normalizePhone,
+    getPhoneLookupKeys,
+    isRealName,
+    getMappedContactName,
+    hasRealContactName,
+    getConversationDisplayName,
+    enrichConversationIdentity,
+    getConversationAvatarText,
+    getConversationIdValue,
+    toDateTimeLocalInputValue,
+    toIsoFromDateTimeLocalInput,
+    formatDateTimeForActivity,
+    applyLeadScoreUpdateToConversation,
+    getConversationLeadScore,
+    getContactIdFromConversation,
+    getContactTagsRaw,
+    deriveLeadStatus,
+    getLeadStageValue,
+    getCrmActivityLabel,
+    getCrmActivityDescription
+  } = useTeamInboxBoundUtils(contactNameMap);
+
+  const {
+    showTemplateSendModal,
+    templateLoading,
+    templateSending,
+    templateOptions,
+    selectedTemplateKey,
+    templateVariableValues,
+    templateHeaderVariableValues,
+    templateHeaderMediaUrl,
+    templateModalMessage,
+    templateModalMessageTone,
+    selectedTemplateOption,
+    getTemplateCompositeKey,
+    getTemplateLanguageCode,
+    extractTemplateVariableCount,
+    extractTemplateHeaderVariableCount,
+    getTemplateHeaderFormat,
+    templateRequiresHeaderMedia,
+    openTemplateSendModal,
+    closeTemplateSendModal,
+    handleTemplateSelectionChange,
+    handleTemplateVariableChange,
+    handleTemplateHeaderVariableChange,
+    handleTemplateHeaderMediaUrlChange,
+    handleSendTemplate
+  } = useTemplateSendModal({
+    selectedConversation,
+    conversationId,
+    onMissingContactPhone: (message) => {
+      setContactInfoMessage(message);
+      setContactInfoMessageTone('error');
+    },
+    onTemplateSent: (message) => {
+      setContactInfoMessage(message);
+      setContactInfoMessageTone('success');
+    }
   });
 
-  const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
-  const getPhoneLookupKeys = (value) => {
-    const normalized = normalizePhone(value);
-    if (!normalized) return [];
-    const keys = [normalized];
-    if (normalized.length > 10) keys.push(normalized.slice(-10));
-    return Array.from(new Set(keys));
-  };
-  const isRealName = (value) => {
-    const name = String(value || '').trim();
-    return Boolean(name) && !/^\+?\d+$/.test(name);
-  };
-  const getMappedContactName = (phone) => {
-    const keys = getPhoneLookupKeys(phone);
-    for (const key of keys) {
-      if (isRealName(contactNameMap[key])) return contactNameMap[key];
+  const {
+    applyContactUpdateLocally,
+    loadCrmActivitiesForContact,
+    loadCrmDocumentsForContact,
+    handleQualifyLead,
+    handleUnqualifyLead,
+    handleSaveInternalNote,
+    handleLeadStageChange,
+    handleSaveLeadFollowUp,
+    handleCreateQuickTask,
+    handleOpenCrmDocument,
+    handleDownloadCrmDocument,
+    handleDeleteCrmDocument,
+    handleUploadCrmDocument
+  } = createContactCrmActions({
+    selectedConversation,
+    setConversations,
+    setSelectedConversation,
+    setContactInfoActionBusy,
+    setContactInfoMessage,
+    setContactInfoMessageTone,
+    internalNoteDraft,
+    setInternalNoteDraft,
+    setInternalNoteSaving,
+    setCrmActivities,
+    setCrmActivitiesLoading,
+    setCrmDocuments,
+    setCrmDocumentsLoading,
+    setCrmDocumentUploading,
+    setLeadFollowUpSaving,
+    setLeadFollowUpDraft,
+    setCrmTaskCreating,
+    crmDocumentTypeDraft,
+    crmTaskTitleDraft,
+    crmTaskDueDraft,
+    crmTaskPriorityDraft,
+    setCrmTaskTitleDraft,
+    setCrmTaskDueDraft,
+    setCrmTaskPriorityDraft,
+    leadFollowUpDraft,
+    normalizePhone,
+    getContactIdFromConversation,
+    getContactTagsRaw,
+    getConversationIdValue,
+    toIsoFromDateTimeLocalInput,
+    toDateTimeLocalInputValue,
+    confirmAction: confirmTeamInboxAction
+  });
+  const {
+    handleCreateMeetLink,
+    handleCopyMeetLink,
+    handleSendMeetLinkToContact,
+    handleSendMeetTemplateToContact,
+    loadMeetAuthStatus,
+    handleDisconnectGoogleForMeet
+  } = createMeetIntegrationActions({
+    meetTokenDraft,
+    meetTitleDraft,
+    meetStartDraft,
+    meetEndDraft,
+    meetCreateFollowUpTask,
+    meetFollowUpTitleDraft,
+    meetFollowUpDueDraft,
+    meetFollowUpPriorityDraft,
+    meetLink,
+    meetAuthConfigured,
+    selectedConversation,
+    conversationId,
+    setConversations,
+    setMeetCreating,
+    setMeetLink,
+    setMeetSending,
+    setMeetTemplateSending,
+    setMeetAuthConfigured,
+    setMeetAuthStatusLoading,
+    setMeetDisconnecting,
+    setMeetTokenDraft,
+    setContactInfoMessage,
+    setContactInfoMessageTone,
+    appendMessageUnique,
+    applyContactUpdateLocally,
+    loadCrmActivitiesForContact,
+    getContactIdFromConversation,
+    getConversationIdValue,
+    toIsoFromDateTimeLocalInput,
+    formatDateTimeForActivity,
+    getTemplateLanguageCode,
+    extractTemplateVariableCount
+  });
+  const handleConnectGoogleForMeet = async () => {
+    try {
+      setMeetConnecting(true);
+      setContactInfoMessage('');
+      const result = await googleCalendarService.getConnectAuthUrl(window.location.origin);
+      if (result?.success === false || !result?.authUrl) {
+        throw new Error(result?.error || 'Failed to start Google OAuth.');
+      }
+
+      googleOAuthPopupRef.current = window.open(
+        result.authUrl,
+        'google-calendar-oauth',
+        'width=760,height=780,menubar=no,toolbar=no,status=no'
+      );
+
+      if (!googleOAuthPopupRef.current) {
+        throw new Error('Popup was blocked. Allow popups for this site and try again.');
+      }
+
+      setContactInfoMessage('Complete Google sign-in in the popup to connect Calendar.');
+      setContactInfoMessageTone('success');
+    } catch (error) {
+      setMeetConnecting(false);
+      setContactInfoMessage(error?.message || 'Unable to start Google OAuth.');
+      setContactInfoMessageTone('error');
     }
-    return '';
-  };
-  const getContactName = (conversation) =>
-    String(conversation?.contactId?.name || conversation?.contactName || '').trim();
-  const hasRealContactName = (conversation) => {
-    const name = getContactName(conversation);
-    return isRealName(name);
-  };
-  const getConversationDisplayName = (conversation) => {
-    const name = getContactName(conversation);
-    if (hasRealContactName(conversation)) return name;
-    const mappedName = getMappedContactName(conversation?.contactPhone);
-    return mappedName || conversation?.contactPhone || name || 'Unknown';
-  };
-  const getContactIdValue = (conversation) => String(
-    conversation?.contactId?._id ||
-    conversation?.contactId?.id ||
-    conversation?.contactId ||
-    ''
-  );
-  const enrichConversationIdentity = (conversation, sources = []) => {
-    const base = normalizeConversation(conversation || {});
-    if (hasRealContactName(base)) return base;
-
-    const basePhone = normalizePhone(base?.contactPhone);
-    const baseContactId = getContactIdValue(base);
-    const candidate = sources.find((item) => {
-      if (!item || !hasRealContactName(item)) return false;
-      const itemPhone = normalizePhone(item?.contactPhone);
-      const itemContactId = getContactIdValue(item);
-      if (basePhone && itemPhone && basePhone === itemPhone) return true;
-      if (baseContactId && itemContactId && baseContactId === itemContactId) return true;
-      return false;
-    });
-
-    const mappedName = getMappedContactName(base?.contactPhone);
-    if (!candidate) {
-      if (!mappedName) return base;
-      const mergedContact = {
-        ...(base?.contactId && typeof base.contactId === 'object' ? base.contactId : {}),
-        name: mappedName
-      };
-      return normalizeConversation({
-        ...base,
-        contactId: mergedContact,
-        contactName: mappedName
-      });
-    }
-
-    const mergedContact = {
-      ...(candidate?.contactId && typeof candidate.contactId === 'object' ? candidate.contactId : {}),
-      ...(base?.contactId && typeof base.contactId === 'object' ? base.contactId : {}),
-      name: getContactName(base) || getContactName(candidate) || mappedName
-    };
-
-    return normalizeConversation({
-      ...candidate,
-      ...base,
-      contactId: mergedContact,
-      contactName: getContactName(base) || getContactName(candidate) || mappedName,
-      contactPhone: base?.contactPhone || candidate?.contactPhone
-    });
   };
 
-  const getConversationAvatarText = (conversation) => {
-    const name = String(getConversationDisplayName(conversation) || '').trim();
-    const phone = String(conversation?.contactPhone || '').trim();
-
-    // If contact has a real name, show its initial.
-    if (isRealName(name)) return name.charAt(0).toUpperCase();
-
-    // Fallback for number-only contacts to avoid confusing numeric avatar bubbles.
-    if (phone) return 'UN';
-
-    return '?';
-  };
-
-
-
-
-
+  useMeetOAuthEffects({
+    showContactInfo,
+    loadMeetAuthStatus,
+    meetConnecting,
+    setMeetConnecting,
+    googleOAuthPopupRef,
+    setContactInfoMessage,
+    setContactInfoMessageTone
+  });
 
   useEffect(() => {
     selectedConversationRef.current = selectedConversation;
   }, [selectedConversation]);
 
   useEffect(() => {
-    setShowContactInfo(false);
-  }, [selectedConversation?._id]);
+    const activeConversationId = String(
+      selectedConversation?._id || selectedConversation?.id || ''
+    ).trim();
+
+    if (activeConversationId) return;
+
+    activeMessagesConversationIdRef.current = '';
+    messageLoadRequestIdRef.current += 1;
+    setMessagesLoading(false);
+    setMessages([]);
+  }, [selectedConversation?._id, selectedConversation?.id]);
 
   useEffect(() => {
-    const handleOutsideClick = (event) => {
-      if (inboxMenuRef.current && !inboxMenuRef.current.contains(event.target)) {
-        setShowSelectMenu(false);
-      }
-      if (messageMenuRef.current && !messageMenuRef.current.contains(event.target)) {
-        setShowMessageSelectMenu(false);
-      }
-      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target)) {
-        setShowFilterMenu(false);
-      }
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target)) {
-        setShowEmojiPicker(false);
-      }
-    };
+    const activeMessagesConversationId = String(
+      activeMessagesConversationIdRef.current || ''
+    ).trim();
 
-    document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('touchstart', handleOutsideClick, { passive: true });
-    return () => {
-      document.removeEventListener('mousedown', handleOutsideClick);
-      document.removeEventListener('touchstart', handleOutsideClick);
-    };
-  }, []);
-
-  const handleEmojiInsert = (emoji) => {
-    const inputEl = messageInputRef.current;
-    if (!inputEl) {
-      setMessageInput((prev) => `${prev}${emoji}`);
+    if (!activeMessagesConversationId) {
       return;
     }
 
-    const start = inputEl.selectionStart ?? messageInput.length;
-    const end = inputEl.selectionEnd ?? messageInput.length;
-    const next = `${messageInput.slice(0, start)}${emoji}${messageInput.slice(end)}`;
-    setMessageInput(next);
-
-    requestAnimationFrame(() => {
-      inputEl.focus();
-      const cursor = start + emoji.length;
-      inputEl.setSelectionRange(cursor, cursor);
-    });
-  };
-
-  const scheduleRealtimeResync = (targetConversationId) => {
-    if (!targetConversationId) return;
-    if (realtimeResyncTimerRef.current) {
-      clearTimeout(realtimeResyncTimerRef.current);
-      realtimeResyncTimerRef.current = null;
-    }
-
-    realtimeResyncTimerRef.current = setTimeout(() => {
-      const activeConversation = selectedConversationRef.current;
-      if (!activeConversation) return;
-      if (String(activeConversation._id) !== String(targetConversationId)) return;
-      loadMessages(activeConversation._id);
-    }, 180);
-  };
-
-  // Initialize WebSocket connection
-
-
-
-  useEffect(() => {
-
-
-
-    const handleConnect = () => {
-
-
-
-      setWsConnected(true);
-      loadConversations({ silent: true });
-      loadContacts({ silent: true });
-
-
-
-      console.log('âœ… WebSocket connected in TeamInbox');
-
-
-
-    };
-
-
-
-
-
-
-
-    const handleDisconnect = () => {
-
-
-
-      setWsConnected(false);
-
-
-
-      console.log('âŒ WebSocket disconnected in TeamInbox');
-
-
-
-    };
-
-
-
-
-
-
-
-    const handleNewMessage = (data) => {
-
-
-
-      console.log('ðŸ“¨ New message received:', data);
-
-      const incomingConversationRaw = data?.conversation || {};
-      if (
-        !hasRealContactName(incomingConversationRaw) &&
-        !getMappedContactName(incomingConversationRaw?.contactPhone)
-      ) {
-        loadContacts({ silent: true });
-      }
-
-
-
-      
-
-
-
-      // Update conversations list
-
-
-
-      setConversations(prev => {
-        const incomingConversation = enrichConversationIdentity(
-          data?.conversation || {},
-          [...prev, selectedConversationRef.current].filter(Boolean)
-        );
-        const activeConversation = selectedConversationRef.current;
-        const isSelectedConversation =
-          activeConversation && activeConversation._id === incomingConversation._id;
-        const isIncomingContactMessage = data?.message?.sender === 'contact';
-
-        let found = false;
-        const updated = prev.map(conv => {
-          if (conv._id !== incomingConversation._id) return conv;
-
-          found = true;
-          const mergedConversation = enrichConversationIdentity(
-            { ...conv, ...incomingConversation },
-            [conv, incomingConversation, ...prev]
-          );
-
-          if (isSelectedConversation && isIncomingContactMessage) {
-            mergedConversation.unreadCount = 0;
-          } else if (isIncomingContactMessage) {
-            mergedConversation.unreadCount = Math.max(
-              getUnreadCount(incomingConversation),
-              getUnreadCount(conv) + 1,
-              1
-            );
-          }
-
-          return mergedConversation;
-        });
-
-        if (!found && incomingConversation._id) {
-          updated.unshift(enrichConversationIdentity({
-            ...incomingConversation,
-            unreadCount:
-              isSelectedConversation && isIncomingContactMessage
-                ? 0
-                : Math.max(getUnreadCount(incomingConversation), isIncomingContactMessage ? 1 : 0)
-          }, [...prev, selectedConversationRef.current].filter(Boolean)));
-        }
-
-        return updated.sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
-      });
-
-
-
-
-
-
-
-      // Update messages if this conversation is selected
-
-
-
-      const activeConversation = selectedConversationRef.current;
-      if (activeConversation && activeConversation._id === data?.conversation?._id) {
-        const incoming = data?.message || {};
-        if (incoming?.sender === 'agent') {
-          setMessages((prev) => {
-            const incomingId = incoming?._id ? String(incoming._id) : '';
-            const incomingWamid = incoming?.whatsappMessageId ? String(incoming.whatsappMessageId) : '';
-
-            // Already present -> refresh fields only.
-            const existingIndex = prev.findIndex((msg) => {
-              const msgId = msg?._id ? String(msg._id) : '';
-              const msgWamid = msg?.whatsappMessageId ? String(msg.whatsappMessageId) : '';
-              return (incomingId && msgId === incomingId) || (incomingWamid && msgWamid === incomingWamid);
-            });
-            if (existingIndex >= 0) {
-              return prev.map((msg, idx) => (idx === existingIndex ? { ...msg, ...incoming } : msg));
-            }
-
-            // Replace optimistic temp bubble with confirmed agent message.
-            const optimisticIndex = prev.findIndex(
-              (msg) =>
-                typeof msg?._id === 'string' &&
-                msg._id.startsWith('temp-') &&
-                msg.sender === 'agent' &&
-                msg.text === incoming.text
-            );
-            if (optimisticIndex >= 0) {
-              return prev.map((msg, idx) => (idx === optimisticIndex ? { ...msg, ...incoming } : msg));
-            }
-
-            return [...prev, incoming];
-          });
-        } else {
-          appendMessageUnique(incoming);
-          markAsRead(activeConversation._id);
-        }
-        scheduleRealtimeResync(activeConversation._id);
-      }
-
-
-
-    };
-
-
-
-
-
-
-
-    const handleMessageSent = (data) => {
-
-
-
-      console.log('ðŸ“¤ Message sent confirmation:', data);
-
-
-
-      
-
-
-
-      const activeConversation = selectedConversationRef.current;
-      if (activeConversation && activeConversation._id === data.message.conversationId) {
-        setMessages((prev) => {
-          const incoming = data.message || {};
-          const incomingId = incoming?._id ? String(incoming._id) : '';
-          const incomingWamid = incoming?.whatsappMessageId ? String(incoming.whatsappMessageId) : '';
-
-          // If already exists, only refresh fields/status.
-          const existingIndex = prev.findIndex((msg) => {
-            const msgId = msg?._id ? String(msg._id) : '';
-            const msgWamid = msg?.whatsappMessageId ? String(msg.whatsappMessageId) : '';
-            return (incomingId && msgId === incomingId) || (incomingWamid && msgWamid === incomingWamid);
-          });
-          if (existingIndex >= 0) {
-            return prev.map((msg, idx) => (idx === existingIndex ? { ...msg, ...incoming } : msg));
-          }
-
-          // Try replacing an optimistic pending message with same text.
-          const optimisticIndex = prev.findIndex(
-            (msg) =>
-              typeof msg?._id === 'string' &&
-              msg._id.startsWith('temp-') &&
-              msg.sender === 'agent' &&
-              msg.text === incoming.text
-          );
-          if (optimisticIndex >= 0) {
-            return prev.map((msg, idx) => (idx === optimisticIndex ? { ...msg, ...incoming } : msg));
-          }
-
-          return [...prev, incoming];
-        });
-      }
-
-
-
-    };
-
-
-
-
-
-
-
-    const handleMessageStatus = (data) => {
-      console.log('Message status update:', data);
-
-      const incomingStatus = String(data?.status || '').toLowerCase();
-      const incomingMessageIds = new Set(
-        [
-          data?.messageId,
-          data?.id,
-          data?.whatsappMessageId,
-          data?.message?._id,
-          data?.message?.messageId,
-          data?.message?.whatsappMessageId
-        ]
-          .filter(Boolean)
-          .map((v) => String(v))
-      );
-
-      const statusRank = { sent: 1, delivered: 2, read: 3, failed: 4 };
-      let foundMatch = false;
-
-      setMessages((prev) =>
-        prev.map((msg) => {
-          const msgIds = [
-            msg?._id,
-            msg?.messageId,
-            msg?.whatsappMessageId
-          ]
-            .filter(Boolean)
-            .map((v) => String(v));
-
-          const matched = msgIds.some((id) => incomingMessageIds.has(id));
-          if (!matched) return msg;
-
-          foundMatch = true;
-          const currentStatus = String(msg?.status || '').toLowerCase();
-          const currentRank = statusRank[currentStatus] || 0;
-          const nextRank = statusRank[incomingStatus] || currentRank;
-
-          return nextRank >= currentRank
-            ? { ...msg, status: incomingStatus || currentStatus }
-            : msg;
-        })
-      );
-
-      const activeConversation = selectedConversationRef.current;
-      const eventConversationId = data?.conversationId ? String(data.conversationId) : '';
-      if (!foundMatch && activeConversation && eventConversationId && String(activeConversation._id) === eventConversationId) {
-        loadMessages(activeConversation._id);
-      }
-      if (activeConversation && eventConversationId && String(activeConversation._id) === eventConversationId) {
-        scheduleRealtimeResync(activeConversation._id);
-      }
-    };
-
-
-
-
-
-
-
-    // Connect to WebSocket
-
-
-
-    webSocketService.connect(currentUserId);
-
-
-
-    webSocketService.on('connected', handleConnect);
-
-
-
-    webSocketService.on('disconnected', handleDisconnect);
-
-
-
-    webSocketService.on('newMessage', handleNewMessage);
-    webSocketService.on('new_message', handleNewMessage);
-
-
-
-    webSocketService.on('messageSent', handleMessageSent);
-    webSocketService.on('message_sent', handleMessageSent);
-
-
-
-    webSocketService.on('messageStatus', handleMessageStatus);
-    webSocketService.on('message_status', handleMessageStatus);
-
-
-
-
-
-
-
-    return () => {
-
-
-
-      webSocketService.off('connected', handleConnect);
-
-
-
-      webSocketService.off('disconnected', handleDisconnect);
-
-
-
-      webSocketService.off('newMessage', handleNewMessage);
-      webSocketService.off('new_message', handleNewMessage);
-
-
-
-      webSocketService.off('messageSent', handleMessageSent);
-      webSocketService.off('message_sent', handleMessageSent);
-
-
-
-      webSocketService.off('messageStatus', handleMessageStatus);
-      webSocketService.off('message_status', handleMessageStatus);
-
-
-
-    };
-
-
-
-  }, [currentUserId]);
-
-  useEffect(() => {
-    return () => {
-      if (realtimeResyncTimerRef.current) {
-        clearTimeout(realtimeResyncTimerRef.current);
-      }
-    };
-  }, []);
-
-
-
-  useEffect(() => {
-
-
-
-    loadConversations();
-    loadContacts({ silent: true });
-
-
-
-  }, []);
-  useEffect(() => {
-    const onFocusRefresh = () => {
-      if (document.visibilityState && document.visibilityState !== 'visible') return;
-      loadConversations({ silent: true });
-    };
-    window.addEventListener('focus', onFocusRefresh);
-    document.addEventListener('visibilitychange', onFocusRefresh);
-    return () => {
-      window.removeEventListener('focus', onFocusRefresh);
-      document.removeEventListener('visibilitychange', onFocusRefresh);
-    };
-  }, []);
-
-
-
-
-
-
-
-  // Handle phone number from navigation state
-
-
-
-  useEffect(() => {
-
-
-
-    if (location.state?.phoneNumber && conversations.length > 0) {
-
-
-
-      const targetConversation = conversations.find(
-
-
-
-        conv => conv.contactPhone === location.state.phoneNumber
-
-
-
-      );
-
-
-
-      
-
-
-
-      if (targetConversation) {
-
-
-
-        setSelectedConversation(targetConversation);
-
-
-
-      } else {
-
-
-
-        // If no conversation exists, create a new one or show a message
-
-
-
-        console.log('No conversation found for phone:', location.state.phoneNumber);
-
-
-
-        // Optionally create a new conversation here
-
-
-
-      }
-
-
-
-    }
-
-
-
-  }, [location.state, conversations]);
-
-
-
-
-
-
-
-  // Load messages when conversation is selected
-
-
-
-  useEffect(() => {
-    if (selectedConversation) {
-      isConversationSwitchRef.current = true;
-      loadMessages(selectedConversation._id);
-    }
-  }, [selectedConversation]);
-
-  useEffect(() => {
-    if (!conversationId || !conversations.length) return;
-    const targetConversation = conversations.find(
-      (conv) => String(conv._id) === String(conversationId)
+    messageCacheRef.current.set(
+      activeMessagesConversationId,
+      Array.isArray(messages) ? messages : []
     );
-    if (targetConversation && selectedConversation?._id !== targetConversation._id) {
-      setSelectedConversation(targetConversation);
-      if (getUnreadCount(targetConversation) > 0) {
-        markAsRead(targetConversation._id);
-      }
-    }
-  }, [conversationId, conversations, selectedConversation?._id]);
-
-
-
-
-
-
-
-  // Auto-scroll to bottom when new messages arrive
-
-
-
-  useEffect(() => {
-    if (isConversationSwitchRef.current) {
-      scrollToBottom('auto');
-      isConversationSwitchRef.current = false;
-      return;
-    }
-    scrollToBottom('smooth');
   }, [messages]);
 
-
-
-
-
-
-
-  const loadConversations = async ({ silent = false } = {}) => {
-
-
-
-    try {
-
-
-
-      if (!silent) setLoading(true);
-
-
-
-      const data = await whatsappService.getConversations();
-
-
-
-      setConversations(Array.isArray(data) ? data.map(normalizeConversation) : []);
-
-
-
-    } catch (error) {
-
-
-
-      console.error('Failed to load conversations:', error);
-
-
-
-    } finally {
-
-
-
-      if (!silent) setLoading(false);
-
-
-
-    }
-
-
-
-  };
-
-
-
-
-
-
-
-  const loadMessages = async (conversationId) => {
-
-
-
-    try {
-
-
-
-      const data = await whatsappService.getMessages(conversationId);
-
-
-
-      setMessages(Array.isArray(data) ? data : []);
-
-
-
-    } catch (error) {
-
-
-
-      console.error('Failed to load messages:', error);
-
-
-
-    }
-
-
-
-  };
-
-
-
-
-
-
-
-  const sendMessage = async () => {
-
-
-
-    if (!messageInput.trim() || !selectedConversation || sendingMessage) return;
-
-
-
-
-
-
-
-    let optimisticId = null;
-    let textToSend = '';
-    try {
-      setSendingMessage(true);
-      const activeConversationId = selectedConversation?._id || conversationId;
-      textToSend = messageInput.trim();
-      optimisticId = `temp-${Date.now()}`;
-
-      // Optimistic UI: show outgoing message instantly.
-      setMessageInput('');
-      appendMessageUnique({
-        _id: optimisticId,
-        sender: 'agent',
-        text: textToSend,
-        status: 'sending',
-        timestamp: new Date().toISOString(),
-        conversationId: activeConversationId
-      });
-
-      setConversations(prev =>
-        prev.map(conv =>
-          conv._id === selectedConversation._id
-            ? {
-                ...conv,
-                lastMessage: textToSend,
-                lastMessageTime: new Date().toISOString(),
-                lastMessageFrom: 'agent'
-              }
-            : conv
-        )
-      );
-
-
-
-      const result = await whatsappService.sendMessage(
-
-
-
-        selectedConversation.contactPhone,
-
-
-
-        textToSend,
-
-
-
-        activeConversationId
-
-
-
-      );
-
-
-
-
-
-
-
-            if (result?.success) {
-
-        const sentMessage = result.message || result.data?.message;
-
-        if (sentMessage) {
-          setMessages((prev) => {
-            const sentId = sentMessage?._id ? String(sentMessage._id) : '';
-            const sentWamid = sentMessage?.whatsappMessageId ? String(sentMessage.whatsappMessageId) : '';
-
-            // Replace optimistic temp bubble
-            let next = prev.map((msg) =>
-              msg._id === optimisticId
-                ? { ...msg, ...sentMessage, status: sentMessage.status || 'sent' }
-                : msg
-            );
-
-            // If temp wasn't found (already removed/replaced), ensure message exists once
-            const existsAfterReplace = next.some((msg) => {
-              const msgId = msg?._id ? String(msg._id) : '';
-              const msgWamid = msg?.whatsappMessageId ? String(msg.whatsappMessageId) : '';
-              return (sentId && msgId === sentId) || (sentWamid && msgWamid === sentWamid);
-            });
-            if (!existsAfterReplace) {
-              next = [...next, { ...sentMessage, status: sentMessage.status || 'sent' }];
-            }
-
-            // De-duplicate same real message (can happen due to websocket + API race)
-            const seen = new Set();
-            next = next.filter((msg) => {
-              const msgId = msg?._id ? String(msg._id) : '';
-              const msgWamid = msg?.whatsappMessageId ? String(msg.whatsappMessageId) : '';
-              const key = msgId || msgWamid;
-              if (!key) return true;
-              if (seen.has(key)) return false;
-              seen.add(key);
-              return true;
-            });
-
-            return next;
-          });
-
-        } else {
-
-          setMessages(prev =>
-            prev.map(msg =>
-              msg._id === optimisticId
-                ? { ...msg, status: 'sent' }
-                : msg
-            )
-          );
-
-        }
-
-      } else {
-
-
-
-        setMessages(prev => prev.filter(msg => msg._id !== optimisticId));
-        setMessageInput(textToSend);
-        console.error('Failed to send message:', result?.error);
-        alert(result?.error || 'Message send failed');
-
-
-
-      }
-
-
-
-    } catch (error) {
-
-
-
-      if (optimisticId) {
-        setMessages(prev => prev.filter(msg => msg._id !== optimisticId));
-      }
-      if (textToSend) {
-        setMessageInput((prev) => prev || textToSend);
-      }
-      console.error('Error sending message:', error);
-      alert(error?.message || 'Unable to send message');
-
-
-
-    } finally {
-      setSendingMessage(false);
-    }
-
-
-
-  };
-
-
-
-
-
-
-
-  const markAsRead = async (conversationId) => {
-
-
-
-    try {
-
-
-
-      await whatsappService.markConversationAsRead(conversationId);
-
-
-
-      
-
-
-
-      // Update local state
-
-
-
-      setConversations(prev => 
-
-
-
-        prev.map(conv => 
-
-
-
-          conv._id === conversationId 
-
-
-
-            ? { ...conv, unreadCount: 0 }
-
-
-
-            : conv
-
-
-
-        )
-
-
-
-      );
-
-
-
-    } catch (error) {
-
-
-
-      console.error('Failed to mark conversation as read:', error);
-
-
-
-    }
-
-
-
-  };
-
-
-
-
-
-
-
-  const scrollToBottom = (behavior = 'smooth') => {
-    const chatContainer = chatMessagesRef.current;
-    if (!chatContainer) return;
-
-    if (behavior === 'auto') {
-      chatContainer.scrollTop = chatContainer.scrollHeight;
-      return;
-    }
-
-    chatContainer.scrollTo({
-      top: chatContainer.scrollHeight,
-      behavior
-    });
-  };
-
-
-
-
-
-
-
-  const deleteCurrentConversation = async () => {
-
-
-
-    if (!selectedConversation) return;
-
-
-
-    
-
-
-
-    if (window.confirm(`Are you sure you want to delete this conversation with ${selectedConversation.contactId?.name || selectedConversation.contactPhone}?`)) {
-
-
-
-      try {
-
-
-
-        await whatsappService.deleteConversation(selectedConversation._id);
-
-
-
-        setConversations(prev => prev.filter(conv => conv._id !== selectedConversation._id));
-
-
-
-        setSelectedConversation(null);
-
-
-
-        setMessages([]);
-        navigate('/inbox');
-
-
-
-        alert('Conversation deleted successfully!');
-
-
-
-      } catch (error) {
-
-
-
-        console.error('Failed to delete conversation:', error);
-
-
-
-        alert('Failed to delete conversation');
-
-
-
-      }
-
-
-
-    }
-
-
-
-  };
-
-
-
-
-
-
-
-  const toggleSelectForDeletion = (conversationId) => {
-
-
-
-    console.log('Toggling conversation:', conversationId);
-
-
-
-    console.log('Current selected:', selectedForDeletion);
-
-
-
-    setSelectedForDeletion(prev => {
-
-
-
-      const newSelection = prev.includes(conversationId) 
-
-
-
-        ? prev.filter(id => id !== conversationId)
-
-
-
-        : [...prev, conversationId];
-
-
-
-      console.log('New selection:', newSelection);
-
-
-
-      return newSelection;
-
-
-
-    });
-
-
-
-  };
-
-
-
-
-
-
-
-  const deleteSelectedChats = async () => {
-
-
-
-    if (selectedForDeletion.length === 0) {
-
-
-
-      alert('Please select chats to delete');
-
-
-
-      return;
-
-
-
-    }
-
-
-
-    
-
-
-
-    if (window.confirm(`Are you sure you want to delete ${selectedForDeletion.length} chat(s)?`)) {
-
-
-
-      try {
-
-
-
-        await whatsappService.deleteSelectedConversations(selectedForDeletion);
-
-
-
-        setConversations(prev => prev.filter(conv => !selectedForDeletion.includes(conv._id)));
-
-
-
-        if (selectedConversation && selectedForDeletion.includes(selectedConversation._id)) {
-
-
-
-          setSelectedConversation(null);
-
-
-
-          setMessages([]);
-          navigate('/inbox');
-
-
-
-        }
-
-
-
-        setSelectedForDeletion([]);
-
-
-
-        setShowSelectMode(false);
-
-
-
-        alert('Selected chats deleted successfully!');
-
-
-
-      } catch (error) {
-
-
-
-        console.error('Failed to delete selected chats:', error);
-
-
-
-        alert('Failed to delete selected chats');
-
-
-
-      }
-
-
-
-    }
-
-
-
-  };
-
-
-
-
-
-
-
-  const toggleMessageSelection = (messageId) => {
-
-
-
-    console.log('Toggling message:', messageId);
-
-
-
-    console.log('Current selected messages:', selectedMessagesForDeletion);
-
-
-
-    setSelectedMessagesForDeletion(prev => {
-
-
-
-      const newSelection = prev.includes(messageId) 
-
-
-
-        ? prev.filter(id => id !== messageId)
-
-
-
-        : [...prev, messageId];
-
-
-
-      console.log('New message selection:', newSelection);
-
-
-
-      return newSelection;
-
-
-
-    });
-
-
-
-  };
-
-
-
-
-
-
-
-  const deleteSelectedMessages = async () => {
-
-
-
-    console.log('Attempting to delete selected messages. Selected count:', selectedMessagesForDeletion.length);
-
-
-
-    if (selectedMessagesForDeletion.length === 0) {
-
-
-
-      alert('Please select messages to delete');
-
-
-
-      return;
-
-
-
-    }
-
-
-
-    
-
-
-
-    if (window.confirm(`Are you sure you want to delete ${selectedMessagesForDeletion.length} message(s)?`)) {
-
-
-
-      try {
-
-
-
-        const selectedSet = new Set(selectedMessagesForDeletion);
-        const persistedMessageIds = messages
-          .map((msg, idx) => ({ msg, key: getMessageKey(msg, idx) }))
-          .filter(item => selectedSet.has(item.key) && item.msg?._id)
-          .map(item => item.msg._id);
-
-        if (persistedMessageIds.length > 0) {
-          await whatsappService.deleteSelectedMessages(persistedMessageIds);
-        }
-
-        setMessages(prev => prev.filter((msg, idx) => !selectedSet.has(getMessageKey(msg, idx))));
-
-
-
-        setSelectedMessagesForDeletion([]);
-
-
-
-        setShowMessageSelectMode(false);
-
-
-
-        alert('Selected messages deleted successfully!');
-
-
-
-      } catch (error) {
-
-
-
-        console.error('Failed to delete selected messages:', error);
-
-
-
-        alert('Failed to delete selected messages');
-
-
-
-      }
-
-
-
-    }
-
-
-
-  };
-
-
-
-
-
-
-
-  const getStatusIcon = (status) => {
-    const normalizedStatus = String(status || '').toLowerCase();
-
-    switch (normalizedStatus) {
-      case 'sent':
-        return <Check size={16} className="message-status-icon status-sent" />;
-
-      case 'delivered':
-        return <CheckCheck size={16} className="message-status-icon status-delivered" />;
-
-      case 'read':
-        return <CheckCheck size={16} className="message-status-icon status-read" />;
-
-      case 'failed':
-        return <span className="message-status-icon status-failed">x</span>;
-
-      default:
-        return null;
-    }
-  };
-
-
-
-
-
-
-
-  const formatMessageTime = (timestamp) => {
-    const date = new Date(timestamp);
-    if (Number.isNaN(date.getTime())) return '';
-
-    return date.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  const loadContacts = async ({ silent = true } = {}) => {
-    try {
-      const data = await whatsappService.getContacts();
-      const contacts = Array.isArray(data) ? data : [];
-      const nextMap = {};
-      contacts.forEach((contact) => {
-        const name = String(contact?.name || '').trim();
-        if (!isRealName(name)) return;
-        getPhoneLookupKeys(contact?.phone).forEach((key) => {
-          if (!nextMap[key]) nextMap[key] = name;
-        });
-      });
-      setContactNameMap(nextMap);
-    } catch (error) {
-      if (!silent) {
-        console.error('Failed to load contacts:', error);
-      }
-    }
-  };
-
-  const formatConversationTime = (timestamp) => {
-    const date = new Date(timestamp);
-    if (Number.isNaN(date.getTime())) return '';
-
-    const now = new Date();
-    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const startOfDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const diffDays = Math.floor((startOfToday - startOfDate) / (1000 * 60 * 60 * 24));
-
-    // WhatsApp-style list label
-    if (diffDays === 0) {
-      return date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    }
-    if (diffDays === 1) {
-      return 'Yesterday';
-    }
-    if (diffDays > 1 && diffDays < 7) {
-      return date.toLocaleDateString('en-US', { weekday: 'short' });
-    }
-
-    return date.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: '2-digit',
-      year: '2-digit'
-    });
-  };
-
-  const formatDateLabel = (timestamp) => {
-    if (!timestamp) return '';
-    const date = new Date(timestamp);
-    const today = new Date();
-    const yesterday = new Date();
-    yesterday.setDate(today.getDate() - 1);
-
-    const isSameDay = (a, b) =>
-      a.getFullYear() === b.getFullYear() &&
-      a.getMonth() === b.getMonth() &&
-      a.getDate() === b.getDate();
-
-    if (isSameDay(date, today)) return 'Today';
-    if (isSameDay(date, yesterday)) return 'Yesterday';
-
-    return date.toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    });
-  };
-
-
-
-
-
-
-
-  const safeConversations = Array.isArray(conversations) ? conversations : [];
-  const getMessageKey = (message, index) => message._id || message.whatsappMessageId || `tmp-${index}`;
-
-  const filteredConversations = safeConversations
-    .filter(conv =>
-      conv.contactId?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      conv.contactPhone?.includes(searchTerm) ||
-      conv.lastMessage?.toLowerCase().includes(searchTerm.toLowerCase())
-    )
-    .filter(conv => {
-      if (conversationFilter === 'unread') return getUnreadCount(conv) > 0;
-      if (conversationFilter === 'read') return getUnreadCount(conv) === 0;
-      return true;
-    });
-
-  const groupedMessages = [];
-  let lastDateKey = '';
-  messages.forEach((message, index) => {
-    const ts = message.timestamp || message.whatsappTimestamp || message.createdAt;
-    const d = new Date(ts);
-    const key = `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    if (key !== lastDateKey) {
-      groupedMessages.push({
-        type: 'separator',
-        key: `sep-${key}-${index}`,
-        label: formatDateLabel(ts)
-      });
-      lastDateKey = key;
-    }
-    groupedMessages.push({ type: 'message', key: message._id || `msg-${index}`, message, index });
+  useTeamInboxContactEffects({
+    selectedConversation,
+    toDateTimeLocalInputValue,
+    getContactIdFromConversation,
+    loadCrmActivitiesForContact,
+    loadCrmDocumentsForContact,
+    setShowContactInfo,
+    setContactInfoMessage,
+    setContactInfoMessageTone,
+    setInternalNoteDraft,
+    setLeadFollowUpDraft,
+    setCrmTaskTitleDraft,
+    setCrmTaskDueDraft,
+    setCrmTaskPriorityDraft,
+    setCrmDocumentTypeDraft,
+    setCrmDocuments,
+    setCrmDocumentsLoading,
+    setCrmDocumentUploading,
+    setMeetTokenDraft,
+    setMeetTitleDraft,
+    setMeetStartDraft,
+    setMeetEndDraft,
+    setMeetSending,
+    setMeetTemplateSending,
+    setMeetCreateFollowUpTask,
+    setMeetFollowUpTitleDraft,
+    setMeetFollowUpDueDraft,
+    setMeetFollowUpPriorityDraft,
+    setMeetLink,
+    setCrmActivities,
+    setCrmActivitiesLoading
   });
 
+  const {
+    loadConversations,
+    loadMessages,
+    sendMessage,
+    sendReaction,
+    sendAttachment,
+    openAttachment,
+    deleteMessage,
+    retryAttachment,
+    markAsRead,
+    loadContacts
+  } = createInboxDataActions({
+    normalizeConversation,
+    setLoading,
+    setConversations,
+    setMessages,
+    setMessagesLoading,
+    selectedConversation,
+    sendingMessage,
+    messageInput,
+    setSendingMessage,
+    setMessageInput,
+    appendMessageUnique,
+    getConversationIdValue,
+    conversationId,
+    isRealName,
+    getPhoneLookupKeys,
+    setContactNameMap,
+    activeMessagesConversationIdRef,
+    messageLoadRequestIdRef,
+    messageCacheRef,
+    notifyActionFeedback: showTeamInboxActionFeedback,
+    confirmAction: confirmTeamInboxAction
+  });
+  const { handleEmojiInsert, scheduleRealtimeResync } = useTeamInboxViewEffects({
+    inboxMenuRef,
+    messageMenuRef,
+    filterMenuRef,
+    emojiPickerRef,
+    setShowSelectMenu,
+    setShowMessageSelectMenu,
+    setShowFilterMenu,
+    setShowEmojiPicker,
+    messageInputRef,
+    messageInput,
+    setMessageInput,
+    realtimeResyncTimerRef,
+    selectedConversationRef,
+    loadMessages,
+    chatMessagesRef,
+    isConversationSwitchRef,
+    messages,
+    messagesLoading
+  });
+  useConversationSelectionEffects({
+    locationState: location.state,
+    conversations,
+    setSelectedConversation,
+    selectedConversation,
+    isConversationSwitchRef,
+    loadMessages,
+    conversationId,
+    getUnreadCount,
+    markAsRead,
+    pendingConversationRouteSyncRef,
+    getConversationDisplayName
+  });
 
+  useInboxRealtimeEffects({
+    currentUserId,
+    notificationMode,
+    setWsConnected,
+    loadConversations,
+    loadContacts,
+    hasRealContactName,
+    getMappedContactName,
+    setConversations,
+    enrichConversationIdentity,
+    selectedConversationRef,
+    getUnreadCount,
+    setMessages,
+    appendMessageUnique,
+    markAsRead,
+    scheduleRealtimeResync,
+    loadMessages,
+    setSelectedConversation,
+    applyLeadScoreUpdateToConversation,
+    realtimeResyncTimerRef
+  });
+  const {
+    deleteCurrentConversation,
+    deleteConversationEntry,
+    toggleSelectForDeletion,
+    deleteSelectedChats,
+    toggleMessageSelection,
+    deleteSelectedMessages
+  } = createInboxSelectionActions({
+    selectedConversation,
+    selectedForDeletion,
+    selectedMessagesForDeletion,
+    messages,
+    setConversations,
+    setSelectedConversation,
+    setMessages,
+    setSelectedForDeletion,
+    setShowSelectMode,
+    setSelectedMessagesForDeletion,
+    setShowMessageSelectMode,
+    navigate,
+    getMessageKey,
+    notifyActionFeedback: showTeamInboxActionFeedback,
+    confirmAction: confirmTeamInboxAction
+  });
 
+  const filteredConversations = filterConversations({
+    conversations,
+    searchTerm,
+    conversationFilter,
+    getUnreadCount,
+    getConversationDisplayName
+  });
 
+  const groupedMessages = buildGroupedMessages(messages);
 
+  const {
+    handleSelectConversation,
+    handleToggleFilterMenu,
+    handleSelectConversationFilter,
+    handleToggleInboxMenu,
+    handleToggleConversationSelectMode,
+    handleResolveConversationSelection,
+    handleToggleMessageMenu,
+    handleToggleMessageSelectionMode,
+    handleDeleteCurrentConversationFromMenu,
+    handleOpenContactInformation
+  } = createTeamInboxUiHandlers({
+    selectedConversation,
+    setSelectedConversation,
+    navigate,
+    getUnreadCount,
+    markAsRead,
+    setShowFilterMenu,
+    setShowSelectMenu,
+    setShowMessageSelectMenu,
+    setConversationFilter,
+    setShowSelectMode,
+    setSelectedForDeletion,
+    setShowMessageSelectMode,
+    setSelectedMessagesForDeletion,
+    deleteCurrentConversation,
+    setContactInfoMessage,
+    setContactInfoMessageTone,
+    setInternalNoteDraft,
+    setShowContactInfo,
+    pendingConversationRouteSyncRef
+  });
 
 
   return (
 
-
-
     <div className="inbox-container">
-
-
-
-      <div className="inbox-sidebar">
-
-
-
-        <div className="inbox-header">
-
-
-
-          <h2>Team Inbox</h2>
-
-
-
-          <div className="inbox-actions">
-
-
-
-            <div className={`connection-indicator ${wsConnected ? 'connected' : 'disconnected'}`} />
-
-
-
-            <div className="inbox-header-menu" ref={filterMenuRef}>
-              <button
-                className="icon-btn"
-                onClick={() => {
-                  setShowFilterMenu(!showFilterMenu);
-                  setShowSelectMenu(false);
-                  setShowMessageSelectMenu(false);
-                }}
-              >
-                <Filter size={18} />
-              </button>
-              {showFilterMenu && (
-                <div className="inbox-select-menu">
-                  <button
-                    className="select-menu-item"
-                    onClick={() => {
-                      setConversationFilter('all');
-                      setShowFilterMenu(false);
-                    }}
-                  >
-                    All Chats
-                  </button>
-                  <button
-                    className="select-menu-item"
-                    onClick={() => {
-                      setConversationFilter('unread');
-                      setShowFilterMenu(false);
-                    }}
-                  >
-                    Unread
-                  </button>
-                  <button
-                    className="select-menu-item"
-                    onClick={() => {
-                      setConversationFilter('read');
-                      setShowFilterMenu(false);
-                    }}
-                  >
-                    Read
-                  </button>
-                </div>
-              )}
-            </div>
-
-
-
-            <div className="inbox-header-menu" ref={inboxMenuRef}>
-
-
-
-              <button
-                className="icon-btn"
-                onClick={() => {
-                  setShowSelectMenu(!showSelectMenu);
-                  setShowFilterMenu(false);
-                  setShowMessageSelectMenu(false);
-                }}
-              ><MoreVertical size={18} /></button>
-
-
-
-              {showSelectMenu && (
-
-
-
-                <div className="inbox-select-menu">
-
-
-
-                  <button className="select-menu-item" onClick={() => {
-
-
-
-                    setShowSelectMode(!showSelectMode);
-
-
-
-                    setShowSelectMenu(false);
-
-
-
-                    if (showSelectMode) {
-
-
-
-                      setSelectedForDeletion([]);
-
-
-
-                    }
-
-
-
-                  }}>
-
-
-
-                    {showSelectMode ? 'Cancel Select' : 'Select Chat'}
-
-
-
-                  </button>
-
-
-
-                </div>
-
-
-
-              )}
-
-
-
-            </div>
-
-
-
-          </div>
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <div className="search-bar">
-
-
-
-          <Search size={18} className="search-icon" />
-
-
-
-          <input
-
-
-
-            type="text"
-
-
-
-            placeholder="Search conversations..."
-
-
-
-            value={searchTerm}
-
-
-
-            onChange={(e) => setSearchTerm(e.target.value)}
-
-
-
-          />
-
-
-
-        </div>
-
-
-
-
-
-
-
-        <div className="conversation-list">
-
-
-
-          {loading ? (
-
-
-
-            <div className="loading">Loading conversations...</div>
-
-
-
-          ) : (
-
-
-
-            <>
-
-
-
-              {showSelectMode && (
-
-
-
-                <div className="selection-actions">
-
-
-
-                  <button 
-
-
-
-                    className="delete-selected-btn" 
-
-
-
-                    onClick={deleteSelectedChats}
-
-
-
-                    disabled={selectedForDeletion.length === 0}
-
-
-
-                    style={{ opacity: selectedForDeletion.length === 0 ? 0.5 : 1 }}
-
-
-
-                  >
-
-
-
-                    Delete Selected ({selectedForDeletion.length})
-
-
-
-                  </button>
-
-
-
-                  <button className="resolve-btn" onClick={() => {
-
-
-
-                    setShowSelectMode(false);
-
-
-
-                    setSelectedForDeletion([]);
-
-
-
-                  }}>Resolve</button>
-
-
-
-                </div>
-
-
-
-              )}
-
-
-
-              {filteredConversations.map(conversation => {
-                const unreadCount = getUnreadCount(conversation);
-                return (
-
-
-
-                <div
-
-
-
-                  key={conversation._id}
-
-
-
-                  className={`conversation-item ${selectedConversation?._id === conversation._id ? 'active' : ''} ${showSelectMode ? 'select-mode' : ''} ${unreadCount > 0 ? 'has-unread' : ''}`}
-
-
-
-                  onClick={() => {
-
-
-
-                    console.log('Conversation clicked:', conversation._id, 'Select mode:', showSelectMode);
-
-
-
-                    if (showSelectMode) {
-
-
-
-                      toggleSelectForDeletion(conversation._id);
-
-
-
-                    } else {
-
-
-
-                      setSelectedConversation(conversation);
-                      navigate(`/inbox/${conversation._id}`);
-
-
-
-                      if (getUnreadCount(conversation) > 0) {
-
-
-
-                        markAsRead(conversation._id);
-
-
-
-                      }
-
-
-
-                    }
-
-
-
-                  }}
-
-
-
-                >
-
-
-
-                  {showSelectMode && (
-
-
-
-                    <div className="select-checkbox">
-
-
-
-                      <input
-
-
-
-                        type="checkbox"
-
-
-
-                        checked={selectedForDeletion.includes(conversation._id)}
-
-
-
-                        onChange={() => toggleSelectForDeletion(conversation._id)}
-
-
-
-                        onClick={(e) => e.stopPropagation()}
-
-
-
-                      />
-
-
-
-                    </div>
-
-
-
-                  )}
-
-
-
-                  <div className="avatar">
-
-
-
-                    {getConversationAvatarText(conversation)}
-
-
-
-                  </div>
-
-
-
-                  <div className="conversation-info">
-
-
-
-                    <div className="conversation-top">
-
-
-
-                      <span className="name">
-
-
-
-                        {getConversationDisplayName(conversation)}
-
-
-
-                      </span>
-
-
-
-                      <div className="conversation-meta-right">
-                        <span className={`time conversation-time-label ${unreadCount > 0 ? 'unread' : ''}`}>
-                          {formatConversationTime(conversation.lastMessageTime)}
-                        </span>
-                        {unreadCount > 0 && (
-                          <span className="team-unread-badge">{unreadCount}</span>
-                        )}
-                      </div>
-
-
-
-                    </div>
-
-
-
-                    <div className="conversation-bottom">
-
-
-
-                      <p className="preview">{conversation.lastMessage}</p>
-
-
-
-                    </div>
-
-
-
-                  </div>
-
-
-
-                </div>
-
-
-
-              );
-              })}
-
-
-
-            </>
-
-
-
-          )}
-
-
-
-        </div>
-
-
-
-      </div>
-
-
-
-
-
-
-
-      <div className="chat-area">
-
-
-
-        {selectedConversation ? (
-
-
-
-          <>
-
-
-
-            <div className="chat-header">
-
-
-
-              <div className="avatar">
-
-
-
-                {getConversationAvatarText(selectedConversation)}
-
-
-
-              </div>
-
-
-
-              <div className="chat-header-info">
-
-
-
-                <span className="name text-white">
-
-
-
-                  {getConversationDisplayName(selectedConversation)}
-
-
-
-                </span>
-
-
-
-                <span className="status text-white">{selectedConversation.contactPhone}</span>
-
-
-
-              </div>
-
-
-
-              <div className="chat-header-actions">
-
-
-
-                <button className="icon-btn text-white"><Phone size={18} /></button>
-
-
-
-                <div className="chat-header-menu" ref={messageMenuRef}>
-
-
-
-                  <button
-                    className="icon-btn text-white"
-                    onClick={() => {
-                      setShowMessageSelectMenu(!showMessageSelectMenu);
-                      setShowSelectMenu(false);
-                      setShowFilterMenu(false);
-                    }}
-                  ><MoreVertical size={18} /></button>
-
-
-
-                  {showMessageSelectMenu && (
-
-
-
-                    <div className="message-select-menu">
-
-
-
-                      <button className="select-menu-item" onClick={() => {
-
-
-
-                        setShowMessageSelectMode(!showMessageSelectMode);
-
-
-
-                        setShowMessageSelectMenu(false);
-
-
-
-                        if (showMessageSelectMode) {
-
-
-
-                          setSelectedMessagesForDeletion([]);
-
-
-
-                        }
-
-
-
-                      }}>
-
-
-
-                        {showMessageSelectMode ? 'Cancel Select' : 'Select Chat'}
-
-
-
-                      </button>
-                      <button
-                        className="select-menu-item"
-                        onClick={() => {
-                          setShowMessageSelectMenu(false);
-                          deleteCurrentConversation();
-                        }}
-                      >
-                        Delete Chat
-                      </button>
-                      <button
-                        className="select-menu-item"
-                        onClick={() => {
-                          setShowMessageSelectMenu(false);
-                          setShowContactInfo(true);
-                        }}
-                      >
-                        Contact Information
-                      </button>
-
-
-
-                    </div>
-
-
-
-                  )}
-
-
-
-                </div>
-
-
-
-              </div>
-
-
-
-            </div>
-
-
-
-
-
-
-
-            <div className="chat-messages" ref={chatMessagesRef}>
-
-
-
-              {groupedMessages.map((item) => {
-                if (item.type === 'separator') {
-                  return (
-                    <div key={item.key} className="message-date-separator">
-                      <span>{item.label}</span>
-                    </div>
-                  );
-                }
-
-                const message = item.message;
-                const messageKey = getMessageKey(message, item.index);
-
-                return (
-                  <div
-                    key={messageKey}
-                    className={`message ${message.sender === 'agent' ? 'outgoing' : 'incoming'} ${showMessageSelectMode ? 'select-mode' : ''}`}
-                    onClick={() => {
-                      if (showMessageSelectMode) {
-                        toggleMessageSelection(messageKey);
-                      }
-                    }}
-                  >
-                    {showMessageSelectMode && (
-                      <div className="message-select-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={selectedMessagesForDeletion.includes(messageKey)}
-                          onChange={() => toggleMessageSelection(messageKey)}
-                          onClick={(e) => e.stopPropagation()}
-                        />
-                      </div>
-                    )}
-
-                    <div className="bubble">
-                      {message.text}
-                      {message.mediaUrl && (
-                        <div className="media-attachment">
-                          <a href={message.mediaUrl} target="_blank" rel="noopener noreferrer">
-                            View Media
-                          </a>
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="message-info">
-                      <span className="timestamp">
-                        {formatMessageTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
-                      </span>
-                      {message.sender === 'agent' && getStatusIcon(message.status)}
-                    </div>
-                  </div>
-                );
-              })}
-
-
-
-              <div ref={messagesEndRef} />
-
-
-
-            </div>
-
-
-
-
-
-
-
-            <div className="chat-input-area">
-              {showMessageSelectMode && (
-                <div className="message-selection-actions sticky-bottom-actions">
-                  <button
-                    className="delete-selected-btn"
-                    onClick={deleteSelectedMessages}
-                    disabled={selectedMessagesForDeletion.length === 0}
-                    style={{ opacity: selectedMessagesForDeletion.length === 0 ? 0.5 : 1 }}
-                  >
-                    Delete Selected ({selectedMessagesForDeletion.length})
-                  </button>
-                </div>
-              )}
-
-              <input
-
-
-
-                type="text"
-                ref={messageInputRef}
-
-
-
-                placeholder="Type a message..."
-
-
-
-                value={messageInput}
-
-
-
-                onChange={(e) => setMessageInput(e.target.value)}
-
-
-
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    sendMessage();
-                  }
-                }}
-
-
-
-              />
-
-              <div className="emoji-picker-wrap" ref={emojiPickerRef}>
-                <button
-                  className="emoji-btn"
-                  type="button"
-                  onClick={() => setShowEmojiPicker((prev) => !prev)}
-                >
-                  <Smile size={20} />
-                </button>
-                {showEmojiPicker && (
-                  <div className="emoji-picker-popup">
-                    {commonEmojis.map((emoji) => (
-                      <button
-                        key={emoji}
-                        type="button"
-                        className="emoji-option-btn"
-                        onClick={() => handleEmojiInsert(emoji)}
-                      >
-                        {emoji}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-
-
-              <button 
-
-
-
-                className="send-btn" 
-
-
-
-                onClick={sendMessage}
-
-
-
-                disabled={!messageInput.trim() || sendingMessage}
-
-
-
-              >
-
-
-
-                <Send size={18} />
-
-
-
-              </button>
-
-
-
-            </div>
-
-
-
-          </>
-
-
-
-        ) : (
-
-
-
-          <div className="no-conversation-selected">
-
-
-
-            <div className="placeholder-content">
-
-
-
-              <h3>Welcome to Team Inbox</h3>
-
-
-
-              <p>Select a conversation to start messaging</p>
-
-
-
-            </div>
-
-
-
-          </div>
-
-
-
-        )}
-
-        {selectedConversation && showContactInfo && (
-          <div className="contact-info-modal-overlay" onClick={() => setShowContactInfo(false)}>
-            <div className="contact-info-modal" onClick={(e) => e.stopPropagation()}>
-              <div className="contact-info-modal-header">
-                <h3>Contact Information</h3>
-                <button className="icon-btn" onClick={() => setShowContactInfo(false)}>
-                  <MoreVertical size={16} />
-                </button>
-              </div>
-              <div className="contact-info-row">
-                <span>Name</span>
-                <strong>{selectedConversation.contactId?.name || '-'}</strong>
-              </div>
-              <div className="contact-info-row">
-                <span>Phone</span>
-                <strong>{selectedConversation.contactPhone || '-'}</strong>
-              </div>
-              <div className="contact-info-row">
-                <span>Email</span>
-                <strong>{selectedConversation.contactId?.email || '-'}</strong>
-              </div>
-              <div className="contact-info-row">
-                <span>Tags</span>
-                <strong>
-                  {Array.isArray(selectedConversation.contactId?.tags) && selectedConversation.contactId.tags.length > 0
-                    ? selectedConversation.contactId.tags.join(', ')
-                    : '-'}
-                </strong>
-              </div>
-              <div className="contact-info-row">
-                <span>Notes</span>
-                <strong>{selectedConversation.contactId?.notes || '-'}</strong>
-              </div>
-            </div>
-          </div>
-        )}
-
-
-
-      </div>
-
-
-
+      <ConversationSidebar
+        wsConnected={wsConnected}
+        filterMenuRef={filterMenuRef}
+        inboxMenuRef={inboxMenuRef}
+        showFilterMenu={showFilterMenu}
+        showSelectMenu={showSelectMenu}
+        showSelectMode={showSelectMode}
+        selectedForDeletion={selectedForDeletion}
+        loading={loading}
+        filteredConversations={filteredConversations}
+        selectedConversation={selectedConversation}
+        searchTerm={searchTerm}
+        onSearchTermChange={setSearchTerm}
+        onToggleFilterMenu={handleToggleFilterMenu}
+        onSelectFilter={handleSelectConversationFilter}
+        onToggleSelectMenu={handleToggleInboxMenu}
+        onToggleSelectMode={handleToggleConversationSelectMode}
+        onDeleteSelectedChats={deleteSelectedChats}
+        onDeleteConversation={deleteConversationEntry}
+        onResolveSelection={handleResolveConversationSelection}
+        onConversationClick={handleSelectConversation}
+        onToggleSelectForDeletion={toggleSelectForDeletion}
+        getUnreadCount={getUnreadCount}
+        getConversationAvatarText={getConversationAvatarText}
+        getConversationDisplayName={getConversationDisplayName}
+        formatConversationTime={formatConversationTime}
+      />
+
+      <ChatArea
+        selectedConversation={selectedConversation}
+        messages={messages}
+        messagesLoading={messagesLoading}
+        getConversationAvatarText={getConversationAvatarText}
+        getConversationDisplayName={getConversationDisplayName}
+        messageMenuRef={messageMenuRef}
+        showMessageSelectMenu={showMessageSelectMenu}
+        showMessageSelectMode={showMessageSelectMode}
+        selectedMessagesForDeletion={selectedMessagesForDeletion}
+        groupedMessages={groupedMessages}
+        chatMessagesRef={chatMessagesRef}
+        messagesEndRef={messagesEndRef}
+        messageInputRef={messageInputRef}
+        messageInput={messageInput}
+        showEmojiPicker={showEmojiPicker}
+        emojiPickerRef={emojiPickerRef}
+        commonEmojis={commonEmojis}
+        externalMessageActionFeedback={teamInboxActionFeedback}
+        onClearExternalMessageActionFeedback={() => setTeamInboxActionFeedback(null)}
+        sendingMessage={sendingMessage}
+        onToggleMessageMenu={handleToggleMessageMenu}
+        onToggleMessageSelectMode={handleToggleMessageSelectionMode}
+        onDeleteConversation={handleDeleteCurrentConversationFromMenu}
+        onOpenContactInformation={handleOpenContactInformation}
+        onToggleMessageSelection={toggleMessageSelection}
+        deleteSelectedMessages={deleteSelectedMessages}
+        onMessageInputChange={setMessageInput}
+        onSendMessage={sendMessage}
+        onReactToMessage={sendReaction}
+        onSendAttachment={sendAttachment}
+        onOpenAttachment={openAttachment}
+        onDeleteMessage={deleteMessage}
+        onRetryAttachment={retryAttachment}
+        onToggleEmojiPicker={() => setShowEmojiPicker((prev) => !prev)}
+        onEmojiInsert={handleEmojiInsert}
+        getMessageKey={getMessageKey}
+        formatMessageTime={formatMessageTime}
+      />
+        <TemplateSendModal
+          showTemplateSendModal={showTemplateSendModal}
+          closeTemplateSendModal={closeTemplateSendModal}
+          templateSending={templateSending}
+          templateLoading={templateLoading}
+          selectedTemplateKey={selectedTemplateKey}
+          handleTemplateSelectionChange={handleTemplateSelectionChange}
+          templateOptions={templateOptions}
+          getTemplateCompositeKey={getTemplateCompositeKey}
+          getTemplateLanguageCode={getTemplateLanguageCode}
+          extractTemplateVariableCount={extractTemplateVariableCount}
+          extractTemplateHeaderVariableCount={extractTemplateHeaderVariableCount}
+          getTemplateHeaderFormat={getTemplateHeaderFormat}
+          templateRequiresHeaderMedia={templateRequiresHeaderMedia}
+          selectedTemplateOption={selectedTemplateOption}
+          templateVariableValues={templateVariableValues}
+          templateHeaderVariableValues={templateHeaderVariableValues}
+          templateHeaderMediaUrl={templateHeaderMediaUrl}
+          handleTemplateVariableChange={handleTemplateVariableChange}
+          handleTemplateHeaderVariableChange={handleTemplateHeaderVariableChange}
+          handleTemplateHeaderMediaUrlChange={handleTemplateHeaderMediaUrlChange}
+          templateModalMessage={templateModalMessage}
+          templateModalMessageTone={templateModalMessageTone}
+          handleSendTemplate={handleSendTemplate}
+        />
+      <ContactInfoPanel
+        selectedConversation={selectedConversation}
+        showContactInfo={showContactInfo}
+        setShowContactInfo={setShowContactInfo}
+        deriveLeadStatus={deriveLeadStatus}
+        getConversationLeadScore={getConversationLeadScore}
+        getLeadStageValue={getLeadStageValue}
+        handleLeadStageChange={handleLeadStageChange}
+        contactInfoActionBusy={contactInfoActionBusy}
+        leadStageOptions={leadStageOptions}
+        openTemplateSendModal={openTemplateSendModal}
+        templateLoading={templateLoading}
+        templateSending={templateSending}
+        handleQualifyLead={handleQualifyLead}
+        handleUnqualifyLead={handleUnqualifyLead}
+        leadFollowUpDraft={leadFollowUpDraft}
+        setLeadFollowUpDraft={setLeadFollowUpDraft}
+        handleSaveLeadFollowUp={handleSaveLeadFollowUp}
+        leadFollowUpSaving={leadFollowUpSaving}
+        crmTaskTitleDraft={crmTaskTitleDraft}
+        setCrmTaskTitleDraft={setCrmTaskTitleDraft}
+        crmTaskPriorityDraft={crmTaskPriorityDraft}
+        setCrmTaskPriorityDraft={setCrmTaskPriorityDraft}
+        crmTaskDueDraft={crmTaskDueDraft}
+        setCrmTaskDueDraft={setCrmTaskDueDraft}
+        handleCreateQuickTask={handleCreateQuickTask}
+        crmTaskCreating={crmTaskCreating}
+        meetTokenDraft={meetTokenDraft}
+        setMeetTokenDraft={setMeetTokenDraft}
+        meetAuthConfigured={meetAuthConfigured}
+        meetAuthStatusLoading={meetAuthStatusLoading}
+        meetConnecting={meetConnecting}
+        meetDisconnecting={meetDisconnecting}
+        handleDisconnectGoogleForMeet={handleDisconnectGoogleForMeet}
+        handleConnectGoogleForMeet={handleConnectGoogleForMeet}
+        meetTitleDraft={meetTitleDraft}
+        setMeetTitleDraft={setMeetTitleDraft}
+        meetStartDraft={meetStartDraft}
+        setMeetStartDraft={setMeetStartDraft}
+        meetEndDraft={meetEndDraft}
+        setMeetEndDraft={setMeetEndDraft}
+        meetCreateFollowUpTask={meetCreateFollowUpTask}
+        setMeetCreateFollowUpTask={setMeetCreateFollowUpTask}
+        meetFollowUpTitleDraft={meetFollowUpTitleDraft}
+        setMeetFollowUpTitleDraft={setMeetFollowUpTitleDraft}
+        meetFollowUpPriorityDraft={meetFollowUpPriorityDraft}
+        setMeetFollowUpPriorityDraft={setMeetFollowUpPriorityDraft}
+        meetFollowUpDueDraft={meetFollowUpDueDraft}
+        setMeetFollowUpDueDraft={setMeetFollowUpDueDraft}
+        handleCreateMeetLink={handleCreateMeetLink}
+        meetCreating={meetCreating}
+        meetLink={meetLink}
+        handleCopyMeetLink={handleCopyMeetLink}
+        meetSending={meetSending}
+        meetTemplateSending={meetTemplateSending}
+        handleSendMeetTemplateToContact={handleSendMeetTemplateToContact}
+        sendingMessage={sendingMessage}
+        handleSendMeetLinkToContact={handleSendMeetLinkToContact}
+        crmActivitiesLoading={crmActivitiesLoading}
+        crmActivities={crmActivities}
+        crmDocumentsLoading={crmDocumentsLoading}
+        crmDocuments={crmDocuments}
+        crmDocumentUploading={crmDocumentUploading}
+        crmDocumentTypeDraft={crmDocumentTypeDraft}
+        setCrmDocumentTypeDraft={setCrmDocumentTypeDraft}
+        handleUploadCrmDocument={handleUploadCrmDocument}
+        handleOpenCrmDocument={handleOpenCrmDocument}
+        handleDownloadCrmDocument={handleDownloadCrmDocument}
+        handleDeleteCrmDocument={handleDeleteCrmDocument}
+        getCrmActivityLabel={getCrmActivityLabel}
+        getCrmActivityDescription={getCrmActivityDescription}
+        formatDateTimeForActivity={formatDateTimeForActivity}
+        internalNoteDraft={internalNoteDraft}
+        setInternalNoteDraft={setInternalNoteDraft}
+        handleSaveInternalNote={handleSaveInternalNote}
+        internalNoteSaving={internalNoteSaving}
+        contactInfoMessage={contactInfoMessage}
+        contactInfoMessageTone={contactInfoMessageTone}
+      />
     </div>
-
-
-
   );
-
-
-
 };
-
-
-
-
-
-
-
-export default TeamInbox;
-
-
-
-
-
-
-
-
-
-
+export default TeamInbox;                                                                                                  

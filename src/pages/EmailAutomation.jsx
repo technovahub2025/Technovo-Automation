@@ -482,7 +482,7 @@ const EmailAutomation = () => {
             </button>
           </div>
 
-          <button className="send-btn" type="button" onClick={handleSendBulkEmail} disabled={isSending || !recipients.length}>
+          <button className="email-send-btn" type="button" onClick={handleSendBulkEmail} disabled={isSending || !recipients.length}>
             {isSending ? "Sending emails..." : "Send Bulk Email"}
           </button>
 
