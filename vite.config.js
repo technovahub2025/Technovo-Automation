@@ -10,7 +10,7 @@ const normalizeBasePath = (value) => {
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
-  const configuredBase = normalizeBasePath(env.VITE_APP_BASE_PATH || '/');
+  const configuredBase = normalizeBasePath(env.VITE_APP_BASE_PATH || '/nexion/');
 
   return {
     base: configuredBase,
