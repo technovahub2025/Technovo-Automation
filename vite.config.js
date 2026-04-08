@@ -7,17 +7,6 @@ export default defineConfig(({ mode }) => {
 
   return {
     base: configuredBase,
-    plugins: [react()],
-    build: {
-      rollupOptions: {
-        output: {
-          manualChunks(id) {
-            if (id.includes('node_modules')) {
-              return 'vendor';
-            }
-          }
-        }
-      }
-    }
+    plugins: [react()]
   };
 });
