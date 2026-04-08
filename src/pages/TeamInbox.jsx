@@ -43,6 +43,8 @@ const TeamInbox = () => {
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messagesOlderLoading, setMessagesOlderLoading] = useState(false);
+  const [messagesHasMore, setMessagesHasMore] = useState(false);
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -109,6 +111,7 @@ const TeamInbox = () => {
   const activeMessagesConversationIdRef = useRef('');
   const messageLoadRequestIdRef = useRef(0);
   const messageCacheRef = useRef(new Map());
+  const messagePaginationCacheRef = useRef(new Map());
   const messageLoadPromiseMapRef = useRef(new Map());
   const commonEmojis = [
     '\u{1F44D}',
@@ -472,6 +475,8 @@ const TeamInbox = () => {
 
     activeMessagesConversationIdRef.current = '';
     messageLoadRequestIdRef.current += 1;
+    setMessagesHasMore(false);
+    setMessagesOlderLoading(false);
     setMessagesLoading(false);
     setMessages([]);
   }, [selectedConversation?._id, selectedConversation?.id]);
@@ -555,7 +560,10 @@ const TeamInbox = () => {
     activeMessagesConversationIdRef,
     messageLoadRequestIdRef,
     messageCacheRef,
+    messagePaginationCacheRef,
     messageLoadPromiseMapRef,
+    setMessagesOlderLoading,
+    setMessagesHasMore,
     notifyActionFeedback: showTeamInboxActionFeedback,
     confirmAction: confirmTeamInboxAction
   });
@@ -577,7 +585,8 @@ const TeamInbox = () => {
     chatMessagesRef,
     isConversationSwitchRef,
     messages,
-    messagesLoading
+    messagesLoading,
+    messagesOlderLoading
   });
   useConversationSelectionEffects({
     locationState: location.state,
@@ -718,6 +727,8 @@ const TeamInbox = () => {
         selectedConversation={selectedConversation}
         messages={messages}
         messagesLoading={messagesLoading}
+        hasOlderMessages={messagesHasMore}
+        olderMessagesLoading={messagesOlderLoading}
         getConversationAvatarText={getConversationAvatarText}
         getConversationDisplayName={getConversationDisplayName}
         messageMenuRef={messageMenuRef}
@@ -748,6 +759,9 @@ const TeamInbox = () => {
         onOpenAttachment={openAttachment}
         onDeleteMessage={deleteMessage}
         onRetryAttachment={retryAttachment}
+        onLoadOlderMessages={() =>
+          selectedConversation ? loadMessages(selectedConversation._id, { loadOlder: true }) : false
+        }
         onToggleEmojiPicker={() => setShowEmojiPicker((prev) => !prev)}
         onEmojiInsert={handleEmojiInsert}
         getMessageKey={getMessageKey}

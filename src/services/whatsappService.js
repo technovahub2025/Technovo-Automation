@@ -545,6 +545,68 @@ export const whatsappService = {
     }
 
   },
+
+  async getMessagesPage(conversationId, options = {}) {
+    const normalizedConversationId = String(conversationId || '').trim();
+    if (!normalizedConversationId) {
+      return {
+        data: [],
+        meta: {
+          limit: 0,
+          hasMore: false,
+          nextCursor: null
+        }
+      };
+    }
+
+    const parsedLimit = Number(options?.limit);
+    const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 80)) : 60;
+    const cursor = String(options?.cursor || '').trim();
+
+    try {
+      const response = await axios.get(
+        `${API_BASE_URL}/api/conversations/${normalizedConversationId}/messages`,
+        {
+          headers: getAuthHeaders(false),
+          params: {
+            limit,
+            ...(cursor ? { cursor } : {})
+          }
+        }
+      );
+
+      const payload = response.data;
+      if (Array.isArray(payload)) {
+        return {
+          data: payload,
+          meta: {
+            limit,
+            hasMore: false,
+            nextCursor: null
+          }
+        };
+      }
+
+      return {
+        data: Array.isArray(payload?.data) ? payload.data : [],
+        meta: {
+          limit: Number(payload?.meta?.limit || limit) || limit,
+          hasMore: Boolean(payload?.meta?.hasMore),
+          nextCursor: String(payload?.meta?.nextCursor || '').trim() || null
+        }
+      };
+    } catch (error) {
+      console.error('Failed to fetch paged messages:', error);
+      return {
+        data: [],
+        meta: {
+          limit,
+          hasMore: false,
+          nextCursor: null
+        }
+      };
+    }
+  },
   // Delete selected messages
   async deleteSelectedMessages(messageIds = []) {
 

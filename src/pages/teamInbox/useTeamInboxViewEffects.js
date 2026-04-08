@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 
 export const useTeamInboxViewEffects = ({
   inboxMenuRef,
@@ -18,8 +18,11 @@ export const useTeamInboxViewEffects = ({
   chatMessagesRef,
   isConversationSwitchRef,
   messages,
-  messagesLoading
+  messagesLoading,
+  messagesOlderLoading
 }) => {
+  const wasOlderMessagesLoadingRef = useRef(false);
+
   useEffect(() => {
     const handleOutsideClick = (event) => {
       if (inboxMenuRef.current && !inboxMenuRef.current.contains(event.target)) {
@@ -112,6 +115,16 @@ export const useTeamInboxViewEffects = ({
   );
 
   useLayoutEffect(() => {
+    if (messagesOlderLoading) {
+      wasOlderMessagesLoadingRef.current = true;
+      return;
+    }
+
+    if (wasOlderMessagesLoadingRef.current) {
+      wasOlderMessagesLoadingRef.current = false;
+      return;
+    }
+
     if (isConversationSwitchRef.current) {
       if (messagesLoading) {
         return;
@@ -125,7 +138,7 @@ export const useTeamInboxViewEffects = ({
     if (!messagesLoading) {
       scrollToBottom('smooth');
     }
-  }, [messages, messagesLoading, scrollToBottom, isConversationSwitchRef]);
+  }, [messages, messagesLoading, messagesOlderLoading, scrollToBottom, isConversationSwitchRef]);
 
   return {
     handleEmojiInsert,

@@ -192,6 +192,8 @@ const ChatArea = ({
   selectedConversation,
   messages,
   messagesLoading,
+  hasOlderMessages,
+  olderMessagesLoading,
   getConversationAvatarText,
   getConversationDisplayName,
   messageMenuRef,
@@ -222,6 +224,7 @@ const ChatArea = ({
   onOpenAttachment,
   onDeleteMessage,
   onRetryAttachment,
+  onLoadOlderMessages,
   onToggleEmojiPicker,
   onEmojiInsert,
   getMessageKey,
@@ -233,6 +236,8 @@ const ChatArea = ({
   const externalFeedbackTimerRef = useRef(null);
   const openMenuRef = useRef(null);
   const reactionPickerRef = useRef(null);
+  const olderMessagesScrollAnchorRef = useRef(0);
+  const olderMessagesLoadPendingRef = useRef(false);
   const [highlightedMessageKey, setHighlightedMessageKey] = useState('');
   const [activeHoverMenuKey, setActiveHoverMenuKey] = useState('');
   const [activeReactionPickerKey, setActiveReactionPickerKey] = useState('');
@@ -453,6 +458,8 @@ const ChatArea = ({
     setPendingAttachmentComposer(null);
     setIsAttachmentDragActive(false);
     attachmentDragDepthRef.current = 0;
+    olderMessagesScrollAnchorRef.current = 0;
+    olderMessagesLoadPendingRef.current = false;
   }, [selectedConversation?._id, selectedConversation?.id]);
 
   useEffect(
@@ -581,6 +588,30 @@ const ChatArea = ({
     });
     return nextReactionMap;
   }, [messages, messageLookup]);
+
+  useLayoutEffect(() => {
+    if (!olderMessagesLoadPendingRef.current || olderMessagesLoading) {
+      return;
+    }
+
+    const chatContainer = chatMessagesRef.current;
+    if (!chatContainer) {
+      olderMessagesLoadPendingRef.current = false;
+      olderMessagesScrollAnchorRef.current = 0;
+      return;
+    }
+
+    const previousScrollHeight = Number(olderMessagesScrollAnchorRef.current || 0);
+    if (previousScrollHeight > 0) {
+      const heightDelta = chatContainer.scrollHeight - previousScrollHeight;
+      if (heightDelta > 0) {
+        chatContainer.scrollTop += heightDelta;
+      }
+    }
+
+    olderMessagesLoadPendingRef.current = false;
+    olderMessagesScrollAnchorRef.current = 0;
+  }, [messages, olderMessagesLoading, chatMessagesRef]);
 
   const imagePreviewItems = useMemo(
     () =>
@@ -1812,6 +1843,37 @@ const ChatArea = ({
     }
   };
 
+  const handleChatScroll = () => {
+    if (
+      !onLoadOlderMessages ||
+      !hasOlderMessages ||
+      olderMessagesLoading ||
+      messagesLoading
+    ) {
+      return;
+    }
+
+    const chatContainer = chatMessagesRef.current;
+    if (!chatContainer || chatContainer.scrollTop > 48) {
+      return;
+    }
+
+    olderMessagesScrollAnchorRef.current = chatContainer.scrollHeight;
+    olderMessagesLoadPendingRef.current = true;
+
+    Promise.resolve()
+      .then(() => onLoadOlderMessages())
+      .then((didLoad) => {
+        if (didLoad !== false) return;
+        olderMessagesLoadPendingRef.current = false;
+        olderMessagesScrollAnchorRef.current = 0;
+      })
+      .catch(() => {
+        olderMessagesLoadPendingRef.current = false;
+        olderMessagesScrollAnchorRef.current = 0;
+      });
+  };
+
   const isVoiceRecordingActive = voiceRecorderState.status === 'recording';
   const isVoiceSending = voiceRecorderState.status === 'sending';
   const showVoiceRecorderComposer = isVoiceRecordingActive || isVoiceSending;
@@ -2107,7 +2169,14 @@ const ChatArea = ({
           </div>
         )}
 
-        <div className="chat-messages" ref={chatMessagesRef}>
+        <div className="chat-messages" ref={chatMessagesRef} onScroll={handleChatScroll}>
+          {olderMessagesLoading && (
+            <div className="chat-history-loading">
+              <span className="chat-history-loading-spinner" aria-hidden="true" />
+              <span>Loading earlier messages...</span>
+            </div>
+          )}
+
           {messagesLoading && (
             <div className="chat-thread-loading">
               <span className="chat-thread-loading-spinner" aria-hidden="true" />

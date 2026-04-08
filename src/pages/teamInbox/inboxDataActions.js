@@ -1,8 +1,16 @@
 import { whatsappService } from '../../services/whatsappService';
 import {
-  mergeFetchedMessagesPreservingReplyContext,
-  mergeMessagePreservingReplyContext
+  mergeMessagePreservingReplyContext,
+  mergeOrderedMessagesPreservingReplyContext
 } from './replyMessageMergeUtils';
+
+const DEFAULT_MESSAGES_PAGE_LIMIT = 60;
+
+const normalizeMessagePageMeta = (meta = {}, fallbackLimit = DEFAULT_MESSAGES_PAGE_LIMIT) => ({
+  limit: Number(meta?.limit || fallbackLimit) || fallbackLimit,
+  hasMore: Boolean(meta?.hasMore),
+  nextCursor: String(meta?.nextCursor || '').trim() || null
+});
 
 export const createInboxDataActions = ({
   normalizeConversation,
@@ -10,6 +18,8 @@ export const createInboxDataActions = ({
   setConversations,
   setMessages,
   setMessagesLoading,
+  setMessagesOlderLoading,
+  setMessagesHasMore,
   selectedConversation,
   sendingMessage,
   messageInput,
@@ -24,6 +34,7 @@ export const createInboxDataActions = ({
   activeMessagesConversationIdRef,
   messageLoadRequestIdRef,
   messageCacheRef,
+  messagePaginationCacheRef,
   messageLoadPromiseMapRef,
   notifyActionFeedback,
   confirmAction
@@ -58,11 +69,19 @@ export const createInboxDataActions = ({
     }
   };
 
-  const loadMessages = async (targetConversationId) => {
+  const loadMessages = async (targetConversationId, options = {}) => {
     const normalizedConversationId = String(targetConversationId || '').trim();
+    const loadOlder = Boolean(options?.loadOlder);
+    const parsedPageLimit = Number(options?.limit);
+    const pageLimit = Number.isFinite(parsedPageLimit)
+      ? Math.max(20, Math.min(parsedPageLimit, 80))
+      : DEFAULT_MESSAGES_PAGE_LIMIT;
+
     if (!normalizedConversationId) {
       activeMessagesConversationIdRef.current = '';
       messageLoadRequestIdRef.current += 1;
+      setMessagesHasMore(false);
+      setMessagesOlderLoading(false);
       setMessages([]);
       setMessagesLoading(false);
       return false;
@@ -71,62 +90,112 @@ export const createInboxDataActions = ({
     const previousConversationId = String(activeMessagesConversationIdRef.current || '').trim();
     const isConversationSwitch = previousConversationId !== normalizedConversationId;
     const cachedMessages = messageCacheRef.current.get(normalizedConversationId);
+    const cachedMeta = normalizeMessagePageMeta(
+      messagePaginationCacheRef?.current?.get(normalizedConversationId),
+      pageLimit
+    );
     activeMessagesConversationIdRef.current = normalizedConversationId;
 
-    if (isConversationSwitch) {
+    if (!loadOlder && isConversationSwitch) {
       setMessages(Array.isArray(cachedMessages) ? cachedMessages : []);
     }
 
-    const existingLoadPromise = messageLoadPromiseMapRef?.current?.get(normalizedConversationId);
+    if (!loadOlder) {
+      setMessagesHasMore(Boolean(cachedMeta.hasMore));
+      setMessagesOlderLoading(false);
+    } else if (
+      !Array.isArray(cachedMessages) ||
+      cachedMessages.length === 0 ||
+      !cachedMeta.hasMore ||
+      !cachedMeta.nextCursor
+    ) {
+      return false;
+    }
+
+    const requestKey = loadOlder
+      ? `${normalizedConversationId}::older::${cachedMeta.nextCursor}`
+      : normalizedConversationId;
+    const existingLoadPromise = messageLoadPromiseMapRef?.current?.get(requestKey);
     if (existingLoadPromise) {
-      setMessagesLoading(!Array.isArray(cachedMessages) || cachedMessages.length === 0);
+      if (loadOlder) {
+        setMessagesOlderLoading(true);
+      } else {
+        setMessagesLoading(!Array.isArray(cachedMessages) || cachedMessages.length === 0);
+      }
       return existingLoadPromise;
     }
 
-    const requestId = Number(messageLoadRequestIdRef.current || 0) + 1;
-    messageLoadRequestIdRef.current = requestId;
-    setMessagesLoading(!Array.isArray(cachedMessages) || cachedMessages.length === 0);
+    const requestId = loadOlder ? Number(messageLoadRequestIdRef.current || 0) : Number(messageLoadRequestIdRef.current || 0) + 1;
+    if (!loadOlder) {
+      messageLoadRequestIdRef.current = requestId;
+      setMessagesLoading(!Array.isArray(cachedMessages) || cachedMessages.length === 0);
+    } else {
+      setMessagesOlderLoading(true);
+    }
 
-    const loadPromise = whatsappService.getMessages(normalizedConversationId)
+    const loadPromise = whatsappService
+      .getMessagesPage(normalizedConversationId, {
+        limit: pageLimit,
+        ...(loadOlder && cachedMeta.nextCursor ? { cursor: cachedMeta.nextCursor } : {})
+      })
       .then((data) => {
-        if (
-          messageLoadRequestIdRef.current !== requestId ||
-          String(activeMessagesConversationIdRef.current || '').trim() !== normalizedConversationId
-        ) {
+        if (String(activeMessagesConversationIdRef.current || '').trim() !== normalizedConversationId) {
+          return false;
+        }
+        if (!loadOlder && messageLoadRequestIdRef.current !== requestId) {
           return false;
         }
 
-        const nextMessages = mergeFetchedMessagesPreservingReplyContext(
-          Array.isArray(messageCacheRef.current.get(normalizedConversationId))
-            ? messageCacheRef.current.get(normalizedConversationId)
-            : [],
-          Array.isArray(data) ? data : []
-        );
+        const fetchedMessages = Array.isArray(data?.data) ? data.data : [];
+        const fetchedMeta = normalizeMessagePageMeta(data?.meta, pageLimit);
+        const currentCachedMessages = Array.isArray(
+          messageCacheRef.current.get(normalizedConversationId)
+        )
+          ? messageCacheRef.current.get(normalizedConversationId)
+          : [];
 
+        const nextMessages = loadOlder
+          ? mergeOrderedMessagesPreservingReplyContext(fetchedMessages, currentCachedMessages)
+          : mergeOrderedMessagesPreservingReplyContext(currentCachedMessages, fetchedMessages);
+
+        const shouldPreserveExistingPagination =
+          !loadOlder &&
+          currentCachedMessages.length > fetchedMessages.length &&
+          messagePaginationCacheRef?.current?.has(normalizedConversationId);
+        const nextMeta = shouldPreserveExistingPagination
+          ? normalizeMessagePageMeta(
+              messagePaginationCacheRef.current.get(normalizedConversationId),
+              pageLimit
+            )
+          : fetchedMeta;
+
+        messagePaginationCacheRef?.current?.set(normalizedConversationId, nextMeta);
         messageCacheRef.current.set(normalizedConversationId, nextMessages);
         setMessages(nextMessages);
+        setMessagesHasMore(Boolean(nextMeta.hasMore));
         return true;
       })
       .catch((error) => {
         if (
-          messageLoadRequestIdRef.current === requestId &&
-          String(activeMessagesConversationIdRef.current || '').trim() === normalizedConversationId
+          String(activeMessagesConversationIdRef.current || '').trim() === normalizedConversationId &&
+          (!loadOlder ? messageLoadRequestIdRef.current === requestId : true)
         ) {
           console.error('Failed to load messages:', error);
         }
         return false;
       })
       .finally(() => {
-        messageLoadPromiseMapRef?.current?.delete(normalizedConversationId);
+        messageLoadPromiseMapRef?.current?.delete(requestKey);
         if (
-          messageLoadRequestIdRef.current === requestId &&
-          String(activeMessagesConversationIdRef.current || '').trim() === normalizedConversationId
+          String(activeMessagesConversationIdRef.current || '').trim() === normalizedConversationId &&
+          (!loadOlder ? messageLoadRequestIdRef.current === requestId : true)
         ) {
+          setMessagesOlderLoading(false);
           setMessagesLoading(false);
         }
       });
 
-    messageLoadPromiseMapRef?.current?.set(normalizedConversationId, loadPromise);
+    messageLoadPromiseMapRef?.current?.set(requestKey, loadPromise);
     return loadPromise;
   };
 

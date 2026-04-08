@@ -10,6 +10,14 @@ const getMessageIdentityKey = (message = {}) => {
   return '';
 };
 
+const getMessageSortTimestamp = (message = {}) => {
+  const rawTimestamp =
+    message?.timestamp || message?.whatsappTimestamp || message?.createdAt || Date.now();
+  const parsedTimestamp = new Date(rawTimestamp);
+  const numericTimestamp = parsedTimestamp.valueOf();
+  return Number.isFinite(numericTimestamp) ? numericTimestamp : 0;
+};
+
 export const mergeMessagePreservingReplyContext = (existingMessage = {}, incomingMessage = {}) => {
   const merged = {
     ...existingMessage,
@@ -68,5 +76,42 @@ export const mergeFetchedMessagesPreservingReplyContext = (
       return message;
     }
     return mergeMessagePreservingReplyContext(existingByIdentity.get(identityKey), message);
+  });
+};
+
+export const mergeOrderedMessagesPreservingReplyContext = (...messageLists) => {
+  const mergedByIdentity = new Map();
+  const fallbackMessages = [];
+
+  messageLists.forEach((messages = []) => {
+    (Array.isArray(messages) ? messages : []).forEach((message = {}) => {
+      const identityKey = getMessageIdentityKey(message);
+      if (!identityKey) {
+        fallbackMessages.push(message);
+        return;
+      }
+
+      const existingMessage = mergedByIdentity.get(identityKey);
+      mergedByIdentity.set(
+        identityKey,
+        existingMessage
+          ? mergeMessagePreservingReplyContext(existingMessage, message)
+          : message
+      );
+    });
+  });
+
+  return [...mergedByIdentity.values(), ...fallbackMessages].sort((leftMessage, rightMessage) => {
+    const timestampDifference =
+      getMessageSortTimestamp(leftMessage) - getMessageSortTimestamp(rightMessage);
+    if (timestampDifference !== 0) return timestampDifference;
+
+    const leftIdentity =
+      getMessageIdentityKey(leftMessage) ||
+      toCleanString(leftMessage?._id || leftMessage?.id || leftMessage?.whatsappMessageId);
+    const rightIdentity =
+      getMessageIdentityKey(rightMessage) ||
+      toCleanString(rightMessage?._id || rightMessage?.id || rightMessage?.whatsappMessageId);
+    return leftIdentity.localeCompare(rightIdentity);
   });
 };

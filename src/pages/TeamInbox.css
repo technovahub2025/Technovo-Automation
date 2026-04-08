@@ -639,12 +639,38 @@
     box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
 }
 
+.chat-history-loading {
+    align-self: center;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px;
+    margin-top: -6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(203, 213, 225, 0.92);
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 600;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
+}
+
 .chat-thread-loading-spinner {
     width: 14px;
     height: 14px;
     border-radius: 999px;
     border: 2px solid rgba(15, 118, 110, 0.18);
     border-top-color: #0f766e;
+    animation: teamInboxSpin 0.9s linear infinite;
+    flex-shrink: 0;
+}
+
+.chat-history-loading-spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: 999px;
+    border: 2px solid rgba(59, 130, 246, 0.18);
+    border-top-color: #2563eb;
     animation: teamInboxSpin 0.9s linear infinite;
     flex-shrink: 0;
 }
