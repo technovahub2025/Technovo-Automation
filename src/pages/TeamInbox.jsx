@@ -109,6 +109,7 @@ const TeamInbox = () => {
   const activeMessagesConversationIdRef = useRef('');
   const messageLoadRequestIdRef = useRef(0);
   const messageCacheRef = useRef(new Map());
+  const messageLoadPromiseMapRef = useRef(new Map());
   const commonEmojis = [
     '\u{1F44D}',
     '\u2764\uFE0F',
@@ -554,6 +555,7 @@ const TeamInbox = () => {
     activeMessagesConversationIdRef,
     messageLoadRequestIdRef,
     messageCacheRef,
+    messageLoadPromiseMapRef,
     notifyActionFeedback: showTeamInboxActionFeedback,
     confirmAction: confirmTeamInboxAction
   });

@@ -19,6 +19,7 @@ export const useConversationSelectionEffects = ({
     getUnreadCount,
     markAsRead
   });
+  const preloadedRouteConversationIdRef = useRef('');
   const selectedConversationId = String(
     selectedConversation?._id || selectedConversation?.id || ''
   ).trim();
@@ -30,6 +31,19 @@ export const useConversationSelectionEffects = ({
       markAsRead
     };
   }, [loadMessages, getUnreadCount, markAsRead]);
+
+  useEffect(() => {
+    const normalizedConversationId = String(conversationId || '').trim();
+    if (!normalizedConversationId) {
+      preloadedRouteConversationIdRef.current = '';
+      return;
+    }
+    if (selectedConversationId) return;
+    if (preloadedRouteConversationIdRef.current === normalizedConversationId) return;
+
+    preloadedRouteConversationIdRef.current = normalizedConversationId;
+    callbacksRef.current.loadMessages(normalizedConversationId);
+  }, [conversationId, selectedConversationId]);
 
   useEffect(() => {
     if ((locationState?.phoneNumber || locationState?.contactName) && conversations.length > 0) {

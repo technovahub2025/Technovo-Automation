@@ -608,6 +608,24 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         });
     }, [isMobile]);
 
+    useEffect(() => {
+        if (isMobile || !canUseBroadcast) {
+            return undefined;
+        }
+
+        const prefetchTeamInbox = () => {
+            prefetchRoute('/inbox');
+        };
+
+        if (typeof window.requestIdleCallback === 'function') {
+            const idleHandle = window.requestIdleCallback(prefetchTeamInbox, { timeout: 2000 });
+            return () => window.cancelIdleCallback?.(idleHandle);
+        }
+
+        const timerId = window.setTimeout(prefetchTeamInbox, 1200);
+        return () => window.clearTimeout(timerId);
+    }, [canUseBroadcast, isMobile, prefetchRoute]);
+
     // Helper function to check if a route is currently active
     const isRouteActive = (route) => {
         return currentPath === route;

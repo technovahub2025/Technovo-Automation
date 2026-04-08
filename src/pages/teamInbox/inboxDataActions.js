@@ -24,6 +24,7 @@ export const createInboxDataActions = ({
   activeMessagesConversationIdRef,
   messageLoadRequestIdRef,
   messageCacheRef,
+  messageLoadPromiseMapRef,
   notifyActionFeedback,
   confirmAction
 }) => {
@@ -76,45 +77,57 @@ export const createInboxDataActions = ({
       setMessages(Array.isArray(cachedMessages) ? cachedMessages : []);
     }
 
+    const existingLoadPromise = messageLoadPromiseMapRef?.current?.get(normalizedConversationId);
+    if (existingLoadPromise) {
+      setMessagesLoading(!Array.isArray(cachedMessages) || cachedMessages.length === 0);
+      return existingLoadPromise;
+    }
+
     const requestId = Number(messageLoadRequestIdRef.current || 0) + 1;
     messageLoadRequestIdRef.current = requestId;
     setMessagesLoading(!Array.isArray(cachedMessages) || cachedMessages.length === 0);
 
-    try {
-      const data = await whatsappService.getMessages(normalizedConversationId);
-      if (
-        messageLoadRequestIdRef.current !== requestId ||
-        String(activeMessagesConversationIdRef.current || '').trim() !== normalizedConversationId
-      ) {
+    const loadPromise = whatsappService.getMessages(normalizedConversationId)
+      .then((data) => {
+        if (
+          messageLoadRequestIdRef.current !== requestId ||
+          String(activeMessagesConversationIdRef.current || '').trim() !== normalizedConversationId
+        ) {
+          return false;
+        }
+
+        const nextMessages = mergeFetchedMessagesPreservingReplyContext(
+          Array.isArray(messageCacheRef.current.get(normalizedConversationId))
+            ? messageCacheRef.current.get(normalizedConversationId)
+            : [],
+          Array.isArray(data) ? data : []
+        );
+
+        messageCacheRef.current.set(normalizedConversationId, nextMessages);
+        setMessages(nextMessages);
+        return true;
+      })
+      .catch((error) => {
+        if (
+          messageLoadRequestIdRef.current === requestId &&
+          String(activeMessagesConversationIdRef.current || '').trim() === normalizedConversationId
+        ) {
+          console.error('Failed to load messages:', error);
+        }
         return false;
-      }
+      })
+      .finally(() => {
+        messageLoadPromiseMapRef?.current?.delete(normalizedConversationId);
+        if (
+          messageLoadRequestIdRef.current === requestId &&
+          String(activeMessagesConversationIdRef.current || '').trim() === normalizedConversationId
+        ) {
+          setMessagesLoading(false);
+        }
+      });
 
-      const nextMessages = mergeFetchedMessagesPreservingReplyContext(
-        Array.isArray(messageCacheRef.current.get(normalizedConversationId))
-          ? messageCacheRef.current.get(normalizedConversationId)
-          : [],
-        Array.isArray(data) ? data : []
-      );
-
-      messageCacheRef.current.set(normalizedConversationId, nextMessages);
-      setMessages(nextMessages);
-      return true;
-    } catch (error) {
-      if (
-        messageLoadRequestIdRef.current === requestId &&
-        String(activeMessagesConversationIdRef.current || '').trim() === normalizedConversationId
-      ) {
-        console.error('Failed to load messages:', error);
-      }
-      return false;
-    } finally {
-      if (
-        messageLoadRequestIdRef.current === requestId &&
-        String(activeMessagesConversationIdRef.current || '').trim() === normalizedConversationId
-      ) {
-        setMessagesLoading(false);
-      }
-    }
+    messageLoadPromiseMapRef?.current?.set(normalizedConversationId, loadPromise);
+    return loadPromise;
   };
 
   const buildReplyMetadata = (replyContext = null) => {

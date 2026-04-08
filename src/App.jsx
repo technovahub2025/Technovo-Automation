@@ -3,27 +3,13 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./pages/authcontext";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 import MainLayout from "./layout/MainLayout";
-import Dashboard from "./pages/Dashboard";
-import InboundCalls from "./components/inbound/InboundCalls";
-import OutboundCall from "./components/outbound/OutboundCall";
-import OutboundSchedules from "./components/outbound/OutboundSchedules";
-import CallAnalytics from "./components/inbound/ivr/CallAnalytics";
-import VoiceBroadcast from "./pages/VoiceBroadcast/VoiceBroadcast";
-import EmailAutomation from "./pages/EmailAutomation";
-import PDFExtractor from "./pages/PDFExtractor";
-import MetaVerification from "./pages/MetaVerification";
-import RegisterDocuments from "./pages/RegisterDocuments";
 import Login from "./pages/login";
 import Register from "./pages/register";
 import ForgotPassword from "./pages/forgotpassword";
 import ResetPassword from "./pages/resetpassword";
 import AuthCallback from "./pages/AuthCallback";
-import WhatsAppWorkflow from "./pages/WhatsAppWorkflow";
-import AdminMultiStep from "./pages/admin/Dashboard";
-import UsersListPage from "./pages/superadmin/UsersListPage";
-import AdminSetupPage from "./pages/superadmin/AdminSetupPage";
-import PaymentsDetailsPage from "./pages/superadmin/PaymentsDetailsPage";
 
+const Dashboard = lazy(() => import("./pages/Dashboard"));
 const TeamInbox = lazy(() => import("./pages/TeamInbox"));
 const Broadcast = lazy(() => import("./pages/Broadcast"));
 const Templates = lazy(() => import("./pages/Templates"));
@@ -38,6 +24,20 @@ const Insights = lazy(() => import("./pages/Insights"));
 const MetaConnect = lazy(() => import("./pages/MetaConnect"));
 const CrmPipeline = lazy(() => import("./pages/CrmPipeline"));
 const CrmTasks = lazy(() => import("./pages/CrmTasks"));
+const InboundCalls = lazy(() => import("./components/inbound/InboundCalls"));
+const OutboundCall = lazy(() => import("./components/outbound/OutboundCall"));
+const OutboundSchedules = lazy(() => import("./components/outbound/OutboundSchedules"));
+const CallAnalytics = lazy(() => import("./components/inbound/ivr/CallAnalytics"));
+const VoiceBroadcast = lazy(() => import("./pages/VoiceBroadcast/VoiceBroadcast"));
+const EmailAutomation = lazy(() => import("./pages/EmailAutomation"));
+const PDFExtractor = lazy(() => import("./pages/PDFExtractor"));
+const MetaVerification = lazy(() => import("./pages/MetaVerification"));
+const RegisterDocuments = lazy(() => import("./pages/RegisterDocuments"));
+const WhatsAppWorkflow = lazy(() => import("./pages/WhatsAppWorkflow"));
+const AdminMultiStep = lazy(() => import("./pages/admin/Dashboard"));
+const UsersListPage = lazy(() => import("./pages/superadmin/UsersListPage"));
+const AdminSetupPage = lazy(() => import("./pages/superadmin/AdminSetupPage"));
+const PaymentsDetailsPage = lazy(() => import("./pages/superadmin/PaymentsDetailsPage"));
 
 const renderLazyRoute = (element, label = "Loading page...") => (
   <Suspense fallback={<div style={{ padding: 24 }}>{label}</div>}>{element}</Suspense>
@@ -60,7 +60,7 @@ function App() {
 
         {/* App layout with nested routes */}
         <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}> 
-          <Route index element={<Dashboard />} />
+          <Route index element={renderLazyRoute(<Dashboard />, "Loading dashboard...")} />
           <Route path="ads-manager" element={renderLazyRoute(<CampaignManagement />, "Loading ads manager...")} />
           <Route path="meta-connect" element={renderLazyRoute(<MetaConnect />, "Loading Meta connect...")} />
           <Route path="insights" element={renderLazyRoute(<Insights />, "Loading insights...")} />
@@ -79,28 +79,35 @@ function App() {
           <Route path="campaignmanagement" element={renderLazyRoute(<CampaignManagement />, "Loading campaign manager...")} />
           <Route
             path="whatsapp-workflow"
-            element={<WhatsAppWorkflow />}
+            element={renderLazyRoute(<WhatsAppWorkflow />, "Loading workflow...")}
           />
           <Route path="voice-automation" element={<Navigate to="/voice-automation/inbound" replace />} />
-          <Route path="voice-automation/inbound" element={<InboundCalls />} />
-          <Route path="voice-automation/outbound" element={<OutboundCall />} />
-          <Route path="voice-automation/outbound/schedules" element={<OutboundSchedules />} />
-          <Route path="voice-automation/history" element={<CallAnalytics />} />
+          <Route path="voice-automation/inbound" element={renderLazyRoute(<InboundCalls />, "Loading inbound automation...")} />
+          <Route path="voice-automation/outbound" element={renderLazyRoute(<OutboundCall />, "Loading outbound automation...")} />
+          <Route path="voice-automation/outbound/schedules" element={renderLazyRoute(<OutboundSchedules />, "Loading outbound schedules...")} />
+          <Route path="voice-automation/history" element={renderLazyRoute(<CallAnalytics />, "Loading call analytics...")} />
 
-          <Route path="voice-broadcast" element={<ProtectedRoute requiredFeature="voiceCampaign"><VoiceBroadcast /></ProtectedRoute>} />
+          <Route
+            path="voice-broadcast"
+            element={
+              <ProtectedRoute requiredFeature="voiceCampaign">
+                {renderLazyRoute(<VoiceBroadcast />, "Loading voice broadcast...")}
+              </ProtectedRoute>
+            }
+          />
           <Route path="missedcalls" element={<Navigate to="/missedcalls/overview" replace />} />
           <Route path="missedcalls/overview" element={renderLazyRoute(<MissedCallsOverviewPage />, "Loading missed calls overview...")} />
           <Route path="missedcalls/calls" element={renderLazyRoute(<MissedCallsCallsPage />, "Loading missed calls...")} />
           <Route path="missedcalls/automation" element={renderLazyRoute(<MissedCallsAutomationPage />, "Loading missed call automation...")} />
-          <Route path="email-automation" element={<EmailAutomation />} />
-          <Route path="pdf-extractor" element={<PDFExtractor />} />
-          <Route path="verification" element={<MetaVerification />} />
-          <Route path="register-docs" element={<RegisterDocuments />} />
+          <Route path="email-automation" element={renderLazyRoute(<EmailAutomation />, "Loading email automation...")} />
+          <Route path="pdf-extractor" element={renderLazyRoute(<PDFExtractor />, "Loading PDF extractor...")} />
+          <Route path="verification" element={renderLazyRoute(<MetaVerification />, "Loading verification...")} />
+          <Route path="register-docs" element={renderLazyRoute(<RegisterDocuments />, "Loading documents...")} />
           <Route
             path="admin"
             element={
               <ProtectedRoute requiredRole="superadmin">
-                <AdminMultiStep />
+                {renderLazyRoute(<AdminMultiStep />, "Loading admin dashboard...")}
               </ProtectedRoute>
             }
           />
@@ -108,7 +115,7 @@ function App() {
             path="admin/users"
             element={
               <ProtectedRoute requiredRole="superadmin">
-                <UsersListPage />
+                {renderLazyRoute(<UsersListPage />, "Loading users...")}
               </ProtectedRoute>
             }
           />
@@ -116,7 +123,7 @@ function App() {
             path="admin/admin-setup"
             element={
               <ProtectedRoute requiredRole="superadmin">
-                <AdminSetupPage />
+                {renderLazyRoute(<AdminSetupPage />, "Loading admin setup...")}
               </ProtectedRoute>
             }
           />
@@ -124,7 +131,7 @@ function App() {
             path="admin/payments"
             element={
               <ProtectedRoute requiredRole="superadmin">
-                <PaymentsDetailsPage />
+                {renderLazyRoute(<PaymentsDetailsPage />, "Loading payments...")}
               </ProtectedRoute>
             }
           />

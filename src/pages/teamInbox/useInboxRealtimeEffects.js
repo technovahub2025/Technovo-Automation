@@ -25,6 +25,8 @@ export const useInboxRealtimeEffects = ({
   realtimeResyncTimerRef
 }) => {
   const notifiedIncomingMessageKeysRef = useRef(new Set());
+  const bootstrapLoadPromiseRef = useRef(null);
+  const lastBootstrapLoadAtRef = useRef(0);
   const callbacksRef = useRef({
     loadConversations,
     loadContacts,
@@ -38,6 +40,36 @@ export const useInboxRealtimeEffects = ({
     loadMessages,
     applyLeadScoreUpdateToConversation
   });
+
+  const bootstrapInboxData = ({
+    silentConversations = false,
+    silentContacts = true,
+    force = false
+  } = {}) => {
+    const now = Date.now();
+    if (!force && bootstrapLoadPromiseRef.current) {
+      return bootstrapLoadPromiseRef.current;
+    }
+
+    if (!force && lastBootstrapLoadAtRef.current && now - lastBootstrapLoadAtRef.current < 15000) {
+      return Promise.resolve();
+    }
+
+    const loadPromise = Promise.all([
+      callbacksRef.current.loadConversations({ silent: silentConversations }),
+      callbacksRef.current.loadContacts({ silent: silentContacts })
+    ])
+      .catch((error) => {
+        console.error('Failed to bootstrap Team Inbox data:', error);
+      })
+      .finally(() => {
+        lastBootstrapLoadAtRef.current = Date.now();
+        bootstrapLoadPromiseRef.current = null;
+      });
+
+    bootstrapLoadPromiseRef.current = loadPromise;
+    return loadPromise;
+  };
 
   useEffect(() => {
     callbacksRef.current = {
@@ -70,8 +102,10 @@ export const useInboxRealtimeEffects = ({
   useEffect(() => {
     const handleConnect = () => {
       setWsConnected(true);
-      callbacksRef.current.loadConversations({ silent: true });
-      callbacksRef.current.loadContacts({ silent: true });
+      bootstrapInboxData({
+        silentConversations: true,
+        silentContacts: true
+      });
       console.log('? WebSocket connected in TeamInbox');
     };
 
@@ -408,8 +442,11 @@ export const useInboxRealtimeEffects = ({
   }, [realtimeResyncTimerRef]);
 
   useEffect(() => {
-    callbacksRef.current.loadConversations();
-    callbacksRef.current.loadContacts({ silent: true });
+    bootstrapInboxData({
+      silentConversations: false,
+      silentContacts: true,
+      force: true
+    });
   }, []);
 
   useEffect(() => {
