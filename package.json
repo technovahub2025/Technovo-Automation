@@ -8,6 +8,7 @@
     "build": "vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "deploy:check": "node scripts/check-deploy.mjs",
     "test:unit": "node --test \"./test/*.test.mjs\"",
     "metaads:smoke": "node scripts/meta-ads-smoke.mjs"
   },
