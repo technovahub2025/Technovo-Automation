@@ -8,7 +8,6 @@ import './Dashboard.css';
 
 const BroadcastDashboard = () => {
     const [analytics, setAnalytics] = useState({});
-    const [, setConversations] = useState([]);
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(false);
@@ -36,14 +35,8 @@ const BroadcastDashboard = () => {
     const loadDashboardData = async () => {
         try {
             setLoading(true);
-            // Load both analytics and conversations in parallel
-            const [analyticsData, conversationsData] = await Promise.all([
-                whatsappService.getAnalytics(),
-                whatsappService.getConversations()
-            ]);
-
-            setAnalytics(analyticsData);
-            setConversations(conversationsData);
+            const analyticsData = await whatsappService.getAnalytics();
+            setAnalytics(analyticsData || {});
         } catch (error) {
             console.error('Failed to load dashboard data:', error);
         } finally {

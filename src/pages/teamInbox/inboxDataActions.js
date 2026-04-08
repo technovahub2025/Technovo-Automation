@@ -4,7 +4,7 @@ import {
   mergeOrderedMessagesPreservingReplyContext
 } from './replyMessageMergeUtils';
 
-const DEFAULT_MESSAGES_PAGE_LIMIT = 60;
+const DEFAULT_MESSAGES_PAGE_LIMIT = 30;
 
 const normalizeMessagePageMeta = (meta = {}, fallbackLimit = DEFAULT_MESSAGES_PAGE_LIMIT) => ({
   limit: Number(meta?.limit || fallbackLimit) || fallbackLimit,

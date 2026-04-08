@@ -3,6 +3,7 @@ import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
 
 const API_BASE_URL = resolveApiBaseUrl();
+const TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS = 15000;
 const LEAD_SCORING_DEFAULTS = {
   isEnabled: true,
   readScore: 2,
@@ -373,7 +374,8 @@ export const whatsappService = {
 
       const response = await axios.get(`${API_BASE_URL}/api/conversations`, {
         headers: getAuthHeaders(false),
-        params: filters
+        params: filters,
+        timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
       });
       const data = response.data;
       const result = data?.data || data;
@@ -560,7 +562,7 @@ export const whatsappService = {
     }
 
     const parsedLimit = Number(options?.limit);
-    const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 80)) : 60;
+    const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 80)) : 30;
     const cursor = String(options?.cursor || '').trim();
 
     try {
@@ -568,6 +570,7 @@ export const whatsappService = {
         `${API_BASE_URL}/api/conversations/${normalizedConversationId}/messages`,
         {
           headers: getAuthHeaders(false),
+          timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
           params: {
             limit,
             ...(cursor ? { cursor } : {})
@@ -640,7 +643,8 @@ export const whatsappService = {
 
       const response = await axios.get(`${API_BASE_URL}/api/contacts`, {
         headers: getAuthHeaders(false),
-        params: filters
+        params: filters,
+        timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
       });
       const data = response.data;
       const result = data?.data || data;
@@ -984,7 +988,8 @@ export const whatsappService = {
     try {
 
       const response = await axios.get(`${API_BASE_URL}/api/analytics`, {
-        headers: getAuthHeaders(false)
+        headers: getAuthHeaders(false),
+        timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
       });
       const data = response.data;
 

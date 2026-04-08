@@ -220,7 +220,7 @@ export const apiClient = {
    * This endpoint doesn't exist yet - using regular contacts instead
    * @param {Object} params - Query parameters
    */
-  getConversationContacts: (params = {}) => api.get('/contacts', { params }),
+  getConversationContacts: (params = {}) => api.get('/conversations/contacts/unique', { params }),
 
   // ============ BROADCASTS ============
   

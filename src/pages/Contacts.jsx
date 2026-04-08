@@ -8,7 +8,6 @@ import './Contacts.css';
 const Contacts = () => {
     const navigate = useNavigate();
     const [contacts, setContacts] = useState([]);
-    const [conversationContacts, setConversationContacts] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
@@ -30,12 +29,7 @@ const Contacts = () => {
 
     useEffect(() => {
         loadContacts();
-        loadConversationContacts();
     }, []);
-
-    useEffect(() => {
-        filterContacts();
-    }, [searchTerm, lastActiveFilter, sortOption]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -56,10 +50,7 @@ const Contacts = () => {
 const loadContacts = async () => {
     try {
         const result = await apiClient.getContacts();
-        console.log('Contacts API Response:', result); // Debug log
-        // Handle different response structures
         const contactsData = result.data?.data || result.data || [];
-        console.log('Processed Contacts:', contactsData); // Debug log
         setContacts(Array.isArray(contactsData) ? contactsData : []);
     } catch (error) {
         console.error('Failed to load contacts:', error);
@@ -68,23 +59,6 @@ const loadContacts = async () => {
         setLoading(false);
     }
 };
-
-  const loadConversationContacts = async () => {
-    try {
-        const result = await apiClient.getConversationContacts();
-        console.log('Conversation Contacts API Response:', result); // Debug log
-        const conversationData = result.data?.data || result.data || [];
-        setConversationContacts(Array.isArray(conversationData) ? conversationData : []);
-    } catch (error) {
-        console.error('Failed to load conversation contacts:', error);
-        setConversationContacts([]);
-    }
-};
-
-    const filterContacts = () => {
-        // This will be used to filter based on search term and active tab
-        // Implementation will be added below
-    };
 
     const handleAddContact = async () => {
         if (!newContact.phone) {

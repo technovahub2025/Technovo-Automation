@@ -2,6 +2,7 @@ import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
 
 const API_BASE_URL = resolveApiBaseUrl();
+const CRM_REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_CRM_REQUEST_TIMEOUT_MS || 15000);
 
 const getAuthHeaders = (includeJson = true) => {
   const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
@@ -18,12 +19,23 @@ const toServiceError = (error, fallback) =>
   error?.message ||
   fallback;
 
+const buildRequestConfig = (includeJson = true, extra = {}) => {
+  const { headers: extraHeaders = {}, ...rest } = extra || {};
+  return {
+    timeout: CRM_REQUEST_TIMEOUT_MS,
+    headers: {
+      ...getAuthHeaders(includeJson),
+      ...extraHeaders
+    },
+    ...rest
+  };
+};
+
 export const crmService = {
   async getContacts(filters = {}) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/contacts`, {
-        headers: getAuthHeaders(false),
-        params: filters
+        ...buildRequestConfig(false, { params: filters })
       });
       return response.data;
     } catch (error) {
@@ -34,7 +46,7 @@ export const crmService = {
   async getContact(contactId) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/contacts/${contactId}`, {
-        headers: getAuthHeaders(false)
+        ...buildRequestConfig(false)
       });
       return response.data;
     } catch (error) {
@@ -47,7 +59,7 @@ export const crmService = {
       const response = await axios.patch(
         `${API_BASE_URL}/api/crm/contacts/${contactId}/stage`,
         { stage },
-        { headers: getAuthHeaders() }
+        buildRequestConfig()
       );
       return response.data;
     } catch (error) {
@@ -60,7 +72,7 @@ export const crmService = {
       const response = await axios.patch(
         `${API_BASE_URL}/api/crm/contacts/${contactId}/owner`,
         { ownerId },
-        { headers: getAuthHeaders() }
+        buildRequestConfig()
       );
       return response.data;
     } catch (error) {
@@ -75,7 +87,7 @@ export const crmService = {
       const response = await axios.post(
         `${API_BASE_URL}/api/crm/contacts/${contactId}/notes`,
         payload,
-        { headers: getAuthHeaders() }
+        buildRequestConfig()
       );
       return response.data;
     } catch (error) {
@@ -86,7 +98,7 @@ export const crmService = {
   async listContactDocuments(contactId) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/contacts/${contactId}/documents`, {
-        headers: getAuthHeaders(false)
+        ...buildRequestConfig(false)
       });
       return response.data;
     } catch (error) {
@@ -113,7 +125,7 @@ export const crmService = {
       const response = await axios.post(
         `${API_BASE_URL}/api/crm/contacts/${contactId}/documents`,
         formData,
-        { headers }
+        buildRequestConfig(false, { headers })
       );
       return response.data;
     } catch (error) {
@@ -124,8 +136,7 @@ export const crmService = {
   async getContactDocumentAccess(documentId, mode = 'view') {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/documents/${documentId}/access`, {
-        headers: getAuthHeaders(false),
-        params: { mode }
+        ...buildRequestConfig(false, { params: { mode } })
       });
       return response.data;
     } catch (error) {
@@ -136,7 +147,7 @@ export const crmService = {
   async deleteContactDocument(documentId) {
     try {
       const response = await axios.delete(`${API_BASE_URL}/api/crm/documents/${documentId}`, {
-        headers: getAuthHeaders(false)
+        ...buildRequestConfig(false)
       });
       return response.data;
     } catch (error) {
@@ -147,8 +158,7 @@ export const crmService = {
   async getTasks(filters = {}) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/tasks`, {
-        headers: getAuthHeaders(false),
-        params: filters
+        ...buildRequestConfig(false, { params: filters })
       });
       return response.data;
     } catch (error) {
@@ -159,7 +169,7 @@ export const crmService = {
   async createTask(payload) {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/crm/tasks`, payload, {
-        headers: getAuthHeaders()
+        ...buildRequestConfig()
       });
       return response.data;
     } catch (error) {
@@ -170,7 +180,7 @@ export const crmService = {
   async updateTask(taskId, payload) {
     try {
       const response = await axios.patch(`${API_BASE_URL}/api/crm/tasks/${taskId}`, payload, {
-        headers: getAuthHeaders()
+        ...buildRequestConfig()
       });
       return response.data;
     } catch (error) {
@@ -181,8 +191,7 @@ export const crmService = {
   async getActivities(contactId, limit = 100) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/activities/${contactId}`, {
-        headers: getAuthHeaders(false),
-        params: { limit }
+        ...buildRequestConfig(false, { params: { limit } })
       });
       return response.data;
     } catch (error) {
@@ -193,7 +202,7 @@ export const crmService = {
   async getMetrics() {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/metrics`, {
-        headers: getAuthHeaders(false)
+        ...buildRequestConfig(false)
       });
       return response.data;
     } catch (error) {
