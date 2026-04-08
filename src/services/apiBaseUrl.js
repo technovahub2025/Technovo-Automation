@@ -11,13 +11,6 @@ export const normalizeApiBaseUrl = (value) => {
   return normalized.replace(/\/api$/i, "");
 };
 
-const normalizeAppBasePath = (value) => {
-  const raw = toCleanString(value || "/");
-  if (!raw || raw === "/") return "/";
-  const withLeading = raw.startsWith("/") ? raw : `/${raw}`;
-  return withLeading.endsWith("/") ? withLeading.slice(0, -1) : withLeading;
-};
-
 export const resolveApiBaseUrl = ({ override } = {}) => {
   const normalizedOverride = normalizeApiBaseUrl(override);
   if (normalizedOverride) return normalizedOverride;
@@ -38,15 +31,9 @@ export const resolveApiBaseUrl = ({ override } = {}) => {
     return LOCAL_BACKEND_FALLBACK;
   }
 
-  const origin = toCleanString(window.location.origin);
-  const appBasePath = normalizeAppBasePath(
-    import.meta.env.VITE_APP_BASE_PATH || import.meta.env.BASE_URL || "/"
-  );
-
-  if (appBasePath && appBasePath !== "/") {
-    return `${origin}${appBasePath}`;
-  }
-  return origin;
+  // Same-origin fallback should target the host origin only.
+  // Frontend route basenames like /nexion are not API prefixes.
+  return toCleanString(window.location.origin);
 };
 
 export const buildApiUrl = (path = "") => {
