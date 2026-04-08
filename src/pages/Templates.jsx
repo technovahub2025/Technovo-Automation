@@ -2,8 +2,11 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { FileText, CheckCircle, Clock, AlertCircle, RefreshCw, Search, Plus, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { whatsappService } from '../services/whatsappService';
+import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
 import './Templates.css';
 import '../styles/whatsapp.css';
+
+const TEMPLATE_LOADING_TIMEOUT_MS = 8000;
 
 const Templates = () => {
   const navigate = useNavigate();
@@ -29,6 +32,10 @@ const Templates = () => {
   };
 
   const loadTemplates = async () => {
+    const releaseLoadingGuard = startLoadingTimeoutGuard(
+      () => setIsLoading(false),
+      TEMPLATE_LOADING_TIMEOUT_MS
+    );
     setIsLoading(true);
     setError(null);
 
@@ -50,6 +57,7 @@ const Templates = () => {
       setError(message);
       setOfficialTemplates([]);
     } finally {
+      releaseLoadingGuard();
       setIsLoading(false);
     }
   };

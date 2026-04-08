@@ -4,6 +4,7 @@ import { resolveApiBaseUrl } from "./apiBaseUrl";
 
 const API_BASE_URL = resolveApiBaseUrl();
 const TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS = 15000;
+const WHATSAPP_DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_WHATSAPP_REQUEST_TIMEOUT_MS || 12000);
 const LEAD_SCORING_DEFAULTS = {
   isEnabled: true,
   readScore: 2,
@@ -839,7 +840,8 @@ export const whatsappService = {
   async getTemplates() {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/templates/meta`, {
-        headers: getAuthHeaders(false)
+        headers: getAuthHeaders(false),
+        timeout: WHATSAPP_DEFAULT_TIMEOUT_MS
       });
       const data = response.data;
       
@@ -864,7 +866,10 @@ export const whatsappService = {
       const response = await axios.post(
         `${API_BASE_URL}/api/templates/meta/sync`,
         {},
-        { headers: getAuthHeaders() }
+        {
+          headers: getAuthHeaders(),
+          timeout: WHATSAPP_DEFAULT_TIMEOUT_MS
+        }
       );
       return response.data;
     } catch (error) {
@@ -1064,7 +1069,8 @@ export const whatsappService = {
     try {
       const encodedName = encodeURIComponent(String(templateName || '').trim());
       const response = await axios.delete(`${API_BASE_URL}/api/templates/meta/${encodedName}`, {
-        headers: getAuthHeaders(false)
+        headers: getAuthHeaders(false),
+        timeout: WHATSAPP_DEFAULT_TIMEOUT_MS
       });
       return response.data;
     } catch (error) {

@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { RefreshCw, Funnel, TrendingUp, ClipboardList, Clock3 } from "lucide-react";
 import { crmService } from "../services/crmService";
+import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
 import "./CrmWorkspace.css";
+
+const CRM_PIPELINE_LOADING_TIMEOUT_MS = 8000;
 
 const STAGE_ORDER = [
   { key: "new", label: "New" },
@@ -38,6 +41,13 @@ const CrmPipeline = () => {
   const [stageUpdatingId, setStageUpdatingId] = useState("");
 
   const fetchPipelineData = async ({ silent = false } = {}) => {
+    const releaseLoadingGuard = startLoadingTimeoutGuard(
+      () => {
+        if (silent) setRefreshing(false);
+        else setLoading(false);
+      },
+      CRM_PIPELINE_LOADING_TIMEOUT_MS
+    );
     try {
       if (silent) setRefreshing(true);
       else setLoading(true);
@@ -67,6 +77,7 @@ const CrmPipeline = () => {
     } catch (fetchError) {
       setError(fetchError?.message || "Failed to load CRM pipeline");
     } finally {
+      releaseLoadingGuard();
       setLoading(false);
       setRefreshing(false);
     }

@@ -4,7 +4,10 @@ import StatCard from '../components/StatCard';
 import RecentChats from '../components/RecentChats';
 import MessageAnalytics from '../components/MessageAnalytics';
 import { whatsappService } from '../services/whatsappService';
+import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
 import './Dashboard.css';
+
+const DASHBOARD_LOADING_TIMEOUT_MS = 8000;
 
 const BroadcastDashboard = () => {
     const [analytics, setAnalytics] = useState({});
@@ -33,6 +36,10 @@ const BroadcastDashboard = () => {
     }, [showDetailedAnalytics]);
 
     const loadDashboardData = async () => {
+        const releaseLoadingGuard = startLoadingTimeoutGuard(
+            () => setLoading(false),
+            DASHBOARD_LOADING_TIMEOUT_MS
+        );
         try {
             setLoading(true);
             const analyticsData = await whatsappService.getAnalytics();
@@ -40,6 +47,7 @@ const BroadcastDashboard = () => {
         } catch (error) {
             console.error('Failed to load dashboard data:', error);
         } finally {
+            releaseLoadingGuard();
             setLoading(false);
         }
     };

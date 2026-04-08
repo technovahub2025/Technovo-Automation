@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { Plus, RefreshCw, CheckCircle2 } from "lucide-react";
 import { crmService } from "../services/crmService";
+import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
 import "./CrmWorkspace.css";
+
+const CRM_TASKS_LOADING_TIMEOUT_MS = 8000;
 
 const TASK_STATUSES = [
   { key: "pending", label: "Pending" },
@@ -51,6 +54,13 @@ const CrmTasks = () => {
   });
 
   const loadData = async ({ silent = false } = {}) => {
+    const releaseLoadingGuard = startLoadingTimeoutGuard(
+      () => {
+        if (silent) setRefreshing(false);
+        else setLoading(false);
+      },
+      CRM_TASKS_LOADING_TIMEOUT_MS
+    );
     try {
       if (silent) setRefreshing(true);
       else setLoading(true);
@@ -80,6 +90,7 @@ const CrmTasks = () => {
     } catch (loadError) {
       setError(loadError?.message || "Failed to load CRM tasks");
     } finally {
+      releaseLoadingGuard();
       setLoading(false);
       setRefreshing(false);
     }

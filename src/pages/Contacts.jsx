@@ -3,7 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X } from 'lucide-react';
 import { apiClient } from '../services/whatsappapi';
 import { normalizePhone } from './teamInbox/teamInboxIdentityUtils.js';
+import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
 import './Contacts.css';
+
+const CONTACTS_LOADING_TIMEOUT_MS = 8000;
 
 const Contacts = () => {
     const navigate = useNavigate();
@@ -48,6 +51,10 @@ const Contacts = () => {
     }, [showFilterDropdown, showSortDropdown]);
 
 const loadContacts = async () => {
+    const releaseLoadingGuard = startLoadingTimeoutGuard(
+        () => setLoading(false),
+        CONTACTS_LOADING_TIMEOUT_MS
+    );
     try {
         const result = await apiClient.getContacts();
         const contactsData = result.data?.data || result.data || [];
@@ -56,6 +63,7 @@ const loadContacts = async () => {
         console.error('Failed to load contacts:', error);
         setContacts([]);
     } finally {
+        releaseLoadingGuard();
         setLoading(false);
     }
 };

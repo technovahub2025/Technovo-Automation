@@ -1,10 +1,12 @@
 import { whatsappService } from '../../services/whatsappService';
+import { startLoadingTimeoutGuard } from '../../utils/loadingGuard';
 import {
   mergeMessagePreservingReplyContext,
   mergeOrderedMessagesPreservingReplyContext
 } from './replyMessageMergeUtils';
 
 const DEFAULT_MESSAGES_PAGE_LIMIT = 30;
+const CONVERSATION_LIST_LOADING_TIMEOUT_MS = 8000;
 
 const normalizeMessagePageMeta = (meta = {}, fallbackLimit = DEFAULT_MESSAGES_PAGE_LIMIT) => ({
   limit: Number(meta?.limit || fallbackLimit) || fallbackLimit,
@@ -58,6 +60,12 @@ export const createInboxDataActions = ({
   };
 
   const loadConversations = async ({ silent = false } = {}) => {
+    const releaseLoadingGuard = silent
+      ? () => true
+      : startLoadingTimeoutGuard(
+          () => setLoading(false),
+          CONVERSATION_LIST_LOADING_TIMEOUT_MS
+        );
     try {
       if (!silent) setLoading(true);
       const data = await whatsappService.getConversations();
@@ -65,6 +73,7 @@ export const createInboxDataActions = ({
     } catch (error) {
       console.error('Failed to load conversations:', error);
     } finally {
+      releaseLoadingGuard();
       if (!silent) setLoading(false);
     }
   };
