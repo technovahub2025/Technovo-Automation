@@ -1,13 +1,29 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Send, CheckCircle, Eye, AlertCircle, Plus, TrendingUp } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import RecentChats from '../components/RecentChats';
 import MessageAnalytics from '../components/MessageAnalytics';
 import { whatsappService } from '../services/whatsappService';
 import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
+import {
+    readSidebarPageCache,
+    resolveCacheUserId,
+    writeSidebarPageCache
+} from '../utils/sidebarPageCache';
 import './Dashboard.css';
 
 const DASHBOARD_LOADING_TIMEOUT_MS = 8000;
+const BROADCAST_DASHBOARD_CACHE_TTL_MS = 10 * 60 * 1000;
+const BROADCAST_DASHBOARD_CACHE_NAMESPACE = 'broadcast-dashboard';
+
+const sanitizeDashboardAnalytics = (analytics = {}) => {
+    if (!analytics || typeof analytics !== 'object') return {};
+    try {
+        return JSON.parse(JSON.stringify(analytics));
+    } catch {
+        return {};
+    }
+};
 
 const BroadcastDashboard = () => {
     const [analytics, setAnalytics] = useState({});
@@ -15,10 +31,59 @@ const BroadcastDashboard = () => {
     const [refreshing, setRefreshing] = useState(false);
     const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(false);
     const baseUrl = import.meta.env.BASE_URL || '/';
+    const currentUserId = resolveCacheUserId();
+
+    const persistDashboardCache = useCallback((nextAnalytics) => {
+        writeSidebarPageCache(
+            BROADCAST_DASHBOARD_CACHE_NAMESPACE,
+            { analytics: sanitizeDashboardAnalytics(nextAnalytics) },
+            {
+                currentUserId,
+                ttlMs: BROADCAST_DASHBOARD_CACHE_TTL_MS
+            }
+        );
+    }, [currentUserId]);
+
+    const loadDashboardData = useCallback(async ({ silent = false } = {}) => {
+        const releaseLoadingGuard = startLoadingTimeoutGuard(
+            () => {
+                if (silent) setRefreshing(false);
+                else setLoading(false);
+            },
+            DASHBOARD_LOADING_TIMEOUT_MS
+        );
+        try {
+            if (silent) setRefreshing(true);
+            else setLoading(true);
+
+            const analyticsData = await whatsappService.getAnalytics();
+            const nextAnalytics = analyticsData || {};
+            setAnalytics(nextAnalytics);
+            persistDashboardCache(nextAnalytics);
+        } catch (error) {
+            console.error('Failed to load dashboard data:', error);
+        } finally {
+            releaseLoadingGuard();
+            setLoading(false);
+            setRefreshing(false);
+        }
+    }, [persistDashboardCache]);
 
     useEffect(() => {
+        const cachedDashboard = readSidebarPageCache(BROADCAST_DASHBOARD_CACHE_NAMESPACE, {
+            currentUserId,
+            allowStale: true
+        });
+
+        if (cachedDashboard?.data?.analytics) {
+            setAnalytics(cachedDashboard.data.analytics);
+            setLoading(false);
+            loadDashboardData({ silent: true });
+            return;
+        }
+
         loadDashboardData();
-    }, []);
+    }, [currentUserId, loadDashboardData]);
 
     useEffect(() => {
         if (!showDetailedAnalytics) return;
@@ -35,27 +100,8 @@ const BroadcastDashboard = () => {
         };
     }, [showDetailedAnalytics]);
 
-    const loadDashboardData = async () => {
-        const releaseLoadingGuard = startLoadingTimeoutGuard(
-            () => setLoading(false),
-            DASHBOARD_LOADING_TIMEOUT_MS
-        );
-        try {
-            setLoading(true);
-            const analyticsData = await whatsappService.getAnalytics();
-            setAnalytics(analyticsData || {});
-        } catch (error) {
-            console.error('Failed to load dashboard data:', error);
-        } finally {
-            releaseLoadingGuard();
-            setLoading(false);
-        }
-    };
-
     const refreshData = async () => {
-        setRefreshing(true);
-        await loadDashboardData();
-        setRefreshing(false);
+        await loadDashboardData({ silent: true });
     };
 
     const getMessageSentCount = () => {

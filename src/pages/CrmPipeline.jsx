@@ -1,10 +1,17 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { RefreshCw, Funnel, TrendingUp, ClipboardList, Clock3 } from "lucide-react";
 import { crmService } from "../services/crmService";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
+import {
+  readSidebarPageCache,
+  resolveCacheUserId,
+  writeSidebarPageCache
+} from "../utils/sidebarPageCache";
 import "./CrmWorkspace.css";
 
 const CRM_PIPELINE_LOADING_TIMEOUT_MS = 8000;
+const CRM_PIPELINE_CACHE_TTL_MS = 10 * 60 * 1000;
+const CRM_PIPELINE_CACHE_NAMESPACE = "crm-pipeline-page";
 
 const STAGE_ORDER = [
   { key: "new", label: "New" },
@@ -30,6 +37,30 @@ const normalizeStage = (stage) => {
 
 const getContactId = (contact) => String(contact?._id || contact?.id || "").trim();
 
+const sanitizeCrmPipelineContact = (contact = {}) => ({
+  _id: String(contact?._id || "").trim(),
+  id: String(contact?.id || "").trim(),
+  name: String(contact?.name || "").trim(),
+  phone: String(contact?.phone || "").trim(),
+  email: String(contact?.email || "").trim(),
+  status: String(contact?.status || "").trim(),
+  stage: String(contact?.stage || "").trim(),
+  leadScore:
+    Number.isFinite(Number(contact?.leadScore)) && Number(contact.leadScore) >= 0
+      ? Number(contact.leadScore)
+      : 0,
+  nextFollowUpAt: String(contact?.nextFollowUpAt || "").trim()
+});
+
+const sanitizeCrmPipelineMetrics = (metrics = {}) => {
+  if (!metrics || typeof metrics !== "object") return null;
+  try {
+    return JSON.parse(JSON.stringify(metrics));
+  } catch {
+    return null;
+  }
+};
+
 const CrmPipeline = () => {
   const [contacts, setContacts] = useState([]);
   const [metrics, setMetrics] = useState(null);
@@ -39,8 +70,30 @@ const CrmPipeline = () => {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [stageUpdatingId, setStageUpdatingId] = useState("");
+  const hasInitializedFilterEffectRef = useRef(false);
+  const currentUserId = resolveCacheUserId();
 
-  const fetchPipelineData = async ({ silent = false } = {}) => {
+  const isDefaultView = !search.trim() && statusFilter === "all";
+
+  const persistPipelineCache = useCallback((nextContacts, nextMetrics) => {
+    if (!isDefaultView) return;
+
+    writeSidebarPageCache(
+      CRM_PIPELINE_CACHE_NAMESPACE,
+      {
+        contacts: (Array.isArray(nextContacts) ? nextContacts : [])
+          .map(sanitizeCrmPipelineContact)
+          .filter((contact) => contact._id || contact.id || contact.phone),
+        metrics: sanitizeCrmPipelineMetrics(nextMetrics)
+      },
+      {
+        currentUserId,
+        ttlMs: CRM_PIPELINE_CACHE_TTL_MS
+      }
+    );
+  }, [currentUserId, isDefaultView]);
+
+  const fetchPipelineData = useCallback(async ({ silent = false } = {}) => {
     const releaseLoadingGuard = startLoadingTimeoutGuard(
       () => {
         if (silent) setRefreshing(false);
@@ -72,8 +125,12 @@ const CrmPipeline = () => {
       }
 
       const rawContacts = contactsResult?.data || [];
-      setContacts(Array.isArray(rawContacts) ? rawContacts : []);
-      setMetrics(metricsResult?.data || null);
+      const nextContacts = Array.isArray(rawContacts) ? rawContacts : [];
+      const nextMetrics = metricsResult?.data || null;
+
+      setContacts(nextContacts);
+      setMetrics(nextMetrics);
+      persistPipelineCache(nextContacts, nextMetrics);
     } catch (fetchError) {
       setError(fetchError?.message || "Failed to load CRM pipeline");
     } finally {
@@ -81,18 +138,35 @@ const CrmPipeline = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [persistPipelineCache, search, statusFilter]);
 
   useEffect(() => {
+    if (!hasInitializedFilterEffectRef.current) {
+      hasInitializedFilterEffectRef.current = true;
+      return undefined;
+    }
     const timer = setTimeout(() => {
       fetchPipelineData({ silent: true });
     }, 300);
     return () => clearTimeout(timer);
-  }, [search, statusFilter]);
+  }, [fetchPipelineData, search, statusFilter]);
 
   useEffect(() => {
+    const cachedPipeline = readSidebarPageCache(CRM_PIPELINE_CACHE_NAMESPACE, {
+      currentUserId,
+      allowStale: true
+    });
+
+    if (Array.isArray(cachedPipeline?.data?.contacts)) {
+      setContacts(cachedPipeline.data.contacts);
+      setMetrics(cachedPipeline?.data?.metrics || null);
+      setLoading(false);
+      fetchPipelineData({ silent: true });
+      return;
+    }
+
     fetchPipelineData();
-  }, []);
+  }, [currentUserId, fetchPipelineData]);
 
   const contactsByStage = useMemo(() => {
     const grouped = STAGE_ORDER.reduce((acc, stage) => {
@@ -108,7 +182,7 @@ const CrmPipeline = () => {
     return grouped;
   }, [contacts]);
 
-  const handleStageMove = async (contact, nextStage) => {
+  const handleStageMove = useCallback(async (contact, nextStage) => {
     const contactId = getContactId(contact);
     if (!contactId || !nextStage) return;
 
@@ -120,19 +194,22 @@ const CrmPipeline = () => {
       }
 
       const updated = result?.data || null;
-      setContacts((prev) =>
-        prev.map((item) => {
+      setContacts((prev) => {
+        const nextContacts = prev.map((item) => {
           const itemId = getContactId(item);
           if (!itemId || itemId !== contactId) return item;
           return updated ? { ...item, ...updated } : { ...item, stage: nextStage };
-        })
-      );
+        });
+
+        persistPipelineCache(nextContacts, metrics);
+        return nextContacts;
+      });
     } catch (updateError) {
       setError(updateError?.message || "Failed to update stage");
     } finally {
       setStageUpdatingId("");
     }
-  };
+  }, [metrics, persistPipelineCache]);
 
   return (
     <div className="crm-workspace">

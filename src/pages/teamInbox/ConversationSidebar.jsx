@@ -15,6 +15,7 @@ import { getConversationPreviewMeta } from './teamInboxDisplayUtils';
 
 const ConversationSidebar = ({
   wsConnected,
+  refreshing,
   filterMenuRef,
   inboxMenuRef,
   showFilterMenu,
@@ -147,6 +148,11 @@ const ConversationSidebar = ({
           value={searchTerm}
           onChange={(event) => onSearchTermChange(event.target.value)}
         />
+        {refreshing ? (
+          <div className="conversation-refresh-indicator" aria-live="polite">
+            Refreshing...
+          </div>
+        ) : null}
       </div>
 
       <div className="conversation-list">

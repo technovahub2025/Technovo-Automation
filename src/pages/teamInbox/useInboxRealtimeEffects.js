@@ -7,6 +7,7 @@ export const useInboxRealtimeEffects = ({
   currentUserId,
   notificationMode,
   setWsConnected,
+  hasBootstrapCache,
   loadConversations,
   loadContacts,
   hasRealContactName,
@@ -22,6 +23,7 @@ export const useInboxRealtimeEffects = ({
   loadMessages,
   setSelectedConversation,
   applyLeadScoreUpdateToConversation,
+  setSidebarRefreshing,
   realtimeResyncTimerRef
 }) => {
   const notifiedIncomingMessageKeysRef = useRef(new Set());
@@ -442,12 +444,21 @@ export const useInboxRealtimeEffects = ({
   }, [realtimeResyncTimerRef]);
 
   useEffect(() => {
+    const useSilentBootstrap = Boolean(hasBootstrapCache);
+    if (useSilentBootstrap && typeof setSidebarRefreshing === 'function') {
+      setSidebarRefreshing(true);
+    }
+
     bootstrapInboxData({
-      silentConversations: false,
+      silentConversations: useSilentBootstrap,
       silentContacts: true,
       force: true
+    }).finally(() => {
+      if (useSilentBootstrap && typeof setSidebarRefreshing === 'function') {
+        setSidebarRefreshing(false);
+      }
     });
-  }, []);
+  }, [hasBootstrapCache, setSidebarRefreshing]);
 
   useEffect(() => {
     const onFocusRefresh = () => {

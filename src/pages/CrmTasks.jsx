@@ -1,10 +1,17 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import { Plus, RefreshCw, CheckCircle2 } from "lucide-react";
 import { crmService } from "../services/crmService";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
+import {
+  readSidebarPageCache,
+  resolveCacheUserId,
+  writeSidebarPageCache
+} from "../utils/sidebarPageCache";
 import "./CrmWorkspace.css";
 
 const CRM_TASKS_LOADING_TIMEOUT_MS = 8000;
+const CRM_TASKS_CACHE_TTL_MS = 10 * 60 * 1000;
+const CRM_TASKS_CACHE_NAMESPACE = "crm-tasks-page";
 
 const TASK_STATUSES = [
   { key: "pending", label: "Pending" },
@@ -36,6 +43,24 @@ const formatDateTime = (value) => {
 
 const getEntityId = (value) => String(value?._id || value?.id || "").trim();
 
+const sanitizeCrmTaskContact = (contact = {}) => ({
+  _id: String(contact?._id || "").trim(),
+  id: String(contact?.id || "").trim(),
+  name: String(contact?.name || "").trim(),
+  phone: String(contact?.phone || "").trim()
+});
+
+const sanitizeCrmTask = (task = {}) => ({
+  _id: String(task?._id || "").trim(),
+  id: String(task?.id || "").trim(),
+  title: String(task?.title || "").trim(),
+  description: String(task?.description || "").trim(),
+  dueAt: String(task?.dueAt || "").trim(),
+  priority: String(task?.priority || "").trim(),
+  status: String(task?.status || "").trim(),
+  contactId: sanitizeCrmTaskContact(task?.contactId)
+});
+
 const CrmTasks = () => {
   const [tasks, setTasks] = useState([]);
   const [contacts, setContacts] = useState([]);
@@ -52,8 +77,31 @@ const CrmTasks = () => {
     dueAt: "",
     priority: "medium"
   });
+  const hasInitializedFilterEffectRef = useRef(false);
+  const currentUserId = resolveCacheUserId();
+  const isDefaultView = statusFilter === "all" && priorityFilter === "all";
 
-  const loadData = async ({ silent = false } = {}) => {
+  const persistTasksCache = useCallback((nextTasks, nextContacts) => {
+    if (!isDefaultView) return;
+
+    writeSidebarPageCache(
+      CRM_TASKS_CACHE_NAMESPACE,
+      {
+        tasks: (Array.isArray(nextTasks) ? nextTasks : [])
+          .map(sanitizeCrmTask)
+          .filter((task) => task._id || task.id || task.title),
+        contacts: (Array.isArray(nextContacts) ? nextContacts : [])
+          .map(sanitizeCrmTaskContact)
+          .filter((contact) => contact._id || contact.id || contact.phone)
+      },
+      {
+        currentUserId,
+        ttlMs: CRM_TASKS_CACHE_TTL_MS
+      }
+    );
+  }, [currentUserId, isDefaultView]);
+
+  const loadData = useCallback(async ({ silent = false } = {}) => {
     const releaseLoadingGuard = startLoadingTimeoutGuard(
       () => {
         if (silent) setRefreshing(false);
@@ -87,6 +135,7 @@ const CrmTasks = () => {
 
       setTasks(nextTasks);
       setContacts(nextContacts);
+      persistTasksCache(nextTasks, nextContacts);
     } catch (loadError) {
       setError(loadError?.message || "Failed to load CRM tasks");
     } finally {
@@ -94,15 +143,32 @@ const CrmTasks = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  };
+  }, [persistTasksCache, priorityFilter, statusFilter]);
 
   useEffect(() => {
+    const cachedTasks = readSidebarPageCache(CRM_TASKS_CACHE_NAMESPACE, {
+      currentUserId,
+      allowStale: true
+    });
+
+    if (Array.isArray(cachedTasks?.data?.tasks)) {
+      setTasks(cachedTasks.data.tasks);
+      setContacts(Array.isArray(cachedTasks?.data?.contacts) ? cachedTasks.data.contacts : []);
+      setLoading(false);
+      loadData({ silent: true });
+      return;
+    }
+
     loadData();
-  }, []);
+  }, [currentUserId, loadData]);
 
   useEffect(() => {
+    if (!hasInitializedFilterEffectRef.current) {
+      hasInitializedFilterEffectRef.current = true;
+      return undefined;
+    }
     loadData({ silent: true });
-  }, [statusFilter, priorityFilter]);
+  }, [statusFilter, priorityFilter, loadData]);
 
   const contactOptions = useMemo(
     () =>
@@ -113,7 +179,7 @@ const CrmTasks = () => {
     [contacts]
   );
 
-  const handleCreateTask = async (event) => {
+  const handleCreateTask = useCallback(async (event) => {
     event.preventDefault();
     try {
       setSubmitting(true);
@@ -151,24 +217,29 @@ const CrmTasks = () => {
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [form, loadData]);
 
-  const handleTaskStatusChange = async (task, nextStatus) => {
+  const handleTaskStatusChange = useCallback(async (task, nextStatus) => {
     const taskId = getEntityId(task);
     if (!taskId) return;
 
     const previousTasks = tasks;
-    setTasks((prev) =>
-      prev.map((item) => (getEntityId(item) === taskId ? { ...item, status: nextStatus } : item))
-    );
+    setTasks((prev) => {
+      const nextTasks = prev.map((item) =>
+        getEntityId(item) === taskId ? { ...item, status: nextStatus } : item
+      );
+      persistTasksCache(nextTasks, contacts);
+      return nextTasks;
+    });
 
     const result = await crmService.updateTask(taskId, { status: nextStatus });
     if (result?.success === false) {
       setTasks(previousTasks);
+      persistTasksCache(previousTasks, contacts);
       setError(result?.error || "Failed to update task");
       return;
     }
-  };
+  }, [contacts, persistTasksCache, tasks]);
 
   return (
     <div className="crm-workspace">

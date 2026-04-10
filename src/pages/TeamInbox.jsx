@@ -20,6 +20,11 @@ import { useTeamInboxContactEffects } from './teamInbox/useTeamInboxContactEffec
 import { useTeamInboxViewEffects } from './teamInbox/useTeamInboxViewEffects';
 import { useTeamInboxBoundUtils } from './teamInbox/useTeamInboxBoundUtils';
 import {
+  readTeamInboxBootstrapCache,
+  writeTeamInboxBootstrapCache,
+  writeTeamInboxThreadCache
+} from './teamInbox/teamInboxSessionCache';
+import {
   requestTeamInboxNotificationPermission,
   TEAM_INBOX_NOTIFICATION_OPEN_EVENT,
   TEAM_INBOX_NOTIFICATION_MODE_CHANGED_EVENT,
@@ -45,6 +50,7 @@ const TeamInbox = () => {
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesOlderLoading, setMessagesOlderLoading] = useState(false);
   const [messagesHasMore, setMessagesHasMore] = useState(false);
+  const [sidebarRefreshing, setSidebarRefreshing] = useState(false);
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -113,6 +119,7 @@ const TeamInbox = () => {
   const messageCacheRef = useRef(new Map());
   const messagePaginationCacheRef = useRef(new Map());
   const messageLoadPromiseMapRef = useRef(new Map());
+  const restoredBootstrapCacheUserRef = useRef('');
   const commonEmojis = [
     '\u{1F44D}',
     '\u2764\uFE0F',
@@ -129,6 +136,32 @@ const TeamInbox = () => {
   ];
   const storedUser = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; } })();
   const currentUserId = user?.id || user?._id || storedUser?.id || storedUser?._id || localStorage.getItem('userId') || null;
+
+  useEffect(() => {
+    const normalizedUserId = String(currentUserId || '').trim();
+    if (!normalizedUserId) return;
+    if (restoredBootstrapCacheUserRef.current === normalizedUserId) return;
+
+    const cachedBootstrap = readTeamInboxBootstrapCache({
+      currentUserId: normalizedUserId,
+      allowStale: true
+    });
+
+    restoredBootstrapCacheUserRef.current = normalizedUserId;
+    if (!cachedBootstrap) return;
+
+    const cachedConversations = Array.isArray(cachedBootstrap.conversations)
+      ? cachedBootstrap.conversations.map(normalizeConversation)
+      : [];
+    const cachedContactNameMap =
+      cachedBootstrap.contactNameMap && typeof cachedBootstrap.contactNameMap === 'object'
+        ? cachedBootstrap.contactNameMap
+        : {};
+
+    setConversations(cachedConversations);
+    setContactNameMap(cachedContactNameMap);
+    setLoading(false);
+  }, [currentUserId]);
   const showTeamInboxActionFeedback = (message, tone = 'info') => {
     const nextMessage = String(message || '').trim();
     if (!nextMessage) return;
@@ -494,7 +527,26 @@ const TeamInbox = () => {
       activeMessagesConversationId,
       Array.isArray(messages) ? messages : []
     );
-  }, [messages]);
+
+    const nextMeta = messagePaginationCacheRef.current.get(activeMessagesConversationId);
+    writeTeamInboxThreadCache({
+      currentUserId,
+      conversationId: activeMessagesConversationId,
+      messages,
+      meta: nextMeta
+    });
+  }, [currentUserId, messages]);
+
+  useEffect(() => {
+    if (!String(currentUserId || '').trim()) return;
+    if (!conversations.length && !Object.keys(contactNameMap || {}).length) return;
+
+    writeTeamInboxBootstrapCache({
+      currentUserId,
+      conversations,
+      contactNameMap
+    });
+  }, [contactNameMap, conversations, currentUserId]);
 
   useTeamInboxContactEffects({
     selectedConversation,
@@ -541,6 +593,7 @@ const TeamInbox = () => {
     markAsRead,
     loadContacts
   } = createInboxDataActions({
+    currentUserId,
     normalizeConversation,
     setLoading,
     setConversations,
@@ -562,6 +615,7 @@ const TeamInbox = () => {
     messageCacheRef,
     messagePaginationCacheRef,
     messageLoadPromiseMapRef,
+    setSidebarRefreshing,
     setMessagesOlderLoading,
     setMessagesHasMore,
     notifyActionFeedback: showTeamInboxActionFeedback,
@@ -606,6 +660,12 @@ const TeamInbox = () => {
     currentUserId,
     notificationMode,
     setWsConnected,
+    hasBootstrapCache: Boolean(
+      readTeamInboxBootstrapCache({
+        currentUserId,
+        allowStale: true
+      })
+    ),
     loadConversations,
     loadContacts,
     hasRealContactName,
@@ -621,6 +681,7 @@ const TeamInbox = () => {
     loadMessages,
     setSelectedConversation,
     applyLeadScoreUpdateToConversation,
+    setSidebarRefreshing,
     realtimeResyncTimerRef
   });
   const {
@@ -697,6 +758,7 @@ const TeamInbox = () => {
     <div className="inbox-container">
       <ConversationSidebar
         wsConnected={wsConnected}
+        refreshing={sidebarRefreshing}
         filterMenuRef={filterMenuRef}
         inboxMenuRef={inboxMenuRef}
         showFilterMenu={showFilterMenu}

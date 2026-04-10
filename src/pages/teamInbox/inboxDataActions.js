@@ -4,6 +4,10 @@ import {
   mergeMessagePreservingReplyContext,
   mergeOrderedMessagesPreservingReplyContext
 } from './replyMessageMergeUtils';
+import {
+  readTeamInboxThreadCache,
+  writeTeamInboxThreadCache
+} from './teamInboxSessionCache';
 
 const DEFAULT_MESSAGES_PAGE_LIMIT = 30;
 const CONVERSATION_LIST_LOADING_TIMEOUT_MS = 8000;
@@ -15,6 +19,7 @@ const normalizeMessagePageMeta = (meta = {}, fallbackLimit = DEFAULT_MESSAGES_PA
 });
 
 export const createInboxDataActions = ({
+  currentUserId,
   normalizeConversation,
   setLoading,
   setConversations,
@@ -38,6 +43,7 @@ export const createInboxDataActions = ({
   messageCacheRef,
   messagePaginationCacheRef,
   messageLoadPromiseMapRef,
+  setSidebarRefreshing,
   notifyActionFeedback,
   confirmAction
 }) => {
@@ -67,6 +73,9 @@ export const createInboxDataActions = ({
           CONVERSATION_LIST_LOADING_TIMEOUT_MS
         );
     try {
+      if (silent && typeof setSidebarRefreshing === 'function') {
+        setSidebarRefreshing(true);
+      }
       if (!silent) setLoading(true);
       const data = await whatsappService.getConversations();
       setConversations(Array.isArray(data) ? data.map(normalizeConversation) : []);
@@ -74,6 +83,9 @@ export const createInboxDataActions = ({
       console.error('Failed to load conversations:', error);
     } finally {
       releaseLoadingGuard();
+      if (silent && typeof setSidebarRefreshing === 'function') {
+        setSidebarRefreshing(false);
+      }
       if (!silent) setLoading(false);
     }
   };
@@ -98,12 +110,27 @@ export const createInboxDataActions = ({
 
     const previousConversationId = String(activeMessagesConversationIdRef.current || '').trim();
     const isConversationSwitch = previousConversationId !== normalizedConversationId;
-    const cachedMessages = messageCacheRef.current.get(normalizedConversationId);
+    const persistentCachedThread = readTeamInboxThreadCache({
+      currentUserId,
+      conversationId: normalizedConversationId,
+      allowStale: true
+    });
+    const runtimeCachedMessages = messageCacheRef.current.get(normalizedConversationId);
+    const cachedMessages = Array.isArray(runtimeCachedMessages)
+      ? runtimeCachedMessages
+      : Array.isArray(persistentCachedThread?.messages)
+        ? persistentCachedThread.messages
+        : null;
     const cachedMeta = normalizeMessagePageMeta(
-      messagePaginationCacheRef?.current?.get(normalizedConversationId),
+      messagePaginationCacheRef?.current?.get(normalizedConversationId) || persistentCachedThread?.meta,
       pageLimit
     );
     activeMessagesConversationIdRef.current = normalizedConversationId;
+
+    if (!Array.isArray(runtimeCachedMessages) && Array.isArray(persistentCachedThread?.messages)) {
+      messageCacheRef.current.set(normalizedConversationId, persistentCachedThread.messages);
+      messagePaginationCacheRef?.current?.set(normalizedConversationId, cachedMeta);
+    }
 
     if (!loadOlder && isConversationSwitch) {
       setMessages(Array.isArray(cachedMessages) ? cachedMessages : []);
@@ -180,6 +207,12 @@ export const createInboxDataActions = ({
 
         messagePaginationCacheRef?.current?.set(normalizedConversationId, nextMeta);
         messageCacheRef.current.set(normalizedConversationId, nextMessages);
+        writeTeamInboxThreadCache({
+          currentUserId,
+          conversationId: normalizedConversationId,
+          messages: nextMessages,
+          meta: nextMeta
+        });
         setMessages(nextMessages);
         setMessagesHasMore(Boolean(nextMeta.hasMore));
         return true;

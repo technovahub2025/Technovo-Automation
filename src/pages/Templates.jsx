@@ -1,12 +1,49 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { FileText, CheckCircle, Clock, AlertCircle, RefreshCw, Search, Plus, Trash2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { whatsappService } from '../services/whatsappService';
 import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
+import {
+  readSidebarPageCache,
+  resolveCacheUserId,
+  writeSidebarPageCache
+} from '../utils/sidebarPageCache';
 import './Templates.css';
 import '../styles/whatsapp.css';
 
 const TEMPLATE_LOADING_TIMEOUT_MS = 8000;
+const TEMPLATES_CACHE_TTL_MS = 10 * 60 * 1000;
+const TEMPLATES_CACHE_NAMESPACE = 'templates-page';
+
+const sanitizeTemplateForCache = (template = {}) => ({
+  _id: String(template?._id || '').trim(),
+  id: String(template?.id || '').trim(),
+  name: String(template?.name || '').trim(),
+  status: String(template?.status || '').trim(),
+  language: String(template?.language || '').trim(),
+  category: String(template?.category || '').trim(),
+  message: String(template?.message || '').trim(),
+  content:
+    template?.content && typeof template.content === 'object'
+      ? {
+          body: String(template.content.body || '').trim(),
+          text: String(template.content.text || '').trim()
+        }
+      : null,
+  components: Array.isArray(template?.components)
+    ? template.components
+        .map((component) => ({
+          type: String(component?.type || '').trim(),
+          text: String(component?.text || '').trim()
+        }))
+        .filter((component) => component.type || component.text)
+    : []
+});
+
+const sanitizeTemplatesCache = (templates = []) =>
+  (Array.isArray(templates) ? templates : []).map(sanitizeTemplateForCache).filter((template) => (
+    template._id || template.id || template.name
+  ));
 
 const Templates = () => {
   const navigate = useNavigate();
@@ -17,10 +54,23 @@ const Templates = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [deletingTemplateName, setDeletingTemplateName] = useState('');
   const [error, setError] = useState(null);
+  const currentUserId = resolveCacheUserId();
 
   useEffect(() => {
+    const cachedTemplates = readSidebarPageCache(TEMPLATES_CACHE_NAMESPACE, {
+      currentUserId,
+      allowStale: true
+    });
+
+    if (Array.isArray(cachedTemplates?.data?.officialTemplates)) {
+      setOfficialTemplates(cachedTemplates.data.officialTemplates);
+      setIsLoading(false);
+      loadTemplates({ silent: true });
+      return;
+    }
+
     loadTemplates();
-  }, []);
+  }, [currentUserId]);
 
   const extractErrorMessage = (err, fallback) => {
     return (
@@ -31,12 +81,25 @@ const Templates = () => {
     );
   };
 
-  const loadTemplates = async () => {
+  const persistTemplatesCache = useCallback((templates) => {
+    writeSidebarPageCache(
+      TEMPLATES_CACHE_NAMESPACE,
+      { officialTemplates: sanitizeTemplatesCache(templates) },
+      {
+        currentUserId,
+        ttlMs: TEMPLATES_CACHE_TTL_MS
+      }
+    );
+  }, [currentUserId]);
+
+  const loadTemplates = useCallback(async ({ silent = false } = {}) => {
     const releaseLoadingGuard = startLoadingTimeoutGuard(
-      () => setIsLoading(false),
+      () => {
+        if (!silent) setIsLoading(false);
+      },
       TEMPLATE_LOADING_TIMEOUT_MS
     );
-    setIsLoading(true);
+    if (!silent) setIsLoading(true);
     setError(null);
 
     try {
@@ -52,15 +115,20 @@ const Templates = () => {
       }
 
       setOfficialTemplates(allTemplates);
+      persistTemplatesCache(allTemplates);
     } catch (err) {
-      const message = extractErrorMessage(err, 'Failed to load templates. Please try again.');
-      setError(message);
-      setOfficialTemplates([]);
+      if (!silent) {
+        const message = extractErrorMessage(err, 'Failed to load templates. Please try again.');
+        setError(message);
+        setOfficialTemplates([]);
+      } else {
+        console.error('Failed to refresh templates:', err);
+      }
     } finally {
       releaseLoadingGuard();
-      setIsLoading(false);
+      if (!silent) setIsLoading(false);
     }
-  };
+  }, [persistTemplatesCache]);
 
   const syncTemplates = async () => {
     setIsSyncing(true);

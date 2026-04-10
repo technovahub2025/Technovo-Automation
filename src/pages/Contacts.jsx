@@ -1,12 +1,40 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X } from 'lucide-react';
 import { apiClient } from '../services/whatsappapi';
 import { normalizePhone } from './teamInbox/teamInboxIdentityUtils.js';
 import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
+import {
+    readSidebarPageCache,
+    resolveCacheUserId,
+    writeSidebarPageCache
+} from '../utils/sidebarPageCache';
 import './Contacts.css';
 
 const CONTACTS_LOADING_TIMEOUT_MS = 8000;
+const CONTACTS_CACHE_TTL_MS = 10 * 60 * 1000;
+const CONTACTS_CACHE_NAMESPACE = 'contacts-page';
+
+const sanitizeContactForCache = (contact = {}) => ({
+    _id: String(contact?._id || '').trim(),
+    id: String(contact?.id || '').trim(),
+    name: String(contact?.name || '').trim(),
+    phone: String(contact?.phone || '').trim(),
+    email: String(contact?.email || '').trim(),
+    tags: Array.isArray(contact?.tags)
+        ? contact.tags.map((tag) => String(tag || '').trim()).filter(Boolean).slice(0, 20)
+        : [],
+    isBlocked: Boolean(contact?.isBlocked),
+    sourceType: String(contact?.sourceType || '').trim(),
+    source: String(contact?.source || '').trim(),
+    createdAt: String(contact?.createdAt || '').trim(),
+    lastSeen: String(contact?.lastSeen || '').trim()
+});
+
+const sanitizeContactsCache = (contacts = []) =>
+    (Array.isArray(contacts) ? contacts : []).map(sanitizeContactForCache).filter((contact) => (
+        contact._id || contact.id || contact.phone
+    ));
 
 const Contacts = () => {
     const navigate = useNavigate();
@@ -29,10 +57,23 @@ const Contacts = () => {
     const [importStep, setImportStep] = useState('upload');
     const [importMapping, setImportMapping] = useState({});
     const fileInputRef = useRef(null);
+    const currentUserId = resolveCacheUserId();
 
     useEffect(() => {
+        const cachedContacts = readSidebarPageCache(CONTACTS_CACHE_NAMESPACE, {
+            currentUserId,
+            allowStale: true
+        });
+
+        if (Array.isArray(cachedContacts?.data?.contacts)) {
+            setContacts(cachedContacts.data.contacts);
+            setLoading(false);
+            loadContacts({ silent: true });
+            return;
+        }
+
         loadContacts();
-    }, []);
+    }, [currentUserId]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -50,23 +91,41 @@ const Contacts = () => {
         };
     }, [showFilterDropdown, showSortDropdown]);
 
-const loadContacts = async () => {
+const persistContactsCache = useCallback((nextContacts) => {
+    writeSidebarPageCache(
+        CONTACTS_CACHE_NAMESPACE,
+        { contacts: sanitizeContactsCache(nextContacts) },
+        {
+            currentUserId,
+            ttlMs: CONTACTS_CACHE_TTL_MS
+        }
+    );
+}, [currentUserId]);
+
+const loadContacts = useCallback(async ({ silent = false } = {}) => {
     const releaseLoadingGuard = startLoadingTimeoutGuard(
-        () => setLoading(false),
+        () => {
+            if (!silent) setLoading(false);
+        },
         CONTACTS_LOADING_TIMEOUT_MS
     );
     try {
+        if (!silent) setLoading(true);
         const result = await apiClient.getContacts();
         const contactsData = result.data?.data || result.data || [];
-        setContacts(Array.isArray(contactsData) ? contactsData : []);
+        const nextContacts = Array.isArray(contactsData) ? contactsData : [];
+        setContacts(nextContacts);
+        persistContactsCache(nextContacts);
     } catch (error) {
         console.error('Failed to load contacts:', error);
-        setContacts([]);
+        if (!silent) {
+            setContacts([]);
+        }
     } finally {
         releaseLoadingGuard();
-        setLoading(false);
+        if (!silent) setLoading(false);
     }
-};
+}, [persistContactsCache]);
 
     const handleAddContact = async () => {
         if (!newContact.phone) {
@@ -85,7 +144,7 @@ const loadContacts = async () => {
                 throw new Error(result?.data?.error || 'Failed to add contact');
             }
 
-            await loadContacts();
+            await loadContacts({ silent: true });
             setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Opted-in' });
             setShowAddModal(false);
             alert('Contact added successfully!');
@@ -123,7 +182,7 @@ const loadContacts = async () => {
                 throw new Error(result?.data?.error || 'Failed to update contact');
             }
 
-            await loadContacts();
+            await loadContacts({ silent: true });
             setEditingContact(null);
             setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Opted-in' });
             setShowEditModal(false);
@@ -150,7 +209,7 @@ const loadContacts = async () => {
                 throw new Error(result?.data?.error || 'Failed to delete contact');
             }
 
-            await loadContacts();
+            await loadContacts({ silent: true });
             alert('Contact deleted successfully!');
         } catch (error) {
             alert('Failed to delete contact: ' + error.message);
@@ -192,7 +251,7 @@ const loadContacts = async () => {
             );
             
             await Promise.all(deletePromises);
-            await loadContacts();
+            await loadContacts({ silent: true });
             setSelectedContacts(new Set());
             alert(`${selectedContacts.size} contact(s) deleted successfully!`);
         } catch (error) {
@@ -358,7 +417,7 @@ const loadContacts = async () => {
                 setImportPreview([]);
                 setImportMapping({});
                 setImportStep('upload');
-                await loadContacts();
+                await loadContacts({ silent: true });
             } else {
                 alert('Import failed: ' + (result.data.error || 'Unknown error'));
             }

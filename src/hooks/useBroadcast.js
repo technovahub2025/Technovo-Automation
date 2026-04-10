@@ -2,12 +2,20 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { apiClient } from '../services/whatsappapi';
 import webSocketService from '../services/websocketService';
 import apiService from '../services/api';
+import {
+  readSidebarPageCache,
+  resolveCacheUserId,
+  writeSidebarPageCache
+} from '../utils/sidebarPageCache';
+
+const BROADCAST_PAGE_CACHE_NAMESPACE = 'broadcast-page';
+const BROADCAST_PAGE_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const dedupeTemplatesById = (items = []) => {
   const seen = new Set();
 
   return items.filter((item) => {
-    const key = String(item?._id || '');
+    const key = String(item?._id || item?.id || item?.name || '').trim();
     if (!key || seen.has(key)) {
       return false;
     }
@@ -16,6 +24,69 @@ const dedupeTemplatesById = (items = []) => {
     return true;
   });
 };
+
+const sanitizeBroadcastTemplateForCache = (template = {}) => ({
+  _id: String(template?._id || '').trim(),
+  id: String(template?.id || '').trim(),
+  name: String(template?.name || '').trim(),
+  type: String(template?.type || '').trim(),
+  language: String(template?.language || '').trim(),
+  category: String(template?.category || '').trim(),
+  status: String(template?.status || '').trim(),
+  message: String(template?.message || '').trim(),
+  templateContent: String(template?.templateContent || '').trim(),
+  content:
+    template?.content && typeof template.content === 'object'
+      ? {
+          body: String(template.content.body || '').trim(),
+          text: String(template.content.text || '').trim()
+        }
+      : null,
+  components: Array.isArray(template?.components)
+    ? template.components
+        .map((component) => ({
+          type: String(component?.type || '').trim(),
+          text: String(component?.text || '').trim()
+        }))
+        .filter((component) => component.type || component.text)
+    : []
+});
+
+const sanitizeBroadcastForCache = (broadcast = {}) => ({
+  _id: String(broadcast?._id || '').trim(),
+  id: String(broadcast?.id || '').trim(),
+  name: String(broadcast?.name || '').trim(),
+  status: String(broadcast?.status || '').trim(),
+  messageType: String(broadcast?.messageType || '').trim(),
+  templateName: String(broadcast?.templateName || '').trim(),
+  language: String(broadcast?.language || '').trim(),
+  createdAt: String(broadcast?.createdAt || '').trim(),
+  scheduledAt: String(broadcast?.scheduledAt || '').trim(),
+  completedAt: String(broadcast?.completedAt || '').trim(),
+  recipientCount:
+    Number.isFinite(Number(broadcast?.recipientCount)) && Number(broadcast.recipientCount) >= 0
+      ? Number(broadcast.recipientCount)
+      : 0,
+  stats:
+    broadcast?.stats && typeof broadcast.stats === 'object'
+      ? {
+          sent: Number(broadcast.stats.sent || 0) || 0,
+          delivered: Number(broadcast.stats.delivered || 0) || 0,
+          read: Number(broadcast.stats.read || 0) || 0,
+          replied: Number(broadcast.stats.replied || 0) || 0,
+          failed: Number(broadcast.stats.failed || 0) || 0
+        }
+      : {},
+  recipients: Array.isArray(broadcast?.recipients)
+    ? broadcast.recipients
+        .slice(0, 20)
+        .map((recipient) => ({
+          phone: String(recipient?.phone || '').trim(),
+          name: String(recipient?.name || '').trim()
+        }))
+        .filter((recipient) => recipient.phone || recipient.name)
+    : []
+});
 
 export const useBroadcast = () => {
   // State management
@@ -45,8 +116,8 @@ export const useBroadcast = () => {
   const [wsConnected, setWsConnected] = useState(false);
   const loadRequestSeqRef = useRef(0);
   const latestAppliedSeqRef = useRef(0);
-  const storedUser = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; } })();
-  const currentUserId = storedUser?.id || storedUser?._id || localStorage.getItem('userId') || null;
+  const currentUserId = resolveCacheUserId();
+  const broadcastPageCacheRef = useRef(null);
 
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
@@ -68,6 +139,43 @@ export const useBroadcast = () => {
   // Campaign name
   const [broadcastName, setBroadcastName] = useState('');
 
+  const persistBroadcastPageCache = useCallback((patch = {}) => {
+    const previousCache = broadcastPageCacheRef.current || {};
+    const nextCache = {
+      broadcasts: Array.isArray(patch.broadcasts)
+        ? patch.broadcasts
+            .map(sanitizeBroadcastForCache)
+            .filter((item) => item._id || item.id || item.name)
+        : Array.isArray(previousCache.broadcasts)
+          ? previousCache.broadcasts
+          : [],
+      templates: Array.isArray(patch.templates)
+        ? patch.templates
+            .map(sanitizeBroadcastTemplateForCache)
+            .filter((item) => item._id || item.id || item.name)
+        : Array.isArray(previousCache.templates)
+          ? previousCache.templates
+          : [],
+      officialTemplates: Array.isArray(patch.officialTemplates)
+        ? patch.officialTemplates
+            .map(sanitizeBroadcastTemplateForCache)
+            .filter((item) => item._id || item.id || item.name)
+        : Array.isArray(previousCache.officialTemplates)
+          ? previousCache.officialTemplates
+          : [],
+      lastUpdated:
+        patch.lastUpdated instanceof Date
+          ? patch.lastUpdated.toISOString()
+          : String(patch.lastUpdated || previousCache.lastUpdated || '').trim()
+    };
+
+    broadcastPageCacheRef.current = nextCache;
+    writeSidebarPageCache(BROADCAST_PAGE_CACHE_NAMESPACE, nextCache, {
+      currentUserId,
+      ttlMs: BROADCAST_PAGE_CACHE_TTL_MS
+    });
+  }, [currentUserId]);
+
 // API functions
   const loadTemplates = useCallback(async () => {
     try {
@@ -76,10 +184,11 @@ export const useBroadcast = () => {
       const allTemplates = Array.isArray(responseData) ? responseData : [];
       const customTemplates = allTemplates.filter((t) => t.type === 'custom');
       setTemplates(customTemplates);
+      persistBroadcastPageCache({ templates: customTemplates });
     } catch (error) {
       console.error('Failed to load templates:', error);
     }
-  }, []);
+  }, [persistBroadcastPageCache]);
 
   const loadBroadcasts = useCallback(async () => {
     const requestSeq = ++loadRequestSeqRef.current;
@@ -93,11 +202,16 @@ export const useBroadcast = () => {
       }
       latestAppliedSeqRef.current = requestSeq;
       setBroadcasts(broadcastsData);
-      setLastUpdated(new Date());
+      const nextUpdatedAt = new Date();
+      setLastUpdated(nextUpdatedAt);
+      persistBroadcastPageCache({
+        broadcasts: broadcastsData,
+        lastUpdated: nextUpdatedAt
+      });
     } catch (error) {
       console.error('Failed to load broadcasts:', error);
     }
-  }, []);
+  }, [persistBroadcastPageCache]);
 
   const syncTemplates = useCallback(async () => {
     try {
@@ -106,13 +220,14 @@ export const useBroadcast = () => {
       const templates = Array.isArray(responseData) ? responseData : [];
 
       setOfficialTemplates(templates);
+      persistBroadcastPageCache({ officialTemplates: templates });
 
     } catch (error) {
       console.error('Failed to sync Meta templates:', error);
       console.error('Error response:', error.response?.data);
       setOfficialTemplates([]);
     }
-  }, []);
+  }, [persistBroadcastPageCache]);
 
   
 
@@ -253,6 +368,31 @@ export const useBroadcast = () => {
   // Load initial data and setup WebSocket
   useEffect(() => {
     let isCancelled = false;
+    const cachedBroadcastPage = readSidebarPageCache(BROADCAST_PAGE_CACHE_NAMESPACE, {
+      currentUserId,
+      allowStale: true
+    });
+
+    if (cachedBroadcastPage?.data) {
+      broadcastPageCacheRef.current = cachedBroadcastPage.data;
+
+      if (Array.isArray(cachedBroadcastPage.data.broadcasts)) {
+        setBroadcasts(cachedBroadcastPage.data.broadcasts);
+      }
+      if (Array.isArray(cachedBroadcastPage.data.templates)) {
+        setTemplates(cachedBroadcastPage.data.templates);
+      }
+      if (Array.isArray(cachedBroadcastPage.data.officialTemplates)) {
+        setOfficialTemplates(cachedBroadcastPage.data.officialTemplates);
+      }
+      if (cachedBroadcastPage.data.lastUpdated) {
+        const parsedLastUpdated = new Date(cachedBroadcastPage.data.lastUpdated);
+        if (!Number.isNaN(parsedLastUpdated.getTime())) {
+          setLastUpdated(parsedLastUpdated);
+        }
+      }
+    }
+
     loadTemplates();
     loadBroadcasts();
 
@@ -350,6 +490,7 @@ export const useBroadcast = () => {
         const templates = Array.isArray(responseData) ? responseData : [];
 
         setOfficialTemplates(templates);
+        persistBroadcastPageCache({ officialTemplates: templates });
 
       } catch (error) {
         console.error('❌ Failed to fetch Meta templates:', error);
@@ -361,7 +502,19 @@ export const useBroadcast = () => {
     if (messageType === 'template') {
       fetchTemplates();
     }
-  }, [messageType]);
+  }, [messageType, persistBroadcastPageCache]);
+
+  useEffect(() => {
+    if (!broadcasts.length && !templates.length && !officialTemplates.length) {
+      return;
+    }
+    persistBroadcastPageCache({
+      broadcasts,
+      templates,
+      officialTemplates,
+      lastUpdated
+    });
+  }, [broadcasts, templates, officialTemplates, lastUpdated, persistBroadcastPageCache]);
 
   // Close dropdowns when clicking outside
   useEffect(() => {
