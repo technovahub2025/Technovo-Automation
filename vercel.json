@@ -4,15 +4,9 @@
   "installCommand": "npm install",
   "buildCommand": "VITE_APP_BASE_PATH=/nexion/ VITE_APP_BASENAME=/nexion npm run build",
   "outputDirectory": "dist",
-  "rewrites": [
-    { "source": "/nexion/assets/:path*", "destination": "/assets/:path*" },
-    { "source": "/nexion", "destination": "/index.html" },
-    { "source": "/nexion/", "destination": "/index.html" },
-    { "source": "/nexion/:path*", "destination": "/index.html" }
-  ],
   "routes": [
-    { "src": "/nexion/assets/(.*)", "dest": "/assets/$1" },
-    { "src": "/nexion/?$", "dest": "/index.html" },
-    { "src": "/nexion/(.*)", "dest": "/index.html" }
+    { "handle": "filesystem" },
+    { "src": "/nexion/(.*)", "dest": "/index.html" },
+    { "src": "/nexion", "dest": "/index.html" }
   ]
 }
