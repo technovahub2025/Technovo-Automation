@@ -1,13 +1,21 @@
 import React from 'react';
 import {
+  CalendarClock,
   Download,
   ExternalLink,
   FileText,
+  FileStack,
+  Link2,
   MessageSquare,
+  NotebookPen,
+  ScrollText,
   ThumbsDown,
   ThumbsUp,
   Trash2,
-  Upload
+  Upload,
+  UserRound,
+  X,
+  ChevronDown
 } from 'lucide-react';
 
 const CRM_DOCUMENT_TYPE_OPTIONS = [
@@ -38,8 +46,13 @@ const ContactInfoPanel = ({
   getLeadStageValue,
   handleLeadStageChange,
   contactInfoActionBusy,
+  whatsappMessagingState,
   leadStageOptions,
   openTemplateSendModal,
+  onMarkWhatsAppOptIn,
+  onOpenWhatsAppOptInModal,
+  onMarkWhatsAppOptOut,
+  onViewWhatsAppConsentAudit,
   templateLoading,
   templateSending,
   handleQualifyLead,
@@ -109,6 +122,14 @@ const ContactInfoPanel = ({
   contactInfoMessageTone
 }) => {
   const crmDocumentInputRef = React.useRef(null);
+  const [expandedSections, setExpandedSections] = React.useState({
+    followUp: false,
+    quickTask: false,
+    documents: false,
+    scheduleMeet: false,
+    recentActivity: false,
+    internalNotes: false
+  });
 
   const handleDocumentFileSelection = async (event) => {
     const nextFile = event?.target?.files?.[0] || null;
@@ -122,37 +143,107 @@ const ContactInfoPanel = ({
 
   if (!selectedConversation || !showContactInfo) return null;
 
+  const contactName = String(selectedConversation.contactId?.name || '').trim() || 'Unknown Contact';
+  const contactPhone = String(selectedConversation.contactPhone || '').trim() || '-';
+  const contactInitials = contactName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join('') || 'UN';
+  const leadStatus = deriveLeadStatus(selectedConversation);
+  const leadScore = getConversationLeadScore(selectedConversation);
+  const isUnknownContact = contactName === 'Unknown Contact';
+
+  const toggleSection = (sectionKey) => {
+    setExpandedSections((current) => ({
+      ...current,
+      [sectionKey]: !current[sectionKey]
+    }));
+  };
+
+  const renderCollapsibleCard = (sectionKey, title, content, summary, icon) => {
+    const isExpanded = Boolean(expandedSections[sectionKey]);
+
+    return (
+      <div className="contact-info-card contact-info-card--collapsible">
+        <button
+          type="button"
+          className="contact-info-section-toggle"
+          onClick={() => toggleSection(sectionKey)}
+          aria-expanded={isExpanded}
+        >
+          <span className="contact-info-section-toggle-copy">
+            <span className="contact-info-section-toggle-title">
+              <span className="contact-info-section-toggle-icon-wrap" aria-hidden="true">
+                {icon}
+              </span>
+              <span>{title}</span>
+            </span>
+            {!isExpanded && summary ? (
+              <span className="contact-info-section-toggle-summary">{summary}</span>
+            ) : null}
+          </span>
+          <ChevronDown
+            size={16}
+            className={`contact-info-section-toggle-icon${isExpanded ? ' is-expanded' : ''}`}
+          />
+        </button>
+        {isExpanded ? <div className="contact-info-section-body">{content}</div> : null}
+      </div>
+    );
+  };
+
   return (
     <aside className="contact-info-side-panel">
       <div className="contact-info-modal">
         <div className="contact-info-modal-header">
           <h3>Contact Information</h3>
-          <button className="contact-info-close-btn" onClick={() => setShowContactInfo(false)}>
-            Close
+          <button
+            className="contact-info-close-btn"
+            onClick={() => setShowContactInfo(false)}
+            aria-label="Close contact information"
+            title="Close"
+          >
+            <X size={16} />
           </button>
         </div>
 
         <div className="contact-info-card">
+          <div className="contact-profile-summary">
+            <div className="contact-profile-avatar" aria-hidden="true">
+              {isUnknownContact ? <UserRound size={18} /> : contactInitials}
+            </div>
+            <div className="contact-profile-copy">
+              <strong>{contactName}</strong>
+              <span>{contactPhone}</span>
+              <small>
+                {isUnknownContact
+                  ? 'No saved contact name yet'
+                  : 'Lead details and WhatsApp policy status'}
+              </small>
+            </div>
+          </div>
           <h4>Lead Info</h4>
           <div className="contact-info-item">
             <span>Name</span>
-            <strong>{selectedConversation.contactId?.name || 'Unknown'}</strong>
+            <strong>{contactName}</strong>
           </div>
           <div className="contact-info-item">
             <span>Phone</span>
-            <strong>{selectedConversation.contactPhone || '-'}</strong>
+            <strong>{contactPhone}</strong>
           </div>
           <div className="contact-info-item">
             <span>Status</span>
             <strong>
-              <span className={`lead-status-badge status-${deriveLeadStatus(selectedConversation).toLowerCase()}`}>
-                {deriveLeadStatus(selectedConversation)}
+              <span className={`lead-status-badge status-${leadStatus.toLowerCase()}`}>
+                {leadStatus}
               </span>
             </strong>
           </div>
           <div className="contact-info-item">
             <span>Score</span>
-            <strong className="lead-score-value">{getConversationLeadScore(selectedConversation)}</strong>
+            <strong className="lead-score-value">{leadScore}</strong>
           </div>
           <div className="contact-info-item">
             <span>Stage</span>
@@ -171,17 +262,90 @@ const ContactInfoPanel = ({
           </div>
         </div>
 
+        <div className="contact-info-card whatsapp-status-card">
+          <h4>WhatsApp Status</h4>
+          <div className="contact-info-item">
+            <span>Messaging</span>
+            <strong>
+              <span className={`whatsapp-status-badge whatsapp-status-badge--${whatsappMessagingState?.badgeTone || 'template-only'}`}>
+                {whatsappMessagingState?.statusLabel || 'Template Only'}
+              </span>
+            </strong>
+          </div>
+          <div className="whatsapp-status-explainer">
+            <p className="whatsapp-status-meta">
+              {whatsappMessagingState?.optedOut
+                ? 'This contact has opted out. Update consent before sending WhatsApp outreach.'
+                : whatsappMessagingState?.freeformAllowed
+                  ? 'The 24-hour customer service window is open for free-form replies.'
+                  : 'Free-form chat is closed. Use an approved template to continue the conversation.'}
+            </p>
+          </div>
+          <div className="whatsapp-status-actions">
+            <button
+              type="button"
+              className="lead-action-btn lead-action-btn--neutral"
+              onClick={onOpenWhatsAppOptInModal || onMarkWhatsAppOptIn}
+              disabled={contactInfoActionBusy}
+            >
+              <ThumbsUp size={14} />
+              Mark Opted In
+            </button>
+            <button
+              type="button"
+              className="lead-action-btn lead-action-btn--unqualify"
+              onClick={onMarkWhatsAppOptOut}
+              disabled={contactInfoActionBusy}
+            >
+              <ThumbsDown size={14} />
+              Mark Opted Out
+            </button>
+            <button
+              type="button"
+              className="lead-action-btn lead-action-btn--template"
+              onClick={onViewWhatsAppConsentAudit}
+              disabled={contactInfoActionBusy}
+            >
+              <FileText size={14} />
+              View Audit
+            </button>
+          </div>
+          {(selectedConversation?.contactId?.whatsappOptInAt || selectedConversation?.contactId?.whatsappOptInSource) ? (
+            <div className="whatsapp-status-audit">
+              <span>
+                Opt-in saved:
+                <strong>{` ${formatDateTimeForActivity(selectedConversation?.contactId?.whatsappOptInAt) || '-'}`}</strong>
+              </span>
+              <span>
+                Source:
+                <strong>{` ${String(selectedConversation?.contactId?.whatsappOptInSource || '-').trim() || '-'}`}</strong>
+              </span>
+              <span>
+                Proof:
+                <strong>{` ${String(selectedConversation?.contactId?.whatsappOptInProofType || '-').trim() || '-'}`}</strong>
+              </span>
+            </div>
+          ) : null}
+        </div>
+
         <div className="contact-info-card">
           <h4>Actions</h4>
+          <p className="contact-info-section-note">WhatsApp actions</p>
           <button
             type="button"
             className="lead-action-btn lead-action-btn--template"
             onClick={openTemplateSendModal}
-            disabled={templateLoading || templateSending || !selectedConversation?.contactPhone}
+            disabled={
+              templateLoading ||
+              templateSending ||
+              !selectedConversation?.contactPhone ||
+              whatsappMessagingState?.optedOut
+            }
           >
             <MessageSquare size={14} />
             Send Template
           </button>
+          <p className="contact-info-section-note">CRM actions</p>
           <button
             type="button"
             className="lead-action-btn lead-action-btn--qualify"
@@ -202,62 +366,74 @@ const ContactInfoPanel = ({
           </button>
         </div>
 
-        <div className="contact-info-card">
-          <h4>Follow-up</h4>
-          <input
-            type="datetime-local"
-            className="lead-followup-input"
-            value={leadFollowUpDraft}
-            onChange={(event) => setLeadFollowUpDraft(event.target.value)}
-          />
-          <button
-            type="button"
-            className="lead-action-btn lead-action-btn--save-note"
-            onClick={handleSaveLeadFollowUp}
-            disabled={leadFollowUpSaving || contactInfoActionBusy}
-          >
-            {leadFollowUpSaving ? 'Saving...' : 'Save Follow-up'}
-          </button>
-        </div>
-
-        <div className="contact-info-card">
-          <h4>Quick Task</h4>
-          <input
-            type="text"
-            className="quick-task-input"
-            placeholder="Follow-up task title..."
-            value={crmTaskTitleDraft}
-            onChange={(event) => setCrmTaskTitleDraft(event.target.value)}
-          />
-          <div className="quick-task-row">
-            <select
-              className="quick-task-select"
-              value={crmTaskPriorityDraft}
-              onChange={(event) => setCrmTaskPriorityDraft(event.target.value)}
-            >
-              <option value="low">Low Priority</option>
-              <option value="medium">Medium Priority</option>
-              <option value="high">High Priority</option>
-            </select>
+        {renderCollapsibleCard(
+          'followUp',
+          'Follow-up',
+          <>
             <input
               type="datetime-local"
-              className="quick-task-input"
-              value={crmTaskDueDraft}
-              onChange={(event) => setCrmTaskDueDraft(event.target.value)}
+              className="lead-followup-input"
+              value={leadFollowUpDraft}
+              onChange={(event) => setLeadFollowUpDraft(event.target.value)}
             />
-          </div>
-          <button
-            type="button"
-            className="lead-action-btn lead-action-btn--qualify"
-            onClick={handleCreateQuickTask}
-            disabled={crmTaskCreating || contactInfoActionBusy}
-          >
-            {crmTaskCreating ? 'Creating...' : 'Create Task'}
-          </button>
-        </div>
+            <button
+              type="button"
+              className="lead-action-btn lead-action-btn--save-note"
+              onClick={handleSaveLeadFollowUp}
+              disabled={leadFollowUpSaving || contactInfoActionBusy}
+            >
+              {leadFollowUpSaving ? 'Saving...' : 'Save Follow-up'}
+            </button>
+          </>,
+          leadFollowUpDraft ? `Scheduled for ${leadFollowUpDraft.replace('T', ' ')}` : 'No follow-up saved',
+          <CalendarClock size={15} />
+        )}
 
-        <div className="contact-info-card">
-          <h4>Documents</h4>
+        {renderCollapsibleCard(
+          'quickTask',
+          'Quick Task',
+          <>
+            <input
+              type="text"
+              className="quick-task-input"
+              placeholder="Follow-up task title..."
+              value={crmTaskTitleDraft}
+              onChange={(event) => setCrmTaskTitleDraft(event.target.value)}
+            />
+            <div className="quick-task-row">
+              <select
+                className="quick-task-select"
+                value={crmTaskPriorityDraft}
+                onChange={(event) => setCrmTaskPriorityDraft(event.target.value)}
+              >
+                <option value="low">Low Priority</option>
+                <option value="medium">Medium Priority</option>
+                <option value="high">High Priority</option>
+              </select>
+              <input
+                type="datetime-local"
+                className="quick-task-input"
+                value={crmTaskDueDraft}
+                onChange={(event) => setCrmTaskDueDraft(event.target.value)}
+              />
+            </div>
+            <button
+              type="button"
+              className="lead-action-btn lead-action-btn--qualify"
+              onClick={handleCreateQuickTask}
+              disabled={crmTaskCreating || contactInfoActionBusy}
+            >
+              {crmTaskCreating ? 'Creating...' : 'Create Task'}
+            </button>
+          </>,
+          String(crmTaskTitleDraft || '').trim() || 'Create a quick follow-up task',
+          <NotebookPen size={15} />
+        )}
+
+        {renderCollapsibleCard(
+          'documents',
+          'Documents',
+          <>
           <div className="crm-document-upload-row">
             <select
               className="quick-task-select"
@@ -353,10 +529,15 @@ const ContactInfoPanel = ({
           ) : (
             <p className="crm-activity-empty">No CRM documents saved for this contact yet.</p>
           )}
-        </div>
+          </>,
+          crmDocumentsLoading ? 'Loading documents...' : `${crmDocuments.length} document${crmDocuments.length === 1 ? '' : 's'}`,
+          <FileStack size={15} />
+        )}
 
-        <div className="contact-info-card">
-          <h4>Schedule Meet</h4>
+        {renderCollapsibleCard(
+          'scheduleMeet',
+          'Schedule Meet',
+          <>
           {!meetAuthConfigured && (
             <input
               type="password"
@@ -504,10 +685,15 @@ const ContactInfoPanel = ({
               </div>
             </div>
           )}
-        </div>
+          </>,
+          meetLink ? 'Meet link ready to share' : 'Create and share a Google Meet link',
+          <Link2 size={15} />
+        )}
 
-        <div className="contact-info-card">
-          <h4>Recent Activity</h4>
+        {renderCollapsibleCard(
+          'recentActivity',
+          'Recent Activity',
+          <>
           {crmActivitiesLoading ? (
             <p className="crm-activity-empty">Loading activity...</p>
           ) : crmActivities.length > 0 ? (
@@ -526,10 +712,15 @@ const ContactInfoPanel = ({
           ) : (
             <p className="crm-activity-empty">No CRM activity for this lead yet.</p>
           )}
-        </div>
+          </>,
+          crmActivitiesLoading ? 'Loading activity...' : `${crmActivities.length} recent activit${crmActivities.length === 1 ? 'y' : 'ies'}`,
+          <ScrollText size={15} />
+        )}
 
-        <div className="contact-info-card">
-          <h4>Internal Notes</h4>
+        {renderCollapsibleCard(
+          'internalNotes',
+          'Internal Notes',
+          <>
           <textarea
             className="internal-note-input"
             placeholder="Add notes about this lead..."
@@ -550,7 +741,10 @@ const ContactInfoPanel = ({
               ? 'Note saved for this lead.'
               : 'No notes saved for this lead yet.'}
           </p>
-        </div>
+          </>,
+          String(selectedConversation?.contactId?.notes || '').trim() ? 'Saved note available' : 'No internal note yet',
+          <FileText size={15} />
+        )}
 
         {contactInfoMessage && (
           <div className={`contact-info-feedback contact-info-feedback--${contactInfoMessageTone}`}>

@@ -17,11 +17,29 @@ const emptySetup = {
   mode: "live",
 };
 
+const DEFAULT_LEAD_MAPPING = {
+  phoneFieldKeys: "phone number, phone, mobile, whatsapp number",
+  nameFieldKeys: "full name, name",
+  emailFieldKeys: "email, email address",
+  consentFieldKeys: "whatsapp consent, receive whatsapp updates, consent",
+  consentApprovedValues: "yes, true, checked",
+  consentText: "Meta lead form consent for WhatsApp marketing updates.",
+  scope: "marketing",
+};
+
+const splitCsv = (value) =>
+  String(value || "")
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
 const extractErrorMessage = (error, fallback) =>
   error?.response?.data?.error ||
   error?.response?.data?.message ||
   error?.message ||
   fallback;
+
+const META_LEAD_MAPPING_STORAGE_KEY = "meta_lead_consent_mapping_v1";
 
 const MetaConnect = () => {
   const popupRef = useRef(null);
@@ -38,6 +56,15 @@ const MetaConnect = () => {
     pageId: "",
     whatsappNumber: "",
   });
+  const [leadSyncForm, setLeadSyncForm] = useState({
+    leadId: "",
+    ...DEFAULT_LEAD_MAPPING,
+  });
+  const [leadPreviewLoading, setLeadPreviewLoading] = useState(false);
+  const [leadSyncLoading, setLeadSyncLoading] = useState(false);
+  const [leadPreview, setLeadPreview] = useState(null);
+  const [leadSyncMessage, setLeadSyncMessage] = useState("");
+  const [mappingSavedMessage, setMappingSavedMessage] = useState("");
 
   const isConfigured = useMemo(() => Boolean(form.adAccountId && form.pageId), [form]);
   const pageAccessIssue =
@@ -80,6 +107,28 @@ const MetaConnect = () => {
 
   useEffect(() => {
     loadMetaState();
+  }, []);
+
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(META_LEAD_MAPPING_STORAGE_KEY);
+      if (!stored) return;
+      const parsed = JSON.parse(stored);
+      if (!parsed || typeof parsed !== "object") return;
+
+      setLeadSyncForm((prev) => ({
+        ...prev,
+        phoneFieldKeys: String(parsed.phoneFieldKeys || prev.phoneFieldKeys),
+        nameFieldKeys: String(parsed.nameFieldKeys || prev.nameFieldKeys),
+        emailFieldKeys: String(parsed.emailFieldKeys || prev.emailFieldKeys),
+        consentFieldKeys: String(parsed.consentFieldKeys || prev.consentFieldKeys),
+        consentApprovedValues: String(parsed.consentApprovedValues || prev.consentApprovedValues),
+        consentText: String(parsed.consentText || prev.consentText),
+        scope: String(parsed.scope || prev.scope)
+      }));
+    } catch {
+      // Ignore malformed local mapping cache.
+    }
   }, []);
 
   useEffect(() => {
@@ -153,6 +202,95 @@ const MetaConnect = () => {
       setError(extractErrorMessage(saveError, "Unable to save Meta selections."));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const buildLeadMappingPayload = () => ({
+    phoneFieldKeys: splitCsv(leadSyncForm.phoneFieldKeys),
+    nameFieldKeys: splitCsv(leadSyncForm.nameFieldKeys),
+    emailFieldKeys: splitCsv(leadSyncForm.emailFieldKeys),
+    consentFieldKeys: splitCsv(leadSyncForm.consentFieldKeys),
+    consentApprovedValues: splitCsv(leadSyncForm.consentApprovedValues),
+    consentText: leadSyncForm.consentText,
+    scope: leadSyncForm.scope,
+  });
+
+  const saveLeadMappingPreset = () => {
+    try {
+      window.localStorage.setItem(
+        META_LEAD_MAPPING_STORAGE_KEY,
+        JSON.stringify({
+          phoneFieldKeys: leadSyncForm.phoneFieldKeys,
+          nameFieldKeys: leadSyncForm.nameFieldKeys,
+          emailFieldKeys: leadSyncForm.emailFieldKeys,
+          consentFieldKeys: leadSyncForm.consentFieldKeys,
+          consentApprovedValues: leadSyncForm.consentApprovedValues,
+          consentText: leadSyncForm.consentText,
+          scope: leadSyncForm.scope
+        })
+      );
+      setMappingSavedMessage("Lead mapping preset saved on this browser.");
+      window.setTimeout(() => setMappingSavedMessage(""), 2500);
+    } catch (saveError) {
+      setError(extractErrorMessage(saveError, "Unable to save lead mapping preset."));
+    }
+  };
+
+  const resetLeadMappingPreset = () => {
+    setLeadSyncForm((prev) => ({
+      ...prev,
+      ...DEFAULT_LEAD_MAPPING
+    }));
+    window.localStorage.removeItem(META_LEAD_MAPPING_STORAGE_KEY);
+    setMappingSavedMessage("Lead mapping preset reset to defaults.");
+    window.setTimeout(() => setMappingSavedMessage(""), 2500);
+  };
+
+  const handlePreviewLead = async () => {
+    if (!leadSyncForm.leadId.trim()) {
+      setError("Enter a Meta lead ID to preview consent mapping.");
+      return;
+    }
+
+    try {
+      setLeadPreviewLoading(true);
+      setError("");
+      setLeadSyncMessage("");
+      const result = await metaAdsApi.previewMetaLeadConsent(leadSyncForm.leadId.trim(), buildLeadMappingPayload());
+      setLeadPreview(result?.data || null);
+    } catch (previewError) {
+      setError(extractErrorMessage(previewError, "Unable to preview Meta lead consent."));
+    } finally {
+      setLeadPreviewLoading(false);
+    }
+  };
+
+  const handleSyncLeadConsent = async () => {
+    if (!leadSyncForm.leadId.trim()) {
+      setError("Enter a Meta lead ID before syncing consent.");
+      return;
+    }
+
+    try {
+      setLeadSyncLoading(true);
+      setError("");
+      setLeadSyncMessage("");
+      const result = await metaAdsApi.syncMetaLeadConsent({
+        leadId: leadSyncForm.leadId.trim(),
+        mapping: buildLeadMappingPayload(),
+      });
+      setLeadPreview((prev) => ({
+        ...(prev || {}),
+        lead: result?.data?.lead || prev?.lead || null,
+        resolved: result?.data?.resolved || prev?.resolved || null
+      }));
+      setLeadSyncMessage(
+        `Lead consent synced successfully for ${result?.data?.contact?.phone || "contact"}`
+      );
+    } catch (syncError) {
+      setError(extractErrorMessage(syncError, "Unable to sync Meta lead consent."));
+    } finally {
+      setLeadSyncLoading(false);
     }
   };
 
@@ -291,6 +429,164 @@ const MetaConnect = () => {
             </div>
           </section>
         </div>
+
+        <section className="meta-card">
+          <div className="meta-card-header">
+            <h2>Meta Lead Consent Sync</h2>
+            <span className="meta-pill meta-pill-muted">Preview before sync</span>
+          </div>
+
+          {leadSyncMessage ? <div className="meta-banner meta-banner-success">{leadSyncMessage}</div> : null}
+          {mappingSavedMessage ? <div className="meta-banner meta-banner-success">{mappingSavedMessage}</div> : null}
+
+          <div className="meta-banner meta-banner-warning">
+            Use this only for Meta Lead Ads. For website or QR consent collection, use the public opt-in flow.
+          </div>
+
+          <div className="meta-form-grid">
+            <label className="meta-field meta-field-full">
+              <span>Lead ID</span>
+              <input
+                type="text"
+                value={leadSyncForm.leadId}
+                onChange={(e) => setLeadSyncForm((prev) => ({ ...prev, leadId: e.target.value }))}
+                placeholder="Meta leadgen_id"
+              />
+            </label>
+
+            <label className="meta-field">
+              <span>Phone field keys</span>
+              <input
+                type="text"
+                value={leadSyncForm.phoneFieldKeys}
+                onChange={(e) => setLeadSyncForm((prev) => ({ ...prev, phoneFieldKeys: e.target.value }))}
+                placeholder="phone number, phone"
+              />
+            </label>
+
+            <label className="meta-field">
+              <span>Name field keys</span>
+              <input
+                type="text"
+                value={leadSyncForm.nameFieldKeys}
+                onChange={(e) => setLeadSyncForm((prev) => ({ ...prev, nameFieldKeys: e.target.value }))}
+                placeholder="full name, name"
+              />
+            </label>
+
+            <label className="meta-field">
+              <span>Email field keys</span>
+              <input
+                type="text"
+                value={leadSyncForm.emailFieldKeys}
+                onChange={(e) => setLeadSyncForm((prev) => ({ ...prev, emailFieldKeys: e.target.value }))}
+                placeholder="email, email address"
+              />
+            </label>
+
+            <label className="meta-field">
+              <span>Consent field keys</span>
+              <input
+                type="text"
+                value={leadSyncForm.consentFieldKeys}
+                onChange={(e) => setLeadSyncForm((prev) => ({ ...prev, consentFieldKeys: e.target.value }))}
+                placeholder="whatsapp consent, receive whatsapp updates"
+              />
+            </label>
+
+            <label className="meta-field">
+              <span>Allowed consent answers</span>
+              <input
+                type="text"
+                value={leadSyncForm.consentApprovedValues}
+                onChange={(e) =>
+                  setLeadSyncForm((prev) => ({ ...prev, consentApprovedValues: e.target.value }))
+                }
+                placeholder="yes, true, checked"
+              />
+            </label>
+
+            <label className="meta-field">
+              <span>Consent scope</span>
+              <select
+                value={leadSyncForm.scope}
+                onChange={(e) => setLeadSyncForm((prev) => ({ ...prev, scope: e.target.value }))}
+              >
+                <option value="marketing">Marketing</option>
+                <option value="service">Service</option>
+                <option value="both">Both</option>
+              </select>
+            </label>
+
+            <label className="meta-field meta-field-full">
+              <span>Consent text snapshot</span>
+              <textarea
+                rows="3"
+                value={leadSyncForm.consentText}
+                onChange={(e) => setLeadSyncForm((prev) => ({ ...prev, consentText: e.target.value }))}
+                placeholder="Consent text saved against the lead"
+              />
+            </label>
+          </div>
+
+          <div className="meta-selection-actions meta-selection-actions-start">
+            <button className="meta-btn meta-btn-secondary" type="button" onClick={saveLeadMappingPreset}>
+              Save Mapping Preset
+            </button>
+            <button className="meta-btn meta-btn-secondary" type="button" onClick={resetLeadMappingPreset}>
+              Reset Defaults
+            </button>
+            <button className="meta-btn meta-btn-secondary" onClick={handlePreviewLead} disabled={leadPreviewLoading}>
+              {leadPreviewLoading ? "Previewing..." : "Preview Lead"}
+            </button>
+            <button className="meta-btn meta-btn-primary" onClick={handleSyncLeadConsent} disabled={leadSyncLoading}>
+              {leadSyncLoading ? "Syncing..." : "Sync Lead Consent"}
+            </button>
+            <a className="meta-btn meta-btn-secondary" href="/whatsapp-opt-in-demo" target="_blank" rel="noreferrer">
+              Open Public Opt-In Demo
+            </a>
+          </div>
+
+          {leadPreview ? (
+            <div className="meta-lead-preview">
+              <div className="meta-status-list">
+                <div className="meta-status-item">
+                  <div>
+                    <strong>Resolved phone</strong>
+                    <span>{leadPreview?.resolved?.phone || "Not found"}</span>
+                  </div>
+                </div>
+                <div className="meta-status-item">
+                  <div>
+                    <strong>Resolved name</strong>
+                    <span>{leadPreview?.resolved?.name || "Not found"}</span>
+                  </div>
+                </div>
+                <div className="meta-status-item">
+                  <div>
+                    <strong>Consent answer</strong>
+                    <span>
+                      {leadPreview?.resolved?.consentRawValue || "Not found"}{" "}
+                      {leadPreview?.resolved?.consentApproved ? "(approved)" : "(not approved)"}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="meta-lead-field-list">
+                <strong>Lead fields returned by Meta</strong>
+                <ul>
+                  {(leadPreview?.resolved?.availableFields || []).map((field) => (
+                    <li key={field.fieldName}>
+                      <span>{field.fieldName}</span>
+                      <code>{(field.values || []).join(", ") || "-"}</code>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </div>
+          ) : null}
+        </section>
 
       </div>
     </div>

@@ -211,10 +211,12 @@ const ChatArea = ({
   externalMessageActionFeedback,
   onClearExternalMessageActionFeedback,
   sendingMessage,
+  whatsappMessagingState,
   onToggleMessageMenu,
   onToggleMessageSelectMode,
   onDeleteConversation,
   onOpenContactInformation,
+  onOpenTemplateSendModal,
   onToggleMessageSelection,
   deleteSelectedMessages,
   onMessageInputChange,
@@ -270,6 +272,14 @@ const ChatArea = ({
   const voiceRecorderTimerRef = useRef(null);
   const voiceRecorderStopModeRef = useRef('cancel');
   const attachmentDragDepthRef = useRef(0);
+  const isFreeformBlocked = Boolean(
+    selectedConversation && whatsappMessagingState && !whatsappMessagingState.freeformAllowed
+  );
+  const composerPlaceholder = isFreeformBlocked
+    ? whatsappMessagingState?.optedOut
+      ? 'WhatsApp outreach is blocked for this contact'
+      : 'Send an approved template to continue this chat'
+    : 'Type a message...';
 
   useLayoutEffect(() => {
     if (!activeHoverMenuKey || !openMenuRef.current || !chatMessagesRef?.current) {
@@ -2410,6 +2420,34 @@ const ChatArea = ({
             </div>
           )}
 
+          {selectedConversation && isFreeformBlocked && (
+            <div
+              className={`chat-policy-banner ${
+                whatsappMessagingState?.optedOut ? 'is-opted-out' : 'is-template-only'
+              }`}
+            >
+              <div className="chat-policy-banner-copy">
+                <strong className="chat-policy-banner-title">
+                  {whatsappMessagingState?.optedOut ? 'WhatsApp outreach blocked' : 'Template required'}
+                </strong>
+                <span className="chat-policy-banner-text">
+                  {whatsappMessagingState?.optedOut
+                    ? 'This contact has opted out of WhatsApp messaging. Update consent before sending again.'
+                    : 'The 24-hour customer service window is closed. Use an approved template to restart the conversation.'}
+                </span>
+              </div>
+              {!whatsappMessagingState?.optedOut && typeof onOpenTemplateSendModal === 'function' && (
+                <button
+                  type="button"
+                  className="chat-policy-banner-action"
+                  onClick={onOpenTemplateSendModal}
+                >
+                  Send Template
+                </button>
+              )}
+            </div>
+          )}
+
           {activeReplyContext && (
             <div className="message-reply-composer">
               <div className="message-reply-composer-copy">
@@ -2448,7 +2486,7 @@ const ChatArea = ({
               aria-label="Attach file"
               title="Attach file"
               onClick={() => attachmentInputRef.current?.click()}
-              disabled={sendingMessage || !selectedConversation || showVoiceRecorderComposer}
+              disabled={sendingMessage || !selectedConversation || showVoiceRecorderComposer || isFreeformBlocked}
             >
               <Paperclip size={18} />
             </button>
@@ -2490,10 +2528,12 @@ const ChatArea = ({
                     type="text"
                     ref={messageInputRef}
                     className="chat-message-input"
-                    placeholder="Type a message..."
+                    placeholder={composerPlaceholder}
                     value={messageInput}
                     onChange={(event) => onMessageInputChange(event.target.value)}
+                    readOnly={isFreeformBlocked}
                     onKeyDown={(event) => {
+                      if (isFreeformBlocked) return;
                       if (event.key === 'Enter') {
                         event.preventDefault();
                         handleSendCurrentMessage();
@@ -2534,7 +2574,7 @@ const ChatArea = ({
                       aria-label="Record voice message"
                       title="Voice message"
                       onClick={handleVoiceMessageClick}
-                      disabled={!selectedConversation || sendingMessage}
+                      disabled={!selectedConversation || sendingMessage || isFreeformBlocked}
                     >
                       <Mic size={18} />
                     </button>
@@ -2549,7 +2589,7 @@ const ChatArea = ({
               disabled={
                 showVoiceRecorderComposer
                   ? isVoiceSending
-                  : !messageInput.trim() || sendingMessage
+                  : !messageInput.trim() || sendingMessage || isFreeformBlocked
               }
               aria-label={
                 showVoiceRecorderComposer

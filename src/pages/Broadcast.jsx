@@ -25,6 +25,7 @@ import AllCampaignsPopup from '../components/broadcastComponents/AllCampaignsPop
 import CampaignResultsModal from '../components/broadcastComponents/CampaignResultsModal';
 import BroadcastResultsPopup from '../components/broadcastComponents/BroadcastResultsPopup';
 import BroadcastAnalyticsModal from '../components/broadcastComponents/BroadcastAnalyticsModal';
+import BroadcastAudienceValidationModal from '../components/broadcastComponents/BroadcastAudienceValidationModal';
 import OutboundDialer from '../components/outbound/OutboundDialer';
 
 // Import styles
@@ -183,6 +184,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState(null);
+  const [audienceValidationModalOpen, setAudienceValidationModalOpen] = useState(false);
+  const [pendingAudienceValidation, setPendingAudienceValidation] = useState(null);
   const [broadcastMode, setBroadcastMode] = useState('whatsapp');
   const [outboundPhaseTab, setOutboundPhaseTab] = useState('quick');
   const broadcastSubmitInFlightRef = useRef(false);
@@ -604,6 +607,44 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
   };
 
+  const buildProcessedRecipients = () =>
+    recipients.map((recipient) => ({
+      phone: recipient.phone,
+      variables: recipient.variables || [],
+      data: recipient.data || recipient.fullData || recipient
+    }));
+
+  const validateAudienceOrAbort = async ({ recipientsPayload, selectedTemplate }) => {
+    const templateCategory =
+      messageType === 'template'
+        ? String(selectedTemplate?.category || '').trim().toLowerCase()
+        : '';
+
+    const validationResponse = await apiClient.validateBroadcastAudience({
+      recipients: recipientsPayload,
+      messageType,
+      templateCategory
+    });
+
+    const validation =
+      validationResponse?.data?.data || validationResponse?.data || null;
+
+    return {
+      templateCategory,
+      validation
+    };
+  };
+
+  const openAudienceValidationModal = (validationResult) => {
+    setPendingAudienceValidation(validationResult);
+    setAudienceValidationModalOpen(true);
+  };
+
+  const closeAudienceValidationModal = () => {
+    setAudienceValidationModalOpen(false);
+    setPendingAudienceValidation(null);
+  };
+
 
 
   const createBroadcast = async () => {
@@ -648,6 +689,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
     let templateContent = '';
+    let selectedTemplate = null;
 
     if (messageType === 'template') {
 
@@ -661,7 +703,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
 
-      const selectedTemplate = officialTemplates.find(t => t.name === templateName);
+      selectedTemplate = officialTemplates.find(t => t.name === templateName);
 
       if (!selectedTemplate) {
 
@@ -701,6 +743,18 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     try {
       broadcastSubmitInFlightRef.current = true;
       setIsSending(true);
+      const processedRecipients = buildProcessedRecipients();
+      const audienceValidation = await validateAudienceOrAbort({
+        recipientsPayload: processedRecipients,
+        selectedTemplate
+      });
+      if (!audienceValidation) {
+        return;
+      }
+      if (!audienceValidation.validation?.canProceed || Number(audienceValidation.validation?.summary?.invalid || 0) > 0) {
+        openAudienceValidationModal(audienceValidation);
+        return;
+      }
 
       const payload = {
 
@@ -708,7 +762,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         messageType,
 
-        recipients,
+        recipients: audienceValidation.validation?.eligibleRecipients || processedRecipients,
 
         ...(messageType === 'template' ? {
 
@@ -717,6 +771,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           language,
 
           templateContent,
+          templateCategory: audienceValidation.templateCategory,
 
           templateParameters: templateVariables.map((variable, index) => ({
 
@@ -841,6 +896,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
     // Initialize templateContent with default value
     let templateContent = '';
+    let selectedTemplate = null;
 
     if (messageType === 'template') {
 
@@ -854,7 +910,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
 
-      const selectedTemplate = officialTemplates.find(t => t.name === templateName);
+      selectedTemplate = officialTemplates.find(t => t.name === templateName);
 
 
 
@@ -898,26 +954,18 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
     try {
-
-      const processedRecipients = recipients.map(recipient => {
-
-        const processedRecipient = {
-
-          phone: recipient.phone,
-
-          variables: recipient.variables || []
-
-        };
-
-
-
-        processedRecipient.data = recipient.data || recipient;
-
-
-
-        return processedRecipient;
-
+      const processedRecipients = buildProcessedRecipients();
+      const audienceValidation = await validateAudienceOrAbort({
+        recipientsPayload: processedRecipients,
+        selectedTemplate
       });
+      if (!audienceValidation) {
+        return;
+      }
+      if (!audienceValidation.validation?.canProceed || Number(audienceValidation.validation?.summary?.invalid || 0) > 0) {
+        openAudienceValidationModal(audienceValidation);
+        return;
+      }
 
 
 
@@ -927,12 +975,13 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         messageType,
 
-        recipients: processedRecipients,
+        recipients: audienceValidation.validation?.eligibleRecipients || processedRecipients,
 
         ...(messageType === 'template' ? { 
           templateName, 
           language,
-          templateContent 
+          templateContent,
+          templateCategory: audienceValidation.templateCategory
         } : { customMessage }),
 
       };
@@ -1159,6 +1208,107 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     setTemplateVariables([]);
     setSelectedLocalTemplate('');
     setMessageType('template');
+  };
+
+  const buildBroadcastPayloadFromValidation = ({
+    validationResult,
+    recipientsPayload,
+    selectedTemplate,
+    mode
+  }) => {
+    const templateCategory = validationResult?.templateCategory || '';
+
+    return {
+      ...(mode === 'send'
+        ? {
+            broadcast_name: broadcastName.trim(),
+            messageType,
+            recipients: validationResult?.validation?.eligibleRecipients || recipientsPayload
+          }
+        : {
+            name: broadcastName,
+            messageType,
+            recipients: validationResult?.validation?.eligibleRecipients || recipientsPayload
+          }),
+      ...(messageType === 'template'
+        ? {
+            templateName,
+            language,
+            templateContent: selectedTemplate ? extractTemplateBody(selectedTemplate) : '',
+            templateCategory,
+            ...(mode === 'create'
+              ? {
+                  templateParameters: templateVariables.map((variable, index) => ({
+                    type: 'text',
+                    text: `Parameter ${index + 1}`
+                  }))
+                }
+              : {})
+          }
+        : mode === 'send'
+          ? { customMessage }
+          : { customMessage }),
+      ...(mode === 'create' && scheduledTime
+        ? { scheduledAt: new Date(scheduledTime).toISOString() }
+        : {})
+    };
+  };
+
+  const continueBroadcastWithEligibleRecipients = async () => {
+    const validationResult = pendingAudienceValidation;
+    if (!validationResult?.validation?.canProceed) {
+      closeAudienceValidationModal();
+      return;
+    }
+
+    const processedRecipients = buildProcessedRecipients();
+    const selectedTemplate = messageType === 'template'
+      ? officialTemplates.find((t) => t.name === templateName) || null
+      : null;
+    const mode = scheduledTime ? 'create' : 'send';
+    const payload = buildBroadcastPayloadFromValidation({
+      validationResult,
+      recipientsPayload: processedRecipients,
+      selectedTemplate,
+      mode
+    });
+
+    closeAudienceValidationModal();
+
+    try {
+      if (mode === 'create') {
+        const result = await apiClient.createBroadcast(payload);
+        if (result.data.success) {
+          alert(scheduledTime ? 'Broadcast scheduled successfully!' : 'Broadcast created successfully!');
+          await loadBroadcasts();
+          resetComposerForm();
+          setShowNewBroadcastPopup(false);
+          if (composerMode) navigate('/broadcast');
+          else setActiveTab('overview');
+          return;
+        }
+        alert('Failed: ' + (result.data.error || result.data.message));
+        return;
+      }
+
+      const result = await apiClient.sendBulkMessages(payload);
+      setSendResults(result.data);
+      if (result.data.success) {
+        setShowResultsPopup(true);
+        await loadBroadcasts();
+        setShowNewBroadcastPopup(false);
+        resetComposerForm();
+        if (composerMode) navigate('/broadcast');
+        return;
+      }
+      alert('Failed to send: ' + (result.data.error || result.data.message));
+    } catch (error) {
+      console.error('Broadcast continue after validation error:', error);
+      alert('Failed to continue broadcast: ' + error.message);
+    } finally {
+      broadcastSubmitInFlightRef.current = false;
+      setIsSending(false);
+    }
   };
 
   if (composerMode) {
@@ -1601,6 +1751,16 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         isOpen={showAnalyticsModal}
         onClose={() => setShowAnalyticsModal(false)}
         broadcast={selectedBroadcast}
+      />
+      <BroadcastAudienceValidationModal
+        open={audienceValidationModalOpen}
+        validation={pendingAudienceValidation?.validation || null}
+        onClose={() => {
+          closeAudienceValidationModal();
+          broadcastSubmitInFlightRef.current = false;
+          setIsSending(false);
+        }}
+        onProceed={continueBroadcastWithEligibleRecipients}
       />
       </>
       )}

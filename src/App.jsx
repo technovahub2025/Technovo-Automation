@@ -8,6 +8,7 @@ import Register from "./pages/register";
 import ForgotPassword from "./pages/forgotpassword";
 import ResetPassword from "./pages/resetpassword";
 import AuthCallback from "./pages/AuthCallback";
+const PublicWhatsAppOptInDemo = lazy(() => import("./pages/PublicWhatsAppOptInDemo"));
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const TeamInbox = lazy(() => import("./pages/TeamInbox"));
@@ -57,6 +58,10 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password/:token" element={<ResetPassword />} />
+        <Route
+          path="/whatsapp-opt-in-demo"
+          element={renderLazyRoute(<PublicWhatsAppOptInDemo />, "Loading opt-in demo...")}
+        />
 
         {/* App layout with nested routes */}
         <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}> 

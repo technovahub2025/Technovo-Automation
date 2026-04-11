@@ -6,17 +6,39 @@ const META_API_BASE_URL = import.meta.env.VITE_META_API_BASE_URL || "";
 const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
 const normalizedMetaBaseUrl = normalizeApiBaseUrl(META_API_BASE_URL);
 const META_API_RUNTIME_BASE_KEY = "meta_api_runtime_base_url";
+const allowRemoteMetaApiInLocalDev = String(import.meta.env.VITE_META_API_ALLOW_REMOTE_LOCAL_DEV || "").trim().toLowerCase() === "true";
+
+const getWindowHostname = () => {
+  if (typeof window === "undefined") return "";
+  return String(window.location.hostname || "").trim().toLowerCase();
+};
+
+const isLocalFrontend = () => /^(localhost|127\.0\.0\.1)$/i.test(getWindowHostname());
+
+const shouldForceLocalMetaApiBase = () => isLocalFrontend() && !allowRemoteMetaApiInLocalDev;
 
 const getRuntimeMetaBaseUrl = () => {
   if (typeof window === "undefined") return "";
   return normalizeApiBaseUrl(window.localStorage.getItem(META_API_RUNTIME_BASE_KEY) || "");
 };
 
-const resolveMetaApiBaseUrl = () => getRuntimeMetaBaseUrl() || normalizedMetaBaseUrl || APP_API_BASE_URL;
+const resolveMetaApiBaseUrl = () => {
+  if (shouldForceLocalMetaApiBase()) {
+    return APP_API_BASE_URL;
+  }
+
+  return getRuntimeMetaBaseUrl() || normalizedMetaBaseUrl || APP_API_BASE_URL;
+};
 
 export const setMetaApiRuntimeBaseUrl = (value) => {
   if (typeof window === "undefined") return;
   const normalized = normalizeApiBaseUrl(value);
+  if (shouldForceLocalMetaApiBase()) {
+    window.localStorage.removeItem(META_API_RUNTIME_BASE_KEY);
+    metaApi.defaults.baseURL = APP_API_BASE_URL;
+    return;
+  }
+
   if (normalized) {
     window.localStorage.setItem(META_API_RUNTIME_BASE_KEY, normalized);
     metaApi.defaults.baseURL = normalized;
@@ -82,10 +104,26 @@ export const saveMetaSelections = async (payload) => {
   return response.data;
 };
 
+export const previewMetaLeadConsent = async (leadId, params = {}) => {
+  metaApi.defaults.baseURL = resolveMetaApiBaseUrl();
+  const response = await metaApi.get(`/api/meta-ads/leads/${encodeURIComponent(leadId)}/preview`, {
+    params
+  });
+  return response.data;
+};
+
+export const syncMetaLeadConsent = async (payload) => {
+  metaApi.defaults.baseURL = resolveMetaApiBaseUrl();
+  const response = await metaApi.post("/api/meta-ads/leads/sync-consent", payload);
+  return response.data;
+};
+
 export default {
   getMetaOverview,
   getMetaDiagnostics,
   getMetaAuthUrl,
   saveMetaSelections,
+  previewMetaLeadConsent,
+  syncMetaLeadConsent,
   setMetaApiRuntimeBaseUrl,
 };

@@ -166,16 +166,30 @@ export const whatsappService = {
     language = 'en_US',
     variables = [],
     conversationId,
-    components = []
+    components = [],
+    options = {}
   ) {
     try {
+      const normalizedConversationId = String(conversationId || '').trim();
+      const normalizedOptions =
+        options && typeof options === 'object' && !Array.isArray(options) ? options : {};
       const payload = {
         to,
         templateName,
         language,
         variables,
-        conversationId,
-        ...(Array.isArray(components) && components.length > 0 ? { components } : {})
+        ...(normalizedConversationId ? { conversationId: normalizedConversationId } : {}),
+        ...(Array.isArray(components) && components.length > 0 ? { components } : {}),
+        ...(String(normalizedOptions.contactId || '').trim()
+          ? { contactId: String(normalizedOptions.contactId || '').trim() }
+          : {}),
+        ...(String(normalizedOptions.contactName || '').trim()
+          ? { contactName: String(normalizedOptions.contactName || '').trim() }
+          : {})
+        ,
+        ...(String(normalizedOptions.templateCategory || '').trim()
+          ? { templateCategory: String(normalizedOptions.templateCategory || '').trim() }
+          : {})
       };
       const response = await axios.post(
         `${API_BASE_URL}/api/messages/send-template`,

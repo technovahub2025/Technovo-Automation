@@ -2,9 +2,12 @@
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import './TeamInbox.css';
 import { googleCalendarService } from '../services/googleCalendarService';
+import { apiClient } from '../services/whatsappapi';
 import { AuthContext } from './authcontext'
 import TemplateSendModal from './teamInbox/TemplateSendModal';
 import ContactInfoPanel from './teamInbox/ContactInfoPanel';
+import WhatsAppOptInModal from '../components/WhatsAppOptInModal';
+import WhatsAppConsentAuditModal from '../components/WhatsAppConsentAuditModal';
 import ConversationSidebar from './teamInbox/ConversationSidebar';
 import ChatArea from './teamInbox/ChatArea';
 import { useTemplateSendModal } from './teamInbox/useTemplateSendModal';
@@ -30,6 +33,8 @@ import {
   TEAM_INBOX_NOTIFICATION_MODE_CHANGED_EVENT,
   getTeamInboxNotificationMode
 } from './teamInbox/teamInboxNotificationUtils';
+import { getWhatsAppOutreachTargetFromLocationState } from '../utils/whatsappOutreachNavigation';
+import { getWhatsAppConversationState } from '../utils/whatsappContactState';
 import {
   formatConversationTime,
   filterConversations,
@@ -51,6 +56,7 @@ const TeamInbox = () => {
   const [messagesOlderLoading, setMessagesOlderLoading] = useState(false);
   const [messagesHasMore, setMessagesHasMore] = useState(false);
   const [sidebarRefreshing, setSidebarRefreshing] = useState(false);
+  const [pendingTemplateTarget, setPendingTemplateTarget] = useState(null);
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -102,6 +108,22 @@ const TeamInbox = () => {
   const [crmDocumentTypeDraft, setCrmDocumentTypeDraft] = useState('other');
   const [notificationMode, setNotificationMode] = useState(() => getTeamInboxNotificationMode());
   const [teamInboxActionFeedback, setTeamInboxActionFeedback] = useState(null);
+  const [showWhatsAppOptInModal, setShowWhatsAppOptInModal] = useState(false);
+  const [whatsAppOptInDraft, setWhatsAppOptInDraft] = useState({
+    source: 'manual',
+    scope: 'marketing',
+    proofType: '',
+    proofId: '',
+    proofUrl: '',
+    pageUrl: '',
+    consentText:
+      'I agree to receive WhatsApp updates from Technovohub and can reply STOP anytime to opt out.'
+  });
+  const [whatsAppOptInError, setWhatsAppOptInError] = useState('');
+  const [showWhatsAppConsentAuditModal, setShowWhatsAppConsentAuditModal] = useState(false);
+  const [whatsAppConsentAuditLoading, setWhatsAppConsentAuditLoading] = useState(false);
+  const [whatsAppConsentAuditError, setWhatsAppConsentAuditError] = useState('');
+  const [whatsAppConsentAuditData, setWhatsAppConsentAuditData] = useState(null);
   const messagesEndRef = useRef(null);
   const chatMessagesRef = useRef(null);
   const inboxMenuRef = useRef(null);
@@ -120,6 +142,7 @@ const TeamInbox = () => {
   const messagePaginationCacheRef = useRef(new Map());
   const messageLoadPromiseMapRef = useRef(new Map());
   const restoredBootstrapCacheUserRef = useRef('');
+  const consumedTemplateOpenNonceRef = useRef('');
   const commonEmojis = [
     '\u{1F44D}',
     '\u2764\uFE0F',
@@ -136,6 +159,7 @@ const TeamInbox = () => {
   ];
   const storedUser = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; } })();
   const currentUserId = user?.id || user?._id || storedUser?.id || storedUser?._id || localStorage.getItem('userId') || null;
+  const routeOutreachTarget = getWhatsAppOutreachTargetFromLocationState(location.state);
 
   useEffect(() => {
     const normalizedUserId = String(currentUserId || '').trim();
@@ -172,6 +196,69 @@ const TeamInbox = () => {
   };
   const confirmTeamInboxAction = async (message) =>
     window.confirm(String(message || '').trim());
+
+  const applyWhatsAppContactUpdateLocally = (contactUpdate = {}) => {
+    const normalizedContactId = String(
+      contactUpdate?._id || contactUpdate?.id || ''
+    ).trim();
+    if (!normalizedContactId) return;
+
+    const mergeConversation = (conversation) => {
+      const conversationContactId = String(
+        conversation?.contactId?._id || conversation?.contactId?.id || conversation?.contactId || ''
+      ).trim();
+      if (!conversationContactId || conversationContactId !== normalizedContactId) {
+        return conversation;
+      }
+
+      const currentContact =
+        conversation?.contactId && typeof conversation.contactId === 'object'
+          ? conversation.contactId
+          : {};
+
+      return normalizeConversation({
+        ...conversation,
+        contactId: {
+          ...currentContact,
+          ...contactUpdate
+        },
+        contactName:
+          String(contactUpdate?.name || '').trim() || conversation?.contactName || ''
+      });
+    };
+
+    setConversations((prev) => prev.map(mergeConversation));
+    setSelectedConversation((prev) => (prev ? mergeConversation(prev) : prev));
+  };
+
+  const buildWhatsAppOptInDraft = (contact = {}) => ({
+    source: String(contact?.whatsappOptInSource || '').trim() || 'manual',
+    scope: String(contact?.whatsappOptInScope || '').trim() || 'marketing',
+    proofType: String(contact?.whatsappOptInProofType || '').trim(),
+    proofId: String(contact?.whatsappOptInProofId || '').trim(),
+    proofUrl: String(contact?.whatsappOptInProofUrl || '').trim(),
+    pageUrl: String(contact?.whatsappOptInPageUrl || '').trim(),
+    consentText:
+      String(contact?.whatsappOptInTextSnapshot || '').trim() ||
+      'I agree to receive WhatsApp updates from Technovohub and can reply STOP anytime to opt out.'
+  });
+
+  const getCapturedByLabel = () => {
+    try {
+      const parsedUser = JSON.parse(localStorage.getItem('user') || 'null');
+      return String(
+        user?.name ||
+          user?.fullName ||
+          user?.email ||
+          parsedUser?.name ||
+          parsedUser?.fullName ||
+          parsedUser?.email ||
+          'team_inbox'
+      ).trim();
+    } catch {
+      return 'team_inbox';
+    }
+  };
 
   useEffect(() => {
     const handleNotificationModeChange = (event) => {
@@ -357,16 +444,45 @@ const TeamInbox = () => {
     handleSendTemplate
   } = useTemplateSendModal({
     selectedConversation,
+    templateTarget: pendingTemplateTarget,
     conversationId,
     onMissingContactPhone: (message) => {
       setContactInfoMessage(message);
       setContactInfoMessageTone('error');
     },
-    onTemplateSent: (message) => {
+    onTemplateSent: (message, result) => {
       setContactInfoMessage(message);
       setContactInfoMessageTone('success');
+      const nextConversationId = String(result?.conversationId || '').trim();
+      if (nextConversationId) {
+        pendingConversationRouteSyncRef.current = nextConversationId;
+        navigate(`/inbox/${nextConversationId}`);
+      }
+    },
+    onTemplateModalClosed: () => {
+      setPendingTemplateTarget(null);
     }
   });
+
+  useEffect(() => {
+    const shouldOpenTemplateModal = Boolean(location.state?.openTemplateSendModal);
+    if (!shouldOpenTemplateModal || !routeOutreachTarget?.contactPhone) return;
+
+    const routeNonce =
+      String(location.state?.whatsappOutreachNonce || '').trim() ||
+      `${routeOutreachTarget.contactPhone}::${routeOutreachTarget.contactId || ''}`;
+
+    if (consumedTemplateOpenNonceRef.current === routeNonce) return;
+
+    consumedTemplateOpenNonceRef.current = routeNonce;
+    setPendingTemplateTarget(routeOutreachTarget);
+  }, [location.state, routeOutreachTarget]);
+
+  useEffect(() => {
+    if (!pendingTemplateTarget?.contactPhone) return;
+    if (showTemplateSendModal) return;
+    openTemplateSendModal();
+  }, [openTemplateSendModal, pendingTemplateTarget, showTemplateSendModal]);
 
   const {
     applyContactUpdateLocally,
@@ -718,6 +834,119 @@ const TeamInbox = () => {
   });
 
   const groupedMessages = buildGroupedMessages(messages);
+  const selectedWhatsAppState =
+    selectedConversation?.contactId && typeof selectedConversation.contactId === 'object'
+      ? getWhatsAppConversationState(selectedConversation.contactId)
+      : {
+          normalizedOptInStatus: 'unknown',
+          serviceWindowClosesAt: null,
+          serviceWindowOpen: true,
+          freeformAllowed: true,
+          templateOnly: false,
+          optedOut: false,
+          marketingTemplateAllowed: true,
+          statusLabel: '24h Open',
+          badgeTone: 'service-open'
+        };
+
+  const openSelectedConversationOptInModal = () => {
+    const activeContact =
+      selectedConversation?.contactId && typeof selectedConversation.contactId === 'object'
+        ? selectedConversation.contactId
+        : {};
+    setWhatsAppOptInDraft(buildWhatsAppOptInDraft(activeContact));
+    setWhatsAppOptInError('');
+    setShowWhatsAppOptInModal(true);
+  };
+
+  const handleMarkSelectedConversationOptIn = async () => {
+    const contactId = String(getContactIdFromConversation(selectedConversation) || '').trim();
+    if (!contactId) {
+      setContactInfoMessage('No contact found for this conversation.');
+      setContactInfoMessageTone('error');
+      return;
+    }
+
+    try {
+      setContactInfoActionBusy(true);
+      setWhatsAppOptInError('');
+      const result = await apiClient.markContactWhatsAppOptIn(contactId, {
+        ...whatsAppOptInDraft,
+        capturedBy: getCapturedByLabel()
+      });
+      const updatedContact = result?.data?.data?.contact || result?.data?.contact || null;
+      if (updatedContact) {
+        applyWhatsAppContactUpdateLocally(updatedContact);
+      }
+      setContactInfoMessage('WhatsApp opt-in updated.');
+      setContactInfoMessageTone('success');
+      setShowWhatsAppOptInModal(false);
+    } catch (error) {
+      const nextError =
+        error?.response?.data?.error ||
+        error?.message ||
+        'Failed to update WhatsApp opt-in.';
+      setContactInfoMessage(nextError);
+      setContactInfoMessageTone('error');
+      setWhatsAppOptInError(nextError);
+    } finally {
+      setContactInfoActionBusy(false);
+    }
+  };
+
+  const handleMarkSelectedConversationOptOut = async () => {
+    const contactId = String(getContactIdFromConversation(selectedConversation) || '').trim();
+    if (!contactId) {
+      setContactInfoMessage('No contact found for this conversation.');
+      setContactInfoMessageTone('error');
+      return;
+    }
+
+    try {
+      setContactInfoActionBusy(true);
+      const result = await apiClient.markContactWhatsAppOptOut(contactId, {
+        source: 'team_inbox'
+      });
+      const updatedContact = result?.data?.data?.contact || result?.data?.contact || null;
+      if (updatedContact) {
+        applyWhatsAppContactUpdateLocally(updatedContact);
+      }
+      setContactInfoMessage('WhatsApp opt-out updated.');
+      setContactInfoMessageTone('success');
+    } catch (error) {
+      setContactInfoMessage(error?.message || 'Failed to update WhatsApp opt-out.');
+      setContactInfoMessageTone('error');
+    } finally {
+      setContactInfoActionBusy(false);
+    }
+  };
+
+  const loadSelectedConversationConsentAudit = async () => {
+    const contactId = String(getContactIdFromConversation(selectedConversation) || '').trim();
+    if (!contactId) {
+      setWhatsAppConsentAuditError('No contact found for this conversation.');
+      return;
+    }
+
+    try {
+      setWhatsAppConsentAuditLoading(true);
+      setWhatsAppConsentAuditError('');
+      const result = await apiClient.getContactWhatsAppConsentAudit(contactId);
+      setWhatsAppConsentAuditData(result?.data?.data || null);
+    } catch (error) {
+      setWhatsAppConsentAuditError(
+        error?.response?.data?.error || error?.message || 'Failed to load consent audit.'
+      );
+    } finally {
+      setWhatsAppConsentAuditLoading(false);
+    }
+  };
+
+  const openSelectedConversationConsentAudit = async () => {
+    setShowWhatsAppConsentAuditModal(true);
+    setWhatsAppConsentAuditData(null);
+    await loadSelectedConversationConsentAudit();
+  };
 
   const {
     handleSelectConversation,
@@ -808,10 +1037,12 @@ const TeamInbox = () => {
         externalMessageActionFeedback={teamInboxActionFeedback}
         onClearExternalMessageActionFeedback={() => setTeamInboxActionFeedback(null)}
         sendingMessage={sendingMessage}
+        whatsappMessagingState={selectedWhatsAppState}
         onToggleMessageMenu={handleToggleMessageMenu}
         onToggleMessageSelectMode={handleToggleMessageSelectionMode}
         onDeleteConversation={handleDeleteCurrentConversationFromMenu}
         onOpenContactInformation={handleOpenContactInformation}
+        onOpenTemplateSendModal={openTemplateSendModal}
         onToggleMessageSelection={toggleMessageSelection}
         deleteSelectedMessages={deleteSelectedMessages}
         onMessageInputChange={setMessageInput}
@@ -863,8 +1094,13 @@ const TeamInbox = () => {
         getLeadStageValue={getLeadStageValue}
         handleLeadStageChange={handleLeadStageChange}
         contactInfoActionBusy={contactInfoActionBusy}
+        whatsappMessagingState={selectedWhatsAppState}
         leadStageOptions={leadStageOptions}
         openTemplateSendModal={openTemplateSendModal}
+        onMarkWhatsAppOptIn={handleMarkSelectedConversationOptIn}
+        onOpenWhatsAppOptInModal={openSelectedConversationOptInModal}
+        onMarkWhatsAppOptOut={handleMarkSelectedConversationOptOut}
+        onViewWhatsAppConsentAudit={openSelectedConversationConsentAudit}
         templateLoading={templateLoading}
         templateSending={templateSending}
         handleQualifyLead={handleQualifyLead}
@@ -932,6 +1168,36 @@ const TeamInbox = () => {
         internalNoteSaving={internalNoteSaving}
         contactInfoMessage={contactInfoMessage}
         contactInfoMessageTone={contactInfoMessageTone}
+      />
+      <WhatsAppOptInModal
+        open={showWhatsAppOptInModal}
+        phone={selectedConversation?.contactPhone || ''}
+        contactName={selectedConversation?.contactId?.name || selectedConversation?.contactName || ''}
+        form={whatsAppOptInDraft}
+        onChange={setWhatsAppOptInDraft}
+        onClose={() => {
+          if (contactInfoActionBusy) return;
+          setShowWhatsAppOptInModal(false);
+          setWhatsAppOptInError('');
+        }}
+        onSubmit={handleMarkSelectedConversationOptIn}
+        submitting={contactInfoActionBusy}
+        error={whatsAppOptInError}
+      />
+      <WhatsAppConsentAuditModal
+        open={showWhatsAppConsentAuditModal}
+        onClose={() => {
+          if (whatsAppConsentAuditLoading) return;
+          setShowWhatsAppConsentAuditModal(false);
+          setWhatsAppConsentAuditError('');
+          setWhatsAppConsentAuditData(null);
+        }}
+        loading={whatsAppConsentAuditLoading}
+        error={whatsAppConsentAuditError}
+        data={whatsAppConsentAuditData}
+        contactName={selectedConversation?.contactId?.name || selectedConversation?.contactName || ''}
+        phone={selectedConversation?.contactPhone || ''}
+        onRefresh={loadSelectedConversationConsentAudit}
       />
     </div>
   );

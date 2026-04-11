@@ -4,9 +4,11 @@ import { getConversationIdValue } from './teamInboxUtils';
 
 export const useTemplateSendModal = ({
   selectedConversation,
+  templateTarget,
   conversationId,
   onMissingContactPhone,
-  onTemplateSent
+  onTemplateSent,
+  onTemplateModalClosed
 }) => {
   const [showTemplateSendModal, setShowTemplateSendModal] = useState(false);
   const [templateLoading, setTemplateLoading] = useState(false);
@@ -20,6 +22,32 @@ export const useTemplateSendModal = ({
   const [templateModalMessageTone, setTemplateModalMessageTone] = useState('info');
 
   const brandLogoUrl = String(import.meta.env.VITE_BRAND_LOGO_URL || '').trim();
+  const resolvedTemplateTarget =
+    templateTarget?.contactPhone
+      ? {
+          contactPhone: String(templateTarget?.contactPhone || '').trim(),
+          contactName: String(
+            templateTarget?.contactName || templateTarget?.name || ''
+          ).trim(),
+          contactId: String(templateTarget?.contactId || '').trim()
+        }
+      : selectedConversation?.contactPhone
+        ? {
+            contactPhone: String(selectedConversation?.contactPhone || '').trim(),
+            contactName: String(
+              selectedConversation?.contactName ||
+                selectedConversation?.name ||
+                selectedConversation?.displayName ||
+                ''
+            ).trim(),
+            contactId: String(
+              selectedConversation?.contactId?._id ||
+                selectedConversation?.contactId?.id ||
+                selectedConversation?.contactId ||
+                ''
+            ).trim()
+          }
+        : null;
 
   const getTemplateCompositeKey = (template = {}) => {
     const name = String(template?.name || '').trim();
@@ -127,7 +155,7 @@ export const useTemplateSendModal = ({
   };
 
   const openTemplateSendModal = async () => {
-    if (!selectedConversation?.contactPhone) {
+    if (!resolvedTemplateTarget?.contactPhone) {
       if (typeof onMissingContactPhone === 'function') {
         onMissingContactPhone('No contact phone found for this conversation.');
       }
@@ -145,6 +173,9 @@ export const useTemplateSendModal = ({
     setShowTemplateSendModal(false);
     setTemplateModalMessage('');
     setTemplateModalMessageTone('info');
+    if (typeof onTemplateModalClosed === 'function') {
+      onTemplateModalClosed();
+    }
   };
 
   const handleTemplateSelectionChange = (templateKey) => {
@@ -181,8 +212,8 @@ export const useTemplateSendModal = ({
     try {
       const activeConversationId =
         getConversationIdValue(selectedConversation) || String(conversationId || '').trim();
-      if (!activeConversationId || !selectedConversation?.contactPhone) {
-        throw new Error('Missing conversation or contact details.');
+      if (!resolvedTemplateTarget?.contactPhone) {
+        throw new Error('Missing contact details.');
       }
 
       const selectedTemplate = templateOptions.find(
@@ -265,12 +296,17 @@ export const useTemplateSendModal = ({
       setTemplateModalMessage('');
 
       const result = await whatsappService.sendTemplateMessage(
-        selectedConversation.contactPhone,
+        resolvedTemplateTarget.contactPhone,
         templateName,
         language,
         bodyVariables,
         activeConversationId,
-        templateComponents
+        templateComponents,
+        {
+          contactId: resolvedTemplateTarget?.contactId || '',
+          contactName: resolvedTemplateTarget?.contactName || '',
+          templateCategory: String(selectedTemplate?.category || '').trim()
+        }
       );
 
       if (result?.success === false) {
@@ -280,7 +316,10 @@ export const useTemplateSendModal = ({
       setShowTemplateSendModal(false);
       setTemplateModalMessage('');
       if (typeof onTemplateSent === 'function') {
-        onTemplateSent('Template sent successfully.');
+        onTemplateSent('Template sent successfully.', result);
+      }
+      if (typeof onTemplateModalClosed === 'function') {
+        onTemplateModalClosed();
       }
     } catch (error) {
       setTemplateModalMessage(error?.message || 'Failed to send template.');
@@ -299,7 +338,7 @@ export const useTemplateSendModal = ({
     setTemplateVariableValues([]);
     setTemplateHeaderVariableValues([]);
     setTemplateHeaderMediaUrl('');
-  }, [selectedConversation?._id]);
+  }, [selectedConversation?._id, templateTarget?.contactPhone, templateTarget?.contactId]);
 
   return {
     showTemplateSendModal,

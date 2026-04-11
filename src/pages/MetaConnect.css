@@ -214,6 +214,21 @@
   min-width: 0;
 }
 
+.meta-field input,
+.meta-field textarea {
+  border: 1px solid #ccd9f0;
+  border-radius: 14px;
+  padding: 13px 14px;
+  color: #172b57;
+  background: #ffffff;
+  width: 100%;
+  min-width: 0;
+}
+
+.meta-field textarea {
+  resize: vertical;
+}
+
 .meta-field-full {
   grid-column: 1 / -1;
 }
@@ -223,6 +238,11 @@
   display: flex;
   justify-content: flex-end;
   flex-wrap: wrap;
+}
+
+.meta-selection-actions-start {
+  justify-content: flex-start;
+  gap: 12px;
 }
 
 .meta-inline-link {
@@ -239,6 +259,55 @@
   color: #5d7097;
   font-weight: 600;
   padding-bottom: 20px;
+}
+
+.meta-lead-preview {
+  margin-top: 20px;
+  display: grid;
+  gap: 18px;
+}
+
+.meta-lead-field-list {
+  border: 1px solid #e2ebfb;
+  border-radius: 18px;
+  padding: 16px;
+  background: #fbfdff;
+}
+
+.meta-lead-field-list strong {
+  display: block;
+  margin-bottom: 10px;
+  color: #172b57;
+}
+
+.meta-lead-field-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 10px;
+}
+
+.meta-lead-field-list li {
+  display: grid;
+  gap: 4px;
+}
+
+.meta-lead-field-list span {
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+  text-transform: capitalize;
+}
+
+.meta-lead-field-list code {
+  display: inline-block;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 12px;
+  word-break: break-word;
 }
 
 .spin {

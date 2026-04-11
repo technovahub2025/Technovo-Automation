@@ -1,4 +1,4 @@
-const TEAM_INBOX_CACHE_VERSION = 1;
+const TEAM_INBOX_CACHE_VERSION = 3;
 const TEAM_INBOX_CACHE_PREFIX = 'team-inbox-cache';
 
 const TEAM_INBOX_BOOTSTRAP_TTL_MS = 30 * 60 * 1000;
@@ -186,6 +186,22 @@ const sanitizeContact = (contact = {}) => {
       Number.isFinite(Number(contact.leadScore)) && Number(contact.leadScore) >= 0
         ? Number(contact.leadScore)
         : 0,
+    isBlocked: Boolean(contact.isBlocked),
+    whatsappOptInStatus: pickString(contact.whatsappOptInStatus),
+    whatsappOptInAt: pickString(contact.whatsappOptInAt),
+    whatsappOptInSource: pickString(contact.whatsappOptInSource),
+    whatsappOptInScope: pickString(contact.whatsappOptInScope),
+    whatsappOptInTextSnapshot: pickString(contact.whatsappOptInTextSnapshot),
+    whatsappOptInProofType: pickString(contact.whatsappOptInProofType),
+    whatsappOptInProofId: pickString(contact.whatsappOptInProofId),
+    whatsappOptInProofUrl: sanitizeUrl(contact.whatsappOptInProofUrl),
+    whatsappOptInCapturedBy: pickString(contact.whatsappOptInCapturedBy),
+    whatsappOptInPageUrl: sanitizeUrl(contact.whatsappOptInPageUrl),
+    whatsappOptInIp: pickString(contact.whatsappOptInIp),
+    whatsappOptInUserAgent: pickString(contact.whatsappOptInUserAgent),
+    whatsappOptOutAt: pickString(contact.whatsappOptOutAt),
+    lastInboundMessageAt: pickString(contact.lastInboundMessageAt),
+    serviceWindowClosesAt: pickString(contact.serviceWindowClosesAt),
     tags: Array.isArray(contact.tags)
       ? contact.tags.map((tag) => pickString(tag)).filter(Boolean).slice(0, 20)
       : [],

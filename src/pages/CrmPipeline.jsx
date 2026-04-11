@@ -1,7 +1,10 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
-import { RefreshCw, Funnel, TrendingUp, ClipboardList, Clock3 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
+import { RefreshCw, Funnel, TrendingUp, ClipboardList, Clock3, Send, Copy, ExternalLink } from "lucide-react";
 import { crmService } from "../services/crmService";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
+import { buildPublicWhatsAppOptInDemoUrl, buildWhatsAppOutreachState } from "../utils/whatsappOutreachNavigation";
+import { getWhatsAppConversationState } from "../utils/whatsappContactState";
 import {
   readSidebarPageCache,
   resolveCacheUserId,
@@ -49,7 +52,26 @@ const sanitizeCrmPipelineContact = (contact = {}) => ({
     Number.isFinite(Number(contact?.leadScore)) && Number(contact.leadScore) >= 0
       ? Number(contact.leadScore)
       : 0,
-  nextFollowUpAt: String(contact?.nextFollowUpAt || "").trim()
+  nextFollowUpAt: String(contact?.nextFollowUpAt || "").trim(),
+  isBlocked: Boolean(contact?.isBlocked),
+  whatsappOptInStatus: String(contact?.whatsappOptInStatus || "").trim(),
+  whatsappOptInAt: String(contact?.whatsappOptInAt || "").trim(),
+  whatsappOptInSource: String(contact?.whatsappOptInSource || "").trim(),
+  whatsappOptInScope: String(contact?.whatsappOptInScope || "").trim(),
+  whatsappOptInTextSnapshot: String(contact?.whatsappOptInTextSnapshot || "").trim(),
+  whatsappOptInProofType: String(contact?.whatsappOptInProofType || "").trim(),
+  whatsappOptInProofId: String(contact?.whatsappOptInProofId || "").trim(),
+  whatsappOptInProofUrl: String(contact?.whatsappOptInProofUrl || "").trim(),
+  whatsappOptInCapturedBy: String(contact?.whatsappOptInCapturedBy || "").trim(),
+  whatsappOptInPageUrl: String(contact?.whatsappOptInPageUrl || "").trim(),
+  whatsappOptOutAt: String(contact?.whatsappOptOutAt || "").trim(),
+  lastInboundMessageAt: String(contact?.lastInboundMessageAt || "").trim(),
+  serviceWindowClosesAt: String(contact?.serviceWindowClosesAt || "").trim()
+});
+
+const decorateCrmContact = (contact = {}) => ({
+  ...contact,
+  whatsappState: getWhatsAppConversationState(contact)
 });
 
 const sanitizeCrmPipelineMetrics = (metrics = {}) => {
@@ -62,6 +84,7 @@ const sanitizeCrmPipelineMetrics = (metrics = {}) => {
 };
 
 const CrmPipeline = () => {
+  const navigate = useNavigate();
   const [contacts, setContacts] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -125,7 +148,7 @@ const CrmPipeline = () => {
       }
 
       const rawContacts = contactsResult?.data || [];
-      const nextContacts = Array.isArray(rawContacts) ? rawContacts : [];
+      const nextContacts = (Array.isArray(rawContacts) ? rawContacts : []).map(decorateCrmContact);
       const nextMetrics = metricsResult?.data || null;
 
       setContacts(nextContacts);
@@ -158,7 +181,7 @@ const CrmPipeline = () => {
     });
 
     if (Array.isArray(cachedPipeline?.data?.contacts)) {
-      setContacts(cachedPipeline.data.contacts);
+      setContacts(cachedPipeline.data.contacts.map(decorateCrmContact));
       setMetrics(cachedPipeline?.data?.metrics || null);
       setLoading(false);
       fetchPipelineData({ silent: true });
@@ -198,7 +221,9 @@ const CrmPipeline = () => {
         const nextContacts = prev.map((item) => {
           const itemId = getContactId(item);
           if (!itemId || itemId !== contactId) return item;
-          return updated ? { ...item, ...updated } : { ...item, stage: nextStage };
+          return updated
+            ? decorateCrmContact({ ...item, ...updated })
+            : decorateCrmContact({ ...item, stage: nextStage });
         });
 
         persistPipelineCache(nextContacts, metrics);
@@ -210,6 +235,43 @@ const CrmPipeline = () => {
       setStageUpdatingId("");
     }
   }, [metrics, persistPipelineCache]);
+
+  const handleStartWhatsAppTemplate = useCallback((contact) => {
+    navigate("/inbox", {
+      state: buildWhatsAppOutreachState(contact, {
+        openTemplateSendModal: true
+      })
+    });
+  }, [navigate]);
+
+  const copyPublicOptInLink = useCallback(async (contact) => {
+    const link = buildPublicWhatsAppOptInDemoUrl(contact, {
+      source: 'crm_pipeline_share',
+      scope: 'marketing'
+    });
+    if (!link) {
+      window.alert('Unable to generate public opt-in link.');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(link);
+      window.alert('Public opt-in link copied successfully.');
+    } catch {
+      window.prompt('Copy this public opt-in link', link);
+    }
+  }, []);
+
+  const openPublicOptInLink = useCallback((contact) => {
+    const link = buildPublicWhatsAppOptInDemoUrl(contact, {
+      source: 'crm_pipeline_share',
+      scope: 'marketing'
+    });
+    if (!link) {
+      window.alert('Unable to generate public opt-in link.');
+      return;
+    }
+    window.open(link, '_blank', 'noopener,noreferrer');
+  }, []);
 
   return (
     <div className="crm-workspace">
@@ -311,6 +373,36 @@ const CrmPipeline = () => {
                       <div className="crm-contact-meta">
                         <span>Score: {Number(contact?.leadScore || 0)}</span>
                         <span>Next: {formatDateTime(contact?.nextFollowUpAt)}</span>
+                      </div>
+                      <div className={`crm-whatsapp-badge crm-whatsapp-badge--${contact?.whatsappState?.badgeTone || 'template-only'}`}>
+                        {contact?.whatsappState?.statusLabel || 'Template Only'}
+                      </div>
+                      <div className="crm-contact-actions">
+                        <button
+                          type="button"
+                          className="crm-contact-action-btn"
+                          onClick={() => handleStartWhatsAppTemplate(contact)}
+                          disabled={contact?.whatsappState?.optedOut}
+                        >
+                          <Send size={14} />
+                          Start WhatsApp
+                        </button>
+                        <button
+                          type="button"
+                          className="crm-contact-action-btn crm-contact-action-btn--secondary"
+                          onClick={() => copyPublicOptInLink(contact)}
+                        >
+                          <Copy size={14} />
+                          Copy Opt-In Link
+                        </button>
+                        <button
+                          type="button"
+                          className="crm-contact-action-btn crm-contact-action-btn--secondary"
+                          onClick={() => openPublicOptInLink(contact)}
+                        >
+                          <ExternalLink size={14} />
+                          Open Opt-In
+                        </button>
                       </div>
                       <select
                         className="crm-select"

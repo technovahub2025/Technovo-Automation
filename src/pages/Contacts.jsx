@@ -1,9 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X } from 'lucide-react';
+import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, Send, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X, FileText, Copy, ExternalLink } from 'lucide-react';
 import { apiClient } from '../services/whatsappapi';
-import { normalizePhone } from './teamInbox/teamInboxIdentityUtils.js';
+import WhatsAppOptInModal from '../components/WhatsAppOptInModal';
+import WhatsAppConsentAuditModal from '../components/WhatsAppConsentAuditModal';
 import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
+import { buildPublicWhatsAppOptInDemoUrl, buildWhatsAppOutreachState } from '../utils/whatsappOutreachNavigation';
+import { getWhatsAppConversationState } from '../utils/whatsappContactState';
 import {
     readSidebarPageCache,
     resolveCacheUserId,
@@ -25,6 +28,19 @@ const sanitizeContactForCache = (contact = {}) => ({
         ? contact.tags.map((tag) => String(tag || '').trim()).filter(Boolean).slice(0, 20)
         : [],
     isBlocked: Boolean(contact?.isBlocked),
+    whatsappOptInStatus: String(contact?.whatsappOptInStatus || '').trim(),
+    whatsappOptInAt: String(contact?.whatsappOptInAt || '').trim(),
+    whatsappOptInSource: String(contact?.whatsappOptInSource || '').trim(),
+    whatsappOptInScope: String(contact?.whatsappOptInScope || '').trim(),
+    whatsappOptInTextSnapshot: String(contact?.whatsappOptInTextSnapshot || '').trim(),
+    whatsappOptInProofType: String(contact?.whatsappOptInProofType || '').trim(),
+    whatsappOptInProofId: String(contact?.whatsappOptInProofId || '').trim(),
+    whatsappOptInProofUrl: String(contact?.whatsappOptInProofUrl || '').trim(),
+    whatsappOptInCapturedBy: String(contact?.whatsappOptInCapturedBy || '').trim(),
+    whatsappOptInPageUrl: String(contact?.whatsappOptInPageUrl || '').trim(),
+    whatsappOptOutAt: String(contact?.whatsappOptOutAt || '').trim(),
+    lastInboundMessageAt: String(contact?.lastInboundMessageAt || '').trim(),
+    serviceWindowClosesAt: String(contact?.serviceWindowClosesAt || '').trim(),
     sourceType: String(contact?.sourceType || '').trim(),
     source: String(contact?.source || '').trim(),
     createdAt: String(contact?.createdAt || '').trim(),
@@ -36,6 +52,33 @@ const sanitizeContactsCache = (contacts = []) =>
         contact._id || contact.id || contact.phone
     ));
 
+const createWhatsAppOptInDraft = (contact = {}) => ({
+    source: String(contact?.whatsappOptInSource || '').trim() || 'manual',
+    scope: String(contact?.whatsappOptInScope || '').trim() || 'marketing',
+    proofType: String(contact?.whatsappOptInProofType || '').trim(),
+    proofId: String(contact?.whatsappOptInProofId || '').trim(),
+    proofUrl: String(contact?.whatsappOptInProofUrl || '').trim(),
+    pageUrl: String(contact?.whatsappOptInPageUrl || '').trim(),
+    consentText:
+        String(contact?.whatsappOptInTextSnapshot || '').trim() ||
+        'I agree to receive WhatsApp updates from Technovohub and can reply STOP anytime to opt out.'
+});
+
+const getCapturedByLabel = () => {
+    try {
+        const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
+        return String(
+            storedUser?.name ||
+            storedUser?.fullName ||
+            storedUser?.email ||
+            storedUser?.username ||
+            'contacts_ui'
+        ).trim();
+    } catch {
+        return 'contacts_ui';
+    }
+};
+
 const Contacts = () => {
     const navigate = useNavigate();
     const [contacts, setContacts] = useState([]);
@@ -45,7 +88,7 @@ const Contacts = () => {
     const [showEditModal, setShowEditModal] = useState(false);
     const [editingContact, setEditingContact] = useState(null);
     const [selectedContacts, setSelectedContacts] = useState(new Set());
-    const [newContact, setNewContact] = useState({ name: '', phone: '', email: '', tags: '', status: 'Opted-in' });
+    const [newContact, setNewContact] = useState({ name: '', phone: '', email: '', tags: '', status: 'Unknown' });
     const [selectionMode, setSelectionMode] = useState(false);
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
     const [showSortDropdown, setShowSortDropdown] = useState(false);
@@ -56,6 +99,16 @@ const Contacts = () => {
     const [importPreview, setImportPreview] = useState([]);
     const [importStep, setImportStep] = useState('upload');
     const [importMapping, setImportMapping] = useState({});
+    const [optInModalOpen, setOptInModalOpen] = useState(false);
+    const [optInTargetContact, setOptInTargetContact] = useState(null);
+    const [optInDraft, setOptInDraft] = useState(createWhatsAppOptInDraft());
+    const [optInSubmitting, setOptInSubmitting] = useState(false);
+    const [optInError, setOptInError] = useState('');
+    const [auditModalOpen, setAuditModalOpen] = useState(false);
+    const [auditTargetContact, setAuditTargetContact] = useState(null);
+    const [auditLoading, setAuditLoading] = useState(false);
+    const [auditError, setAuditError] = useState('');
+    const [auditData, setAuditData] = useState(null);
     const fileInputRef = useRef(null);
     const currentUserId = resolveCacheUserId();
 
@@ -102,7 +155,7 @@ const persistContactsCache = useCallback((nextContacts) => {
     );
 }, [currentUserId]);
 
-const loadContacts = useCallback(async ({ silent = false } = {}) => {
+    const loadContacts = useCallback(async ({ silent = false } = {}) => {
     const releaseLoadingGuard = startLoadingTimeoutGuard(
         () => {
             if (!silent) setLoading(false);
@@ -127,6 +180,35 @@ const loadContacts = useCallback(async ({ silent = false } = {}) => {
     }
 }, [persistContactsCache]);
 
+    const copyPublicOptInLink = useCallback(async (contact) => {
+        const link = buildPublicWhatsAppOptInDemoUrl(contact, {
+            source: 'contacts_share',
+            scope: 'marketing'
+        });
+        if (!link) {
+            alert('Unable to generate public opt-in link.');
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(link);
+            alert('Public opt-in link copied successfully.');
+        } catch {
+            window.prompt('Copy this public opt-in link', link);
+        }
+    }, []);
+
+    const openPublicOptInLink = useCallback((contact) => {
+        const link = buildPublicWhatsAppOptInDemoUrl(contact, {
+            source: 'contacts_share',
+            scope: 'marketing'
+        });
+        if (!link) {
+            alert('Unable to generate public opt-in link.');
+            return;
+        }
+        window.open(link, '_blank', 'noopener,noreferrer');
+    }, []);
+
     const handleAddContact = async () => {
         if (!newContact.phone) {
             alert('Phone number is required');
@@ -136,7 +218,9 @@ const loadContacts = useCallback(async ({ silent = false } = {}) => {
         try {
             const contactData = {
                 ...newContact,
-                tags: newContact.tags ? newContact.tags.split(',').map(tag => tag.trim()) : []
+                tags: newContact.tags ? newContact.tags.split(',').map(tag => tag.trim()) : [],
+                whatsappOptInStatus: 'unknown',
+                isBlocked: false
             };
             
             const result = await apiClient.createContact(contactData);
@@ -145,7 +229,7 @@ const loadContacts = useCallback(async ({ silent = false } = {}) => {
             }
 
             await loadContacts({ silent: true });
-            setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Opted-in' });
+            setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Unknown' });
             setShowAddModal(false);
             alert('Contact added successfully!');
         } catch (error) {
@@ -154,26 +238,78 @@ const loadContacts = useCallback(async ({ silent = false } = {}) => {
     };
 
     const handleEditContact = (contact) => {
+        const whatsappState = getWhatsAppConversationState(contact);
         setEditingContact(contact);
         setNewContact({
             name: contact.name || '',
             phone: contact.phone || '',
             tags: Array.isArray(contact.tags) ? contact.tags.join(', ') : '',
-            status: contact.isBlocked ? 'Opted-out' : 'Opted-in'
+            status:
+                whatsappState.normalizedOptInStatus === 'opted_out'
+                    ? 'Opted-out'
+                    : whatsappState.normalizedOptInStatus === 'opted_in'
+                        ? 'Opted-in'
+                        : 'Unknown'
         });
         setShowEditModal(true);
+    };
+
+    const handleEditContactStatusChange = (nextStatus) => {
+        const currentStatus = newContact.status || 'Unknown';
+        const normalizedCurrentStatus =
+            currentStatus === 'Opted-in'
+                ? 'opted_in'
+                : currentStatus === 'Opted-out'
+                    ? 'opted_out'
+                    : 'unknown';
+
+        if (nextStatus === 'Opted-in' && normalizedCurrentStatus !== 'opted_in') {
+            if (!editingContact) {
+                return;
+            }
+
+            openWhatsAppOptInModal({
+                ...editingContact,
+                phone: newContact.phone || editingContact.phone,
+                name: newContact.name || editingContact.name
+            });
+            return;
+        }
+
+        setNewContact((prev) => ({ ...prev, status: nextStatus }));
     };
 
     const handleUpdateContact = async () => {
         if (!editingContact) return;
         
         try {
+            const existingWhatsappState = getWhatsAppConversationState(editingContact);
+            const nextWhatsappOptInStatus =
+                newContact.status === 'Opted-out'
+                    ? 'opted_out'
+                    : newContact.status === 'Opted-in'
+                        ? 'opted_in'
+                        : 'unknown';
+
+            if (
+                nextWhatsappOptInStatus === 'opted_in' &&
+                existingWhatsappState.normalizedOptInStatus !== 'opted_in'
+            ) {
+                openWhatsAppOptInModal({
+                    ...editingContact,
+                    phone: newContact.phone || editingContact.phone,
+                    name: newContact.name || editingContact.name
+                });
+                return;
+            }
+
             const contactData = {
                 name: newContact.name,
                 phone: newContact.phone,
                 tags: newContact.tags
                     ? newContact.tags.split(',').map(tag => tag.trim()).filter(Boolean)
                     : [],
+                whatsappOptInStatus: nextWhatsappOptInStatus,
                 isBlocked: newContact.status === 'Opted-out'
             };
             
@@ -184,7 +320,7 @@ const loadContacts = useCallback(async ({ silent = false } = {}) => {
 
             await loadContacts({ silent: true });
             setEditingContact(null);
-            setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Opted-in' });
+            setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Unknown' });
             setShowEditModal(false);
             alert('Contact updated successfully!');
         } catch (error) {
@@ -195,7 +331,7 @@ const loadContacts = useCallback(async ({ silent = false } = {}) => {
     const handleCloseEditModal = () => {
         setShowEditModal(false);
         setEditingContact(null);
-        setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Opted-in' });
+        setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Unknown' });
     };
 
     const handleDeleteContact = async (contact) => {
@@ -260,14 +396,86 @@ const loadContacts = useCallback(async ({ silent = false } = {}) => {
     };
 
     const handleMessage = (contact) => {
-        // Navigate to team inbox with the contact's phone number
         navigate('/inbox', {
-            state: {
-                phoneNumber: contact.phone,
-                normalizedPhoneNumber: normalizePhone(contact.phone),
-                contactName: contact.name
-            }
+            state: buildWhatsAppOutreachState(contact)
         });
+    };
+
+    const handleStartWhatsAppTemplate = (contact) => {
+        navigate('/inbox', {
+            state: buildWhatsAppOutreachState(contact, {
+                openTemplateSendModal: true
+            })
+        });
+    };
+
+    const openWhatsAppOptInModal = (contact) => {
+        setOptInTargetContact(contact);
+        setOptInDraft(createWhatsAppOptInDraft(contact));
+        setOptInError('');
+        setOptInModalOpen(true);
+    };
+
+    const closeWhatsAppOptInModal = () => {
+        setOptInModalOpen(false);
+        setOptInTargetContact(null);
+        setOptInDraft(createWhatsAppOptInDraft());
+        setOptInError('');
+    };
+
+    const handleMarkWhatsAppOptIn = async () => {
+        if (!optInTargetContact?._id) return;
+        try {
+            setOptInSubmitting(true);
+            setOptInError('');
+            await apiClient.markContactWhatsAppOptIn(optInTargetContact._id, {
+                ...optInDraft,
+                capturedBy: getCapturedByLabel()
+            });
+            await loadContacts({ silent: true });
+            closeWhatsAppOptInModal();
+        } catch (error) {
+            setOptInError(error?.response?.data?.error || error.message || 'Failed to update WhatsApp opt-in.');
+        } finally {
+            setOptInSubmitting(false);
+        }
+    };
+
+    const handleMarkWhatsAppOptOut = async (contact) => {
+        try {
+            await apiClient.markContactWhatsAppOptOut(contact._id, { source: 'contacts_ui' });
+            await loadContacts({ silent: true });
+        } catch (error) {
+            alert('Failed to update WhatsApp opt-out: ' + error.message);
+        }
+    };
+
+    const closeAuditModal = () => {
+        setAuditModalOpen(false);
+        setAuditTargetContact(null);
+        setAuditData(null);
+        setAuditError('');
+    };
+
+    const loadContactConsentAudit = async (contact) => {
+        if (!contact?._id) return;
+        try {
+            setAuditLoading(true);
+            setAuditError('');
+            const result = await apiClient.getContactWhatsAppConsentAudit(contact._id);
+            setAuditData(result?.data?.data || null);
+        } catch (error) {
+            setAuditError(error?.response?.data?.error || error.message || 'Failed to load consent audit.');
+        } finally {
+            setAuditLoading(false);
+        }
+    };
+
+    const openConsentAuditModal = async (contact) => {
+        setAuditTargetContact(contact);
+        setAuditModalOpen(true);
+        setAuditData(null);
+        await loadContactConsentAudit(contact);
     };
 
     const formatLastActive = (timestamp) => {
@@ -460,8 +668,8 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
         let allContacts = contacts.map(c => ({
             ...c,
             sourceType: normalizeSourceType(c),
-            status: c.isBlocked ? 'Opted-out' : 'Opted-in',
-            lastActive: c.lastContact
+            lastActive: c.lastContact,
+            whatsappState: getWhatsAppConversationState(c)
         }));
         
         // Apply search filter
@@ -773,9 +981,16 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                         )}
                                     </td>
                                     <td>
-                                        <span className={`badge ${contact.status === 'Opted-in' ? 'active' : 'inactive'}`}>
-                                            {contact.status}
-                                        </span>
+                                        <div className="whatsapp-contact-status">
+                                            <span className={`badge whatsapp-contact-badge whatsapp-contact-badge--${contact.whatsappState?.badgeTone || 'template-only'}`}>
+                                                {contact.whatsappState?.statusLabel || 'Template Only'}
+                                            </span>
+                                            {contact.whatsappOptInSource ? (
+                                                <span className="whatsapp-contact-audit">
+                                                    {contact.whatsappOptInSource}
+                                                </span>
+                                            ) : null}
+                                        </div>
                                     </td>
                                     <td>
                                         <span className={`source-badge ${contact.sourceType || 'manual'}`}>
@@ -793,6 +1008,52 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                                 >
                                                     <MessageCircle size={16} />
                                                 </button>
+                                                <button
+                                                    className="action-btn action-btn--template"
+                                                    title="Send Template"
+                                                    onClick={() => handleStartWhatsAppTemplate(contact)}
+                                                    disabled={contact.whatsappState?.optedOut}
+                                                >
+                                                    <Send size={16} />
+                                                </button>
+                                                <button
+                                                    className="action-btn"
+                                                    title="View Consent Audit"
+                                                    onClick={() => openConsentAuditModal(contact)}
+                                                >
+                                                    <FileText size={16} />
+                                                </button>
+                                                <button
+                                                    className="action-btn"
+                                                    title="Copy Public Opt-In Link"
+                                                    onClick={() => copyPublicOptInLink(contact)}
+                                                >
+                                                    <Copy size={16} />
+                                                </button>
+                                                <button
+                                                    className="action-btn"
+                                                    title="Open Public Opt-In Page"
+                                                    onClick={() => openPublicOptInLink(contact)}
+                                                >
+                                                    <ExternalLink size={16} />
+                                                </button>
+                                                {contact.whatsappState?.optedOut ? (
+                                                    <button
+                                                        className="action-btn"
+                                                        title="Mark Opted In"
+                                                        onClick={() => openWhatsAppOptInModal(contact)}
+                                                    >
+                                                        <CheckSquare size={16} />
+                                                    </button>
+                                                ) : (
+                                                    <button
+                                                        className="action-btn"
+                                                        title="Mark Opted Out"
+                                                        onClick={() => handleMarkWhatsAppOptOut(contact)}
+                                                    >
+                                                        <X size={16} />
+                                                    </button>
+                                                )}
                                                 <button
                                                     className="action-btn"
                                                     title="Edit"
@@ -878,6 +1139,10 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                     placeholder="VIP, Lead, Support (comma separated)"
                                 />
                             </div>
+                            <div className="contacts-modal-note">
+                                New contacts start with WhatsApp status as <strong>Unknown</strong>. Capture proof with
+                                <strong> Mark Opted In</strong> after consent is collected.
+                            </div>
                         </div>
                         <div className="modal-footer">
                             <button className="secondary-btn" onClick={() => setShowAddModal(false)}>
@@ -930,13 +1195,42 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                             <div className="form-group">
                                 <label>Status</label>
                                 <select
-                                    value={newContact.status || 'Opted-in'}
-                                    onChange={(e) => setNewContact({...newContact, status: e.target.value})}
+                                    value={newContact.status || 'Unknown'}
+                                    onChange={(e) => handleEditContactStatusChange(e.target.value)}
                                 >
-                                    <option value="Opted-in">Opted-in</option>
+                                    <option value="Unknown">Unknown</option>
+                                    <option
+                                        value="Opted-in"
+                                        disabled={newContact.status !== 'Opted-in'}
+                                    >
+                                        Opted-in
+                                    </option>
                                     <option value="Opted-out">Opted-out</option>
                                 </select>
                             </div>
+                            {newContact.status !== 'Opted-in' ? (
+                                <div className="contacts-modal-note">
+                                    Marketing consent proof is required before marking a contact as
+                                    <strong> Opted-in</strong>.
+                                    <button
+                                        type="button"
+                                        className="contacts-inline-link"
+                                        onClick={() =>
+                                            openWhatsAppOptInModal({
+                                                ...editingContact,
+                                                phone: newContact.phone || editingContact.phone,
+                                                name: newContact.name || editingContact.name
+                                            })
+                                        }
+                                    >
+                                        Capture opt-in proof
+                                    </button>
+                                </div>
+                            ) : (
+                                <div className="contacts-modal-note">
+                                    Current proof source: <strong>{editingContact.whatsappOptInSource || 'Recorded'}</strong>
+                                </div>
+                            )}
                         </div>
                         <div className="modal-footer">
                             <button className="secondary-btn" onClick={handleCloseEditModal}>
@@ -982,7 +1276,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                             <li><strong>Last Name</strong> - Contact's last name</li>
                                             <li><strong>WhatsApp Number</strong> - Phone number with country code</li>
                                             <li><strong>Email</strong> - Email address (optional)</li>
-                                            <li><strong>Status</strong> - Opted-in or Opted-out</li>
+                                            <li><strong>Status</strong> - Opted-in, Opted-out, or Unknown</li>
                                             <li><strong>List Name</strong> - Contact list name (optional)</li>
                                             <li><strong>Tags</strong> - Comma-separated tags (optional)</li>
                                             <li><strong>custom_attribute_1,2,3</strong> - Custom fields (optional)</li>
@@ -1164,6 +1458,28 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                     </div>
                 </div>
             )}
+
+            <WhatsAppOptInModal
+                open={optInModalOpen}
+                phone={optInTargetContact?.phone || ''}
+                contactName={optInTargetContact?.name || ''}
+                form={optInDraft}
+                onChange={setOptInDraft}
+                onClose={closeWhatsAppOptInModal}
+                onSubmit={handleMarkWhatsAppOptIn}
+                submitting={optInSubmitting}
+                error={optInError}
+            />
+            <WhatsAppConsentAuditModal
+                open={auditModalOpen}
+                onClose={closeAuditModal}
+                loading={auditLoading}
+                error={auditError}
+                data={auditData}
+                contactName={auditTargetContact?.name || ''}
+                phone={auditTargetContact?.phone || ''}
+                onRefresh={() => loadContactConsentAudit(auditTargetContact)}
+            />
         </div>
     );
 };

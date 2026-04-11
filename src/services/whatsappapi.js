@@ -147,6 +147,14 @@ export const apiClient = {
    * @param {Object} data - Update data
    */
   updateContact: (id, data) => api.put(`/contacts/${id}`, data),
+
+  markContactWhatsAppOptIn: (id, data = {}) => api.post(`/contacts/${id}/whatsapp-opt-in`, data),
+
+  markContactWhatsAppOptOut: (id, data = {}) => api.post(`/contacts/${id}/whatsapp-opt-out`, data),
+
+  getContactWhatsAppStatus: (id) => api.get(`/contacts/${id}/whatsapp-status`),
+
+  getContactWhatsAppConsentAudit: (id) => api.get(`/contacts/${id}/whatsapp-consent-audit`),
   
   /**
    * Delete contact
@@ -212,6 +220,8 @@ export const apiClient = {
    * @param {Object} data - Bulk message data
    */
   sendBulkMessages: (data) => api.post('/bulk/send', data),
+
+  validateBroadcastAudience: (data) => api.post('/bulk/validate-audience', data),
 
   // ============ CONVERSATIONS & CONTACTS ============
   

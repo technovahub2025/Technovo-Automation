@@ -115,7 +115,7 @@
 
 .contacts-table th.actions-col,
 .contacts-table td.actions-col {
-    width: 150px;
+    width: 220px;
     text-align: center;
     white-space: nowrap;
     vertical-align: middle;
@@ -124,6 +124,59 @@
 .contacts-table td.actions-col {
     padding-top: 6px;
     padding-bottom: 6px;
+}
+
+.whatsapp-contact-badge.whatsapp-contact-badge--service-open {
+    background: #ecfdf5;
+    color: #047857;
+}
+
+.whatsapp-contact-badge.whatsapp-contact-badge--template-only {
+    background: #eef2ff;
+    color: #4338ca;
+}
+
+.whatsapp-contact-badge.whatsapp-contact-badge--opted-out {
+    background: #fef2f2;
+    color: #b91c1c;
+}
+
+.whatsapp-contact-status {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    align-items: flex-start;
+}
+
+.whatsapp-contact-audit {
+    font-size: 11px;
+    color: var(--color-text-secondary);
+    text-transform: capitalize;
+}
+
+.contacts-modal-note {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+}
+
+.contacts-modal-note strong {
+    color: var(--color-text-primary);
+}
+
+.contacts-inline-link {
+    margin-left: 6px;
+    padding: 0;
+    border: none;
+    background: none;
+    color: var(--color-primary);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+}
+
+.contacts-inline-link:hover {
+    text-decoration: underline;
 }
 
 .contacts-table-container {
@@ -438,6 +491,15 @@
 
 .action-btn:hover {
     color: var(--color-text-primary);
+}
+
+.action-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.action-btn--template:hover {
+    color: #2563eb;
 }
 
 .action-btn.delete:hover {

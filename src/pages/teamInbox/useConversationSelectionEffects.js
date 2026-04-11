@@ -47,6 +47,7 @@ export const useConversationSelectionEffects = ({
 
   useEffect(() => {
     if ((locationState?.phoneNumber || locationState?.contactName) && conversations.length > 0) {
+      const isTemplateStartHandoff = Boolean(locationState?.openTemplateSendModal);
       const targetConversation = findConversationByContactIdentity({
         conversations,
         phoneNumber: locationState?.phoneNumber || locationState?.normalizedPhoneNumber,
@@ -56,7 +57,7 @@ export const useConversationSelectionEffects = ({
 
       if (targetConversation) {
         setSelectedConversation(targetConversation);
-      } else {
+      } else if (!isTemplateStartHandoff) {
         console.log(
           'No conversation found for contact handoff:',
           locationState?.phoneNumber || locationState?.contactName || ''
