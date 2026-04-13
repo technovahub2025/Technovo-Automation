@@ -1,4 +1,5 @@
 import { normalizePhone } from '../pages/teamInbox/teamInboxIdentityUtils.js';
+import { getAppRouteBase } from './appRouteBase.js';
 
 const resolveContactId = (contact = {}) =>
   String(
@@ -25,9 +26,8 @@ const getStoredUserContext = () => {
 };
 
 const getBasePath = () => {
-  const rawBasePath = String(import.meta.env.BASE_URL || '/').trim();
-  if (!rawBasePath || rawBasePath === '/') return '';
-  return rawBasePath.endsWith('/') ? rawBasePath.slice(0, -1) : rawBasePath;
+  const routeBase = getAppRouteBase();
+  return routeBase === '/' ? '' : routeBase;
 };
 
 export const buildWhatsAppOutreachState = (contact = {}, options = {}) => {

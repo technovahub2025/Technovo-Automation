@@ -2,11 +2,10 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "vite",
   "installCommand": "npm install",
-  "buildCommand": "VITE_APP_BASE_PATH=/nexion/ VITE_APP_BASENAME=/nexion npm run build",
+  "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "routes": [
     { "handle": "filesystem" },
-    { "src": "/nexion/(.*)", "dest": "/index.html" },
-    { "src": "/nexion", "dest": "/index.html" }
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }

@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { MoreHorizontal, CheckCheck, Check, Clock, MessageCircle } from 'lucide-react';
 import { whatsappService } from '../services/whatsappService';
 import './RecentChats.css';
+import { toAppPath } from '../utils/appRouteBase';
 
 const RecentChats = () => {
     const [chats, setChats] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
-    const baseUrl = import.meta.env.BASE_URL || '/';
 
     useEffect(() => {
         loadRecentConversations();
@@ -138,7 +138,7 @@ const StatusBadge = ({ status }) => {
         <div className="recent-chats">
             <div className="section-header">
                 <h3>Recent Conversations</h3>
-                <button className="view-all-btn" onClick={() => { window.location.href = `${baseUrl}inbox`; }}>View All</button>
+                <button className="view-all-btn" onClick={() => { window.location.href = toAppPath('/inbox'); }}>View All</button>
             </div>
 
             <div className="chats-list">

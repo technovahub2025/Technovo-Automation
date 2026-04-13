@@ -29,15 +29,12 @@ import {
   X
 } from "lucide-react";
 import { apiClient } from "../services/whatsappapi";
+import { stripAppRouteBase, toAppPath } from "../utils/appRouteBase";
 
 const MissedCalls = ({ page = "all" }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const baseUrl = import.meta.env.BASE_URL || "/";
-  const normalizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-  const currentPath = normalizedBase && location.pathname.startsWith(normalizedBase)
-    ? (location.pathname.slice(normalizedBase.length) || "/")
-    : location.pathname;
+  const currentPath = stripAppRouteBase(location.pathname);
   const isCallsOnlyPage = page === "calls";
   const isAutomationOnlyPage = page === "automation";
   const isOverviewOnlyPage = page === "overview";
@@ -144,37 +141,37 @@ const MissedCalls = ({ page = "all" }) => {
     {
       title: "Install App",
       description: "Open Play Store and download the caller automation app.",
-      image: `${baseUrl}assets/missedcalls/step-1-playstore.png`
+      image: toAppPath("/assets/missedcalls/step-1-playstore.png")
     },
     {
       title: "Tap Add Micro",
       description: "Open the app and click the Add Micro button.",
-      image: `${baseUrl}assets/missedcalls/step-2-add-micro.jpeg`
+      image: toAppPath("/assets/missedcalls/step-2-add-micro.jpeg")
     },
     {
       title: "Add Trigger",
       description: "Add a trigger and choose Call Cancel as the event.",
       images: [
-        `${baseUrl}assets/missedcalls/step-3-add-trigger-call-cancel-1.jpeg`,
-        `${baseUrl}assets/missedcalls/step-3-add-trigger-call-cancel-2.jpeg`,
-        `${baseUrl}assets/missedcalls/step-3-add-trigger-call-cancel-3.jpeg`
+        toAppPath("/assets/missedcalls/step-3-add-trigger-call-cancel-1.jpeg"),
+        toAppPath("/assets/missedcalls/step-3-add-trigger-call-cancel-2.jpeg"),
+        toAppPath("/assets/missedcalls/step-3-add-trigger-call-cancel-3.jpeg")
       ]
     },
     {
       title: "Add Action",
       description: "Add Action and choose POST request.",
       images: [
-        `${baseUrl}assets/missedcalls/step-4-add-action-post-1.jpeg`,
-        `${baseUrl}assets/missedcalls/step-4-add-action-post-2.jpeg`,
-        `${baseUrl}assets/missedcalls/step-4-add-action-post-3.jpeg`
+        toAppPath("/assets/missedcalls/step-4-add-action-post-1.jpeg"),
+        toAppPath("/assets/missedcalls/step-4-add-action-post-2.jpeg"),
+        toAppPath("/assets/missedcalls/step-4-add-action-post-3.jpeg")
       ]
     },
     {
       title: "Set Webhook",
       description: "Paste webhook URL and request body, then save.",
       images: [
-        `${baseUrl}assets/missedcalls/step-5-webhook-1.jpeg`,
-        `${baseUrl}assets/missedcalls/step-5-webhook-2.jpeg`
+        toAppPath("/assets/missedcalls/step-5-webhook-1.jpeg"),
+        toAppPath("/assets/missedcalls/step-5-webhook-2.jpeg")
       ],
       imageInstructions: [
         "Change request method from GET to POST. In the Enter URL field, copy and paste the Webhook URL.",

@@ -1,33 +1,18 @@
 import apiService from "./api";
+import { toAppPath } from "../utils/appRouteBase";
 
 const STORAGE_LIBRARY_KEY = "nexion_whatsapp_workflow_library";
 const STORAGE_ACTIVE_KEY = "nexion_whatsapp_workflow_active";
-const APP_BASE_URL = import.meta.env.BASE_URL || "/";
 
 function isAbsoluteUrl(value) {
   return /^https?:\/\//i.test(String(value || ""));
-}
-
-function normalizeBasePath(value) {
-  const raw = String(value || "/").trim();
-  if (!raw || raw === "/") return "/";
-  const withLeading = raw.startsWith("/") ? raw : `/${raw}`;
-  return withLeading.endsWith("/") ? withLeading : `${withLeading}/`;
 }
 
 function toAbsoluteAppPath(path) {
   if (isAbsoluteUrl(path)) {
     return String(path);
   }
-  const normalizedPath = String(path || "").startsWith("/") ? String(path) : `/${String(path || "")}`;
-  const basePath = normalizeBasePath(APP_BASE_URL);
-  if (basePath === "/") {
-    return normalizedPath;
-  }
-  if (normalizedPath.startsWith(basePath)) {
-    return normalizedPath;
-  }
-  return `${basePath.slice(0, -1)}${normalizedPath}`;
+  return toAppPath(path);
 }
 
 const RAW_ENDPOINT_CANDIDATES = [

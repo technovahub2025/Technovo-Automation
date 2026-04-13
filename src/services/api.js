@@ -8,24 +8,8 @@
 import axios from "axios";
 import socketService from "./socketService";
 
-const resolveApiBaseUrl = () => {
-  const configuredApiUrl = String(import.meta.env.VITE_API_URL || "").trim();
-  if (configuredApiUrl) return configuredApiUrl;
-
-  const configuredApiBaseUrl = String(import.meta.env.VITE_API_BASE_URL || "").trim();
-  if (configuredApiBaseUrl) return configuredApiBaseUrl;
-
-  const baseUrl = String(import.meta.env.BASE_URL || "/").trim();
-  if (/^https?:\/\//i.test(baseUrl)) {
-    return baseUrl.replace(/\/+$/, "");
-  }
-
-  const normalizedBase = `/${baseUrl.replace(/^\/+|\/+$/g, "")}`;
-  return normalizedBase === "/" ? "" : normalizedBase;
-};
-
-// Base URL from environment variable or the deployed app base path
-const API_BASE_URL = resolveApiBaseUrl();
+// Base URL from environment variable
+const API_BASE_URL = import.meta.env.VITE_API_URL || "";
 const ADMIN_API_BASE_URL = import.meta.env.VITE_API_ADMIN_URL || API_BASE_URL;
 const USE_CREDENTIALS = String(import.meta.env.VITE_API_WITH_CREDENTIALS || "false").toLowerCase() === "true";
 
@@ -335,6 +319,23 @@ apiService.initializeSocket = () => socketService.connect();
 
 // Superadmin / Admin management APIs
 apiService.getAdmins = () => apiService.get(`${ADMIN_API_BASE_URL}/api/getadmin`);
+apiService.getAdminUsers = (config = {}) =>
+  apiService.get(`${ADMIN_API_BASE_URL}/api/admin/users`, {
+    timeout: Number(import.meta.env.VITE_ADMIN_USERS_TIMEOUT_MS || 90000),
+    ...config
+  });
+apiService.saveCustomPackageDraft = (userId, payload) =>
+  apiService.post(`${ADMIN_API_BASE_URL}/api/admin/users/${userId}/custom-package/draft`, payload);
+apiService.generateCustomPackagePaymentLink = (userId) =>
+  apiService.post(`${ADMIN_API_BASE_URL}/api/admin/users/${userId}/custom-package/payment-link`);
+apiService.verifyCustomPackagePayment = (payload) =>
+  apiService.post(`${ADMIN_API_BASE_URL}/api/admin/custom-package/payments/verify`, payload);
+apiService.resetCustomPackage = (userId) =>
+  apiService.post(`${ADMIN_API_BASE_URL}/api/admin/users/${userId}/custom-package/reset`);
+apiService.uploadAdminMetaDocumentForUser = (userId, formData) =>
+  apiService.post(`${ADMIN_API_BASE_URL}/api/admin/users/${userId}/meta-documents`, formData, {
+    headers: { "Content-Type": "multipart/form-data" }
+  });
 apiService.registerAdmin = (payload) => apiService.post(`${ADMIN_API_BASE_URL}/registeradmin`, payload);
 apiService.updateAdmin = (adminId, payload) => apiService.put(`${ADMIN_API_BASE_URL}/api/edit/${adminId}`, payload);
 apiService.deleteAdmin = (adminId) => apiService.delete(`${ADMIN_API_BASE_URL}/api/delete/${adminId}`);

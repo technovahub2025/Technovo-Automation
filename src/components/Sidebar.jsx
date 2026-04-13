@@ -39,6 +39,7 @@ import {
 } from 'lucide-react';
 import logo from '../../src/assets/logo.png';
 import './Sidebar.css';
+import { stripAppRouteBase } from '../utils/appRouteBase';
 
 const ROUTE_PREFETCHERS = {
     '/': () => import('../pages/Dashboard'),
@@ -83,11 +84,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
     const navigate = useNavigate();
     const location = useLocation();
     const { user, logout } = useContext(AuthContext);
-    const baseUrl = import.meta.env.BASE_URL || '/';
-    const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-    const currentPath = normalizedBase && location.pathname.startsWith(normalizedBase)
-        ? (location.pathname.slice(normalizedBase.length) || '/')
-        : location.pathname;
+    const currentPath = stripAppRouteBase(location.pathname);
 
     // Use prop state instead of local
     const openMenu = expandedPanel;

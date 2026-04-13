@@ -4,6 +4,7 @@ import Header from "../components/Header";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import "./MainLayout.css";
 import { AuthContext } from "../pages/authcontext";
+import { stripAppRouteBase } from "../utils/appRouteBase";
 
 const MainLayout = () => {
   const [expandedPanel, setExpandedPanel] = useState(null);
@@ -11,11 +12,7 @@ const MainLayout = () => {
   const [trialCountdown, setTrialCountdown] = useState("");
   const location = useLocation();
   const navigate = useNavigate();
-  const baseUrl = import.meta.env.BASE_URL || '/';
-  const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  const currentPath = normalizedBase && location.pathname.startsWith(normalizedBase)
-    ? (location.pathname.slice(normalizedBase.length) || '/')
-    : location.pathname;
+  const currentPath = stripAppRouteBase(location.pathname);
   const { user } = useContext(AuthContext);
   const subscriptionStatus = String(user?.subscriptionStatus || "").toLowerCase();
   const workspaceAccessState = String(user?.workspaceAccessState || "").toLowerCase();

@@ -27,6 +27,7 @@ import BroadcastResultsPopup from '../components/broadcastComponents/BroadcastRe
 import BroadcastAnalyticsModal from '../components/broadcastComponents/BroadcastAnalyticsModal';
 import BroadcastAudienceValidationModal from '../components/broadcastComponents/BroadcastAudienceValidationModal';
 import OutboundDialer from '../components/outbound/OutboundDialer';
+import { stripAppRouteBase } from '../utils/appRouteBase';
 
 // Import styles
 import '../styles/whatsapp.css';
@@ -38,11 +39,7 @@ import '../styles/broadcast-list-controls.css';
 const Broadcast = ({ composerMode = false, composerType = null, chooserMode = false }) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const baseUrl = import.meta.env.BASE_URL || '/';
-  const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  const currentPath = normalizedBase && location.pathname.startsWith(normalizedBase)
-    ? (location.pathname.slice(normalizedBase.length) || '/')
-    : location.pathname;
+  const currentPath = stripAppRouteBase(location.pathname);
 
   const {
 

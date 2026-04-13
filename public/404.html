@@ -45,12 +45,7 @@
       (function () {
         var statusEl = document.getElementById('fallback-status');
         var originalPath = window.location.pathname + window.location.search + window.location.hash;
-        var appShellPath = '/nexion/';
-
-        if (!window.location.pathname.startsWith('/nexion/')) {
-          statusEl.textContent = 'This page could not be restored automatically.';
-          return;
-        }
+        var appShellPath = window.location.pathname.startsWith('/nexion/') ? '/nexion/' : '/';
 
         fetch(appShellPath, {
           method: 'GET',

@@ -11,6 +11,7 @@ import {
     writeSidebarPageCache
 } from '../utils/sidebarPageCache';
 import './Dashboard.css';
+import { toAppPath } from '../utils/appRouteBase';
 
 const DASHBOARD_LOADING_TIMEOUT_MS = 8000;
 const BROADCAST_DASHBOARD_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -30,7 +31,6 @@ const BroadcastDashboard = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(false);
-    const baseUrl = import.meta.env.BASE_URL || '/';
     const currentUserId = resolveCacheUserId();
 
     const persistDashboardCache = useCallback((nextAnalytics) => {
@@ -159,7 +159,7 @@ const BroadcastDashboard = () => {
                         <h1>Broadcast Dashboard</h1>
                         <p>Here's what's happening with your WhatsApp platform today.</p>
                     </div>
-                    <button className="primary-btn dashboard-new-broadcast-btn" onClick={() => { window.location.href = `${baseUrl}broadcast`; }}>
+                    <button className="primary-btn dashboard-new-broadcast-btn" onClick={() => { window.location.href = toAppPath('/broadcast'); }}>
                         <Plus size={18} />
                         New Broadcast
                     </button>
@@ -279,10 +279,10 @@ const BroadcastDashboard = () => {
                             <button className="dashboard-action-btn" onClick={refreshData} disabled={refreshing}>
                                 {refreshing ? 'Refreshing...' : 'Refresh Dashboard'}
                             </button>
-                            <button className="dashboard-action-btn" onClick={() => { window.location.href = `${baseUrl}inbox`; }}>
+                            <button className="dashboard-action-btn" onClick={() => { window.location.href = toAppPath('/inbox'); }}>
                                 View All Conversations
                             </button>
-                            <button className="dashboard-action-btn" onClick={() => { window.location.href = `${baseUrl}broadcast`; }}>
+                            <button className="dashboard-action-btn" onClick={() => { window.location.href = toAppPath('/broadcast'); }}>
                                 Create Broadcast
                             </button>
                         </div>
