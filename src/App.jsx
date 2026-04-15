@@ -35,7 +35,7 @@ const PDFExtractor = lazy(() => import("./pages/PDFExtractor"));
 const MetaVerification = lazy(() => import("./pages/MetaVerification"));
 const RegisterDocuments = lazy(() => import("./pages/RegisterDocuments"));
 const WhatsAppWorkflow = lazy(() => import("./pages/WhatsAppWorkflow"));
-const AdminMultiStep = lazy(() => import("./pages/admin/Dashboard"));
+const AdminMultiStep = lazy(() => import("./pages/admin"));
 const UsersListPage = lazy(() => import("./pages/superadmin/UsersListPage"));
 const AdminSetupPage = lazy(() => import("./pages/superadmin/AdminSetupPage"));
 const PaymentsDetailsPage = lazy(() => import("./pages/superadmin/PaymentsDetailsPage"));
