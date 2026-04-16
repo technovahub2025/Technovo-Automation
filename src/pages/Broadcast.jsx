@@ -183,6 +183,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const [selectedBroadcast, setSelectedBroadcast] = useState(null);
   const [audienceValidationModalOpen, setAudienceValidationModalOpen] = useState(false);
   const [pendingAudienceValidation, setPendingAudienceValidation] = useState(null);
+  const [metaLeadBatchLoading, setMetaLeadBatchLoading] = useState(false);
+  const [metaLeadBatchResult, setMetaLeadBatchResult] = useState(null);
   const [broadcastMode, setBroadcastMode] = useState('whatsapp');
   const [outboundPhaseTab, setOutboundPhaseTab] = useState('quick');
   const broadcastSubmitInFlightRef = useRef(false);
@@ -1308,6 +1310,76 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     }
   };
 
+  const handleMetaLeadBatchSync = async ({
+    leadIdsText = '',
+    enableTemplateSend = false,
+    dryRun = true
+  } = {}) => {
+    const leadIds = Array.from(
+      new Set(
+        String(leadIdsText || '')
+          .split(/[\n,\s]+/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (!leadIds.length) {
+      alert('Please enter at least one Meta lead ID.');
+      return;
+    }
+
+    try {
+      setMetaLeadBatchLoading(true);
+      setMetaLeadBatchResult(null);
+
+      const payload = {
+        leadIds,
+        mapping: {
+          phoneFieldKeys: ['phone number', 'phone', 'mobile', 'whatsapp number'],
+          nameFieldKeys: ['full name', 'name'],
+          emailFieldKeys: ['email', 'email address'],
+          consentFieldKeys: ['whatsapp consent', 'receive whatsapp updates', 'consent'],
+          consentApprovedValues: ['yes', 'true', 'checked'],
+          consentText: 'Meta lead form consent for WhatsApp marketing updates.',
+          scope: 'marketing'
+        },
+        dryRun: Boolean(dryRun)
+      };
+
+      if (enableTemplateSend) {
+        if (!templateName) {
+          alert('Select a template before enabling template send.');
+          return;
+        }
+
+        const selectedTemplate = officialTemplates.find((t) => t.name === templateName) || null;
+        const firstRecipientVariables = Array.isArray(recipients?.[0]?.variables)
+          ? recipients[0].variables
+          : [];
+
+        payload.sendTemplate = {
+          templateName,
+          language: language || selectedTemplate?.language || 'en_US',
+          templateCategory: String(selectedTemplate?.category || 'marketing').toLowerCase(),
+          variables: firstRecipientVariables
+        };
+      }
+
+      const result = await apiClient.syncMetaLeadConsentBatch(payload);
+      if (!result?.data?.success) {
+        throw new Error(result?.data?.error || 'Batch sync failed');
+      }
+
+      setMetaLeadBatchResult(result.data?.data || null);
+    } catch (error) {
+      console.error('Meta lead batch sync failed:', error);
+      alert(`Meta lead batch sync failed: ${error?.response?.data?.error || error.message}`);
+    } finally {
+      setMetaLeadBatchLoading(false);
+    }
+  };
+
   if (composerMode) {
     return (
       <div className="broadcast-page">
@@ -1348,6 +1420,9 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           sendResults={sendResults}
           onBackToOverview={handleBackToOverview}
           onResetForm={resetComposerForm}
+          onMetaLeadBatchSync={handleMetaLeadBatchSync}
+          metaLeadBatchLoading={metaLeadBatchLoading}
+          metaLeadBatchResult={metaLeadBatchResult}
         />
       </div>
     );
@@ -1617,6 +1692,12 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           onBackToOverview={handleBackToOverview}
 
           onResetForm={resetComposerForm}
+
+          onMetaLeadBatchSync={handleMetaLeadBatchSync}
+
+          metaLeadBatchLoading={metaLeadBatchLoading}
+
+          metaLeadBatchResult={metaLeadBatchResult}
 
         />
 

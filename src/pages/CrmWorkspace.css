@@ -177,6 +177,7 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  overflow-x: hidden;
 }
 
 .crm-contact-card {
@@ -244,11 +245,16 @@
 }
 
 .crm-contact-actions {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
 }
 
 .crm-contact-action-btn {
   width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   border: 1px solid #cfe0f2;
   background: #eff6ff;
   color: #1d4ed8;
@@ -260,7 +266,20 @@
   gap: 6px;
   font-size: 12px;
   font-weight: 600;
+  line-height: 1.25;
+  text-align: center;
+  white-space: normal;
+  overflow-wrap: anywhere;
   cursor: pointer;
+}
+
+.crm-contact-actions .crm-contact-action-btn:nth-child(3) {
+  grid-column: 1 / -1;
+}
+
+.crm-contact-card .crm-select {
+  width: 100%;
+  min-width: 0;
 }
 
 .crm-contact-action-btn:hover {

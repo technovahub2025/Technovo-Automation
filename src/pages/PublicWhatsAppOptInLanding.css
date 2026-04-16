@@ -1,0 +1,224 @@
+.public-optin-landing {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background: radial-gradient(circle at top, #eef4ff 0%, #f8fafc 45%, #ffffff 100%);
+  color: #0f172a;
+}
+
+.public-optin-landing-card {
+  width: min(520px, 100%);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 18px;
+  box-shadow: 0 24px 50px rgba(15, 23, 42, 0.12);
+  padding: 28px;
+}
+
+.public-optin-landing-hero {
+  margin-bottom: 20px;
+}
+
+.public-optin-landing-eyebrow {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #e0f2fe;
+  color: #0369a1;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.public-optin-landing-hero h1 {
+  margin: 12px 0 6px;
+  font-size: 24px;
+  line-height: 1.2;
+}
+
+.public-optin-landing-hero p {
+  margin: 0;
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.public-optin-landing-form {
+  display: grid;
+  gap: 14px;
+}
+
+.public-optin-landing-form label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  color: #334155;
+}
+
+.public-optin-landing-form input[type="text"],
+.public-optin-landing-form input[type="tel"],
+.public-optin-landing-form input[type="email"] {
+  border: 1px solid #cbd5f5;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: #f8fafc;
+}
+
+.public-optin-landing-consent {
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #f8fafc;
+}
+
+.public-optin-landing-consent label {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 13px;
+  color: #1f2937;
+}
+
+.public-optin-landing-consent input[type="checkbox"] {
+  margin-top: 3px;
+}
+
+.public-optin-landing-hint {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.public-optin-landing-success,
+.public-optin-landing-error {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+}
+
+.public-optin-landing-success {
+  background: #ecfdf5;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+}
+
+.public-optin-landing-error {
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #b91c1c;
+}
+
+.public-optin-landing-form button {
+  border: none;
+  border-radius: 12px;
+  padding: 12px 14px;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.public-optin-landing-form button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.public-optin-landing-form small {
+  color: #94a3b8;
+  font-size: 12px;
+  text-align: center;
+}
+
+.public-optin-landing-share {
+  margin-top: 22px;
+  padding: 16px;
+  border: 1px dashed #cbd5f5;
+  border-radius: 14px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px;
+  gap: 16px;
+  align-items: center;
+}
+
+.public-optin-landing-share h2 {
+  margin: 0 0 6px;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.public-optin-landing-share p {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: #475569;
+}
+
+.public-optin-landing-share-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.public-optin-landing-share-row input {
+  border: 1px solid #cbd5f5;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 12px;
+  background: #f8fafc;
+  color: #0f172a;
+}
+
+.public-optin-landing-share-row button {
+  border: none;
+  border-radius: 10px;
+  padding: 10px 14px;
+  background: #0ea5e9;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.public-optin-landing-share-row button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.public-optin-landing-qr {
+  display: grid;
+  place-items: center;
+  background: #f8fafc;
+  border-radius: 12px;
+  padding: 10px;
+  min-height: 180px;
+}
+
+.public-optin-landing-qr img {
+  width: 160px;
+  height: 160px;
+  object-fit: contain;
+}
+
+.public-optin-landing-qr-placeholder {
+  font-size: 12px;
+  color: #64748b;
+  text-align: center;
+}
+
+@media (max-width: 640px) {
+  .public-optin-landing-card {
+    padding: 22px;
+  }
+
+  .public-optin-landing-hero h1 {
+    font-size: 20px;
+  }
+
+  .public-optin-landing-share {
+    grid-template-columns: 1fr;
+  }
+}

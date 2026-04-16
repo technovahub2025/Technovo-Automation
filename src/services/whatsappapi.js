@@ -223,6 +223,8 @@ export const apiClient = {
 
   validateBroadcastAudience: (data) => api.post('/bulk/validate-audience', data),
 
+  syncMetaLeadConsentBatch: (data) => api.post('/meta-ads/leads/sync-consent/batch', data),
+
   // ============ CONVERSATIONS & CONTACTS ============
   
   /**

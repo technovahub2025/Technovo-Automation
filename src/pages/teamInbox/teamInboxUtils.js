@@ -249,6 +249,8 @@ export const getCrmActivityLabel = (activity = {}) => {
   if (type === 'meeting_scheduled') return 'Meeting scheduled';
   if (type === 'contact_created') return 'Contact created';
   if (type === 'contact_updated') return 'Contact updated';
+  if (type === 'whatsapp_opt_in') return 'WhatsApp opt-in';
+  if (type === 'whatsapp_opt_out') return 'WhatsApp opt-out';
   return 'Activity';
 };
 
@@ -272,6 +274,14 @@ export const getCrmActivityDescription = (activity = {}) => {
   if (type === 'meeting_scheduled') {
     const summary = String(meta?.summary || '').trim();
     return summary || 'Google Meet link was created for this lead';
+  }
+  if (type === 'whatsapp_opt_in') {
+    const source = String(meta?.source || '').trim();
+    return source ? `Consent captured (${source})` : 'Consent captured';
+  }
+  if (type === 'whatsapp_opt_out') {
+    const source = String(meta?.source || '').trim();
+    return source ? `Opted out (${source})` : 'Contact opted out';
   }
   return 'CRM record updated';
 };

@@ -154,6 +154,16 @@ const ContactInfoPanel = ({
   const leadStatus = deriveLeadStatus(selectedConversation);
   const leadScore = getConversationLeadScore(selectedConversation);
   const isUnknownContact = contactName === 'Unknown Contact';
+  const contactOptInScope = String(selectedConversation?.contactId?.whatsappOptInScope || 'unknown').trim() || 'unknown';
+  const marketingLimit = Number(import.meta.env.VITE_WHATSAPP_MARKETING_TEMPLATE_MAX_PER_24H || 1);
+  const marketingLimitLabel = Number.isFinite(marketingLimit) && marketingLimit > 0 ? Math.floor(marketingLimit) : 1;
+  const marketingCount =
+    whatsappMessagingState?.marketingWindowStartAt
+      ? Number(selectedConversation?.contactId?.whatsappMarketingSendCount || 0) || 0
+      : 0;
+  const marketingNextAllowedAt = selectedConversation?.contactId?.whatsappMarketingWindowStartedAt
+    ? whatsappMessagingState?.marketingNextAllowedAt
+    : null;
 
   const toggleSection = (sectionKey) => {
     setExpandedSections((current) => ({
@@ -276,9 +286,11 @@ const ContactInfoPanel = ({
             <p className="whatsapp-status-meta">
               {whatsappMessagingState?.optedOut
                 ? 'This contact has opted out. Update consent before sending WhatsApp outreach.'
-                : whatsappMessagingState?.freeformAllowed
-                  ? 'The 24-hour customer service window is open for free-form replies.'
-                  : 'Free-form chat is closed. Use an approved template to continue the conversation.'}
+                : whatsappMessagingState?.marketingRateLimited
+                  ? 'Marketing template limit reached for this contact. Use service templates or wait for the cooldown.'
+                  : whatsappMessagingState?.freeformAllowed
+                    ? 'The 24-hour customer service window is open for free-form replies.'
+                    : 'Free-form chat is closed. Use an approved template to continue the conversation.'}
             </p>
           </div>
           <div className="whatsapp-status-actions">
@@ -326,6 +338,22 @@ const ContactInfoPanel = ({
               </span>
             </div>
           ) : null}
+          <div className="whatsapp-status-audit whatsapp-status-audit--compact">
+            <span>
+              Scope:
+              <strong>{` ${contactOptInScope || '-'}`}</strong>
+            </span>
+            <span>
+              Marketing window:
+              <strong>{` ${marketingCount}/${marketingLimitLabel}`}</strong>
+            </span>
+            {whatsappMessagingState?.marketingRateLimited ? (
+              <span className="whatsapp-status-warning">
+                Next allowed:
+                <strong>{` ${formatDateTimeForActivity(marketingNextAllowedAt) || '-'}`}</strong>
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <div className="contact-info-card">

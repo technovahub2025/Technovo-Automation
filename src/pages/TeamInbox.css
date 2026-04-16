@@ -3849,6 +3849,8 @@
     background: linear-gradient(180deg, #f6f9fc 0%, #eef4f9 100%);
     padding: 16px 14px;
     overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
 }
 
 .contact-info-modal {
@@ -3865,6 +3867,11 @@
     align-items: center;
     justify-content: space-between;
     margin-bottom: 12px;
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    padding: 4px 0 10px;
+    background: linear-gradient(180deg, #f6f9fc 0%, rgba(246, 249, 252, 0.94) 75%, rgba(246, 249, 252, 0) 100%);
 }
 
 .contact-info-modal-header h3 {
@@ -3887,6 +3894,7 @@
     align-items: center;
     justify-content: center;
     cursor: pointer;
+    flex-shrink: 0;
 }
 
 .contact-info-card {
@@ -3980,6 +3988,7 @@
 
 .contact-info-section-body {
     padding: 0 16px 16px;
+    border-top: 1px solid #eef2f7;
 }
 
 .contact-profile-summary {
@@ -4559,6 +4568,11 @@
     flex-wrap: wrap;
 }
 
+.whatsapp-status-actions .lead-action-btn {
+    margin-bottom: 0;
+    flex: 1 1 140px;
+}
+
 .whatsapp-status-audit {
     display: flex;
     flex-direction: column;
@@ -4569,6 +4583,16 @@
     border: 1px solid #e2e8f0;
     color: #475569;
     font-size: 12px;
+}
+
+.whatsapp-status-audit--compact {
+    margin-top: 8px;
+    background: #f1f5ff;
+    border-color: #d6e0ff;
+}
+
+.whatsapp-status-warning {
+    color: #b45309;
 }
 
 .whatsapp-status-audit strong {
@@ -4642,13 +4666,70 @@
         width: 100%;
         z-index: 12;
         border-left: none;
-        padding: 12px;
+        padding: 10px;
+    }
+
+    .contact-info-modal-header {
+        padding-top: 2px;
     }
 }
 
 @media (max-width: 640px) {
     .contact-info-modal {
         padding: 0;
+    }
+
+    .contact-info-card {
+        border-radius: 14px;
+        padding: 13px;
+        margin-bottom: 12px;
+    }
+
+    .contact-info-modal-header h3 {
+        font-size: 14px;
+    }
+
+    .contact-info-section-toggle {
+        padding: 12px 13px;
+        font-size: 14px;
+    }
+
+    .contact-info-section-toggle-title {
+        gap: 8px;
+    }
+
+    .contact-info-section-toggle-icon-wrap {
+        width: 24px;
+        height: 24px;
+        border-radius: 7px;
+    }
+
+    .contact-info-section-toggle-summary {
+        padding-left: 32px;
+    }
+
+    .contact-info-section-body {
+        padding: 0 13px 13px;
+    }
+
+    .contact-profile-summary {
+        padding: 12px;
+        gap: 10px;
+        margin-bottom: 12px;
+    }
+
+    .contact-profile-avatar {
+        width: 40px;
+        height: 40px;
+        font-size: 13px;
+    }
+
+    .contact-info-item {
+        gap: 8px;
+    }
+
+    .contact-info-item span {
+        flex: 0 0 auto;
     }
 
     .contact-info-item strong {

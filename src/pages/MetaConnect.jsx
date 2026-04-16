@@ -40,6 +40,7 @@ const extractErrorMessage = (error, fallback) =>
   fallback;
 
 const META_LEAD_MAPPING_STORAGE_KEY = "meta_lead_consent_mapping_v1";
+const OPTIN_LINK_STORAGE_KEY = "meta_optin_link_builder_v1";
 
 const MetaConnect = () => {
   const popupRef = useRef(null);
@@ -64,7 +65,74 @@ const MetaConnect = () => {
   const [leadSyncLoading, setLeadSyncLoading] = useState(false);
   const [leadPreview, setLeadPreview] = useState(null);
   const [leadSyncMessage, setLeadSyncMessage] = useState("");
+  const [batchLeadIdsText, setBatchLeadIdsText] = useState("");
+  const [batchSyncLoading, setBatchSyncLoading] = useState(false);
+  const [batchSyncResult, setBatchSyncResult] = useState(null);
+  const [batchTemplateForm, setBatchTemplateForm] = useState({
+    enabled: false,
+    templateName: "",
+    language: "en_US",
+    templateCategory: "marketing",
+    variablesCsv: "",
+    dryRun: true
+  });
   const [mappingSavedMessage, setMappingSavedMessage] = useState("");
+  const [optInBuilder, setOptInBuilder] = useState(() => {
+    if (typeof window === "undefined") {
+      return {
+        baseUrl: "",
+        publicKey: "",
+        userId: "",
+        companyId: "",
+        companyName: "Technovohub",
+        source: "landing_page",
+        scope: "marketing"
+      };
+    }
+
+    const stored = window.localStorage.getItem(OPTIN_LINK_STORAGE_KEY);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (parsed && typeof parsed === "object") {
+          return {
+            baseUrl: parsed.baseUrl || `${window.location.origin}/whatsapp-opt-in`,
+            publicKey: parsed.publicKey || "",
+            userId: parsed.userId || "",
+            companyId: parsed.companyId || "",
+            companyName: parsed.companyName || "Technovohub",
+            source: parsed.source || "landing_page",
+            scope: parsed.scope || "marketing"
+          };
+        }
+      } catch {
+        // ignore local cache errors
+      }
+    }
+
+    let storedUser = null;
+    try {
+      storedUser = JSON.parse(window.localStorage.getItem("user") || "null");
+    } catch {
+      storedUser = null;
+    }
+    const userId =
+      storedUser?.id ||
+      storedUser?._id ||
+      window.localStorage.getItem("userId") ||
+      "";
+
+    return {
+      baseUrl: `${window.location.origin}/whatsapp-opt-in`,
+      publicKey: "",
+      userId: userId ? String(userId) : "",
+      companyId: storedUser?.companyId ? String(storedUser.companyId) : "",
+      companyName: storedUser?.companyName || "Technovohub",
+      source: "landing_page",
+      scope: "marketing"
+    };
+  });
+  const [optInLinkMessage, setOptInLinkMessage] = useState("");
 
   const isConfigured = useMemo(() => Boolean(form.adAccountId && form.pageId), [form]);
   const pageAccessIssue =
@@ -108,6 +176,14 @@ const MetaConnect = () => {
   useEffect(() => {
     loadMetaState();
   }, []);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(OPTIN_LINK_STORAGE_KEY, JSON.stringify(optInBuilder));
+    } catch {
+      // ignore localStorage write errors
+    }
+  }, [optInBuilder]);
 
   useEffect(() => {
     try {
@@ -165,26 +241,58 @@ const MetaConnect = () => {
     return () => window.removeEventListener("message", handleMessage);
   }, []);
 
+  useEffect(() => {
+    if (!connecting) return undefined;
+
+    const intervalId = window.setInterval(() => {
+      const popup = popupRef.current;
+      if (!popup) return;
+      if (popup.closed) {
+        popupRef.current = null;
+        setConnecting(false);
+      }
+    }, 600);
+
+    return () => window.clearInterval(intervalId);
+  }, [connecting]);
+
   const handleConnect = async () => {
+    const popupFeatures = "width=720,height=760,menubar=no,toolbar=no,status=no";
+    const popupShell = window.open("", "meta-oauth", popupFeatures);
+
     try {
       setConnecting(true);
       setError("");
       setStatusMessage("");
+      popupRef.current = popupShell || null;
+
+      if (popupShell) {
+        popupShell.document.title = "Opening Meta Login...";
+        popupShell.document.body.style.fontFamily = "Inter, system-ui, -apple-system, sans-serif";
+        popupShell.document.body.style.margin = "0";
+        popupShell.document.body.style.padding = "24px";
+        popupShell.document.body.innerHTML =
+          "<p style='margin:0;color:#334155'>Redirecting to Meta login...</p>";
+      }
+
       const result = await metaAdsApi.getMetaAuthUrl(window.location.origin);
       if (!result?.authUrl) {
         throw new Error("Meta auth URL was not returned.");
       }
 
-      popupRef.current = window.open(
-        result.authUrl,
-        "meta-oauth",
-        "width=720,height=760,menubar=no,toolbar=no,status=no"
-      );
-
-      if (!popupRef.current) {
-        throw new Error("Popup was blocked. Allow popups for this site and try again.");
+      if (!popupShell || popupShell.closed) {
+        // Fallback for strict browsers/extensions blocking popup windows.
+        setStatusMessage("Popup was blocked. Redirecting in the same tab...");
+        window.location.assign(result.authUrl);
+        return;
       }
+
+      popupShell.location.href = result.authUrl;
     } catch (connectError) {
+      if (popupRef.current && !popupRef.current.closed) {
+        popupRef.current.close();
+      }
+      popupRef.current = null;
       setConnecting(false);
       setError(extractErrorMessage(connectError, "Unable to start Meta login."));
     }
@@ -291,6 +399,87 @@ const MetaConnect = () => {
       setError(extractErrorMessage(syncError, "Unable to sync Meta lead consent."));
     } finally {
       setLeadSyncLoading(false);
+    }
+  };
+
+  const parseBatchLeadIds = () =>
+    Array.from(
+      new Set(
+        String(batchLeadIdsText || "")
+          .split(/[\n,\s]+/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      )
+    );
+
+  const handleBatchSyncConsent = async () => {
+    const leadIds = parseBatchLeadIds();
+    if (!leadIds.length) {
+      setError("Enter at least one lead ID for batch sync.");
+      return;
+    }
+
+    try {
+      setBatchSyncLoading(true);
+      setError("");
+      setLeadSyncMessage("");
+      setBatchSyncResult(null);
+
+      const payload = {
+        leadIds,
+        mapping: buildLeadMappingPayload()
+      };
+
+      if (batchTemplateForm.enabled && batchTemplateForm.templateName.trim()) {
+        payload.sendTemplate = {
+          templateName: batchTemplateForm.templateName.trim(),
+          language: String(batchTemplateForm.language || "en_US").trim() || "en_US",
+          templateCategory: String(batchTemplateForm.templateCategory || "marketing").trim() || "marketing",
+          variables: splitCsv(batchTemplateForm.variablesCsv)
+        };
+      }
+
+      payload.dryRun = Boolean(batchTemplateForm.dryRun);
+
+      const result = await metaAdsApi.syncMetaLeadConsentBatch(payload);
+      setBatchSyncResult(result?.data || null);
+      setLeadSyncMessage("Batch sync completed. Review the result summary below.");
+    } catch (syncError) {
+      setError(extractErrorMessage(syncError, "Unable to run batch lead sync."));
+    } finally {
+      setBatchSyncLoading(false);
+    }
+  };
+
+  const optInLink = useMemo(() => {
+    const baseUrl = String(optInBuilder.baseUrl || "").trim();
+    if (!baseUrl) return "";
+    let url = baseUrl;
+    if (!/^https?:\/\//i.test(url)) {
+      url = `https://${url}`;
+    }
+    const params = new URLSearchParams();
+    if (optInBuilder.publicKey) params.set("publicKey", optInBuilder.publicKey);
+    if (optInBuilder.userId) params.set("userId", optInBuilder.userId);
+    if (optInBuilder.companyId) params.set("companyId", optInBuilder.companyId);
+    if (optInBuilder.companyName) params.set("companyName", optInBuilder.companyName);
+    if (optInBuilder.source) params.set("source", optInBuilder.source);
+    if (optInBuilder.scope) params.set("scope", optInBuilder.scope);
+    const query = params.toString();
+    return query ? `${url}?${query}` : url;
+  }, [optInBuilder]);
+
+  const handleCopyOptInLink = async () => {
+    if (!optInLink) {
+      setOptInLinkMessage("Enter a valid landing page URL first.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(optInLink);
+      setOptInLinkMessage("Opt-in link copied.");
+      window.setTimeout(() => setOptInLinkMessage(""), 2000);
+    } catch {
+      setOptInLinkMessage("Unable to copy. Select and copy the link manually.");
     }
   };
 
@@ -547,6 +736,122 @@ const MetaConnect = () => {
             </a>
           </div>
 
+          <div className="meta-batch-sync-panel">
+            <h3>Batch Lead Sync + Optional Template Send</h3>
+            <p>
+              Paste multiple lead IDs (comma, space, or new line). Sync will always run first.
+              Template send runs only if enabled and template name is given.
+            </p>
+
+            <label className="meta-field meta-field-full">
+              <span>Lead IDs</span>
+              <textarea
+                rows="4"
+                value={batchLeadIdsText}
+                onChange={(e) => setBatchLeadIdsText(e.target.value)}
+                placeholder="lead_id_1, lead_id_2"
+              />
+            </label>
+
+            <div className="meta-form-grid">
+              <label className="meta-field">
+                <span>Enable template send</span>
+                <select
+                  value={batchTemplateForm.enabled ? "yes" : "no"}
+                  onChange={(e) =>
+                    setBatchTemplateForm((prev) => ({ ...prev, enabled: e.target.value === "yes" }))
+                  }
+                >
+                  <option value="no">No (sync only)</option>
+                  <option value="yes">Yes (sync and send)</option>
+                </select>
+              </label>
+
+              <label className="meta-field">
+                <span>Dry run</span>
+                <select
+                  value={batchTemplateForm.dryRun ? "yes" : "no"}
+                  onChange={(e) =>
+                    setBatchTemplateForm((prev) => ({ ...prev, dryRun: e.target.value === "yes" }))
+                  }
+                >
+                  <option value="yes">Yes (no send)</option>
+                  <option value="no">No (send for eligible)</option>
+                </select>
+              </label>
+
+              <label className="meta-field">
+                <span>Template name</span>
+                <input
+                  type="text"
+                  value={batchTemplateForm.templateName}
+                  onChange={(e) =>
+                    setBatchTemplateForm((prev) => ({ ...prev, templateName: e.target.value }))
+                  }
+                  placeholder="approved_template_name"
+                />
+              </label>
+
+              <label className="meta-field">
+                <span>Language</span>
+                <input
+                  type="text"
+                  value={batchTemplateForm.language}
+                  onChange={(e) =>
+                    setBatchTemplateForm((prev) => ({ ...prev, language: e.target.value }))
+                  }
+                  placeholder="en_US"
+                />
+              </label>
+
+              <label className="meta-field">
+                <span>Template category</span>
+                <select
+                  value={batchTemplateForm.templateCategory}
+                  onChange={(e) =>
+                    setBatchTemplateForm((prev) => ({ ...prev, templateCategory: e.target.value }))
+                  }
+                >
+                  <option value="marketing">Marketing</option>
+                  <option value="utility">Utility</option>
+                  <option value="authentication">Authentication</option>
+                </select>
+              </label>
+
+              <label className="meta-field">
+                <span>Variables (CSV)</span>
+                <input
+                  type="text"
+                  value={batchTemplateForm.variablesCsv}
+                  onChange={(e) =>
+                    setBatchTemplateForm((prev) => ({ ...prev, variablesCsv: e.target.value }))
+                  }
+                  placeholder="John, Chennai"
+                />
+              </label>
+            </div>
+
+            <div className="meta-selection-actions meta-selection-actions-start">
+              <button
+                className="meta-btn meta-btn-primary"
+                type="button"
+                onClick={handleBatchSyncConsent}
+                disabled={batchSyncLoading}
+              >
+                {batchSyncLoading ? "Running batch sync..." : "Run Batch Sync"}
+              </button>
+            </div>
+
+            {batchSyncResult ? (
+              <div className="meta-batch-summary">
+                <strong>Batch Summary</strong>
+                <code>
+                  {`leadIds=${batchSyncResult?.summary?.totalLeadIds || 0}, synced=${batchSyncResult?.summary?.syncedSuccess || 0}, syncFailed=${batchSyncResult?.summary?.syncedFailed || 0}, sendSuccess=${batchSyncResult?.summary?.templateSendSuccess || 0}, sendFailed=${batchSyncResult?.summary?.templateSendFailed || 0}`}
+                </code>
+              </div>
+            ) : null}
+          </div>
+
           {leadPreview ? (
             <div className="meta-lead-preview">
               <div className="meta-status-list">
@@ -586,6 +891,106 @@ const MetaConnect = () => {
               </div>
             </div>
           ) : null}
+        </section>
+
+        <section className="meta-card">
+          <div className="meta-card-header">
+            <h2>Public Opt-In Link Builder</h2>
+            <span className="meta-pill meta-pill-muted">Landing page</span>
+          </div>
+
+          <div className="meta-banner meta-banner-warning">
+            Share this link to capture WhatsApp consent with proof. This does not affect live users unless they open the link.
+          </div>
+
+          <div className="meta-form-grid meta-form-grid-optin">
+            <label className="meta-field">
+              <span>Landing URL</span>
+              <input
+                type="text"
+                value={optInBuilder.baseUrl}
+                onChange={(e) => setOptInBuilder((prev) => ({ ...prev, baseUrl: e.target.value }))}
+                placeholder="https://yourdomain/whatsapp-opt-in"
+              />
+            </label>
+            <label className="meta-field">
+              <span>Public Key</span>
+              <input
+                type="text"
+                value={optInBuilder.publicKey}
+                onChange={(e) => setOptInBuilder((prev) => ({ ...prev, publicKey: e.target.value }))}
+                placeholder="WHATSAPP_OPTIN_PUBLIC_KEY"
+              />
+            </label>
+            <label className="meta-field">
+              <span>User ID</span>
+              <input
+                type="text"
+                value={optInBuilder.userId}
+                onChange={(e) => setOptInBuilder((prev) => ({ ...prev, userId: e.target.value }))}
+                placeholder="Owner user id"
+              />
+            </label>
+            <label className="meta-field">
+              <span>Company ID</span>
+              <input
+                type="text"
+                value={optInBuilder.companyId}
+                onChange={(e) => setOptInBuilder((prev) => ({ ...prev, companyId: e.target.value }))}
+                placeholder="Optional company id"
+              />
+            </label>
+            <label className="meta-field">
+              <span>Company Name</span>
+              <input
+                type="text"
+                value={optInBuilder.companyName}
+                onChange={(e) => setOptInBuilder((prev) => ({ ...prev, companyName: e.target.value }))}
+                placeholder="Brand name"
+              />
+            </label>
+            <label className="meta-field">
+              <span>Source</span>
+              <select
+                value={optInBuilder.source}
+                onChange={(e) => setOptInBuilder((prev) => ({ ...prev, source: e.target.value }))}
+              >
+                <option value="landing_page">Landing page</option>
+                <option value="website_form">Website form</option>
+                <option value="qr_page">QR page</option>
+              </select>
+            </label>
+            <label className="meta-field">
+              <span>Scope</span>
+              <select
+                value={optInBuilder.scope}
+                onChange={(e) => setOptInBuilder((prev) => ({ ...prev, scope: e.target.value }))}
+              >
+                <option value="marketing">Marketing</option>
+                <option value="service">Service</option>
+                <option value="both">Both</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="meta-optin-link-row">
+            <input type="text" readOnly value={optInLink || ""} />
+            <div className="meta-optin-link-actions">
+              <button className="meta-btn meta-btn-secondary" type="button" onClick={handleCopyOptInLink}>
+                Copy Link
+              </button>
+              <a
+                className="meta-btn meta-btn-primary"
+                href={optInLink || "#"}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open
+              </a>
+            </div>
+          </div>
+
+          {optInLinkMessage ? <div className="meta-banner meta-banner-success">{optInLinkMessage}</div> : null}
         </section>
 
       </div>

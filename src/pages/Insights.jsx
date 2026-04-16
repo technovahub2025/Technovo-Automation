@@ -52,6 +52,7 @@ const Insights = () => {
   const [metaSetupReady, setMetaSetupReady] = useState(true);
   const [metaSetupLoading, setMetaSetupLoading] = useState(true);
   const [metaSetupMessage, setMetaSetupMessage] = useState('');
+  const [metaSetupWarning, setMetaSetupWarning] = useState('');
 
   const adSetOptions = useMemo(() => {
     const selected = filters.campaigns.find((campaign) => campaign.id === selectedCampaign);
@@ -94,12 +95,18 @@ const Insights = () => {
         const setup = response?.setup || {};
         const isReady = Boolean(setup.connected && setup.adAccountId && setup.pageId);
         setMetaSetupReady(isReady);
+        setMetaSetupWarning(
+          setup?.mode === 'live-partial'
+            ? setup?.setupError || 'Meta setup is partial. Some insights data may be unavailable.'
+            : ''
+        );
         setMetaSetupMessage(
           setup.setupError || 'Connect Meta, select an ad account and Facebook page to continue.'
         );
       } catch (loadError) {
         if (!isMounted) return;
         setMetaSetupReady(false);
+        setMetaSetupWarning('');
         setMetaSetupMessage(
           loadError?.response?.data?.error ||
           loadError?.response?.data?.message ||
@@ -140,7 +147,13 @@ const Insights = () => {
         setInsights(response);
       } catch (loadError) {
         if (!isMounted) return;
-        setError(loadError?.response?.data?.message || 'Unable to load insights right now.');
+        const fallbackMessage = loadError?.response?.data?.message || 'Unable to load insights right now.';
+        const detailedErrors = loadError?.response?.data?.details?.timeseriesErrors;
+        if (Array.isArray(detailedErrors) && detailedErrors.length > 0) {
+          setError(`${fallbackMessage} (${detailedErrors[0]?.message || 'Meta API error'})`);
+        } else {
+          setError(fallbackMessage);
+        }
       } finally {
         if (isMounted) {
           setLoading(false);
@@ -165,6 +178,7 @@ const Insights = () => {
     ctr: 0
   };
   const selectedCampaignItem = campaignList.find((campaign) => campaign.id === selectedCampaign);
+  const hasInsightData = Array.isArray(insights?.timeseries) && insights.timeseries.length > 0;
 
   return (
     <div className="meta-access-shell">
@@ -220,6 +234,21 @@ const Insights = () => {
       ) : null}
 
       {loading ? <div className="insights-inline-loading">Refreshing insights...</div> : null}
+      {!loading && !error && metaSetupWarning ? (
+        <div className="insights-warning-note">{metaSetupWarning}</div>
+      ) : null}
+      {!loading && !error && !hasInsightData ? (
+        <div className="insights-empty-data-note">
+          No delivery data found for this selection in the chosen date range. Try All Campaigns or a wider range.
+        </div>
+      ) : null}
+      {!loading && !error ? (
+        <div className="insights-data-health">
+          Data points: {Array.isArray(insights?.timeseries) ? insights.timeseries.length : 0} | Demographics rows:{' '}
+          {Array.isArray(insights?.demographics) ? insights.demographics.length : 0} | Source:{' '}
+          {insights?.meta?.dataSource || 'unknown'}
+        </div>
+      ) : null}
 
       <div className="insights-workspace">
         <aside className="insights-sidebar">

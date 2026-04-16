@@ -64,6 +64,11 @@ const PerformanceChart = ({ data = [], granularity = 'day', onGranularityChange 
     }));
   }, [data, granularity]);
 
+  const hasPlottableData = useMemo(
+    () => chartData.some((entry) => Number(entry?.reach || 0) > 0 || Number(entry?.spend || 0) > 0),
+    [chartData]
+  );
+
   return (
     <section className="insights-panel">
       <div className="insights-panel-header">
@@ -90,55 +95,61 @@ const PerformanceChart = ({ data = [], granularity = 'day', onGranularityChange 
       </div>
 
       <div className="chart-shell">
-        <ResponsiveContainer width="100%" height={320}>
-          <LineChart data={chartData}>
-            <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" vertical={false} />
-            <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} />
-            <YAxis
-              yAxisId="left"
-              tick={{ fill: '#64748b', fontSize: 12 }}
-              tickFormatter={formatCompactNumber}
-              tickLine={false}
-              axisLine={false}
-            />
-            <YAxis
-              yAxisId="right"
-              orientation="right"
-              tick={{ fill: '#64748b', fontSize: 12 }}
-              tickFormatter={formatCurrency}
-              tickLine={false}
-              axisLine={false}
-            />
-            <Tooltip
-              contentStyle={{
-                borderRadius: '14px',
-                border: '1px solid #dbe4f0',
-                boxShadow: '0 18px 38px rgba(15, 23, 42, 0.08)'
-              }}
-              formatter={chartTooltipFormatter}
-            />
-            <Line
-              yAxisId="left"
-              type="monotone"
-              dataKey="reach"
-              name="Reach"
-              stroke="#2563eb"
-              strokeWidth={3}
-              dot={false}
-              activeDot={{ r: 5 }}
-            />
-            <Line
-              yAxisId="right"
-              type="monotone"
-              dataKey="spend"
-              name="Spend"
-              stroke="#0f766e"
-              strokeWidth={3}
-              dot={false}
-              activeDot={{ r: 5 }}
-            />
-          </LineChart>
-        </ResponsiveContainer>
+        {!chartData.length || !hasPlottableData ? (
+          <div className="insights-chart-empty">
+            No trend data from Meta for this range/filter yet.
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height={320}>
+            <LineChart data={chartData}>
+              <CartesianGrid stroke="#e5e7eb" strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="date" tick={{ fill: '#64748b', fontSize: 12 }} tickLine={false} />
+              <YAxis
+                yAxisId="left"
+                tick={{ fill: '#64748b', fontSize: 12 }}
+                tickFormatter={formatCompactNumber}
+                tickLine={false}
+                axisLine={false}
+              />
+              <YAxis
+                yAxisId="right"
+                orientation="right"
+                tick={{ fill: '#64748b', fontSize: 12 }}
+                tickFormatter={formatCurrency}
+                tickLine={false}
+                axisLine={false}
+              />
+              <Tooltip
+                contentStyle={{
+                  borderRadius: '14px',
+                  border: '1px solid #dbe4f0',
+                  boxShadow: '0 18px 38px rgba(15, 23, 42, 0.08)'
+                }}
+                formatter={chartTooltipFormatter}
+              />
+              <Line
+                yAxisId="left"
+                type="monotone"
+                dataKey="reach"
+                name="Reach"
+                stroke="#2563eb"
+                strokeWidth={3}
+                dot={false}
+                activeDot={{ r: 5 }}
+              />
+              <Line
+                yAxisId="right"
+                type="monotone"
+                dataKey="spend"
+                name="Spend"
+                stroke="#0f766e"
+                strokeWidth={3}
+                dot={false}
+                activeDot={{ r: 5 }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </section>
   );

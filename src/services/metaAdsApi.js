@@ -118,6 +118,12 @@ export const syncMetaLeadConsent = async (payload) => {
   return response.data;
 };
 
+export const syncMetaLeadConsentBatch = async (payload) => {
+  metaApi.defaults.baseURL = resolveMetaApiBaseUrl();
+  const response = await metaApi.post("/api/meta-ads/leads/sync-consent/batch", payload);
+  return response.data;
+};
+
 export default {
   getMetaOverview,
   getMetaDiagnostics,
@@ -125,5 +131,6 @@ export default {
   saveMetaSelections,
   previewMetaLeadConsent,
   syncMetaLeadConsent,
+  syncMetaLeadConsentBatch,
   setMetaApiRuntimeBaseUrl,
 };

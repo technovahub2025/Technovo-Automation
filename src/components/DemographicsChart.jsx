@@ -67,6 +67,13 @@ const DemographicsChart = ({ data = [] }) => {
 
   const platformData = useMemo(() => buildPlatformData(data), [data]);
   const chartData = activeView === 'platform' ? platformData : demographicData;
+  const hasDemographicData = demographicData.some(
+    (item) => Number(item?.male || 0) > 0 || Number(item?.female || 0) > 0
+  );
+  const hasPlatformData = platformData.some(
+    (item) => Number(item?.impressions || 0) > 0 || Number(item?.spend || 0) > 0
+  );
+  const hasChartData = activeView === 'platform' ? hasPlatformData : hasDemographicData;
 
   const demographicMax = Math.max(
     1,
@@ -134,6 +141,11 @@ const DemographicsChart = ({ data = [] }) => {
         <h2>{activeView === 'platform' ? 'Placement per platform' : 'Age and gender distribution'}</h2>
       </div>
 
+      {!hasChartData ? (
+        <div className="insights-chart-empty">
+          No demographic or placement data from Meta for this range/filter yet.
+        </div>
+      ) : (
       <div className={`custom-chart ${activeView === 'platform' ? 'platform-chart' : 'demographic-chart'}`}>
         <div className="custom-chart-grid">
           {(activeView === 'platform' ? platformRightLabels.slice(0, 5) : gridLabels)
@@ -299,6 +311,7 @@ const DemographicsChart = ({ data = [] }) => {
           </div>
         ) : null}
       </div>
+      )}
 
       {activeView === 'platform' ? (
         <>

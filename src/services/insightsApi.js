@@ -11,6 +11,55 @@ const api = axios.create({
   timeout: 12000
 });
 
+const ensureInsightsShape = (payload = {}) => {
+  const summary = payload?.summary && typeof payload.summary === 'object' ? payload.summary : {};
+  const timeseries = Array.isArray(payload?.timeseries) ? payload.timeseries : [];
+  const demographics = Array.isArray(payload?.demographics) ? payload.demographics : [];
+  const meta = payload?.meta && typeof payload.meta === 'object' ? payload.meta : {};
+
+  return {
+    summary: {
+      reach: Number(summary?.reach || 0),
+      impressions: Number(summary?.impressions || 0),
+      spend: Number(summary?.spend || 0),
+      ctr: Number(summary?.ctr || 0)
+    },
+    timeseries: timeseries.map((row) => ({
+      date: String(row?.date || row?.date_start || '').trim(),
+      reach: Number(row?.reach || 0),
+      spend: Number(row?.spend || 0)
+    })),
+    demographics: demographics.map((row) => ({
+      age: String(row?.age || '').trim(),
+      male: Number(row?.male || 0),
+      female: Number(row?.female || 0)
+    })),
+    meta
+  };
+};
+
+const normalizeInsightsResponse = (raw = {}) => {
+  if (raw && typeof raw === 'object') {
+    if (raw.summary || raw.timeseries || raw.demographics) {
+      return ensureInsightsShape(raw);
+    }
+    if (raw.data && (raw.data.summary || raw.data.timeseries || raw.data.demographics)) {
+      return ensureInsightsShape(raw.data);
+    }
+    if (raw.insights && (raw.insights.summary || raw.insights.timeseries || raw.insights.demographics)) {
+      return ensureInsightsShape(raw.insights);
+    }
+  }
+  return ensureInsightsShape();
+};
+
+const normalizeInsightFiltersResponse = (raw = {}) => {
+  if (Array.isArray(raw?.campaigns)) return raw;
+  if (Array.isArray(raw?.data?.campaigns)) return raw.data;
+  if (Array.isArray(raw?.filters?.campaigns)) return raw.filters;
+  return { campaigns: campaignCatalog };
+};
+
 const getAuthHeaders = () => {
   const token =
     localStorage.getItem(tokenKey) ||
@@ -165,9 +214,9 @@ export const fetchInsightFilters = async () => {
     const response = await api.get('/api/insights/filters', {
       headers: getAuthHeaders()
     });
-    return response.data;
+    return normalizeInsightFiltersResponse(response.data);
   } catch (error) {
-    if (error?.response?.status === 404 || !error?.response) {
+    if (error?.response?.status === 404) {
       await delay(180);
       return {
         campaigns: campaignCatalog
@@ -192,9 +241,9 @@ export const fetchInsights = async ({ range = '30d', campaignId = 'all', adSetId
       }
     });
 
-    return response.data;
+    return normalizeInsightsResponse(response.data);
   } catch (error) {
-    if (error?.response?.status === 404 || !error?.response) {
+    if (error?.response?.status === 404) {
       return getMockInsights({ range, campaignId, adSetId });
     }
     throw error;

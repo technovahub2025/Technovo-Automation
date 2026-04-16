@@ -440,6 +440,72 @@
   margin-bottom: 16px;
 }
 
+.meta-lead-sync-block {
+  border: 1px dashed #c7d7f3;
+  border-radius: 10px;
+  background: #f8fbff;
+  padding: 12px;
+}
+
+.meta-lead-sync-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.meta-lead-sync-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+}
+
+.meta-lead-sync-check input[type="checkbox"] {
+  width: auto;
+  margin: 0;
+}
+
+.meta-lead-sync-summary {
+  margin-top: 8px;
+  color: #1e40af;
+}
+
+.meta-lead-download-btn {
+  margin-top: 8px;
+}
+
+.meta-lead-retry-btn {
+  margin-top: 8px;
+}
+
+.meta-lead-retry-meta {
+  margin-top: 8px;
+  color: #0f766e;
+}
+
+.meta-lead-retry-history {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.meta-lead-retry-chip {
+  display: inline-block;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: #ecfeff;
+  border: 1px solid #a5f3fc;
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 600;
+}
+
 .form-actions {
   display: flex;
   flex-wrap: wrap;

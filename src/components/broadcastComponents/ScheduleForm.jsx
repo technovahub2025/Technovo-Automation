@@ -13,6 +13,8 @@ import {
 import MessagePreview from './MessagePreview';
 import './ScheduleForm.css';
 
+const META_RETRY_HISTORY_KEY = 'metaLeadBatchRetryHistory:v1';
+
 const ScheduleForm = ({
   messageType,
   broadcastName,
@@ -40,10 +42,52 @@ const ScheduleForm = ({
   onSendBroadcast,
   sendResults,
   onBackToOverview,
-  onResetForm
+  onResetForm,
+  onMetaLeadBatchSync,
+  metaLeadBatchLoading = false,
+  metaLeadBatchResult = null
 }) => {
   const scheduleInputRef = React.useRef(null);
   const [isDragOver, setIsDragOver] = React.useState(false);
+  const [metaLeadIdsText, setMetaLeadIdsText] = React.useState('');
+  const [metaSendTemplate, setMetaSendTemplate] = React.useState(false);
+  const [metaDryRun, setMetaDryRun] = React.useState(true);
+  const [metaRetryCount, setMetaRetryCount] = React.useState(0);
+  const [metaLastRetryAt, setMetaLastRetryAt] = React.useState(null);
+  const [metaLastRetryLeadCount, setMetaLastRetryLeadCount] = React.useState(0);
+  const [metaRetryHistory, setMetaRetryHistory] = React.useState([]);
+
+  React.useEffect(() => {
+    try {
+      const raw = window.sessionStorage.getItem(META_RETRY_HISTORY_KEY);
+      if (!raw) return;
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      const safe = parsed
+        .map((item) => ({
+          at: item?.at ? new Date(item.at) : null,
+          leadCount: Number(item?.leadCount || 0)
+        }))
+        .filter((item) => item.at instanceof Date && !Number.isNaN(item.at.getTime()));
+      setMetaRetryHistory(safe);
+      setMetaRetryCount(safe.length);
+      if (safe.length > 0) {
+        const latest = safe[0];
+        setMetaLastRetryAt(latest.at);
+        setMetaLastRetryLeadCount(latest.leadCount);
+      }
+    } catch (_error) {
+      // ignore invalid session cache
+    }
+  }, []);
+
+  const persistRetryHistory = React.useCallback((history) => {
+    try {
+      window.sessionStorage.setItem(META_RETRY_HISTORY_KEY, JSON.stringify(history));
+    } catch (_error) {
+      // ignore storage errors
+    }
+  }, []);
 
   const extractTemplateBody = (template) => {
     if (!template || typeof template !== 'object') return '';
@@ -210,6 +254,185 @@ const ScheduleForm = ({
     return text;
   };
 
+  const handleMetaBatchSubmit = () => {
+    if (typeof onMetaLeadBatchSync !== 'function') return;
+    onMetaLeadBatchSync({
+      leadIdsText: metaLeadIdsText,
+      enableTemplateSend: Boolean(metaSendTemplate),
+      dryRun: Boolean(metaDryRun)
+    });
+  };
+
+  const downloadMetaBatchFailureCsv = () => {
+    const syncResults = Array.isArray(metaLeadBatchResult?.syncResults)
+      ? metaLeadBatchResult.syncResults
+      : [];
+    const sendResults = Array.isArray(metaLeadBatchResult?.sendResults)
+      ? metaLeadBatchResult.sendResults
+      : [];
+
+    const syncFailures = syncResults
+      .filter((item) => !item?.success)
+      .map((item) => ({
+        type: 'sync',
+        leadId: String(item?.leadId || ''),
+        phone: String(item?.phone || ''),
+        error: String(item?.error || ''),
+      }));
+
+    const sendFailures = sendResults
+      .filter((item) => !item?.success)
+      .map((item) => ({
+        type: 'send',
+        leadId: String(item?.leadId || ''),
+        phone: String(item?.phone || ''),
+        error: String(item?.error || ''),
+      }));
+
+    const failures = [...syncFailures, ...sendFailures];
+    if (!failures.length) {
+      alert('No failed rows available for export.');
+      return;
+    }
+
+    const escapeCsvCell = (value) => {
+      const normalized = String(value ?? '');
+      if (/[",\n]/.test(normalized)) {
+        return `"${normalized.replace(/"/g, '""')}"`;
+      }
+      return normalized;
+    };
+
+    const rows = [
+      'type,leadId,phone,error',
+      ...failures.map((row) =>
+        [
+          escapeCsvCell(row.type),
+          escapeCsvCell(row.leadId),
+          escapeCsvCell(row.phone),
+          escapeCsvCell(row.error)
+        ].join(',')
+      )
+    ];
+
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `meta_lead_batch_failures_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const downloadMetaBatchFullCsv = () => {
+    const syncResults = Array.isArray(metaLeadBatchResult?.syncResults)
+      ? metaLeadBatchResult.syncResults
+      : [];
+    const sendResults = Array.isArray(metaLeadBatchResult?.sendResults)
+      ? metaLeadBatchResult.sendResults
+      : [];
+
+    const syncRows = syncResults.map((item) => ({
+      stage: 'sync',
+      status: item?.success ? 'success' : 'failed',
+      leadId: String(item?.leadId || ''),
+      phone: String(item?.phone || ''),
+      contactId: String(item?.contactId || ''),
+      error: String(item?.error || '')
+    }));
+
+    const sendRows = sendResults.map((item) => ({
+      stage: 'send',
+      status: item?.success ? 'success' : 'failed',
+      leadId: String(item?.leadId || ''),
+      phone: String(item?.phone || ''),
+      contactId: '',
+      error: String(item?.error || '')
+    }));
+
+    const rowsData = [...syncRows, ...sendRows];
+    if (!rowsData.length) {
+      alert('No batch rows available for export.');
+      return;
+    }
+
+    const escapeCsvCell = (value) => {
+      const normalized = String(value ?? '');
+      if (/[",\n]/.test(normalized)) {
+        return `"${normalized.replace(/"/g, '""')}"`;
+      }
+      return normalized;
+    };
+
+    const rows = [
+      'stage,status,leadId,phone,contactId,error',
+      ...rowsData.map((row) =>
+        [
+          escapeCsvCell(row.stage),
+          escapeCsvCell(row.status),
+          escapeCsvCell(row.leadId),
+          escapeCsvCell(row.phone),
+          escapeCsvCell(row.contactId),
+          escapeCsvCell(row.error)
+        ].join(',')
+      )
+    ];
+
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `meta_lead_batch_full_report_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
+    link.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const retryFailedMetaSends = () => {
+    if (typeof onMetaLeadBatchSync !== 'function') return;
+
+    const failedLeadIds = Array.from(
+      new Set(
+        (Array.isArray(metaLeadBatchResult?.sendResults) ? metaLeadBatchResult.sendResults : [])
+          .filter((item) => item && item.success === false)
+          .map((item) => String(item?.leadId || '').trim())
+          .filter(Boolean)
+      )
+    );
+
+    if (!failedLeadIds.length) {
+      alert('No failed send rows with lead IDs found for retry.');
+      return;
+    }
+
+    setMetaRetryCount((prev) => prev + 1);
+    const retryAt = new Date();
+    setMetaLastRetryAt(retryAt);
+    setMetaLastRetryLeadCount(failedLeadIds.length);
+    setMetaRetryHistory((prev) => {
+      const next = [{ at: retryAt.toISOString(), leadCount: failedLeadIds.length }, ...prev].slice(0, 5);
+      persistRetryHistory(next);
+      return next.map((item) => ({ at: new Date(item.at), leadCount: item.leadCount }));
+    });
+
+    onMetaLeadBatchSync({
+      leadIdsText: failedLeadIds.join('\n'),
+      enableTemplateSend: true,
+      dryRun: false
+    });
+  };
+
+  const clearMetaRetryHistory = () => {
+    setMetaRetryCount(0);
+    setMetaLastRetryAt(null);
+    setMetaLastRetryLeadCount(0);
+    setMetaRetryHistory([]);
+    try {
+      window.sessionStorage.removeItem(META_RETRY_HISTORY_KEY);
+    } catch (_error) {
+      // ignore storage errors
+    }
+  };
+
   return (
     <div className="schedule-form-container">
       <div className="campaign-config-wrapper">
@@ -339,6 +562,104 @@ const ScheduleForm = ({
               </div>
             </>
           )}
+
+          <div className="form-group meta-lead-sync-block">
+            <label>
+              <Users size={16} /> Meta Lead Batch Sync (Optional)
+            </label>
+            <textarea
+              rows={3}
+              value={metaLeadIdsText}
+              onChange={(e) => setMetaLeadIdsText(e.target.value)}
+              placeholder="Paste Meta lead IDs (comma/newline separated)"
+            />
+            <div className="meta-lead-sync-row">
+              <label className="meta-lead-sync-check">
+                <input
+                  type="checkbox"
+                  checked={metaSendTemplate}
+                  onChange={(e) => setMetaSendTemplate(e.target.checked)}
+                />
+                Sync and send selected template
+              </label>
+              <label className="meta-lead-sync-check">
+                <input
+                  type="checkbox"
+                  checked={metaDryRun}
+                  onChange={(e) => setMetaDryRun(e.target.checked)}
+                />
+                Dry run (no send)
+              </label>
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={handleMetaBatchSubmit}
+                disabled={metaLeadBatchLoading}
+              >
+                {metaLeadBatchLoading ? 'Syncing...' : 'Run Lead Sync'}
+              </button>
+            </div>
+            {metaLeadBatchResult ? (
+              <small className="meta-lead-sync-summary">
+                {`Leads: ${metaLeadBatchResult?.summary?.totalLeadIds || 0} | Synced: ${metaLeadBatchResult?.summary?.syncedSuccess || 0} | Sync failed: ${metaLeadBatchResult?.summary?.syncedFailed || 0} | Send success: ${metaLeadBatchResult?.summary?.templateSendSuccess || 0} | Send failed: ${metaLeadBatchResult?.summary?.templateSendFailed || 0}`}
+              </small>
+            ) : null}
+            {metaLeadBatchResult ? (
+              <button
+                type="button"
+                className="secondary-btn meta-lead-download-btn"
+                onClick={downloadMetaBatchFullCsv}
+              >
+                Download Full Batch Report CSV
+              </button>
+            ) : null}
+            {metaLeadBatchResult &&
+            (Number(metaLeadBatchResult?.summary?.syncedFailed || 0) > 0 ||
+              Number(metaLeadBatchResult?.summary?.templateSendFailed || 0) > 0) ? (
+              <button
+                type="button"
+                className="secondary-btn meta-lead-download-btn"
+                onClick={downloadMetaBatchFailureCsv}
+              >
+                Download Failed Rows CSV
+              </button>
+            ) : null}
+            {Number(metaLeadBatchResult?.summary?.templateSendFailed || 0) > 0 ? (
+              <button
+                type="button"
+                className="primary-btn meta-lead-retry-btn"
+                onClick={retryFailedMetaSends}
+                disabled={metaLeadBatchLoading}
+              >
+                {metaLeadBatchLoading ? 'Retrying...' : 'Retry Failed Sends Only'}
+              </button>
+            ) : null}
+            {metaRetryCount > 0 ? (
+              <small className="meta-lead-retry-meta">
+                {`Retries: ${metaRetryCount} | Last retry leads: ${metaLastRetryLeadCount} | Last retry at: ${
+                  metaLastRetryAt ? metaLastRetryAt.toLocaleString() : '-'
+                }`}
+              </small>
+            ) : null}
+            {metaRetryHistory.length > 0 ? (
+              <div className="meta-lead-retry-history">
+                {metaRetryHistory.map((item, index) => (
+                  <span key={`${item.at?.toISOString?.() || 'retry'}-${index}`} className="meta-lead-retry-chip">
+                    {`${item.at ? item.at.toLocaleString() : '-'} | ${item.leadCount} leads`}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {metaRetryHistory.length > 0 ? (
+              <button
+                type="button"
+                className="secondary-btn meta-lead-download-btn"
+                onClick={clearMetaRetryHistory}
+              >
+                Clear Retry History
+              </button>
+            ) : null}
+          </div>
 
           <div className="form-group">
             <label>

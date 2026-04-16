@@ -2448,6 +2448,20 @@ const ChatArea = ({
             </div>
           )}
 
+          {selectedConversation &&
+            !whatsappMessagingState?.optedOut &&
+            whatsappMessagingState?.marketingRateLimited && (
+              <div className="chat-policy-banner is-template-only">
+                <div className="chat-policy-banner-copy">
+                  <strong className="chat-policy-banner-title">Marketing cooldown active</strong>
+                  <span className="chat-policy-banner-text">
+                    This contact has reached the marketing template limit. You can send service
+                    templates or wait until the cooldown ends.
+                  </span>
+                </div>
+              </div>
+            )}
+
           {activeReplyContext && (
             <div className="message-reply-composer">
               <div className="message-reply-composer-copy">

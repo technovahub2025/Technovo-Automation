@@ -9,6 +9,8 @@ import ForgotPassword from "./pages/forgotpassword";
 import ResetPassword from "./pages/resetpassword";
 import AuthCallback from "./pages/AuthCallback";
 const PublicWhatsAppOptInDemo = lazy(() => import("./pages/PublicWhatsAppOptInDemo"));
+const PublicWhatsAppOptInLanding = lazy(() => import("./pages/PublicWhatsAppOptInLanding"));
+const PublicWhatsAppOptInSuccess = lazy(() => import("./pages/PublicWhatsAppOptInSuccess"));
 
 const Dashboard = lazy(() => import("./pages/Dashboard"));
 const TeamInbox = lazy(() => import("./pages/TeamInbox"));
@@ -39,6 +41,7 @@ const AdminMultiStep = lazy(() => import("./pages/admin"));
 const UsersListPage = lazy(() => import("./pages/superadmin/UsersListPage"));
 const AdminSetupPage = lazy(() => import("./pages/superadmin/AdminSetupPage"));
 const PaymentsDetailsPage = lazy(() => import("./pages/superadmin/PaymentsDetailsPage"));
+const ConsentLogsPage = lazy(() => import("./pages/superadmin/ConsentLogsPage"));
 
 const renderLazyRoute = (element, label = "Loading page...") => (
   <Suspense fallback={<div style={{ padding: 24 }}>{label}</div>}>{element}</Suspense>
@@ -61,6 +64,14 @@ function App() {
         <Route
           path="/whatsapp-opt-in-demo"
           element={renderLazyRoute(<PublicWhatsAppOptInDemo />, "Loading opt-in demo...")}
+        />
+        <Route
+          path="/whatsapp-opt-in"
+          element={renderLazyRoute(<PublicWhatsAppOptInLanding />, "Loading WhatsApp opt-in...")}
+        />
+        <Route
+          path="/whatsapp-opt-in/success"
+          element={renderLazyRoute(<PublicWhatsAppOptInSuccess />, "Loading confirmation...")}
         />
 
         {/* App layout with nested routes */}
@@ -137,6 +148,14 @@ function App() {
             element={
               <ProtectedRoute requiredRole="superadmin">
                 {renderLazyRoute(<PaymentsDetailsPage />, "Loading payments...")}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/consent-logs"
+            element={
+              <ProtectedRoute requiredRole="superadmin">
+                {renderLazyRoute(<ConsentLogsPage />, "Loading consent logs...")}
               </ProtectedRoute>
             }
           />
