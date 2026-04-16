@@ -27,7 +27,12 @@ const resolveMetaApiBaseUrl = () => {
     return APP_API_BASE_URL;
   }
 
-  return getRuntimeMetaBaseUrl() || normalizedMetaBaseUrl || APP_API_BASE_URL;
+  // Prefer build-time env config in production to avoid stale runtime overrides.
+  if (normalizedMetaBaseUrl) {
+    return normalizedMetaBaseUrl;
+  }
+
+  return getRuntimeMetaBaseUrl() || APP_API_BASE_URL;
 };
 
 export const setMetaApiRuntimeBaseUrl = (value) => {
