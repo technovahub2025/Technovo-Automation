@@ -24,7 +24,27 @@ const NewBroadcastPopup = ({
   onCreateBroadcast,
   onClose,
   onBackToChoice,
-  getCurrentTime
+  getCurrentTime,
+  quietHoursEnabled,
+  onQuietHoursEnabledChange,
+  quietHoursStartHour,
+  onQuietHoursStartHourChange,
+  quietHoursEndHour,
+  onQuietHoursEndHourChange,
+  quietHoursTimezone,
+  onQuietHoursTimezoneChange,
+  quietHoursAction,
+  onQuietHoursActionChange,
+  retryPolicyEnabled,
+  onRetryPolicyEnabledChange,
+  retryMaxAttempts,
+  onRetryMaxAttemptsChange,
+  retryBackoffSeconds,
+  onRetryBackoffSecondsChange,
+  respectOptOut,
+  onRespectOptOutChange,
+  suppressionListRaw,
+  onSuppressionListRawChange
 }) => {
   if (!showNewBroadcastPopup) return null;
 
@@ -148,6 +168,129 @@ const NewBroadcastPopup = ({
                 {recipients.length} recipients loaded
               </p>
             )}
+          </div>
+
+          <div className="form-group policy-section">
+            <label>Delivery & Compliance</label>
+
+            <div className="policy-toggle">
+              <label className="policy-checkbox">
+                <input
+                  type="checkbox"
+                  checked={quietHoursEnabled}
+                  onChange={(event) => onQuietHoursEnabledChange(event.target.checked)}
+                />
+                <span>Enable quiet hours</span>
+              </label>
+            </div>
+
+            {quietHoursEnabled && (
+              <div className="policy-grid">
+                <div className="policy-field">
+                  <span>Start hour</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={quietHoursStartHour}
+                    onChange={(event) => onQuietHoursStartHourChange(event.target.value)}
+                    className="form-input"
+                  />
+                </div>
+                <div className="policy-field">
+                  <span>End hour</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="23"
+                    value={quietHoursEndHour}
+                    onChange={(event) => onQuietHoursEndHourChange(event.target.value)}
+                    className="form-input"
+                  />
+                </div>
+                <div className="policy-field">
+                  <span>Timezone</span>
+                  <input
+                    type="text"
+                    value={quietHoursTimezone}
+                    onChange={(event) => onQuietHoursTimezoneChange(event.target.value)}
+                    className="form-input"
+                    placeholder="Asia/Kolkata"
+                  />
+                </div>
+                <div className="policy-field">
+                  <span>Action</span>
+                  <select
+                    value={quietHoursAction}
+                    onChange={(event) => onQuietHoursActionChange(event.target.value)}
+                    className="form-input"
+                  >
+                    <option value="defer">Defer send</option>
+                    <option value="skip">Skip send</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            <div className="policy-toggle">
+              <label className="policy-checkbox">
+                <input
+                  type="checkbox"
+                  checked={retryPolicyEnabled}
+                  onChange={(event) => onRetryPolicyEnabledChange(event.target.checked)}
+                />
+                <span>Enable retry policy</span>
+              </label>
+            </div>
+
+            <div className="policy-grid">
+              <div className="policy-field">
+                <span>Max attempts</span>
+                <input
+                  type="number"
+                  min="1"
+                  max="10"
+                  value={retryMaxAttempts}
+                  disabled={!retryPolicyEnabled}
+                  onChange={(event) => onRetryMaxAttemptsChange(event.target.value)}
+                  className="form-input"
+                />
+              </div>
+              <div className="policy-field">
+                <span>Backoff (seconds)</span>
+                <input
+                  type="number"
+                  min="5"
+                  max="600"
+                  value={retryBackoffSeconds}
+                  disabled={!retryPolicyEnabled}
+                  onChange={(event) => onRetryBackoffSecondsChange(event.target.value)}
+                  className="form-input"
+                />
+              </div>
+            </div>
+
+            <div className="policy-toggle">
+              <label className="policy-checkbox">
+                <input
+                  type="checkbox"
+                  checked={respectOptOut}
+                  onChange={(event) => onRespectOptOutChange(event.target.checked)}
+                />
+                <span>Respect opted-out recipients</span>
+              </label>
+            </div>
+
+            <div className="policy-field">
+              <span>Suppression list (comma/newline separated)</span>
+              <textarea
+                value={suppressionListRaw}
+                onChange={(event) => onSuppressionListRawChange(event.target.value)}
+                className="form-textarea policy-textarea"
+                rows="3"
+                placeholder="+919999999999, +919888888888"
+              />
+            </div>
           </div>
 
           <div className="form-group">

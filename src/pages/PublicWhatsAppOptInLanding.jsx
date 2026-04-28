@@ -1,9 +1,19 @@
 import React, { useMemo, useState } from "react";
 import { normalizeApiBaseUrl, resolveApiBaseUrl } from "../services/apiBaseUrl";
+import {
+  canUseLocalDevOptInFallback,
+  DEFAULT_PUBLIC_OPTIN_KEY,
+  resolvePreferredPublicKey,
+  shouldIncludePublicKeyInUrl,
+  syncPublicKeySearchParam
+} from "../utils/publicOptIn";
 import "./PublicWhatsAppOptInLanding.css";
 
 const DEFAULT_CONSENT_TEXT =
   "I agree to receive WhatsApp updates from Technovohub. I can reply STOP anytime to opt out.";
+
+const isValidMongoObjectId = (value = "") =>
+  /^[a-f\d]{24}$/i.test(String(value || "").trim());
 
 const buildInitialState = () => {
   if (typeof window === "undefined") {
@@ -22,7 +32,10 @@ const buildInitialState = () => {
   const params = new URLSearchParams(window.location.search);
   return {
     backendUrl: params.get("backendUrl") || "",
-    publicKey: params.get("publicKey") || "",
+    publicKey: resolvePreferredPublicKey(
+      params.get("publicKey"),
+      DEFAULT_PUBLIC_OPTIN_KEY
+    ),
     userId: params.get("userId") || "",
     companyId: params.get("companyId") || "",
     companyName: params.get("companyName") || "Technovohub",
@@ -56,12 +69,21 @@ function PublicWhatsAppOptInLanding() {
     const resolvedBaseUrl = normalizeApiBaseUrl(form.backendUrl) || resolveApiBaseUrl();
     return `${resolvedBaseUrl}/api/public/whatsapp-opt-in`;
   }, [form.backendUrl]);
+  const allowLocalDevFallback = useMemo(
+    () =>
+      canUseLocalDevOptInFallback({
+        pageUrl: typeof window !== "undefined" ? window.location.href : "",
+        endpointUrl,
+        backendUrl: form.backendUrl
+      }),
+    [endpointUrl, form.backendUrl]
+  );
 
   const shareUrl = useMemo(() => {
     if (typeof window === "undefined") return "";
     const url = new URL(window.location.href);
     if (form.backendUrl) url.searchParams.set("backendUrl", form.backendUrl);
-    if (form.publicKey) url.searchParams.set("publicKey", form.publicKey);
+    syncPublicKeySearchParam(url.searchParams, form.publicKey);
     if (form.userId) url.searchParams.set("userId", form.userId);
     if (form.companyId) url.searchParams.set("companyId", form.companyId);
     if (form.companyName) url.searchParams.set("companyName", form.companyName);
@@ -107,14 +129,47 @@ function PublicWhatsAppOptInLanding() {
     setMessage("");
     setError("");
 
+    const normalizedPublicKey = resolvePreferredPublicKey(form.publicKey);
+    const sendPublicKey = shouldIncludePublicKeyInUrl(normalizedPublicKey);
+
+    if (!sendPublicKey && !allowLocalDevFallback) {
+      setError("Public opt-in key is missing or placeholder. Add the real WHATSAPP_OPTIN_PUBLIC_KEY.");
+      setSubmitting(false);
+      return;
+    }
+
+    if (!String(form.userId || "").trim()) {
+      setError("User ID is required to save opt-in to the correct workspace.");
+      setSubmitting(false);
+      return;
+    }
+
+    if (!isValidMongoObjectId(form.userId)) {
+      setError("User ID must be a valid 24-character Mongo ObjectId.");
+      setSubmitting(false);
+      return;
+    }
+
+    if (String(form.companyId || "").trim() && !isValidMongoObjectId(form.companyId)) {
+      setError("Company ID must be a valid 24-character Mongo ObjectId or be left blank.");
+      setSubmitting(false);
+      return;
+    }
+
     try {
+      const headers = {
+        "Content-Type": "application/json"
+      };
+
+      if (sendPublicKey) {
+        headers["x-opt-in-public-key"] = normalizedPublicKey;
+      }
+
       const response = await fetch(endpointUrl, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-opt-in-public-key": form.publicKey
-        },
+        headers,
         body: JSON.stringify({
+          publicKey: sendPublicKey ? normalizedPublicKey : undefined,
           userId: form.userId,
           companyId: form.companyId || undefined,
           name: form.name,
@@ -134,6 +189,13 @@ function PublicWhatsAppOptInLanding() {
 
       const payload = await response.json();
       if (!response.ok || payload?.success === false) {
+        if (response.status === 401) {
+          throw new Error(
+            allowLocalDevFallback
+              ? "Invalid public opt-in key. Localhost fallback was not accepted. Restart the backend after env changes and verify WHATSAPP_OPTIN_PUBLIC_KEY."
+              : "Invalid public opt-in key. Verify WHATSAPP_OPTIN_PUBLIC_KEY in backend and this page."
+          );
+        }
         throw new Error(payload?.error || "Failed to save WhatsApp opt-in.");
       }
 

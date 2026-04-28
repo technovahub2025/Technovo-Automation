@@ -1,4 +1,9 @@
 import { normalizePhone } from '../pages/teamInbox/teamInboxIdentityUtils.js';
+import {
+  DEFAULT_PUBLIC_OPTIN_KEY,
+  resolvePreferredPublicKey,
+  shouldIncludePublicKeyInUrl
+} from './publicOptIn.js';
 import { getAppRouteBase } from './appRouteBase.js';
 
 const resolveContactId = (contact = {}) =>
@@ -83,8 +88,13 @@ export const buildPublicWhatsAppOptInDemoUrl = (contact = {}, options = {}) => {
   const userId = toTrimmedString(options?.userId || user?.id || user?.userId);
   const companyId = toTrimmedString(options?.companyId || user?.companyId);
   const backendUrl = toTrimmedString(options?.backendUrl || import.meta.env.VITE_API_BASE_URL);
+  const publicKey = resolvePreferredPublicKey(
+    options?.publicKey,
+    DEFAULT_PUBLIC_OPTIN_KEY
+  );
 
   if (backendUrl) query.set('backendUrl', backendUrl);
+  if (shouldIncludePublicKeyInUrl(publicKey)) query.set('publicKey', publicKey);
   if (userId) query.set('userId', userId);
   if (companyId) query.set('companyId', companyId);
   if (name) query.set('name', name);

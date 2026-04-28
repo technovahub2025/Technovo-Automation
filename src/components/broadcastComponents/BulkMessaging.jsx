@@ -4,6 +4,37 @@ import { apiClient } from '../services/whatsappapi';
 import CampaignResults from './CampaignResults';
 import './BulkMessaging.css';
 
+const parseCSVLine = (line = '') => {
+  const values = [];
+  let current = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < line.length; i += 1) {
+    const char = line[i];
+    if (char === '"') {
+      const escapedQuote = line[i + 1] === '"';
+      if (escapedQuote) {
+        current += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      values.push(current.trim());
+      current = '';
+      continue;
+    }
+
+    current += char;
+  }
+
+  values.push(current.trim());
+  return values;
+};
+
 const BulkMessaging = () => {
   const [messageType, setMessageType] = useState('template');
   const [templateName, setTemplateName] = useState('');
@@ -53,19 +84,21 @@ const BulkMessaging = () => {
       const reader = new FileReader();
       reader.onload = (event) => {
         const text = event.target.result;
-        const lines = text.split('\n').filter(line => line.trim());
+        const lines = text
+          .split('\n')
+          .map((line) => line.replace(/\r$/, ''))
+          .filter((line) => line.trim());
         
         if (lines.length === 0) {
           alert('CSV file is empty');
           return;
         }
 
-        // Parse CSV properly
-        const headers = lines[0].split(',').map(header => header.trim());
+        const headers = parseCSVLine(lines[0]);
         const parsedRecipients = [];
         
         for (let i = 1; i < lines.length; i++) {
-          const values = lines[i].split(',').map(value => value.trim());
+          const values = parseCSVLine(lines[i]);
           if (values.length > 0 && values[0]) { // Ensure phone number exists
             const recipient = {
               phone: values[0],

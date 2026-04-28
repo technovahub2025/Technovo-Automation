@@ -177,6 +177,14 @@
 .export-btn:active {
   transform: translateY(0);
 }
+.export-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background: #f3f4f6;
+  border-color: #e5e7eb;
+  box-shadow: none;
+  transform: none;
+}
 
 /* Responsive Design */
 @media (max-width: 1024px) {

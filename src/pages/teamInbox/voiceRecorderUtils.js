@@ -1,9 +1,8 @@
 const VOICE_RECORDER_MIME_CANDIDATES = [
   'audio/ogg;codecs=opus',
-  'audio/webm;codecs=opus',
-  'audio/webm',
   'audio/ogg',
-  'audio/mp4'
+  'audio/mp4',
+  'audio/mpeg'
 ];
 
 const normalizeMimeType = (value = '') =>
@@ -36,6 +35,18 @@ export const inferVoiceRecorderExtension = (mimeType = '') => {
   if (normalizedMimeType === 'audio/mp4') return 'm4a';
   if (normalizedMimeType === 'audio/mpeg') return 'mp3';
   return 'audio';
+};
+
+export const isMetaCompatibleVoiceMimeType = (mimeType = '') => {
+  const normalizedMimeType = normalizeMimeType(mimeType);
+  return (
+    normalizedMimeType === 'audio/ogg' ||
+    normalizedMimeType === 'audio/mp4' ||
+    normalizedMimeType === 'audio/mpeg' ||
+    normalizedMimeType === 'audio/amr' ||
+    normalizedMimeType === 'audio/aac' ||
+    normalizedMimeType === 'audio/opus'
+  );
 };
 
 export const formatVoiceRecorderDuration = (seconds = 0) => {

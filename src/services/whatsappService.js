@@ -1,15 +1,27 @@
 // WhatsApp API Service
 import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
+import { registerUnauthorizedAxiosInterceptor } from "./serviceAuth";
+import { isNotFoundError, runFallbackSequence } from "./messageFallback.js";
 
 const API_BASE_URL = resolveApiBaseUrl();
+registerUnauthorizedAxiosInterceptor(axios);
 const TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS = 15000;
 const WHATSAPP_DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_WHATSAPP_REQUEST_TIMEOUT_MS || 12000);
 const LEAD_SCORING_DEFAULTS = {
   isEnabled: true,
   readScore: 2,
   replyScore: 5,
-  keywordRules: []
+  keywordRules: [],
+  automation: {
+    isEnabled: false,
+    stageThreshold: 45,
+    stageOnThreshold: 'qualified',
+    taskThreshold: 60,
+    taskTitle: 'High intent lead follow-up',
+    recommendedTemplate: '',
+    ownerNotification: true
+  }
 };
 let leadScoringEndpointState = 'unknown'; // unknown | available | missing
 
@@ -27,7 +39,7 @@ const normalizeServiceErrorMessage = (errorValue, fallback = 'Request failed') =
   if (typeof errorValue === 'string') return errorValue;
   try {
     return JSON.stringify(errorValue);
-  } catch (_jsonError) {
+  } catch {
     return fallback;
   }
 };
@@ -43,10 +55,10 @@ const extractBlobErrorMessage = async (errorValue) => {
     try {
       const parsed = JSON.parse(trimmedText);
       return parsed?.error || parsed?.message || trimmedText;
-    } catch (_parseError) {
+    } catch {
       return trimmedText;
     }
-  } catch (_readError) {
+  } catch {
     return null;
   }
 };
@@ -62,7 +74,7 @@ const resolveLeadScoringEndpointState = async ({ force = false } = {}) => {
     if (Array.isArray(features)) {
       leadScoringEndpointState = features.includes('lead-scoring') ? 'available' : 'missing';
     }
-  } catch (error) {
+  } catch {
     // If version probing fails, keep unknown and allow one direct attempt.
   }
 
@@ -554,11 +566,51 @@ export const whatsappService = {
       return Array.isArray(result) ? result : [];
 
     } catch (error) {
+      if (!isNotFoundError(error)) {
+        console.error('Failed to fetch messages:', error);
+        return [];
+      }
 
-      console.error('Failed to fetch messages:', error);
-
-      return [];
-
+      try {
+        const fallbackPayload = await runFallbackSequence({
+          steps: [
+            {
+              name: "messages-conversation-compat",
+              run: async () =>
+                axios.get(
+                  `${API_BASE_URL}/api/messages/conversation/${encodeURIComponent(String(conversationId || '').trim())}`,
+                  {
+                    headers: getAuthHeaders(false),
+                    params: { limit: 30 }
+                  }
+                )
+            },
+            {
+              name: "messages-attachments-compat",
+              run: async () =>
+                axios.get(`${API_BASE_URL}/api/messages/attachments`, {
+                  headers: getAuthHeaders(false),
+                  params: {
+                    conversationId: String(conversationId || '').trim(),
+                    limit: 30
+                  }
+                })
+            }
+          ],
+          isRetryable: isNotFoundError,
+          onStepFailure: ({ name, retryable }) => {
+            if (retryable) {
+              console.warn(`${name} failed, trying next compatibility fallback.`);
+            }
+          }
+        });
+        const data = fallbackPayload?.data;
+        if (Array.isArray(data)) return data;
+        return Array.isArray(data?.data) ? data.data : [];
+      } catch {
+        console.warn('All compatibility fallbacks failed while fetching messages.');
+        return [];
+      }
     }
 
   },
@@ -614,7 +666,80 @@ export const whatsappService = {
         }
       };
     } catch (error) {
-      console.error('Failed to fetch paged messages:', error);
+      if (!isNotFoundError(error)) {
+        console.error('Failed to fetch paged messages:', error);
+        return {
+          data: [],
+          meta: {
+            limit,
+            hasMore: false,
+            nextCursor: null
+          }
+        };
+      }
+
+      try {
+        const fallbackResponse = await runFallbackSequence({
+          steps: [
+            {
+              name: "paged-messages-conversation-compat",
+              run: async () =>
+                axios.get(
+                  `${API_BASE_URL}/api/messages/conversation/${encodeURIComponent(normalizedConversationId)}`,
+                  {
+                    headers: getAuthHeaders(false),
+                    timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
+                    params: {
+                      limit,
+                      ...(cursor ? { cursor } : {})
+                    }
+                  }
+                )
+            },
+            {
+              name: "paged-messages-attachments-compat",
+              run: async () =>
+                axios.get(`${API_BASE_URL}/api/messages/attachments`, {
+                  headers: getAuthHeaders(false),
+                  timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
+                  params: {
+                    conversationId: normalizedConversationId,
+                    limit,
+                    ...(cursor ? { cursor } : {})
+                  }
+                })
+            }
+          ],
+          isRetryable: isNotFoundError,
+          onStepFailure: ({ name, retryable }) => {
+            if (retryable) {
+              console.warn(`${name} failed, trying next compatibility fallback.`);
+            }
+          }
+        });
+        const fallbackPayload = fallbackResponse?.data;
+        if (Array.isArray(fallbackPayload)) {
+          return {
+            data: fallbackPayload,
+            meta: {
+              limit,
+              hasMore: false,
+              nextCursor: null
+            }
+          };
+        }
+        return {
+          data: Array.isArray(fallbackPayload?.data) ? fallbackPayload.data : [],
+          meta: {
+            limit: Number(fallbackPayload?.meta?.limit || limit) || limit,
+            hasMore: Boolean(fallbackPayload?.meta?.hasMore),
+            nextCursor: String(fallbackPayload?.meta?.nextCursor || '').trim() || null
+          }
+        };
+      } catch {
+        console.warn('All compatibility fallbacks failed while fetching paged messages.');
+      }
+
       return {
         data: [],
         meta: {

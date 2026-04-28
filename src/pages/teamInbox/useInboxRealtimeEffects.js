@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import webSocketService from '../../services/websocketService';
 import { mergeMessagePreservingReplyContext } from './replyMessageMergeUtils';
 import { showIncomingMessageSystemNotification } from './teamInboxNotificationUtils';
+import { publishCrmContactSync } from '../../utils/crmSyncEvents';
 
 export const useInboxRealtimeEffects = ({
   currentUserId,
@@ -26,6 +27,14 @@ export const useInboxRealtimeEffects = ({
   setSidebarRefreshing,
   realtimeResyncTimerRef
 }) => {
+  const getContactIdFromConversationPayload = (conversation = {}) =>
+    String(
+      conversation?.contactId?._id ||
+        conversation?.contactId?.id ||
+        conversation?.contactId ||
+        ''
+    ).trim();
+
   const notifiedIncomingMessageKeysRef = useRef(new Set());
   const bootstrapLoadPromiseRef = useRef(null);
   const lastBootstrapLoadAtRef = useRef(0);
@@ -188,6 +197,15 @@ export const useInboxRealtimeEffects = ({
         String(activeConversation._id).trim() === currentConversationId;
       const incoming = data?.message || {};
       const isIncomingContactMessage = String(incoming?.sender || '').trim().toLowerCase() === 'contact';
+      const contactIdValue = getContactIdFromConversationPayload(data?.conversation);
+
+      if (isIncomingContactMessage && contactIdValue) {
+        publishCrmContactSync({
+          contactId: contactIdValue,
+          conversationId: currentConversationId,
+          reason: 'inbox_contact_reply'
+        });
+      }
       const incomingNotificationKey =
         String(incoming?._id || incoming?.whatsappMessageId || '').trim() ||
         `${currentConversationId}:${String(

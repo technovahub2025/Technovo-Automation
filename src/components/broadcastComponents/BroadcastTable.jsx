@@ -45,15 +45,18 @@ const BroadcastTable = ({
                 />
               </th>
             )}
-            <th>Campaign Name</th>
-            <th>Scheduled Time</th>
+            <th className="col-name">Campaign Name</th>
+            <th className="col-time">Scheduled Time</th>
             <th>Successful</th>
             <th>Read</th>
             <th>Replied</th>
-            <th>Recipients</th>
-            <th>Failed</th>
-            <th>Status</th>
-            <th>Actions</th>
+            <th className="col-recipients">Recipients</th>
+            <th className="col-failed">Failed</th>
+            <th className="col-reliability">Suppressed</th>
+            <th className="col-reliability">Deferred</th>
+            <th className="col-reliability">Retried</th>
+            <th className="col-status">Status</th>
+            <th className="col-actions">Actions</th>
           </tr>
         </thead>
 

@@ -246,7 +246,14 @@ export const getCrmActivityLabel = (activity = {}) => {
   if (type === 'task_created') return 'Task created';
   if (type === 'task_updated') return 'Task updated';
   if (type === 'task_completed') return 'Task completed';
+  if (type === 'broadcast_sent') return 'Broadcast sent';
+  if (type === 'deal_created') return 'Deal created';
+  if (type === 'deal_updated') return 'Deal updated';
+  if (type === 'deal_deleted') return 'Deal deleted';
+  if (type === 'deal_won') return 'Deal won';
+  if (type === 'deal_lost') return 'Deal lost';
   if (type === 'meeting_scheduled') return 'Meeting scheduled';
+  if (type === 'owner_notified') return 'Owner notified';
   if (type === 'contact_created') return 'Contact created';
   if (type === 'contact_updated') return 'Contact updated';
   if (type === 'whatsapp_opt_in') return 'WhatsApp opt-in';
@@ -271,9 +278,32 @@ export const getCrmActivityDescription = (activity = {}) => {
   if (type === 'task_created') return String(meta?.title || '').trim() || 'A follow-up task was created';
   if (type === 'task_completed') return String(meta?.nextTask?.title || '').trim() || 'A task was completed';
   if (type === 'task_updated') return String(meta?.nextTask?.title || '').trim() || 'A task was updated';
+  if (type === 'broadcast_sent') {
+    const broadcastName = String(meta?.broadcastName || '').trim();
+    const templateName = String(meta?.templateName || '').trim();
+    const preview = String(meta?.messagePreview || '').trim();
+    return (
+      broadcastName ||
+      templateName ||
+      preview ||
+      'A broadcast campaign message was sent'
+    );
+  }
+  if (type === 'deal_created') return String(meta?.title || '').trim() || 'A new deal was created';
+  if (type === 'deal_updated') return String(meta?.nextDeal?.title || '').trim() || 'A deal was updated';
+  if (type === 'deal_deleted') return String(meta?.title || '').trim() || 'A deal was deleted';
+  if (type === 'deal_won') return String(meta?.nextDeal?.title || '').trim() || 'A deal was marked won';
+  if (type === 'deal_lost') return String(meta?.nextDeal?.title || '').trim() || 'A deal was marked lost';
   if (type === 'meeting_scheduled') {
     const summary = String(meta?.summary || '').trim();
     return summary || 'Google Meet link was created for this lead';
+  }
+  if (type === 'owner_notified') {
+    const rule = String(meta?.automationRule || '').trim();
+    const owner = String(meta?.ownerId || '').trim();
+    return owner
+      ? `Notification queued for owner ${owner}${rule ? ` (${rule})` : ''}`
+      : 'Owner notification was created';
   }
   if (type === 'whatsapp_opt_in') {
     const source = String(meta?.source || '').trim();

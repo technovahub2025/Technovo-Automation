@@ -68,6 +68,15 @@ const defaultForm = {
 
 const formatCurrency = (value) =>
   new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(Number(value || 0));
+const formatCurrencyByCode = (value, currency = "INR") => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "--";
+  try {
+    return new Intl.NumberFormat("en-IN", { style: "currency", currency: String(currency || "INR").toUpperCase(), maximumFractionDigits: 0 }).format(amount);
+  } catch {
+    return amount.toLocaleString("en-IN");
+  }
+};
 
 const formatDate = (value) => {
   if (!value) return "--";
@@ -147,6 +156,7 @@ const MetaAdsManager = () => {
   const [connectingFacebook, setConnectingFacebook] = useState(false);
   const [savingSetup, setSavingSetup] = useState(false);
   const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+  const [billingLoading, setBillingLoading] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
   const [syncingId, setSyncingId] = useState("");
   const [statusUpdatingId, setStatusUpdatingId] = useState("");
@@ -168,6 +178,7 @@ const MetaAdsManager = () => {
   const [hierarchyLoading, setHierarchyLoading] = useState(false);
   const [adSetsLoading, setAdSetsLoading] = useState(false);
   const [adsLoading, setAdsLoading] = useState(false);
+  const [metaBilling, setMetaBilling] = useState(null);
 
   const setup = overview?.setup || {};
   const campaigns = overview?.campaigns || [];
@@ -295,6 +306,45 @@ const MetaAdsManager = () => {
   const updatePlacement = (key, value) => setForm((current) => ({ ...current, placement: { ...current.placement, [key]: value } }));
   const updateSchedule = (key, value) => setForm((current) => ({ ...current, schedule: { ...current.schedule, [key]: value } }));
   const updateCreative = (key, value) => setForm((current) => ({ ...current, creative: { ...current.creative, [key]: value } }));
+  const buildCampaignContractPayload = () => {
+    const campaignName = String(form.campaignName || "").trim();
+    const objective = String(form.objective || "OUTCOME_LEADS").trim();
+    const targeting = {
+      countries: Array.isArray(form.targeting?.countries) ? form.targeting.countries : [],
+      ageMin: Number(form.targeting?.ageMin || 0) || null,
+      ageMax: Number(form.targeting?.ageMax || 0) || null,
+      genders: Array.isArray(form.targeting?.genders) ? form.targeting.genders : [],
+    };
+
+    return {
+      audience: {
+        name: campaignName,
+        platform: "meta_ads",
+        objective,
+        targeting,
+      },
+      deliveryPolicy: {
+        budgetType: "daily",
+        dailyBudget: Number(form.budget?.dailyBudget || 0),
+        currency: String(form.budget?.currency || "INR").trim(),
+        startDate: form.schedule?.startTime || "",
+        endDate: form.schedule?.endTime || "",
+        status: String(form.campaignConfig?.initialStatus || "PAUSED").trim(),
+        spendingLimit: Number(form.campaignConfig?.spendingLimit || 0),
+      },
+      retryPolicy: {
+        enabled: false,
+        maxAttempts: 3,
+        backoffSeconds: 30,
+        retryOnFailureCodes: [],
+      },
+      compliancePolicy: {
+        respectOptOut: true,
+        legalBasis: "consent",
+      },
+      analytics: {},
+    };
+  };
 
   const openNewWizard = () => {
     setError("");
@@ -375,10 +425,25 @@ const MetaAdsManager = () => {
     }
   };
 
+  const handleFetchMetaBilling = async () => {
+    try {
+      setBillingLoading(true);
+      setError("");
+      const response = await metaAdsService.getBillingSummary();
+      setMetaBilling(response?.billing || null);
+      setSuccess("Meta billing fetched.");
+    } catch (requestError) {
+      setError(requestError?.response?.data?.error || requestError.message || "Failed to fetch Meta billing.");
+    } finally {
+      setBillingLoading(false);
+    }
+  };
+
   const handleWizardNext = async () => {
     try {
       setWizardSaving(true);
       setError("");
+      const contractPayload = buildCampaignContractPayload();
       if (wizardStep === 1) {
         const response = await metaAdsService.saveCampaignStep({
           draftId,
@@ -389,6 +454,11 @@ const MetaAdsManager = () => {
           specialAdCategories: form.campaignConfig.specialAdCategories,
           initialStatus: form.campaignConfig.initialStatus,
           spendingLimit: form.campaignConfig.spendingLimit,
+          audience: contractPayload.audience,
+          deliveryPolicy: contractPayload.deliveryPolicy,
+          retryPolicy: contractPayload.retryPolicy,
+          compliancePolicy: contractPayload.compliancePolicy,
+          analytics: contractPayload.analytics,
         });
         setDraftId(response?.draftId || response?.campaign?._id || "");
         setWizardStep(2);
@@ -410,6 +480,11 @@ const MetaAdsManager = () => {
           instagramPositions: form.placement.instagramPositions,
           startTime: form.schedule.startTime,
           endTime: form.schedule.endTime,
+          audience: contractPayload.audience,
+          deliveryPolicy: contractPayload.deliveryPolicy,
+          retryPolicy: contractPayload.retryPolicy,
+          compliancePolicy: contractPayload.compliancePolicy,
+          analytics: contractPayload.analytics,
         });
         setWizardStep(3);
       } else if (wizardStep === 3) {
@@ -425,6 +500,11 @@ const MetaAdsManager = () => {
           displayLink: form.creative.displayLink,
           pageId: form.configuredPageId || setup.selectedPageId || "",
           instagramActorId: form.configuredInstagramActorId || "",
+          audience: contractPayload.audience,
+          deliveryPolicy: contractPayload.deliveryPolicy,
+          retryPolicy: contractPayload.retryPolicy,
+          compliancePolicy: contractPayload.compliancePolicy,
+          analytics: contractPayload.analytics,
         }, creativeFile);
         const uploadedImageHash = response?.campaign?.creative?.mediaHash || "";
         if (uploadedImageHash) {
@@ -577,7 +657,7 @@ const MetaAdsManager = () => {
 
           {!loading && activeSection === "settings" ? <div className="meta-grid meta-grid-settings">
             <article className="meta-card"><div className="meta-card-head"><div><h3>Connection</h3><p>Use env token now and keep the API ready for Facebook Login later.</p></div><button type="button" className="meta-button meta-button-facebook" disabled={connectingFacebook} onClick={handleConnect}><Facebook size={16} /><span>{connectingFacebook ? "Connecting..." : "Connect Facebook"}</span></button></div><div className="meta-settings-grid"><label><span>Ad Account</span><select value={form.adAccountId} onChange={(event) => updateField("adAccountId", event.target.value)}><option value="">Choose ad account</option>{adAccounts.map((account, index) => <option key={buildListKey("account", account.id, account.name, index)} value={account.id}>{account.name || account.id}</option>)}</select></label><label><span>Facebook Page</span><select value={form.configuredPageId || effectiveConfiguredPageId} onChange={(event) => updateField("configuredPageId", event.target.value)}><option value="">Choose page</option>{resolvedPages.map((page, index) => <option key={buildListKey("page", page.id, page.name, index)} value={page.id}>{page.name}</option>)}</select></label><label><span>WhatsApp Number</span><input type="text" value={form.whatsappNumber} onChange={(event) => updateField("whatsappNumber", event.target.value)} placeholder="+91 98765 43210" /></label><div className="meta-settings-actions"><button type="button" className="meta-button meta-button-primary" disabled={savingSetup} onClick={handleSaveSettings}>{savingSetup ? <RefreshCw className="spin" size={16} /> : "Save Settings"}</button></div></div></article>
-            <article className="meta-card"><div className="meta-card-head"><div><h3>Wallet & Diagnostics</h3><p>Backend token health and credits.</p></div><button type="button" className="meta-button meta-button-secondary" disabled={diagnosticsLoading} onClick={handleRunDiagnostics}>{diagnosticsLoading ? <RefreshCw className="spin" size={16} /> : "Run Diagnostics"}</button></div><div className="meta-wallet-row"><div><span>Available credit</span><strong>{formatCurrency(wallet.balance || 0)}</strong></div><div className="meta-wallet-input"><input type="number" min="100" step="100" value={topUpAmount} onChange={(event) => setTopUpAmount(Number(event.target.value || 0))} /><button type="button" className="meta-button meta-button-secondary" disabled={walletSubmitting} onClick={handleWalletTopUp}>{walletSubmitting ? <RefreshCw className="spin" size={16} /> : "Add Credit"}</button></div></div><div className="meta-diagnostics-grid"><div><span>Access token</span><strong>{diagnostics?.env?.hasAccessToken ? "Present" : "Unknown"}</strong></div><div><span>Ad account ID</span><strong>{diagnostics?.env?.hasAdAccountId ? "Present" : "Unknown"}</strong></div><div><span>Page ID</span><strong>{diagnostics?.env?.hasPageId ? "Present" : "Unknown"}</strong></div><div><span>Auth source</span><strong>{diagnostics?.env?.authSource || setup.authSource || "env"}</strong></div></div></article>
+            <article className="meta-card"><div className="meta-card-head"><div><h3>Wallet & Diagnostics</h3><p>Backend token health and credits.</p></div><div className="meta-inline-actions"><button type="button" className="meta-button meta-button-secondary" disabled={billingLoading} onClick={handleFetchMetaBilling}>{billingLoading ? <RefreshCw className="spin" size={16} /> : "Check Meta Billing"}</button><button type="button" className="meta-button meta-button-secondary" disabled={diagnosticsLoading} onClick={handleRunDiagnostics}>{diagnosticsLoading ? <RefreshCw className="spin" size={16} /> : "Run Diagnostics"}</button></div></div><div className="meta-wallet-row"><div><span>Available credit</span><strong>{formatCurrency(wallet.balance || 0)}</strong></div><div className="meta-wallet-input"><input type="number" min="100" step="100" value={topUpAmount} onChange={(event) => setTopUpAmount(Number(event.target.value || 0))} /><button type="button" className="meta-button meta-button-secondary" disabled={walletSubmitting} onClick={handleWalletTopUp}>{walletSubmitting ? <RefreshCw className="spin" size={16} /> : "Add Credit"}</button></div></div>{metaBilling ? <div className="meta-diagnostics-grid"><div><span>Meta account</span><strong>{metaBilling?.adAccount?.name || metaBilling?.adAccount?.id || "--"}</strong></div><div><span>Amount spent</span><strong>{formatCurrencyByCode(metaBilling?.billing?.amountSpent, metaBilling?.adAccount?.currency)}</strong></div><div><span>Current balance</span><strong>{formatCurrencyByCode(metaBilling?.billing?.currentBalance, metaBilling?.adAccount?.currency)}</strong></div><div><span>Spend cap</span><strong>{formatCurrencyByCode(metaBilling?.billing?.spendCap, metaBilling?.adAccount?.currency)}</strong></div></div> : null}<div className="meta-diagnostics-grid"><div><span>Access token</span><strong>{diagnostics?.env?.hasAccessToken ? "Present" : "Unknown"}</strong></div><div><span>Ad account ID</span><strong>{diagnostics?.env?.hasAdAccountId ? "Present" : "Unknown"}</strong></div><div><span>Page ID</span><strong>{diagnostics?.env?.hasPageId ? "Present" : "Unknown"}</strong></div><div><span>Auth source</span><strong>{diagnostics?.env?.authSource || setup.authSource || "env"}</strong></div></div></article>
           </div> : null}
         </main>
       </section>

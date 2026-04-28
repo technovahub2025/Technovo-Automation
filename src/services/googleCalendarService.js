@@ -1,5 +1,6 @@
 import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
+import { handleUnauthorizedServiceError } from "./serviceAuth";
 
 const API_BASE_URL = resolveApiBaseUrl();
 
@@ -18,6 +19,11 @@ const toServiceError = (error, fallback) =>
   error?.message ||
   fallback;
 
+const withServiceError = (error, fallback) => {
+  handleUnauthorizedServiceError(error);
+  return { success: false, error: toServiceError(error, fallback) };
+};
+
 export const googleCalendarService = {
   async getConnectAuthUrl(origin = window.location.origin) {
     try {
@@ -28,7 +34,7 @@ export const googleCalendarService = {
       );
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to create Google auth URL") };
+      return withServiceError(error, "Failed to create Google auth URL");
     }
   },
 
@@ -40,7 +46,7 @@ export const googleCalendarService = {
       );
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to load Google auth status") };
+      return withServiceError(error, "Failed to load Google auth status");
     }
   },
 
@@ -53,7 +59,7 @@ export const googleCalendarService = {
       );
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to disconnect Google Calendar") };
+      return withServiceError(error, "Failed to disconnect Google Calendar");
     }
   },
 
@@ -66,7 +72,7 @@ export const googleCalendarService = {
       );
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to create Google Meet link") };
+      return withServiceError(error, "Failed to create Google Meet link");
     }
   }
 };

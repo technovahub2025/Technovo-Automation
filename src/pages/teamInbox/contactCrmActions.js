@@ -1,9 +1,11 @@
 import { whatsappService } from '../../services/whatsappService';
 import { crmService } from '../../services/crmService';
+import { publishCrmContactSync } from '../../utils/crmSyncEvents';
 
 export const createContactCrmActions = ({
   selectedConversation,
   setConversations,
+  setContactNameMap,
   setSelectedConversation,
   setContactInfoActionBusy,
   setContactInfoMessage,
@@ -48,6 +50,7 @@ export const createContactCrmActions = ({
 
     const normalizedContactId = String(updatedContact?._id || updatedContact?.id || '').trim();
     const normalizedPhone = normalizePhone(updatedContact?.phone);
+    const normalizedName = String(updatedContact?.name || '').trim();
 
     const matchesConversation = (conversation) => {
       if (!conversation) return false;
@@ -78,21 +81,71 @@ export const createContactCrmActions = ({
       };
     };
 
+    if (normalizedPhone && normalizedName) {
+      setContactNameMap?.((prev) => {
+        const next = { ...(prev && typeof prev === 'object' ? prev : {}) };
+        next[normalizedPhone] = normalizedName;
+        if (normalizedPhone.length > 10) {
+          next[normalizedPhone.slice(-10)] = normalizedName;
+        }
+        return next;
+      });
+    }
+
     setConversations((prev) => prev.map((conversation) => mergeConversationWithContact(conversation)));
     setSelectedConversation((prev) => mergeConversationWithContact(prev));
   };
 
-  const updateSelectedContact = async (patch = {}, successMessage = '') => {
-    const contactId = getContactIdFromConversation(selectedConversation);
-    if (!contactId) {
-      setContactInfoMessage('No contact record found for this conversation.');
-      setContactInfoMessageTone('error');
-      return false;
+  const ensureSelectedContactExists = async () => {
+    const existingContactId = getContactIdFromConversation(selectedConversation);
+    if (existingContactId) {
+      return existingContactId;
     }
 
+    const phone = String(selectedConversation?.contactPhone || '').trim();
+    if (!phone) {
+      throw new Error('No contact phone found for this conversation.');
+    }
+
+    const displayName = String(
+      selectedConversation?.contactId?.name ||
+        selectedConversation?.contactName ||
+        ''
+    ).trim();
+
+    const result = await whatsappService.createContact({
+      name: displayName,
+      phone,
+      source: 'team_inbox',
+      sourceType: 'incoming_message',
+      tags: []
+    });
+
+    if (result?.success === false) {
+      throw new Error(result?.error || 'Failed to create contact.');
+    }
+
+    const createdContact = result?.data || result;
+    const createdContactId = String(createdContact?._id || createdContact?.id || '').trim();
+    if (!createdContactId) {
+      throw new Error('Contact creation returned an invalid payload.');
+    }
+
+    applyContactUpdateLocally(createdContact);
+    setContactInfoMessage('Contact linked to CRM successfully.');
+    setContactInfoMessageTone('success');
+    return createdContactId;
+  };
+
+  const updateSelectedContact = async (
+    patch = {},
+    successMessage = '',
+    { syncReason = 'contact_updated', refreshActivities = false } = {}
+  ) => {
     try {
       setContactInfoActionBusy(true);
       setContactInfoMessage('');
+      const contactId = await ensureSelectedContactExists();
 
       const response = await whatsappService.updateContact(contactId, patch);
       if (response?.success === false) {
@@ -101,10 +154,18 @@ export const createContactCrmActions = ({
 
       const updatedContact = response?.data || response;
       applyContactUpdateLocally(updatedContact);
+      publishCrmContactSync({
+        contactId,
+        conversationId: getConversationIdValue(selectedConversation),
+        reason: syncReason
+      });
 
       if (successMessage) {
         setContactInfoMessage(successMessage);
         setContactInfoMessageTone('success');
+      }
+      if (refreshActivities) {
+        await loadCrmActivitiesForContact({ contactId, silent: true });
       }
       return true;
     } catch (error) {
@@ -181,7 +242,8 @@ export const createContactCrmActions = ({
     );
     await updateSelectedContact(
       { tags: nextTags, status: 'qualified', stage: 'qualified' },
-      'Lead marked as qualified.'
+      'Lead marked as qualified.',
+      { syncReason: 'lead_qualified', refreshActivities: true }
     );
   };
 
@@ -196,14 +258,19 @@ export const createContactCrmActions = ({
     );
     await updateSelectedContact(
       { tags: nextTags, status: 'unqualified', stage: 'lost' },
-      'Lead marked as unqualified.'
+      'Lead marked as unqualified.',
+      { syncReason: 'lead_unqualified', refreshActivities: true }
     );
   };
 
   const handleSaveInternalNote = async () => {
     const note = String(internalNoteDraft || '').trim();
     setInternalNoteSaving(true);
-    const updated = await updateSelectedContact({ notes: note }, 'Internal note saved.');
+    const updated = await updateSelectedContact(
+      { notes: note },
+      'Internal note saved.',
+      { syncReason: 'internal_note_saved', refreshActivities: true }
+    );
     if (updated) {
       setInternalNoteDraft(note);
     }
@@ -212,9 +279,7 @@ export const createContactCrmActions = ({
 
   const handleLeadStageChange = async (nextStage) => {
     const normalizedStage = String(nextStage || '').trim().toLowerCase();
-    const contactId = getContactIdFromConversation(selectedConversation);
-    if (!contactId || !normalizedStage) {
-      setContactInfoMessage('No contact record found for this conversation.');
+    if (!normalizedStage) {
       setContactInfoMessageTone('error');
       return;
     }
@@ -222,6 +287,7 @@ export const createContactCrmActions = ({
     try {
       setContactInfoActionBusy(true);
       setContactInfoMessage('');
+      const contactId = await ensureSelectedContactExists();
       const result = await crmService.updateContactStage(contactId, normalizedStage);
       if (result?.success === false) {
         throw new Error(result?.error || 'Failed to update lead stage.');
@@ -230,6 +296,11 @@ export const createContactCrmActions = ({
       applyContactUpdateLocally(updatedContact);
       setContactInfoMessage('Lead stage updated.');
       setContactInfoMessageTone('success');
+      publishCrmContactSync({
+        contactId,
+        conversationId: getConversationIdValue(selectedConversation),
+        reason: 'lead_stage_updated'
+      });
       await loadCrmActivitiesForContact({ contactId, silent: true });
     } catch (error) {
       setContactInfoMessage(error?.message || 'Failed to update lead stage.');
@@ -251,14 +322,11 @@ export const createContactCrmActions = ({
       setLeadFollowUpSaving(true);
       const updated = await updateSelectedContact(
         { nextFollowUpAt },
-        nextFollowUpAt ? 'Next follow-up updated.' : 'Next follow-up cleared.'
+        nextFollowUpAt ? 'Next follow-up updated.' : 'Next follow-up cleared.',
+        { syncReason: 'follow_up_updated', refreshActivities: true }
       );
       if (updated) {
         setLeadFollowUpDraft(toDateTimeLocalInputValue(nextFollowUpAt));
-        const contactId = getContactIdFromConversation(selectedConversation);
-        if (contactId) {
-          await loadCrmActivitiesForContact({ contactId, silent: true });
-        }
       }
     } finally {
       setLeadFollowUpSaving(false);
@@ -266,14 +334,8 @@ export const createContactCrmActions = ({
   };
 
   const handleCreateQuickTask = async () => {
-    const contactId = getContactIdFromConversation(selectedConversation);
     const conversationIdValue = getConversationIdValue(selectedConversation);
     const title = String(crmTaskTitleDraft || '').trim();
-    if (!contactId) {
-      setContactInfoMessage('No contact record found for this conversation.');
-      setContactInfoMessageTone('error');
-      return;
-    }
     if (!title) {
       setContactInfoMessage('Task title is required.');
       setContactInfoMessageTone('error');
@@ -290,6 +352,7 @@ export const createContactCrmActions = ({
     try {
       setCrmTaskCreating(true);
       setContactInfoMessage('');
+      const contactId = await ensureSelectedContactExists();
       const result = await crmService.createTask({
         contactId,
         conversationId: conversationIdValue || undefined,
@@ -305,6 +368,11 @@ export const createContactCrmActions = ({
       setCrmTaskPriorityDraft('medium');
       setContactInfoMessage('Follow-up task created.');
       setContactInfoMessageTone('success');
+      publishCrmContactSync({
+        contactId,
+        conversationId: conversationIdValue,
+        reason: 'quick_task_created'
+      });
       await loadCrmActivitiesForContact({ contactId, silent: true });
     } catch (error) {
       setContactInfoMessage(error?.message || 'Failed to create quick task.');
@@ -389,6 +457,11 @@ export const createContactCrmActions = ({
         loadCrmDocumentsForContact({ contactId, silent: true }),
         loadCrmActivitiesForContact({ contactId, silent: true })
       ]);
+      publishCrmContactSync({
+        contactId,
+        conversationId: getConversationIdValue(selectedConversation),
+        reason: 'document_deleted'
+      });
       setContactInfoMessage('CRM document deleted.');
       setContactInfoMessageTone('success');
     } catch (error) {
@@ -401,12 +474,6 @@ export const createContactCrmActions = ({
 
   const handleUploadCrmDocument = async (file) => {
     const nextFile = file instanceof File ? file : null;
-    const contactId = getContactIdFromConversation(selectedConversation);
-    if (!contactId) {
-      setContactInfoMessage('No contact record found for this conversation.');
-      setContactInfoMessageTone('error');
-      return;
-    }
     if (!nextFile) {
       setContactInfoMessage('Please choose a file to upload.');
       setContactInfoMessageTone('error');
@@ -416,6 +483,7 @@ export const createContactCrmActions = ({
     try {
       setCrmDocumentUploading(true);
       setContactInfoMessage('');
+      const contactId = await ensureSelectedContactExists();
       const result = await crmService.uploadContactDocument(contactId, {
         file: nextFile,
         documentType: crmDocumentTypeDraft || 'other',
@@ -429,6 +497,11 @@ export const createContactCrmActions = ({
         loadCrmDocumentsForContact({ contactId, silent: true }),
         loadCrmActivitiesForContact({ contactId, silent: true })
       ]);
+      publishCrmContactSync({
+        contactId,
+        conversationId: getConversationIdValue(selectedConversation),
+        reason: 'document_uploaded'
+      });
       setContactInfoMessage('CRM document uploaded.');
       setContactInfoMessageTone('success');
     } catch (error) {

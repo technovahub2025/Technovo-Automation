@@ -576,7 +576,12 @@ export const createInboxDataActions = ({
           originalFileName: file.name,
           mimeType: file.type,
           bytes: Number(file.size || 0),
-          fileCategory: mediaType === 'image' ? 'image' : 'document',
+          fileCategory:
+            mediaType === 'image'
+              ? 'image'
+              : mediaType === 'audio'
+                ? 'audio'
+                : 'document',
           uploadProgress: 0,
           uploadError: '',
           _localFile: file

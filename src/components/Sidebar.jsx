@@ -4,6 +4,7 @@ import axios from "axios";
 import { AuthContext } from '../pages/authcontext';
 import { whatsappService } from '../services/whatsappService';
 import { googleCalendarService } from '../services/googleCalendarService';
+import { crmService } from '../services/crmService';
 import { resolveApiBaseUrl } from '../services/apiBaseUrl';
 import {
     buildGoogleOAuthTrustedOrigins,
@@ -23,11 +24,11 @@ import {
     PhoneMissed,
     Mail,
     LogIn,
-    MessageCircle,
     Settings,
     CalendarDays,
     Megaphone,
     BarChart3,
+    BadgeDollarSign,
     Facebook,
     ChevronLeft,
     ChevronRight,
@@ -48,8 +49,14 @@ const ROUTE_PREFETCHERS = {
     '/broadcast': () => import('../pages/Broadcast'),
     '/templates': () => import('../pages/Templates'),
     '/contacts': () => import('../pages/Contacts'),
+    '/crm/home': () => import('../pages/CrmHome'),
     '/crm/pipeline': () => import('../pages/CrmPipeline'),
     '/crm/tasks': () => import('../pages/CrmTasks'),
+    '/crm/tasks-calendar': () => import('../pages/CrmTaskCalendar'),
+    '/crm/deals': () => import('../pages/CrmDeals'),
+    '/crm/meetings': () => import('../pages/CrmMeetings'),
+    '/crm/ops': () => import('../pages/CrmOps'),
+    '/crm/reports': () => import('../pages/CrmReports'),
     '/ads-manager': () => import('../pages/campaignmanagement'),
     '/insights': () => import('../pages/Insights'),
     '/meta-connect': () => import('../pages/MetaConnect'),
@@ -80,7 +87,7 @@ const defaultGoogleCalendarStatus = {
     }
 };
 
-const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLastBulkMessageItem }) => {
+const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const { user, logout } = useContext(AuthContext);
@@ -113,6 +120,12 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
     const [googleCalendarMessage, setGoogleCalendarMessage] = useState('');
     const [googleCalendarMessageTone, setGoogleCalendarMessageTone] = useState('info');
     const [googleCalendarStatus, setGoogleCalendarStatus] = useState(defaultGoogleCalendarStatus);
+    const [hubBadges, setHubBadges] = useState({
+        conversationsUnread: 0,
+        overdueTasks: 0,
+        openDeals: 0,
+        automationAlerts: 0
+    });
     const closeTimerRef = useRef(null);
     const prefetchedRoutesRef = useRef(new Set());
     const googleOAuthPopupRef = useRef(null);
@@ -195,10 +208,10 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
     const canUseWhatsAppWorkflow = isSuperAdmin || Boolean(
         featureFlags.workflowAutomation || featureFlags.teamInbox || featureFlags.broadcastMessaging
     );
-    const canUseAdsManager = isSuperAdmin || (Boolean(featureFlags.adsManager) && canViewAnalytics);
+    const canUseAdvancedCrm = isSuperAdmin;
 
     useEffect(() => {
-        if (!isLoggedIn && openMenu === 'bulkMessage') {
+        if (!isLoggedIn && openMenu) {
             setOpenMenu(null);
         }
     }, [isLoggedIn, openMenu]);
@@ -584,6 +597,109 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         }
     };
 
+    const handleHubMenuToggle = (menuName, event) => {
+        if (isMobile) {
+            if (openMenu === menuName && isOverlayOpen) {
+                setIsOverlayOpen(false);
+                setOpenMenu(null);
+            } else {
+                setOpenMenu(menuName);
+                setIsOverlayOpen(true);
+                if (isCompactMobile) setIsMobileSidebarOpen(true);
+            }
+            return;
+        }
+
+        if (isCompactMobile) setIsMobileSidebarOpen(true);
+        openDesktopFlyout(menuName, event);
+    };
+
+    const loadHubBadges = useCallback(async () => {
+        if (!isLoggedIn || (!canUseBroadcast && !canUseWhatsAppWorkflow)) {
+            setHubBadges({
+                conversationsUnread: 0,
+                overdueTasks: 0,
+                openDeals: 0,
+                automationAlerts: 0
+            });
+            return;
+        }
+
+        try {
+            const [conversations, taskSummary, dealMetrics, ownerDashboard] = await Promise.all([
+                whatsappService.getConversations({ limit: 200 }),
+                crmService.getTaskSummary(),
+                crmService.getDealMetrics(),
+                crmService.getOwnerDashboard()
+            ]);
+
+            const unreadCount = Array.isArray(conversations)
+                ? conversations.reduce(
+                    (total, conversation) => total + Math.max(0, Number(conversation?.unreadCount || 0)),
+                    0
+                )
+                : 0;
+
+            const overdueTasks = Math.max(0, Number(taskSummary?.data?.overdue || 0));
+            const openDeals = Math.max(0, Number(dealMetrics?.data?.open || 0));
+            const automationAlerts = Math.max(
+                0,
+                Number(ownerDashboard?.data?.summary?.responseSlaBreaches || 0)
+            );
+
+            setHubBadges({
+                conversationsUnread: unreadCount,
+                overdueTasks,
+                openDeals,
+                automationAlerts
+            });
+        } catch (_error) {
+            // Keep existing badge values on transient failures.
+        }
+    }, [canUseBroadcast, canUseWhatsAppWorkflow, isLoggedIn]);
+
+    useEffect(() => {
+        loadHubBadges();
+        const intervalId = window.setInterval(loadHubBadges, 60000);
+        return () => window.clearInterval(intervalId);
+    }, [loadHubBadges]);
+
+    const handleHubBadgeNavigate = (event, route) => {
+        event.preventDefault();
+        event.stopPropagation();
+        setOpenMenu(null);
+        setIsOverlayOpen(false);
+        if (isCompactMobile) {
+            setIsMobileSidebarOpen(false);
+        }
+        navigate(route);
+    };
+
+    const renderHubBadge = (value, ariaLabel, route) => {
+        const count = Number(value || 0);
+        if (!Number.isFinite(count) || count <= 0) return null;
+        return (
+            <span
+                className={`hub-count-badge ${route ? 'clickable' : ''}`}
+                aria-label={ariaLabel}
+                role={route ? 'button' : undefined}
+                tabIndex={route ? 0 : undefined}
+                onClick={route ? (event) => handleHubBadgeNavigate(event, route) : undefined}
+                onKeyDown={
+                    route
+                        ? (event) => {
+                            if (event.key === 'Enter' || event.key === ' ') {
+                                handleHubBadgeNavigate(event, route);
+                            }
+                        }
+                        : undefined
+                }
+            >
+                {count > 99 ? "99+" : count}
+            </span>
+        );
+    };
+
     const prefetchRoute = useCallback((route) => {
         if (!route || isMobile) {
             return;
@@ -628,13 +744,22 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         return currentPath === route;
     };
 
-    const isBulkRouteActive =
+    const isConversationsRouteActive =
+        currentPath.startsWith('/inbox');
+    const isCampaignsRouteActive =
         isRouteActive('/broadcast-dashboard') ||
         isRouteActive('/broadcast') ||
-        isRouteActive('/templates') ||
-        isRouteActive('/contacts') ||
+        isRouteActive('/templates');
+    const isCrmRouteActive =
         currentPath.startsWith('/crm/') ||
-        currentPath.startsWith('/inbox');
+        isRouteActive('/contacts');
+    const isLeadScoringSettingsActive = showLeadScoringModal;
+    const isGoogleCalendarSettingsActive = showGoogleCalendarModal;
+    const isAutomationRouteActive =
+        isRouteActive('/whatsapp-workflow') ||
+        isRouteActive('/crm/ops') ||
+        isLeadScoringSettingsActive ||
+        isGoogleCalendarSettingsActive;
     const isVoiceRouteActive =
         isRouteActive('/voice-broadcast') ||
         currentPath.startsWith('/voice-automation/inbound') ||
@@ -646,19 +771,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
         isRouteActive('/ads-manager') ||
         isRouteActive('/insights') ||
         isRouteActive('/meta-connect');
-    const getPreferredBulkRoute = () => {
-        const preferredRoutes = [
-            [featureFlags.broadcastDashboard, '/broadcast-dashboard'],
-            [featureFlags.teamInbox, '/inbox'],
-            [featureFlags.broadcastMessaging, '/broadcast'],
-            [featureFlags.templates, '/templates'],
-            [featureFlags.contacts, '/contacts']
-        ];
-        const selectedRoute = preferredRoutes.find(([enabled, route]) => isSuperAdmin || enabled)?.[1];
-        return selectedRoute || '/broadcast-dashboard';
-    };
-    const isLeadScoringSettingsActive = showLeadScoringModal;
-    const isGoogleCalendarSettingsActive = showGoogleCalendarModal;
 
     return (
         <div className={`sidebar-container ${isCompactMobile ? 'compact-mobile' : ''}`}>
@@ -683,7 +795,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
             <aside
                 className={`sidebar-dark ${isCompactMobile ? (isMobileSidebarOpen ? 'open' : 'closed') : ''}`}
                 onMouseLeave={() => {
-                    if (!isMobile && (openMenu === 'bulkMessage' || openMenu === 'metaAds' || openMenu === 'voice' || openMenu === 'settings')) {
+                    if (!isMobile && (openMenu === 'campaigns' || openMenu === 'crm' || openMenu === 'automationHub' || openMenu === 'metaAds' || openMenu === 'voice' || openMenu === 'settings')) {
                         scheduleDesktopFlyoutClose();
                     }
                 }}
@@ -728,55 +840,107 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                         <span className="icon-label">Dashboard</span>
                     </div>
 
-                    {/* Bulk Message Icon - Opens submenu */}
                     {isLoggedIn && canUseBroadcast && (
                         <div
-                            className={`icon-item ${isBulkRouteActive ? 'active' : ''} ${openMenu === 'bulkMessage' ? 'expanded' : ''}`}
+                            className={`icon-item ${isConversationsRouteActive ? 'active' : ''}`}
+                            onMouseEnter={() => {
+                                if (!isMobile) {
+                                    setOpenMenu(null);
+                                }
+                                prefetchRoute('/inbox');
+                            }}
+                            onClick={() => {
+                                setOpenMenu(null);
+                                navigate('/inbox');
+                            }}
+                            title="Inbox"
+                        >
+                            <MessageSquare size={24} />
+                            {renderHubBadge(
+                                hubBadges.conversationsUnread,
+                                'Unread conversations',
+                                '/inbox?filter=unread'
+                            )}
+                            <span className="icon-label">Inbox</span>
+                        </div>
+                    )}
+
+                    {isLoggedIn && canUseBroadcast && (
+                        <div
+                            className={`icon-item ${isCampaignsRouteActive ? 'active' : ''} ${openMenu === 'campaigns' ? 'expanded' : ''}`}
                             onMouseEnter={(e) => {
                                 if (!isMobile) {
                                     cancelDesktopFlyoutClose();
-                                    openDesktopFlyout('bulkMessage', e);
-                                    prefetchRoute(lastBulkMessageItem);
+                                    openDesktopFlyout('campaigns', e);
+                                    prefetchRoute('/broadcast-dashboard');
+                                    prefetchRoute('/broadcast');
+                                    prefetchRoute('/templates');
                                 }
                             }}
-                            onClick={(e) => {
-                                if (isMobile) {
-                                    if (openMenu === 'bulkMessage' && isOverlayOpen) {
-                                        setIsOverlayOpen(false);
-                                        setOpenMenu(null);
-                                    } else {
-                                        setOpenMenu('bulkMessage');
-                                        setIsOverlayOpen(true);
-                                        if (isCompactMobile) setIsMobileSidebarOpen(true);
-                                    }
-                                    return;
-                                }
-                                if (isCompactMobile) setIsMobileSidebarOpen(true);
-                                const targetRoute = getPreferredBulkRoute();
-                                if (openMenu === 'bulkMessage') {
-                                    if (isMobile) setIsOverlayOpen(true);
-                                    // If already open, navigate to last active item
-                                    navigate(targetRoute === lastBulkMessageItem ? lastBulkMessageItem : targetRoute);
-                                } else {
-                                    // If closed, open and navigate to last active item
-                                    if (!isMobile) {
-                                        openDesktopFlyout('bulkMessage', e);
-                                    } else {
-                                        setOpenMenu('bulkMessage');
-                                        setIsOverlayOpen(true);
-                                    }
-                                    navigate(targetRoute === lastBulkMessageItem ? lastBulkMessageItem : targetRoute);
-                                }
-                            }}
-                            title="Bulk Message"
+                            onClick={(e) => handleHubMenuToggle('campaigns', e)}
+                            title="Bulk Messages"
                         >
-                            <MessageCircle size={24} />
+                            <Radio size={24} />
                             <span className="icon-label icon-label-multiline">
                                 <span>Bulk</span>
-                                <span>Message</span>
+                                <span>Messages</span>
                             </span>
                             <span className="submenu-arrow-indicator" aria-hidden="true">
-                                {openMenu === 'bulkMessage' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+                                {openMenu === 'campaigns' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+                            </span>
+                        </div>
+                    )}
+
+                    {isLoggedIn && canUseBroadcast && (
+                        <div
+                            className={`icon-item ${isCrmRouteActive ? 'active' : ''} ${openMenu === 'crm' ? 'expanded' : ''}`}
+                            onMouseEnter={(e) => {
+                                if (!isMobile) {
+                                    cancelDesktopFlyoutClose();
+                                    openDesktopFlyout('crm', e);
+                                    prefetchRoute('/crm/home');
+                                    prefetchRoute('/crm/pipeline');
+                                }
+                            }}
+                            onClick={(e) => handleHubMenuToggle('crm', e)}
+                            title="CRM"
+                        >
+                            <Users size={24} />
+                            {renderHubBadge(
+                                hubBadges.overdueTasks > 0 ? hubBadges.overdueTasks : hubBadges.openDeals,
+                                hubBadges.overdueTasks > 0 ? 'Overdue CRM tasks' : 'Open deals',
+                                hubBadges.overdueTasks > 0 ? '/crm/tasks?bucket=overdue' : '/crm/deals'
+                            )}
+                            <span className="icon-label">CRM</span>
+                            <span className="submenu-arrow-indicator" aria-hidden="true">
+                                {openMenu === 'crm' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+                            </span>
+                        </div>
+                    )}
+
+                    {isLoggedIn && (canUseWhatsAppWorkflow || canUseBroadcast) && (
+                        <div
+                            className={`icon-item ${isAutomationRouteActive ? 'active' : ''} ${openMenu === 'automationHub' ? 'expanded' : ''}`}
+                            onMouseEnter={(e) => {
+                                if (!isMobile) {
+                                    cancelDesktopFlyoutClose();
+                                    openDesktopFlyout('automationHub', e);
+                                    prefetchRoute('/crm/ops');
+                                    prefetchRoute('/whatsapp-workflow');
+                                }
+                            }}
+                            onClick={(e) => handleHubMenuToggle('automationHub', e)}
+                            title="Automation"
+                        >
+                            <Zap size={24} />
+                            {renderHubBadge(
+                                hubBadges.automationAlerts,
+                                'Automation alerts',
+                                '/crm/ops?historyStatus=error'
+                            )}
+                            <span className="icon-label">Automation</span>
+                            <span className="submenu-arrow-indicator" aria-hidden="true">
+                                {openMenu === 'automationHub' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
                             </span>
                         </div>
                     )}
@@ -1012,16 +1176,12 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                         }
                     }}
                 >
-                    {openMenu === 'bulkMessage' && (
+                    {openMenu === 'campaigns' && (
                         <>
                             <div className="panel-header">
-                                <h3>Bulk Message</h3>
+                                <h3>Bulk Messages</h3>
                                 {isMobile && (
-                                    <button 
-                                        className="panel-close-btn" 
-                                        onClick={toggleOverlay}
-                                        title="Close menu"
-                                    >
+                                    <button className="panel-close-btn" onClick={toggleOverlay} title="Close menu">
                                         <X size={20} />
                                     </button>
                                 )}
@@ -1032,152 +1192,181 @@ const Sidebar = ({ expandedPanel, setExpandedPanel, lastBulkMessageItem, setLast
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                     onMouseEnter={() => prefetchRoute('/broadcast-dashboard')}
                                     onFocus={() => prefetchRoute('/broadcast-dashboard')}
-                                    onClick={() => {
-                                        setLastBulkMessageItem('/broadcast-dashboard');
-                                        closeMobileMenusAfterNavigate();
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.preventDefault();
-                                        setOpenMenu(null);
-                                    }}
+                                    onClick={closeMobileMenusAfterNavigate}
                                 >
                                     <LayoutDashboard size={20} />
                                     <span>Broadcast Dashboard</span>
-                                </NavLink>
-                                <NavLink
-                                    to="/inbox"
-                                    className={() => `panel-item ${currentPath.startsWith('/inbox') ? 'active' : ''}`}
-                                    onMouseEnter={() => prefetchRoute('/inbox')}
-                                    onFocus={() => prefetchRoute('/inbox')}
-                                    onClick={() => {
-                                        setLastBulkMessageItem('/inbox');
-                                        closeMobileMenusAfterNavigate();
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.preventDefault();
-                                        setOpenMenu(null);
-                                    }}
-                                >
-                                    <MessageSquare size={20} />
-                                    <span>Team Inbox</span>
                                 </NavLink>
                                 <NavLink
                                     to="/broadcast"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                     onMouseEnter={() => prefetchRoute('/broadcast')}
                                     onFocus={() => prefetchRoute('/broadcast')}
-                                    onClick={() => {
-                                        setLastBulkMessageItem('/broadcast');
-                                        closeMobileMenusAfterNavigate();
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.preventDefault();
-                                        setOpenMenu(null);
-                                    }}
+                                    onClick={closeMobileMenusAfterNavigate}
                                 >
                                     <Radio size={20} />
                                     <span>Broadcast</span>
                                 </NavLink>
-
                                 <NavLink
                                     to="/templates"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                     onMouseEnter={() => prefetchRoute('/templates')}
                                     onFocus={() => prefetchRoute('/templates')}
-                                    onClick={() => {
-                                        setLastBulkMessageItem('/templates');
-                                        closeMobileMenusAfterNavigate();
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.preventDefault();
-                                        setOpenMenu(null);
-                                    }}
+                                    onClick={closeMobileMenusAfterNavigate}
                                 >
                                     <FileText size={20} />
                                     <span>Templates</span>
                                 </NavLink>
+                            </nav>
+                        </>
+                    )}
 
+                    {openMenu === 'crm' && (
+                        <>
+                            <div className="panel-header">
+                                <h3>CRM</h3>
+                                {isMobile && (
+                                    <button className="panel-close-btn" onClick={toggleOverlay} title="Close menu">
+                                        <X size={20} />
+                                    </button>
+                                )}
+                            </div>
+                            <nav className="panel-menu">
+                                <NavLink
+                                    to="/crm/home"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/crm/home')}
+                                    onFocus={() => prefetchRoute('/crm/home')}
+                                    onClick={closeMobileMenusAfterNavigate}
+                                >
+                                    <LayoutDashboard size={20} />
+                                    <span>CRM Home</span>
+                                </NavLink>
                                 <NavLink
                                     to="/contacts"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                     onMouseEnter={() => prefetchRoute('/contacts')}
                                     onFocus={() => prefetchRoute('/contacts')}
-                                    onClick={() => {
-                                        setLastBulkMessageItem('/contacts');
-                                        closeMobileMenusAfterNavigate();
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.preventDefault();
-                                        setOpenMenu(null);
-                                    }}
+                                    onClick={closeMobileMenusAfterNavigate}
                                 >
                                     <Users size={20} />
                                     <span>Contacts</span>
                                 </NavLink>
-
-                                <div className="panel-submenu-heading">
-                                    <BarChart3 size={16} />
-                                    <span>CRM</span>
-                                </div>
-
                                 <NavLink
                                     to="/crm/pipeline"
-                                    className={({ isActive }) => `panel-item panel-item-submenu ${isActive ? 'active' : ''}`}
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                     onMouseEnter={() => prefetchRoute('/crm/pipeline')}
                                     onFocus={() => prefetchRoute('/crm/pipeline')}
-                                    onClick={() => {
-                                        setLastBulkMessageItem('/crm/pipeline');
-                                        closeMobileMenusAfterNavigate();
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.preventDefault();
-                                        setOpenMenu(null);
-                                    }}
+                                    onClick={closeMobileMenusAfterNavigate}
                                 >
                                     <Users size={20} />
-                                    <span>CRM Pipeline</span>
+                                    <span>Pipeline</span>
                                 </NavLink>
-
                                 <NavLink
                                     to="/crm/tasks"
-                                    className={({ isActive }) => `panel-item panel-item-submenu ${isActive ? 'active' : ''}`}
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                     onMouseEnter={() => prefetchRoute('/crm/tasks')}
                                     onFocus={() => prefetchRoute('/crm/tasks')}
-                                    onClick={() => {
-                                        setLastBulkMessageItem('/crm/tasks');
-                                        closeMobileMenusAfterNavigate();
-                                    }}
-                                    onDoubleClick={(e) => {
-                                        e.preventDefault();
-                                        setOpenMenu(null);
-                                    }}
+                                    onClick={closeMobileMenusAfterNavigate}
                                 >
                                     <FileText size={20} />
-                                    <span>CRM Tasks</span>
+                                    <span>Tasks</span>
                                 </NavLink>
+                                <NavLink
+                                    to="/crm/deals"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/crm/deals')}
+                                    onFocus={() => prefetchRoute('/crm/deals')}
+                                    onClick={closeMobileMenusAfterNavigate}
+                                >
+                                    <BadgeDollarSign size={20} />
+                                    <span>Deals</span>
+                                </NavLink>
+                                <NavLink
+                                    to="/crm/meetings"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/crm/meetings')}
+                                    onFocus={() => prefetchRoute('/crm/meetings')}
+                                    onClick={closeMobileMenusAfterNavigate}
+                                >
+                                    <CalendarDays size={20} />
+                                    <span>Meetings</span>
+                                </NavLink>
+                                <NavLink
+                                    to="/crm/reports"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/crm/reports')}
+                                    onFocus={() => prefetchRoute('/crm/reports')}
+                                    onClick={closeMobileMenusAfterNavigate}
+                                >
+                                    <BarChart3 size={20} />
+                                    <span>Reports</span>
+                                </NavLink>
+                                {canUseAdvancedCrm && (
+                                    <NavLink
+                                        to="/crm/ops"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onMouseEnter={() => prefetchRoute('/crm/ops')}
+                                        onFocus={() => prefetchRoute('/crm/ops')}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <Settings size={20} />
+                                        <span>CRM Ops</span>
+                                    </NavLink>
+                                )}
+                            </nav>
+                        </>
+                    )}
 
-                                <div className="panel-submenu-heading">
-                                    <Settings size={16} />
-                                    <span>Settings</span>
-                                </div>
-
+                    {openMenu === 'automationHub' && (
+                        <>
+                            <div className="panel-header">
+                                <h3>Automation</h3>
+                                {isMobile && (
+                                    <button className="panel-close-btn" onClick={toggleOverlay} title="Close menu">
+                                        <X size={20} />
+                                    </button>
+                                )}
+                            </div>
+                            <nav className="panel-menu">
+                                <NavLink
+                                    to="/crm/ops"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/crm/ops')}
+                                    onFocus={() => prefetchRoute('/crm/ops')}
+                                    onClick={closeMobileMenusAfterNavigate}
+                                >
+                                    <LineChart size={20} />
+                                    <span>Follow-up Ops</span>
+                                </NavLink>
+                                <NavLink
+                                    to="/whatsapp-workflow"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/whatsapp-workflow')}
+                                    onFocus={() => prefetchRoute('/whatsapp-workflow')}
+                                    onClick={closeMobileMenusAfterNavigate}
+                                >
+                                    <MessageSquare size={20} />
+                                    <span>WhatsApp Workflow</span>
+                                </NavLink>
                                 <button
                                     type="button"
-                                    className={`panel-item panel-item-submenu panel-item-button ${isLeadScoringSettingsActive ? 'active' : ''}`}
+                                    className={`panel-item panel-item-button ${isLeadScoringSettingsActive ? 'active' : ''}`}
                                     onClick={openLeadScoringModal}
                                 >
                                     <BarChart3 size={20} />
                                     <span>Lead Scoring Settings</span>
                                 </button>
-
-                                <button
-                                    type="button"
-                                    className={`panel-item panel-item-submenu panel-item-button ${isGoogleCalendarSettingsActive ? 'active' : ''}`}
-                                    onClick={openGoogleCalendarModal}
+                                <NavLink
+                                    to="/crm/tasks-calendar"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/crm/tasks-calendar')}
+                                    onFocus={() => prefetchRoute('/crm/tasks-calendar')}
+                                    onClick={closeMobileMenusAfterNavigate}
                                 >
                                     <CalendarDays size={20} />
-                                    <span>Google Calendar</span>
-                                </button>
+                                    <span>Task Calendar</span>
+                                </NavLink>
                             </nav>
                         </>
                     )}

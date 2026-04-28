@@ -8,6 +8,7 @@ import {
   resolveCacheUserId,
   writeSidebarPageCache
 } from '../utils/sidebarPageCache';
+import AppToast from '../components/common/AppToast';
 import './Templates.css';
 import '../styles/whatsapp.css';
 
@@ -54,6 +55,7 @@ const Templates = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [deletingTemplateName, setDeletingTemplateName] = useState('');
   const [error, setError] = useState(null);
+  const [toast, setToast] = useState(null);
   const currentUserId = resolveCacheUserId();
 
   useEffect(() => {
@@ -72,6 +74,12 @@ const Templates = () => {
     loadTemplates();
   }, [currentUserId]);
 
+  useEffect(() => {
+    if (!toast?.message) return undefined;
+    const timeoutId = window.setTimeout(() => setToast(null), 3200);
+    return () => window.clearTimeout(timeoutId);
+  }, [toast]);
+
   const extractErrorMessage = (err, fallback) => {
     return (
       err?.response?.data?.error ||
@@ -80,6 +88,10 @@ const Templates = () => {
       fallback
     );
   };
+
+  const showToast = useCallback((message, type = 'info') => {
+    setToast({ message, type });
+  }, []);
 
   const persistTemplatesCache = useCallback((templates) => {
     writeSidebarPageCache(
@@ -138,16 +150,16 @@ const Templates = () => {
       const result = await whatsappService.syncTemplates();
       if (result?.success) {
         await loadTemplates();
-        alert('Templates synced successfully!');
+        showToast('Templates synced successfully.', 'success');
       } else {
         const msg = result?.error || result?.message || 'Failed to sync templates';
         setError(msg);
-        alert(msg);
+        showToast(msg, 'error');
       }
     } catch (err) {
       const msg = extractErrorMessage(err, 'Error syncing templates');
       setError(msg);
-      alert(msg);
+      showToast(msg, 'error');
     } finally {
       setIsSyncing(false);
     }
@@ -175,7 +187,7 @@ const Templates = () => {
   const handleDeleteTemplate = async (template) => {
     const templateName = template?.name?.trim();
     if (!templateName) {
-      alert('Template name is missing');
+      showToast('Template name is missing.', 'error');
       return;
     }
 
@@ -186,12 +198,13 @@ const Templates = () => {
     try {
       const result = await whatsappService.deleteTemplateFromMeta(templateName);
       if (!result?.success) {
-        alert(result?.error || 'Failed to delete template');
+        showToast(result?.error || 'Failed to delete template', 'error');
         return;
       }
       await loadTemplates();
+      showToast(`Deleted template "${templateName}".`, 'success');
     } catch (err) {
-      alert(extractErrorMessage(err, 'Failed to delete template'));
+      showToast(extractErrorMessage(err, 'Failed to delete template'), 'error');
     } finally {
       setDeletingTemplateName('');
     }
@@ -234,6 +247,7 @@ const Templates = () => {
 
   return (
     <div className="templates-page">
+      <AppToast toast={toast} />
       <div className="templates-hero">
         <div className="hero-text">
           <span className="hero-eyebrow">Template Library</span>

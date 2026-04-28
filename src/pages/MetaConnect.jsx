@@ -2,6 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { CheckCircle2, ExternalLink, Facebook, RefreshCw, ShieldCheck, UserCircle2 } from "lucide-react";
 import metaAdsApi from "../services/metaAdsApi";
 import { setMetaApiRuntimeBaseUrl } from "../services/metaAdsApi";
+import { toAppPath } from "../utils/appRouteBase";
+import {
+  DEFAULT_PUBLIC_OPTIN_KEY,
+  isLocalHostUrl,
+  resolvePreferredPublicKey,
+  shouldIncludePublicKeyInUrl,
+  syncPublicKeySearchParam
+} from "../utils/publicOptIn";
 import "./MetaConnect.css";
 
 const emptySetup = {
@@ -41,6 +49,11 @@ const extractErrorMessage = (error, fallback) =>
 
 const META_LEAD_MAPPING_STORAGE_KEY = "meta_lead_consent_mapping_v1";
 const OPTIN_LINK_STORAGE_KEY = "meta_optin_link_builder_v1";
+
+const buildDefaultOptInLandingUrl = () => {
+  if (typeof window === "undefined") return "";
+  return `${window.location.origin}${toAppPath("/whatsapp-opt-in")}`;
+};
 
 const MetaConnect = () => {
   const popupRef = useRef(null);
@@ -96,8 +109,11 @@ const MetaConnect = () => {
         const parsed = JSON.parse(stored);
         if (parsed && typeof parsed === "object") {
           return {
-            baseUrl: parsed.baseUrl || `${window.location.origin}/whatsapp-opt-in`,
-            publicKey: parsed.publicKey || "",
+            baseUrl: parsed.baseUrl || buildDefaultOptInLandingUrl(),
+            publicKey: resolvePreferredPublicKey(
+              parsed.publicKey,
+              DEFAULT_PUBLIC_OPTIN_KEY
+            ),
             userId: parsed.userId || "",
             companyId: parsed.companyId || "",
             companyName: parsed.companyName || "Technovohub",
@@ -123,8 +139,8 @@ const MetaConnect = () => {
       "";
 
     return {
-      baseUrl: `${window.location.origin}/whatsapp-opt-in`,
-      publicKey: "",
+      baseUrl: buildDefaultOptInLandingUrl(),
+      publicKey: resolvePreferredPublicKey("", DEFAULT_PUBLIC_OPTIN_KEY),
       userId: userId ? String(userId) : "",
       companyId: storedUser?.companyId ? String(storedUser.companyId) : "",
       companyName: storedUser?.companyName || "Technovohub",
@@ -135,6 +151,12 @@ const MetaConnect = () => {
   const [optInLinkMessage, setOptInLinkMessage] = useState("");
 
   const isConfigured = useMemo(() => Boolean(form.adAccountId && form.pageId), [form]);
+  const hasUnsafeOptInConfig = useMemo(
+    () =>
+      isLocalHostUrl(optInBuilder.baseUrl) ||
+      !shouldIncludePublicKeyInUrl(optInBuilder.publicKey),
+    [optInBuilder.baseUrl, optInBuilder.publicKey]
+  );
   const pageAccessIssue =
     setup.connected &&
     !form.pageId &&
@@ -459,7 +481,7 @@ const MetaConnect = () => {
       url = `https://${url}`;
     }
     const params = new URLSearchParams();
-    if (optInBuilder.publicKey) params.set("publicKey", optInBuilder.publicKey);
+    syncPublicKeySearchParam(params, optInBuilder.publicKey);
     if (optInBuilder.userId) params.set("userId", optInBuilder.userId);
     if (optInBuilder.companyId) params.set("companyId", optInBuilder.companyId);
     if (optInBuilder.companyName) params.set("companyName", optInBuilder.companyName);
@@ -731,7 +753,7 @@ const MetaConnect = () => {
             <button className="meta-btn meta-btn-primary" onClick={handleSyncLeadConsent} disabled={leadSyncLoading}>
               {leadSyncLoading ? "Syncing..." : "Sync Lead Consent"}
             </button>
-            <a className="meta-btn meta-btn-secondary" href="/whatsapp-opt-in-demo" target="_blank" rel="noreferrer">
+            <a className="meta-btn meta-btn-secondary" href={toAppPath("/whatsapp-opt-in-demo")} target="_blank" rel="noreferrer">
               Open Public Opt-In Demo
             </a>
           </div>
@@ -903,6 +925,12 @@ const MetaConnect = () => {
             Share this link to capture WhatsApp consent with proof. This does not affect live users unless they open the link.
           </div>
 
+          {hasUnsafeOptInConfig ? (
+            <div className="meta-banner meta-banner-error">
+              Public opt-in link is not production-safe. Avoid localhost URLs and placeholder public keys before sharing.
+            </div>
+          ) : null}
+
           <div className="meta-form-grid meta-form-grid-optin">
             <label className="meta-field">
               <span>Landing URL</span>
@@ -976,6 +1004,32 @@ const MetaConnect = () => {
           <div className="meta-optin-link-row">
             <input type="text" readOnly value={optInLink || ""} />
             <div className="meta-optin-link-actions">
+              <button
+                className="meta-btn meta-btn-secondary"
+                type="button"
+                onClick={() =>
+                  setOptInBuilder((prev) => ({
+                    ...prev,
+                    baseUrl: buildDefaultOptInLandingUrl()
+                  }))
+                }
+              >
+                Use Current Site URL
+              </button>
+              {shouldIncludePublicKeyInUrl(DEFAULT_PUBLIC_OPTIN_KEY) ? (
+                <button
+                  className="meta-btn meta-btn-secondary"
+                  type="button"
+                  onClick={() =>
+                    setOptInBuilder((prev) => ({
+                      ...prev,
+                      publicKey: DEFAULT_PUBLIC_OPTIN_KEY
+                    }))
+                  }
+                >
+                  Use Env Public Key
+                </button>
+              ) : null}
               <button className="meta-btn meta-btn-secondary" type="button" onClick={handleCopyOptInLink}>
                 Copy Link
               </button>

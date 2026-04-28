@@ -11,9 +11,6 @@ const BroadcastCard = ({
   getReadPercentage,
   getRepliedPercentage,
   getStatusClass,
-  onPauseBroadcast,
-  onResumeBroadcast,
-  onCancelBroadcast,
   onDeleteClick,
   onViewAnalytics
 }) => {
@@ -77,6 +74,47 @@ const BroadcastCard = ({
     }
     return { title: '', lines: [] };
   };
+
+  const reliabilityAnalytics = broadcast?.retrySummary?.analytics || {};
+  const retryPolicy = broadcast?.retrySummary?.retryPolicy || broadcast?.retryPolicy || {};
+  const deliveryPolicy = broadcast?.retrySummary?.deliveryPolicy || broadcast?.deliveryPolicy || {};
+  const compliancePolicy = broadcast?.retrySummary?.compliancePolicy || broadcast?.compliancePolicy || {};
+  const quietHours = deliveryPolicy?.quietHours || {};
+  const suppressedCount = toNumber(reliabilityAnalytics.suppressed);
+  const deferredCount = toNumber(reliabilityAnalytics.deferred);
+  const retriedCount = toNumber(reliabilityAnalytics.retried);
+  const suppressionListCount = Array.isArray(compliancePolicy?.suppressionListPhones)
+    ? compliancePolicy.suppressionListPhones.length
+    : toNumber(compliancePolicy?.suppressionListCount);
+
+  const quietHoursLabel = (() => {
+    if (!quietHours?.enabled) return 'Quiet Hrs Off';
+    const start = toNumber(quietHours?.startHour);
+    const end = toNumber(quietHours?.endHour);
+    return `Quiet ${start}:00-${end}:00`;
+  })();
+
+  const retryLabel = retryPolicy?.enabled === false
+    ? 'Retry Off'
+    : `Retry x${Math.max(1, toNumber(retryPolicy?.maxAttempts || 1))}`;
+
+  const optOutLabel = compliancePolicy?.respectOptOut === false ? 'Opt-out Off' : 'Opt-out On';
+
+  const getReliabilityTooltip = (type, count) => {
+    if (type === 'suppressed') {
+      return `Suppressed: ${count}. Recipients skipped due to suppression list or opt-out policy.`;
+    }
+    if (type === 'deferred') {
+      return `Deferred: ${count}. Messages delayed due to quiet-hours policy.`;
+    }
+    return `Retried: ${count}. Attempts retried after temporary send failures.`;
+  };
+
+  const renderReliabilityBadge = (type, count) => (
+    <span className={`reliability-pill ${type}`} title={getReliabilityTooltip(type, count)}>
+      {count}
+    </span>
+  );
 
   const renderProgressCircle = (percentage, tooltip = { title: '', lines: [] }) => {
     const progressClass = getProgressClass(percentage);
@@ -146,9 +184,9 @@ const BroadcastCard = ({
         </td>
       )}
 
-      <td>{broadcast.name}</td>
+      <td className="col-name">{broadcast.name}</td>
 
-      <td>{getDisplayDateTime(broadcast)}</td>
+      <td className="col-time">{getDisplayDateTime(broadcast)}</td>
 
       <td>{renderProgressCircle(getSuccessPercentage(broadcast), getMetricTooltip('successful', broadcast))}</td>
 
@@ -156,19 +194,33 @@ const BroadcastCard = ({
 
       <td>{renderProgressCircle(getRepliedPercentage(broadcast), getMetricTooltip('replied', broadcast))}</td>
 
-      <td>
+      <td className="col-recipients">
         {broadcast.recipientCount || broadcast.recipients?.length || 0} Contact{(broadcast.recipientCount || broadcast.recipients?.length || 0) !== 1 ? 's' : ''}
       </td>
 
-      <td>
+      <td className="col-failed">
         {broadcast.stats?.failed || 0} Contact{(broadcast.stats?.failed || 0) !== 1 ? 's' : ''}
       </td>
 
-      <td>
+      <td className="col-reliability">{renderReliabilityBadge('suppressed', suppressedCount)}</td>
+
+      <td className="col-reliability">{renderReliabilityBadge('deferred', deferredCount)}</td>
+
+      <td className="col-reliability">{renderReliabilityBadge('retried', retriedCount)}</td>
+
+      <td className="col-status status-with-policy">
         <span className={`badge ${getStatusClass(broadcast.status)}`}>{broadcast.status}</span>
+        <div className="status-policy-row">
+          <span className={`policy-chip ${quietHours?.enabled ? 'on' : 'off'}`}>{quietHoursLabel}</span>
+          <span className={`policy-chip ${retryPolicy?.enabled === false ? 'off' : 'on'}`}>{retryLabel}</span>
+          <span className={`policy-chip ${compliancePolicy?.respectOptOut === false ? 'off' : 'on'}`}>{optOutLabel}</span>
+          {suppressionListCount > 0 && (
+            <span className="policy-chip neutral">{`Suppression ${suppressionListCount}`}</span>
+          )}
+        </div>
       </td>
 
-      <td>
+      <td className="col-actions">
         <div className="action-buttons">
           <button className="action-btn" title="View Analytics" onClick={() => onViewAnalytics?.(broadcast)}>
             <LineChart size={10} />
@@ -202,6 +254,35 @@ const areEqual = (prevProps, nextProps) => {
     prevStats.read === nextStats.read &&
     prevStats.replied === nextStats.replied &&
     prevStats.failed === nextStats.failed &&
+    Number(prev?.retrySummary?.analytics?.suppressed || 0) === Number(next?.retrySummary?.analytics?.suppressed || 0) &&
+    Number(prev?.retrySummary?.analytics?.deferred || 0) === Number(next?.retrySummary?.analytics?.deferred || 0) &&
+    Number(prev?.retrySummary?.analytics?.retried || 0) === Number(next?.retrySummary?.analytics?.retried || 0) &&
+    Boolean(prev?.retrySummary?.deliveryPolicy?.quietHours?.enabled ?? prev?.deliveryPolicy?.quietHours?.enabled) ===
+      Boolean(next?.retrySummary?.deliveryPolicy?.quietHours?.enabled ?? next?.deliveryPolicy?.quietHours?.enabled) &&
+    Number(prev?.retrySummary?.deliveryPolicy?.quietHours?.startHour ?? prev?.deliveryPolicy?.quietHours?.startHour ?? 0) ===
+      Number(next?.retrySummary?.deliveryPolicy?.quietHours?.startHour ?? next?.deliveryPolicy?.quietHours?.startHour ?? 0) &&
+    Number(prev?.retrySummary?.deliveryPolicy?.quietHours?.endHour ?? prev?.deliveryPolicy?.quietHours?.endHour ?? 0) ===
+      Number(next?.retrySummary?.deliveryPolicy?.quietHours?.endHour ?? next?.deliveryPolicy?.quietHours?.endHour ?? 0) &&
+    Boolean(prev?.retrySummary?.retryPolicy?.enabled ?? prev?.retryPolicy?.enabled ?? true) ===
+      Boolean(next?.retrySummary?.retryPolicy?.enabled ?? next?.retryPolicy?.enabled ?? true) &&
+    Number(prev?.retrySummary?.retryPolicy?.maxAttempts ?? prev?.retryPolicy?.maxAttempts ?? 0) ===
+      Number(next?.retrySummary?.retryPolicy?.maxAttempts ?? next?.retryPolicy?.maxAttempts ?? 0) &&
+    Boolean(prev?.retrySummary?.compliancePolicy?.respectOptOut ?? prev?.compliancePolicy?.respectOptOut ?? true) ===
+      Boolean(next?.retrySummary?.compliancePolicy?.respectOptOut ?? next?.compliancePolicy?.respectOptOut ?? true) &&
+    Number(
+      Array.isArray(prev?.retrySummary?.compliancePolicy?.suppressionListPhones)
+        ? prev.retrySummary.compliancePolicy.suppressionListPhones.length
+        : Array.isArray(prev?.compliancePolicy?.suppressionListPhones)
+          ? prev.compliancePolicy.suppressionListPhones.length
+          : 0
+    ) ===
+      Number(
+        Array.isArray(next?.retrySummary?.compliancePolicy?.suppressionListPhones)
+          ? next.retrySummary.compliancePolicy.suppressionListPhones.length
+          : Array.isArray(next?.compliancePolicy?.suppressionListPhones)
+            ? next.compliancePolicy.suppressionListPhones.length
+            : 0
+      ) &&
     prevProps.selectionMode === nextProps.selectionMode &&
     prevProps.selectedCampaigns.includes(prev._id) === nextProps.selectedCampaigns.includes(next._id)
   );

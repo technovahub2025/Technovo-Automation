@@ -7,6 +7,11 @@ import {
   resolveCacheUserId,
   writeSidebarPageCache
 } from '../utils/sidebarPageCache';
+import { downloadCsv } from '../utils/csvExport';
+import {
+  BROADCAST_CAMPAIGN_EXPORT_HEADERS,
+  mapBroadcastsToCampaignExportRows
+} from '../utils/broadcastCsvExport';
 
 const BROADCAST_PAGE_CACHE_NAMESPACE = 'broadcast-page';
 const BROADCAST_PAGE_CACHE_TTL_MS = 10 * 60 * 1000;
@@ -77,6 +82,19 @@ const sanitizeBroadcastForCache = (broadcast = {}) => ({
           failed: Number(broadcast.stats.failed || 0) || 0
         }
       : {},
+  retrySummary:
+    broadcast?.retrySummary && typeof broadcast.retrySummary === 'object'
+      ? {
+          analytics:
+            broadcast.retrySummary?.analytics && typeof broadcast.retrySummary.analytics === 'object'
+              ? {
+                  suppressed: Number(broadcast.retrySummary.analytics.suppressed || 0) || 0,
+                  deferred: Number(broadcast.retrySummary.analytics.deferred || 0) || 0,
+                  retried: Number(broadcast.retrySummary.analytics.retried || 0) || 0
+                }
+              : {}
+        }
+      : {},
   recipients: Array.isArray(broadcast?.recipients)
     ? broadcast.recipients
         .slice(0, 20)
@@ -122,6 +140,7 @@ export const useBroadcast = () => {
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [reliabilityFilter, setReliabilityFilter] = useState('all');
   const [sortBy, setSortBy] = useState('createdAt');
   const [sortOrder, setSortOrder] = useState('desc');
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
@@ -647,7 +666,10 @@ export const useBroadcast = () => {
       'createdAt': 'Latest',
       'name': 'Name',
       'status': 'Status',
-      'recipientCount': 'Recipients'
+      'recipientCount': 'Recipients',
+      'suppressedCount': 'Suppressed',
+      'deferredCount': 'Deferred',
+      'retriedCount': 'Retried'
     };
 
     return sortLabels[dateFilter] || sortLabels[sortBy] || 'Latest';
@@ -698,6 +720,21 @@ export const useBroadcast = () => {
 
     if (statusFilter !== 'all') {
       filtered = filtered.filter((broadcast) => broadcast.status === statusFilter);
+    }
+
+    if (reliabilityFilter !== 'all') {
+      filtered = filtered.filter((broadcast) => {
+        const analytics = broadcast?.retrySummary?.analytics || {};
+        const suppressed = toNonNegative(analytics.suppressed);
+        const deferred = toNonNegative(analytics.deferred);
+        const retried = toNonNegative(analytics.retried);
+
+        if (reliabilityFilter === 'suppressed') return suppressed > 0;
+        if (reliabilityFilter === 'deferred') return deferred > 0;
+        if (reliabilityFilter === 'retried') return retried > 0;
+        if (reliabilityFilter === 'any') return suppressed > 0 || deferred > 0 || retried > 0;
+        return true;
+      });
     }
 
     const parsedStartDate = parseDateValue(startDate);
@@ -753,8 +790,21 @@ export const useBroadcast = () => {
     }
 
     filtered.sort((a, b) => {
-      let aValue = a[sortBy];
-      let bValue = b[sortBy];
+      const getSortValue = (item) => {
+        if (sortBy === 'suppressedCount') {
+          return toNonNegative(item?.retrySummary?.analytics?.suppressed);
+        }
+        if (sortBy === 'deferredCount') {
+          return toNonNegative(item?.retrySummary?.analytics?.deferred);
+        }
+        if (sortBy === 'retriedCount') {
+          return toNonNegative(item?.retrySummary?.analytics?.retried);
+        }
+        return item?.[sortBy];
+      };
+
+      let aValue = getSortValue(a);
+      let bValue = getSortValue(b);
 
       if (sortBy === 'createdAt' || sortBy === 'scheduledAt' || sortBy === 'completedAt') {
         aValue = new Date(aValue || 0);
@@ -774,38 +824,15 @@ export const useBroadcast = () => {
   // Download campaigns as CSV
   const downloadAllCampaigns = (campaigns = broadcasts) => {
     const exportRows = Array.isArray(campaigns) ? campaigns : broadcasts;
-    const csvHeaders = ['Campaign Name', 'Status', 'Scheduled Time', 'Recipients', 'Sent', 'Delivered', 'Read'];
-    const csvData = exportRows.map(broadcast => [
-      broadcast.name || '',
-      broadcast.status || '',
-      broadcast.scheduledAt ? new Date(broadcast.scheduledAt).toLocaleString('en-US', {
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: true
-      }) : 'Immediate',
-      broadcast.recipientCount || broadcast.recipients?.length || 0,
-      broadcast.stats?.sent || 0,
-      broadcast.stats?.delivered || 0,
-      broadcast.stats?.read || 0
-    ]);
+    const csvData = mapBroadcastsToCampaignExportRows(exportRows);
 
-    const csvContent = [
-      csvHeaders.join(','),
-      ...csvData.map(row => row.map(cell => `"${cell}"`).join(','))
-    ].join('\n');
-
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    const url = URL.createObjectURL(blob);
-    link.setAttribute('href', url);
-    link.setAttribute('download', `campaigns_export_${new Date().toISOString().split('T')[0]}.csv`);
-    link.style.visibility = 'hidden';
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    downloadCsv({
+      filename: `campaigns_export_${new Date().toISOString().split('T')[0]}.csv`,
+      headers: BROADCAST_CAMPAIGN_EXPORT_HEADERS,
+      rows: csvData,
+      metadata: [['exportGeneratedAt', new Date().toISOString()]],
+      exportType: 'broadcast_campaigns'
+    });
   };
 
   // Return all state and functions
@@ -836,6 +863,7 @@ export const useBroadcast = () => {
     lastUpdated, setLastUpdated,
     searchTerm, setSearchTerm,
     statusFilter, setStatusFilter,
+    reliabilityFilter, setReliabilityFilter,
     sortBy, setSortBy,
     sortOrder, setSortOrder,
     showFilterDropdown, setShowFilterDropdown,

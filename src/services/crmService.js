@@ -1,5 +1,6 @@
 import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
+import { handleUnauthorizedServiceError } from "./serviceAuth";
 
 const API_BASE_URL = resolveApiBaseUrl();
 const CRM_REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_CRM_REQUEST_TIMEOUT_MS || 15000);
@@ -18,6 +19,11 @@ const toServiceError = (error, fallback) =>
   error?.response?.data?.message ||
   error?.message ||
   fallback;
+
+const withServiceError = (error, fallback) => {
+  handleUnauthorizedServiceError(error);
+  return { success: false, error: toServiceError(error, fallback) };
+};
 
 const buildRequestConfig = (includeJson = true, extra = {}) => {
   const { headers: extraHeaders = {}, ...rest } = extra || {};
@@ -39,7 +45,7 @@ export const crmService = {
       });
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to fetch CRM contacts") };
+      return withServiceError(error, "Failed to fetch CRM contacts");
     }
   },
 
@@ -50,7 +56,7 @@ export const crmService = {
       });
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to fetch contact") };
+      return withServiceError(error, "Failed to fetch contact");
     }
   },
 
@@ -63,7 +69,7 @@ export const crmService = {
       );
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to update contact stage") };
+      return withServiceError(error, "Failed to update contact stage");
     }
   },
 
@@ -76,7 +82,20 @@ export const crmService = {
       );
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to update contact owner") };
+      return withServiceError(error, "Failed to update contact owner");
+    }
+  },
+
+  async updateContactProfile(contactId, payload = {}) {
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/api/crm/contacts/${contactId}/profile`,
+        payload,
+        buildRequestConfig()
+      );
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to update contact profile");
     }
   },
 
@@ -91,7 +110,7 @@ export const crmService = {
       );
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to save contact notes") };
+      return withServiceError(error, "Failed to save contact notes");
     }
   },
 
@@ -102,7 +121,7 @@ export const crmService = {
       });
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to fetch contact documents") };
+      return withServiceError(error, "Failed to fetch contact documents");
     }
   },
 
@@ -129,7 +148,7 @@ export const crmService = {
       );
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to upload contact document") };
+      return withServiceError(error, "Failed to upload contact document");
     }
   },
 
@@ -140,7 +159,7 @@ export const crmService = {
       });
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to access contact document") };
+      return withServiceError(error, "Failed to access contact document");
     }
   },
 
@@ -151,7 +170,7 @@ export const crmService = {
       });
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to delete contact document") };
+      return withServiceError(error, "Failed to delete contact document");
     }
   },
 
@@ -162,7 +181,73 @@ export const crmService = {
       });
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to fetch CRM tasks") };
+      return withServiceError(error, "Failed to fetch CRM tasks");
+    }
+  },
+
+  async getDeals(filters = {}) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/crm/deals`, {
+        ...buildRequestConfig(false, { params: filters })
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to fetch CRM deals");
+    }
+  },
+
+  async getDealMetrics(filters = {}) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/crm/deals/metrics`, {
+        ...buildRequestConfig(false, { params: filters })
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to fetch CRM deal metrics");
+    }
+  },
+
+  async createDeal(payload) {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/crm/deals`, payload, {
+        ...buildRequestConfig()
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to create CRM deal");
+    }
+  },
+
+  async updateDeal(dealId, payload) {
+    try {
+      const response = await axios.patch(`${API_BASE_URL}/api/crm/deals/${dealId}`, payload, {
+        ...buildRequestConfig()
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to update CRM deal");
+    }
+  },
+
+  async deleteDeal(dealId) {
+    try {
+      const response = await axios.delete(`${API_BASE_URL}/api/crm/deals/${dealId}`, {
+        ...buildRequestConfig(false)
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to delete CRM deal");
+    }
+  },
+
+  async getTaskSummary(filters = {}) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/crm/tasks/summary`, {
+        ...buildRequestConfig(false, { params: filters })
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to fetch CRM task summary");
     }
   },
 
@@ -173,7 +258,7 @@ export const crmService = {
       });
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to create CRM task") };
+      return withServiceError(error, "Failed to create CRM task");
     }
   },
 
@@ -184,7 +269,44 @@ export const crmService = {
       });
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to update CRM task") };
+      return withServiceError(error, "Failed to update CRM task");
+    }
+  },
+
+  async addTaskComment(taskId, text) {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/crm/tasks/${taskId}/comments`,
+        { text },
+        buildRequestConfig()
+      );
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to add CRM task comment");
+    }
+  },
+
+  async bulkUpdateTasks(payload = {}) {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/crm/tasks/bulk`,
+        payload,
+        buildRequestConfig()
+      );
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to run CRM bulk task action");
+    }
+  },
+
+  async deleteTask(taskId) {
+    try {
+      const response = await axios.delete(`${API_BASE_URL}/api/crm/tasks/${taskId}`, {
+        ...buildRequestConfig(false)
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to delete CRM task");
     }
   },
 
@@ -195,7 +317,7 @@ export const crmService = {
       });
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to fetch CRM activities") };
+      return withServiceError(error, "Failed to fetch CRM activities");
     }
   },
 
@@ -206,7 +328,88 @@ export const crmService = {
       });
       return response.data;
     } catch (error) {
-      return { success: false, error: toServiceError(error, "Failed to fetch CRM metrics") };
+      return withServiceError(error, "Failed to fetch CRM metrics");
+    }
+  },
+
+  async getReportsSummary() {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/crm/reports/summary`, {
+        ...buildRequestConfig(false)
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to fetch CRM reports");
+    }
+  },
+
+  async getMeetings(filters = {}) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/crm/meetings`, {
+        ...buildRequestConfig(false, { params: filters })
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to fetch CRM meetings");
+    }
+  },
+
+  async getOwnerNotifications(filters = {}) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/crm/notifications/owner`, {
+        ...buildRequestConfig(false, { params: filters })
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to fetch CRM owner notifications");
+    }
+  },
+
+  async markOwnerNotificationRead(notificationId) {
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/api/crm/notifications/owner/${notificationId}/read`,
+        {},
+        buildRequestConfig()
+      );
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to update CRM notification");
+    }
+  },
+
+  async getAutomationHistory(filters = {}) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/crm/ops/history`, {
+        ...buildRequestConfig(false, { params: filters })
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to fetch CRM automation history");
+    }
+  },
+
+  async getOwnerDashboard() {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/crm/ops/owner-dashboard`, {
+        ...buildRequestConfig(false)
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to fetch CRM owner dashboard");
+    }
+  },
+
+  async runFollowUpAutomation(payload = {}) {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/crm/ops/follow-up-automation`,
+        payload,
+        buildRequestConfig()
+      );
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to run CRM follow-up automation");
     }
   }
 };

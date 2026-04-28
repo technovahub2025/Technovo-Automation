@@ -2,7 +2,7 @@ import React from 'react';
 import { ArrowUp, ArrowDown } from 'lucide-react';
 import './StatCard.css';
 
-const StatCard = ({ title, value, change, isPositive, icon: Icon, color }) => {
+const StatCard = ({ title, value, change, isPositive, icon, color }) => {
     return (
         <div className="stat-card-main">
             <div className="stat-header">
@@ -11,7 +11,7 @@ const StatCard = ({ title, value, change, isPositive, icon: Icon, color }) => {
                     <h3 className="stat-value">{value}</h3>
                 </div>
                 <div className="stat-icon" style={{ backgroundColor: `${color}20`, color: color }}>
-                    <Icon size={24} />
+                    {icon ? React.createElement(icon, { size: 24 }) : null}
                 </div>
             </div>
             <div className="stat-footer">

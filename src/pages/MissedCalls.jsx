@@ -86,6 +86,26 @@ const MissedCalls = ({ page = "all" }) => {
   const [guideStep, setGuideStep] = useState(0);
   const [copiedKey, setCopiedKey] = useState("");
 
+  const getLocalWebhookIdentity = () => {
+    try {
+      const user = JSON.parse(localStorage.getItem("user") || "null");
+      const twilioConfig = JSON.parse(localStorage.getItem("twilioConfig") || "null");
+      const userId = String(
+        user?.id || user?._id || user?.userId || localStorage.getItem("userId") || ""
+      ).trim();
+      const phoneNumberId = String(
+        user?.whatsappId ||
+          user?.phoneNumberId ||
+          twilioConfig?.whatsappId ||
+          twilioConfig?.phoneNumberId ||
+          ""
+      ).trim();
+      return { userId, phoneNumberId };
+    } catch {
+      return { userId: "", phoneNumberId: "" };
+    }
+  };
+
   const getLocalWebhookUrl = () => {
     try {
       const user = JSON.parse(localStorage.getItem("user") || "null");
@@ -94,9 +114,53 @@ const MissedCalls = ({ page = "all" }) => {
       const fromTwilioConfig = String(
         twilioConfig?.missedCallWebhook || twilioConfig?.missedcallwebhook || ""
       ).trim();
-      return fromUser || fromTwilioConfig || "";
+      if (fromUser || fromTwilioConfig) {
+        return fromUser || fromTwilioConfig || "";
+      }
+
+      const { userId: localUserId, phoneNumberId: localPhoneNumberId } = getLocalWebhookIdentity();
+      if (!localUserId) return "";
+
+      const webhookBase = String(
+        import.meta.env.VITE_API_BASE_URL ||
+          import.meta.env.VITE_API_URL ||
+          window.location.origin
+      ).replace(/\/+$/, "");
+
+      const apiBase = webhookBase.includes("/api") ? webhookBase : `${webhookBase}/api`;
+      if (localPhoneNumberId) {
+        return `${apiBase}/missedcalls/webhook/${encodeURIComponent(localUserId)}/${encodeURIComponent(localPhoneNumberId)}`;
+      }
+      return `${apiBase}/missedcalls/webhook/${encodeURIComponent(localUserId)}`;
     } catch {
       return "";
+    }
+  };
+
+  const toScopedWebhookUrl = (rawWebhookUrl) => {
+    const normalizedRaw = String(rawWebhookUrl || "").trim();
+    const { userId, phoneNumberId } = getLocalWebhookIdentity();
+    if (!normalizedRaw) return "";
+    if (!userId) return normalizedRaw;
+
+    const suffixWithPhone = `/${encodeURIComponent(userId)}/${encodeURIComponent(phoneNumberId)}`;
+    const suffixWithoutPhone = `/${encodeURIComponent(userId)}`;
+    if (normalizedRaw.endsWith(suffixWithPhone) || normalizedRaw.endsWith(suffixWithoutPhone)) {
+      return normalizedRaw;
+    }
+
+    try {
+      const parsed = new URL(normalizedRaw);
+      const pathname = String(parsed.pathname || "").replace(/\/+$/, "");
+      if (!pathname.endsWith("/api/missedcalls/webhook")) {
+        return normalizedRaw;
+      }
+      if (phoneNumberId) {
+        return `${parsed.origin}${pathname}/${encodeURIComponent(userId)}/${encodeURIComponent(phoneNumberId)}`;
+      }
+      return `${parsed.origin}${pathname}/${encodeURIComponent(userId)}`;
+    } catch {
+      return normalizedRaw;
     }
   };
   const getLocalBusinessPhone = () => {
@@ -385,12 +449,14 @@ const MissedCalls = ({ page = "all" }) => {
         normalizedTemplates.find((tpl) => tpl.name === savedTemplateName);
 
       setAutomationSettings({
-        missedCallWebhook: String(
-          settingsData.missedCallWebhook ||
-          settingsData.missedcallwebhook ||
-          getLocalWebhookUrl() ||
-          ""
-        ).trim(),
+        missedCallWebhook: toScopedWebhookUrl(
+          String(
+            settingsData.missedCallWebhook ||
+              settingsData.missedcallwebhook ||
+              getLocalWebhookUrl() ||
+              ""
+          ).trim()
+        ),
         missedCallAutomationEnabled: settingsData.missedCallAutomationEnabled !== false,
         missedCallDelayMinutes: Number.isFinite(Number(settingsData.missedCallDelayMinutes))
           ? Number(settingsData.missedCallDelayMinutes)
@@ -532,9 +598,14 @@ const MissedCalls = ({ page = "all" }) => {
       const updated = res?.data?.data || payload;
       setAutomationSettings((prev) => ({
         ...prev,
-        missedCallWebhook: String(
-          updated.missedCallWebhook || updated.missedcallwebhook || prev.missedCallWebhook || ""
-        ).trim(),
+        missedCallWebhook: toScopedWebhookUrl(
+          String(
+            updated.missedCallWebhook ||
+              updated.missedcallwebhook ||
+              prev.missedCallWebhook ||
+              ""
+          ).trim()
+        ),
         missedCallAutomationEnabled: updated.missedCallAutomationEnabled !== false,
         missedCallDelayMinutes: Number.isFinite(Number(updated.missedCallDelayMinutes))
           ? Number(updated.missedCallDelayMinutes)

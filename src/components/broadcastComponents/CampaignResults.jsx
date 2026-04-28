@@ -1,7 +1,7 @@
 import React, { useState, useMemo } from 'react';
-import { 
-  CheckCircle, 
-  XCircle, 
+import {
+  CheckCircle,
+  XCircle,
   Download, 
   Search,
   RefreshCw,
@@ -15,6 +15,11 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import './CampaignResults.css';
+import { downloadCsv } from '../../utils/csvExport';
+import {
+  CAMPAIGN_RESULTS_EXPORT_HEADERS,
+  mapCampaignResultsToExportRows
+} from '../../utils/campaignResultsCsvExport';
 
 const CampaignResults = ({ results, broadcastId, onRetry }) => {
   const [searchTerm, setSearchTerm] = useState('');
@@ -75,20 +80,18 @@ const CampaignResults = ({ results, broadcastId, onRetry }) => {
 
   const exportSelected = () => {
     const selectedData = filteredResults.filter((_, index) => selectedRows.has(index));
-    const csv = [
-      'phone,status,timestamp,response',
-      ...selectedData.map(result => 
-        `${result.phone},${result.success ? 'success' : 'failed'},${new Date().toISOString()},"${result.success ? (result.response?.messages?.[0]?.id || 'Sent') : (result.error || 'Failed')}"`
-      )
-    ].join('\n');
-    
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `campaign_results_selected_${Date.now()}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+    const rows = mapCampaignResultsToExportRows(selectedData, {
+      broadcastId: broadcastId || results?.broadcastId || '',
+      fallbackTimestamp: new Date().toISOString()
+    });
+
+    downloadCsv({
+      filename: `campaign_results_selected_${Date.now()}.csv`,
+      headers: CAMPAIGN_RESULTS_EXPORT_HEADERS,
+      rows,
+      metadata: [['exportGeneratedAt', new Date().toISOString()]],
+      exportType: 'campaign_results_selected'
+    });
   };
 
   const copyPhoneNumbers = () => {

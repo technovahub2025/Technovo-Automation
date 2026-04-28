@@ -11,7 +11,10 @@ import {
   Video,
   Mic
 } from 'lucide-react';
-import { getConversationPreviewMeta } from './teamInboxDisplayUtils';
+import {
+  getConversationPreviewMeta,
+  resolveConversationSlaMeta
+} from './teamInboxDisplayUtils';
 
 const ConversationSidebar = ({
   wsConnected,
@@ -26,6 +29,7 @@ const ConversationSidebar = ({
   filteredConversations,
   selectedConversation,
   searchTerm,
+  searchInputRef,
   onSearchTermChange,
   onToggleFilterMenu,
   onSelectFilter,
@@ -43,6 +47,7 @@ const ConversationSidebar = ({
 }) => {
   const [openConversationMenuId, setOpenConversationMenuId] = useState('');
   const activeConversationMenuRef = useRef(null);
+  const activeConversationItemRef = useRef(null);
 
   const renderConversationMediaIcon = (mediaType = '') => {
     switch (String(mediaType || '').trim().toLowerCase()) {
@@ -72,19 +77,12 @@ const ConversationSidebar = ({
   }, [openConversationMenuId]);
 
   useEffect(() => {
-    if (!showSelectMode) return;
-    setOpenConversationMenuId('');
-  }, [showSelectMode]);
-
-  useEffect(() => {
-    if (!openConversationMenuId) return;
-    const menuStillVisible = filteredConversations.some(
-      (conversation) => String(conversation?._id || '').trim() === openConversationMenuId
-    );
-    if (!menuStillVisible) {
-      setOpenConversationMenuId('');
-    }
-  }, [filteredConversations, openConversationMenuId]);
+    if (!activeConversationItemRef.current) return;
+    activeConversationItemRef.current.scrollIntoView({
+      block: 'nearest',
+      behavior: 'smooth'
+    });
+  }, [selectedConversation?._id, filteredConversations]);
 
   return (
     <div className="inbox-sidebar">
@@ -146,6 +144,7 @@ const ConversationSidebar = ({
           type="text"
           placeholder="Search conversations..."
           value={searchTerm}
+          ref={searchInputRef}
           onChange={(event) => onSearchTermChange(event.target.value)}
         />
         {refreshing ? (
@@ -179,13 +178,22 @@ const ConversationSidebar = ({
             {filteredConversations.map((conversation) => {
               const unreadCount = getUnreadCount(conversation);
               const conversationId = String(conversation?._id || '').trim();
-              const isConversationMenuOpen = openConversationMenuId === conversationId;
+              const isConversationMenuOpen =
+                !showSelectMode && openConversationMenuId === conversationId;
+              const leadScoreRaw = Number(
+                conversation?.contactId?.leadScore ?? conversation?.leadScore ?? 0
+              );
+              const leadScore = Number.isFinite(leadScoreRaw) ? Math.max(0, Math.round(leadScoreRaw)) : 0;
               const previewMeta = getConversationPreviewMeta(conversation);
+              const slaMeta = resolveConversationSlaMeta(conversation);
+              const hasOpsMeta = Boolean(slaMeta.label);
+              const isActiveConversation = selectedConversation?._id === conversationId;
 
               return (
                 <div
                   key={conversationId}
-                  className={`conversation-item ${selectedConversation?._id === conversationId ? 'active' : ''} ${showSelectMode ? 'select-mode' : ''} ${unreadCount > 0 ? 'has-unread' : ''} ${isConversationMenuOpen ? 'menu-open' : ''}`}
+                  ref={isActiveConversation ? activeConversationItemRef : null}
+                  className={`conversation-item ${isActiveConversation ? 'active' : ''} ${showSelectMode ? 'select-mode' : ''} ${unreadCount > 0 ? 'has-unread' : ''} ${isConversationMenuOpen ? 'menu-open' : ''}`}
                   onClick={() => {
                     if (showSelectMode) {
                       onToggleSelectForDeletion(conversationId);
@@ -210,7 +218,12 @@ const ConversationSidebar = ({
 
                   <div className="conversation-info">
                     <div className="conversation-top">
-                      <span className="name">{getConversationDisplayName(conversation)}</span>
+                      <div className="conversation-name-row">
+                        <span className="name">{getConversationDisplayName(conversation)}</span>
+                        <span className="conversation-score-chip" title={`Lead score: ${leadScore}`}>
+                          {leadScore}
+                        </span>
+                      </div>
                       <div className="conversation-meta-right">
                         <span className={`time conversation-time-label ${unreadCount > 0 ? 'unread' : ''}`}>
                           {formatConversationTime(conversation.lastMessageTime)}
@@ -273,10 +286,56 @@ const ConversationSidebar = ({
                         <p className="preview">{previewMeta.previewText}</p>
                       </div>
                     </div>
+                    {hasOpsMeta && (
+                      <div className="conversation-operator-meta">
+                        {slaMeta.label && (
+                          <span
+                            className={`conversation-operator-chip conversation-operator-chip--sla ${
+                              slaMeta.tone ? `conversation-operator-chip--${slaMeta.tone}` : ''
+                            }`}
+                          >
+                            {slaMeta.label}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                 </div>
               );
             })}
+
+            {filteredConversations.length === 0 && (
+              <div className="conversation-empty-state" role="status" aria-live="polite">
+                <h4 className="conversation-empty-title">
+                  {String(searchTerm || '').trim()
+                    ? 'No conversations match your search'
+                    : 'No conversations found'}
+                </h4>
+                <p className="conversation-empty-copy">
+                  {String(searchTerm || '').trim()
+                    ? 'Try a different keyword or clear filters to see more chats.'
+                    : 'New chats will appear here once customers start messaging your team.'}
+                </p>
+                <div className="conversation-empty-actions">
+                  {String(searchTerm || '').trim() && (
+                    <button
+                      type="button"
+                      className="conversation-empty-btn"
+                      onClick={() => onSearchTermChange('')}
+                    >
+                      Clear Search
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    className="conversation-empty-btn conversation-empty-btn--ghost"
+                    onClick={() => onSelectFilter('all')}
+                  >
+                    Show All Chats
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

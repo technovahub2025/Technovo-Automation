@@ -33,8 +33,12 @@ import {
 import {
   formatVoiceRecorderDuration,
   inferVoiceRecorderExtension,
+  isMetaCompatibleVoiceMimeType,
   resolvePreferredVoiceRecorderMimeType
 } from './voiceRecorderUtils';
+import {
+  resolveConversationSlaMeta
+} from './teamInboxDisplayUtils';
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const EXTRA_REACTIONS = ['🔥', '👏', '🎉', '🤝', '✅', '💯'];
@@ -283,6 +287,7 @@ const ChatArea = ({
 
   useLayoutEffect(() => {
     if (!activeHoverMenuKey || !openMenuRef.current || !chatMessagesRef?.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setHoverMenuPlacement({ horizontal: '', vertical: '' });
       return undefined;
     }
@@ -330,6 +335,7 @@ const ChatArea = ({
 
   useLayoutEffect(() => {
     if ((!activeReactionPickerKey && !activeHoverMenuKey) || !reactionPickerRef.current || !chatMessagesRef?.current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setReactionBarPlacement({ horizontal: '', vertical: '' });
       return undefined;
     }
@@ -442,7 +448,7 @@ const ChatArea = ({
       try {
         voiceRecorderRef.current.onstop = null;
         voiceRecorderRef.current.stop();
-      } catch (_error) {
+      } catch {
         // no-op
       }
     }
@@ -452,6 +458,7 @@ const ChatArea = ({
     }
     voiceRecorderRef.current = null;
     voiceRecorderChunksRef.current = [];
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setVoiceRecorderState({
       status: 'idle',
       durationSeconds: 0,
@@ -483,7 +490,7 @@ const ChatArea = ({
         try {
           voiceRecorderRef.current.onstop = null;
           voiceRecorderRef.current.stop();
-        } catch (_error) {
+        } catch {
           // no-op
         }
       }
@@ -531,6 +538,7 @@ const ChatArea = ({
 
   useEffect(() => {
     if (!activeImagePreview?.messageKey) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setImagePreviewZoom(1);
     setShowImagePreviewReactions(false);
   }, [activeImagePreview?.messageKey]);
@@ -580,7 +588,7 @@ const ChatArea = ({
       if (!targetMessageKey) return;
 
       const reactionTimestamp = new Date(
-        message?.timestamp || message?.whatsappTimestamp || message?.createdAt || Date.now()
+        message?.timestamp || message?.whatsappTimestamp || message?.createdAt || 0
       ).getTime();
       const normalizedTimestamp = Number.isFinite(reactionTimestamp) ? reactionTimestamp : 0;
       const current = latestReactionByMessageKey.get(targetMessageKey);
@@ -650,7 +658,7 @@ const ChatArea = ({
     return imagePreviewItems.findIndex(
       (item) => String(item?.messageKey || '') === String(activeImagePreview.messageKey || '')
     );
-  }, [activeImagePreview?.messageKey, imagePreviewItems]);
+  }, [activeImagePreview, imagePreviewItems]);
 
   const canReactToMessage = (message = {}) =>
     Boolean(String(message?.whatsappMessageId || '').trim()) &&
@@ -723,7 +731,7 @@ const ChatArea = ({
     );
 
     if (Math.abs(nextScrollTop - chatContainer.scrollTop) > 1) {
-      chatContainer.scrollTop = nextScrollTop;
+      chatContainer.scrollTo({ top: nextScrollTop, behavior: 'auto' });
     }
   };
 
@@ -919,7 +927,7 @@ const ChatArea = ({
     if (currentRecorder && currentRecorder.state !== 'inactive') {
       try {
         currentRecorder.stop();
-      } catch (_error) {
+      } catch {
         resetVoiceRecorderState({
           restoreComposer,
           restoreComposerText
@@ -977,6 +985,13 @@ const ChatArea = ({
 
     const restoreComposerText = String(messageInput || '');
     const preferredMimeType = resolvePreferredVoiceRecorderMimeType();
+    if (!preferredMimeType || !isMetaCompatibleVoiceMimeType(preferredMimeType)) {
+      showMessageActionToast(
+        'Voice note format is not supported in this browser. Use Chrome/Edge latest version.',
+        'info'
+      );
+      return;
+    }
 
     try {
       if (showEmojiPicker && typeof onToggleEmojiPicker === 'function') {
@@ -1025,10 +1040,21 @@ const ChatArea = ({
         }
 
         const finalMimeType = String(
-          resolvedMimeType || recordedChunks?.[0]?.type || 'audio/webm'
+          resolvedMimeType || recordedChunks?.[0]?.type || 'audio/ogg'
         ).trim();
+        if (!isMetaCompatibleVoiceMimeType(finalMimeType)) {
+          resetVoiceRecorderState({
+            restoreComposer: true,
+            restoreComposerText: fallbackRestoreComposerText
+          });
+          showMessageActionToast(
+            `Voice note format "${finalMimeType || 'unknown'}" is not supported. Please try again.`,
+            'info'
+          );
+          return;
+        }
         const voiceBlob = new Blob(recordedChunks, {
-          type: finalMimeType || 'audio/webm'
+          type: finalMimeType || 'audio/ogg'
         });
 
         if (!voiceBlob.size) {
@@ -1042,7 +1068,7 @@ const ChatArea = ({
 
         const extension = inferVoiceRecorderExtension(finalMimeType);
         const voiceFile = new File([voiceBlob], `voice-note-${Date.now()}.${extension}`, {
-          type: finalMimeType || 'audio/webm',
+          type: finalMimeType || 'audio/ogg',
           lastModified: Date.now()
         });
         const replyContext = buildReplyContext();
@@ -1227,7 +1253,7 @@ const ChatArea = ({
       setActiveHoverMenuKey('');
       setActiveReactionPickerKey('');
       showMessageActionToast('Message copied', 'success');
-    } catch (_error) {
+    } catch {
       showMessageActionToast('Unable to copy message text', 'info');
     }
   };
@@ -1887,6 +1913,7 @@ const ChatArea = ({
   const isVoiceRecordingActive = voiceRecorderState.status === 'recording';
   const isVoiceSending = voiceRecorderState.status === 'sending';
   const showVoiceRecorderComposer = isVoiceRecordingActive || isVoiceSending;
+  const slaMeta = resolveConversationSlaMeta(selectedConversation);
 
   if (!selectedConversation) {
     return (
@@ -1920,6 +1947,17 @@ const ChatArea = ({
           <div className="chat-header-info">
             <span className="name text-white">{getConversationDisplayName(selectedConversation)}</span>
             <span className="status text-white">{selectedConversation.contactPhone}</span>
+            <div className="chat-header-operator-meta">
+              {slaMeta.label && (
+                <span
+                  className={`chat-header-operator-chip chat-header-operator-chip--sla ${
+                    slaMeta.tone ? `chat-header-operator-chip--${slaMeta.tone}` : ''
+                  }`}
+                >
+                  {slaMeta.label}
+                </span>
+              )}
+            </div>
           </div>
 
           <div className="chat-header-actions">

@@ -73,6 +73,83 @@ export const getConversationPreviewMeta = (conversation = {}) => {
   };
 };
 
+const toCleanString = (value) => String(value || '').trim();
+
+const pickFirstLabel = (...values) => {
+  for (const value of values) {
+    const normalized = toCleanString(value);
+    if (normalized) return normalized;
+  }
+  return '';
+};
+
+export const resolveConversationAssigneeLabel = (conversation = {}) => {
+  const directAssignee = conversation?.assignedTo;
+  const owner = conversation?.owner;
+
+  const label = pickFirstLabel(
+    conversation?.assignedToName,
+    conversation?.assigneeName,
+    conversation?.ownerName,
+    conversation?.assignedAgentName,
+    directAssignee?.name,
+    directAssignee?.fullName,
+    directAssignee?.email,
+    owner?.name,
+    owner?.fullName,
+    owner?.email
+  );
+
+  return label || 'Unassigned';
+};
+
+const getSlaDueAtValue = (conversation = {}) =>
+  pickFirstLabel(
+    conversation?.slaDueAt,
+    conversation?.slaDeadlineAt,
+    conversation?.slaDeadline,
+    conversation?.nextReplyDueAt
+  );
+
+export const resolveConversationSlaMeta = (conversation = {}) => {
+  const explicitStatus = toCleanString(
+    conversation?.slaStatus || conversation?.slaState || conversation?.responseSlaStatus
+  ).toLowerCase();
+
+  const isBreachedFlag =
+    conversation?.slaBreached === true ||
+    conversation?.isSlaBreached === true ||
+    conversation?.responseSlaBreached === true;
+
+  if (isBreachedFlag || explicitStatus === 'breached' || explicitStatus === 'overdue') {
+    return { label: 'SLA Breached', tone: 'breached' };
+  }
+
+  if (explicitStatus === 'at_risk' || explicitStatus === 'warning') {
+    return { label: 'SLA At Risk', tone: 'warning' };
+  }
+
+  if (explicitStatus === 'ok' || explicitStatus === 'healthy' || explicitStatus === 'on_track') {
+    return { label: 'SLA Healthy', tone: 'healthy' };
+  }
+
+  const dueAtRaw = getSlaDueAtValue(conversation);
+  if (!dueAtRaw) return { label: '', tone: '' };
+
+  const dueAt = new Date(dueAtRaw);
+  if (Number.isNaN(dueAt.getTime())) return { label: '', tone: '' };
+
+  const diffMs = dueAt.getTime() - Date.now();
+  const diffMinutes = Math.floor(diffMs / (1000 * 60));
+  if (diffMinutes <= 0) {
+    return { label: 'SLA Breached', tone: 'breached' };
+  }
+  if (diffMinutes <= 30) {
+    return { label: 'SLA At Risk', tone: 'warning' };
+  }
+  return { label: 'SLA Healthy', tone: 'healthy' };
+};
+
 export const formatConversationTime = (timestamp) => {
   const date = new Date(timestamp);
   if (Number.isNaN(date.getTime())) return '';

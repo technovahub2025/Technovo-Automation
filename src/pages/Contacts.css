@@ -106,6 +106,18 @@
     border-color: #a7f3d0;
 }
 
+.source-badge.public_opt_in {
+    background-color: #eef2ff;
+    color: #4338ca;
+    border-color: #c7d2fe;
+}
+
+.source-badge.meta_lead_ads {
+    background-color: #f5f3ff;
+    color: #7c3aed;
+    border-color: #ddd6fe;
+}
+
 .action-buttons {
     display: flex;
     gap: 8px;
@@ -194,6 +206,30 @@
     color: var(--color-text-secondary);
 }
 
+.contacts-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 18px;
+}
+
+.contacts-skeleton-row {
+    height: 58px;
+    border-radius: 12px;
+    background: #e9eef5;
+    position: relative;
+    overflow: hidden;
+}
+
+.contacts-skeleton-row::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.85), transparent);
+    animation: contactsSkeleton 1.4s ease-in-out infinite;
+}
+
 .no-contacts {
     text-align: center;
     padding: 60px 20px;
@@ -248,6 +284,12 @@
 .notification.error {
     background-color: #ef4444;
     color: white;
+}
+
+@keyframes contactsSkeleton {
+    100% {
+        transform: translateX(100%);
+    }
 }
 
 .contacts-controls {

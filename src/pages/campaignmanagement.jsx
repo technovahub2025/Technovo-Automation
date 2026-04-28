@@ -5,7 +5,6 @@ import { useNavigate } from 'react-router-dom';
 import {
     Plus,
     Search,
-    Filter,
     MoreVertical,
     Play,
     Pause,
@@ -39,8 +38,9 @@ import { resolveApiBaseUrl } from '../services/apiBaseUrl';
 
 
 const API_BASE_URL = resolveApiBaseUrl();
-const USE_MOCK = String(import.meta.env.VITE_META_ADS_USE_MOCK || 'false').toLowerCase() === 'true';
+const USE_MOCK = false;
 const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
+const ITEMS_PER_PAGE = 3;
 const getTodayDateValue = () => {
     const now = new Date();
     const offsetMs = now.getTimezoneOffset() * 60000;
@@ -92,6 +92,20 @@ const getDefaultOptimizationGoal = (objective) => {
     return options[0]?.value || 'REACH';
 };
 
+const toNumberOrNull = (value) => {
+    if (value === '' || value === null || value === undefined) return null;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+};
+
+const getCampaignContractField = (campaign, contractKey, fallbackKey, defaultValue = '') => {
+    const contractValue = campaign?.[contractKey];
+    if (contractValue !== undefined && contractValue !== null && contractValue !== '') return contractValue;
+    const fallbackValue = campaign?.[fallbackKey];
+    if (fallbackValue !== undefined && fallbackValue !== null && fallbackValue !== '') return fallbackValue;
+    return defaultValue;
+};
+
 const CampaignManagement = () => {
     const navigate = useNavigate();
     const [campaigns, setCampaigns] = useState([]);
@@ -105,9 +119,19 @@ const CampaignManagement = () => {
     const [selectedCampaign, setSelectedCampaign] = useState(null);
     const [viewMode, setViewMode] = useState('grid'); // grid or list
     const [dateRange, setDateRange] = useState('last30days');
+    const [currentPage, setCurrentPage] = useState(1);
+    const [brokenImageIds, setBrokenImageIds] = useState({});
     const [metaSetupReady, setMetaSetupReady] = useState(true);
     const [metaSetupLoading, setMetaSetupLoading] = useState(true);
     const [metaSetupMessage, setMetaSetupMessage] = useState('');
+    const dateRangeLabels = {
+        today: 'Today',
+        yesterday: 'Yesterday',
+        last7days: 'Last 7 Days',
+        last30days: 'Last 30 Days',
+        thisMonth: 'This Month',
+        lastMonth: 'Last Month'
+    };
 
     const getAuthHeaders = useCallback(() => {
         const token =
@@ -117,49 +141,69 @@ const CampaignManagement = () => {
         return token ? { Authorization: `Bearer ${token}` } : {};
     }, []);
 
-    const normalizeCampaign = (campaign) => ({
-        ...campaign,
-        id: campaign._id || campaign.id,
-        startDate: campaign.startDate ? campaign.startDate.slice(0, 10) : '',
-        endDate: campaign.endDate ? campaign.endDate.slice(0, 10) : '',
-        platform: campaign.platform || 'both',
-        status: campaign.status || 'draft',
-        objective: campaign.objective || 'awareness',
-        targeting: campaign.targeting || '',
-        dailyBudget: campaign.dailyBudget || campaign.lifetimeBudget || 0,
-        spent: campaign.spent || 0,
-        impressions: campaign.impressions || 0,
-        clicks: campaign.clicks || 0,
-        ctr: campaign.ctr || 0,
-        cpc: campaign.cpc || 0,
-        revenue: campaign.revenue || 0,
-        ageMin: campaign.ageMin || 18,
-        ageMax: campaign.ageMax || 65,
-        gender: campaign.gender || 'all',
-        interests: campaign.interests || '',
-        behaviors: campaign.behaviors || '',
-        primaryText: campaign.primaryText || '',
-        headline: campaign.headline || '',
-        description: campaign.description || '',
-        destinationUrl: campaign.destinationUrl || '',
-        imageUrl: campaign.imageUrl || '',
-        videoUrl: campaign.videoUrl || '',
-        mediaType: campaign.mediaType || (campaign.videoUrl ? 'video' : 'image'),
-        callToAction: campaign.callToAction || 'LEARN_MORE',
-        optimizationGoal: campaign.optimizationGoal || getDefaultOptimizationGoal(campaign.objective || 'awareness'),
-        bidStrategy: campaign.bidStrategy || 'LOWEST_COST_WITHOUT_CAP',
-        metaCampaignId: campaign.metaCampaignId || '',
-        metaAdSetId: campaign.metaAdSetId || '',
-        metaAdId: campaign.metaAdId || '',
-        lifecycleStatus: campaign.lifecycleStatus || (campaign.status === 'active' ? 'running' : campaign.status === 'paused' ? 'paused' : 'draft'),
-        paymentStatus: campaign.paymentStatus || 'verified',
-        reviewStatus: campaign.reviewStatus || 'approved',
-        deliveryStatus: campaign.deliveryStatus || (campaign.status === 'active' ? 'active' : campaign.status === 'paused' ? 'paused' : 'not_published'),
-        reviewNotes: campaign.reviewNotes || '',
-        source: campaign.source || 'local',
-        readOnly: Boolean(campaign.readOnly),
-        syncedFromMeta: Boolean(campaign.syncedFromMeta)
-    });
+    const normalizeCampaign = (campaign) => {
+        const audience = campaign?.audience || {};
+        const deliveryPolicy = campaign?.deliveryPolicy || {};
+        const analytics = campaign?.analytics || {};
+        const retryPolicy = campaign?.retryPolicy || {};
+        const compliancePolicy = campaign?.compliancePolicy || {};
+        const objective = String(getCampaignContractField(audience, 'objective', 'objective', campaign?.objective || 'awareness'));
+        const platform = String(getCampaignContractField(audience, 'platform', 'platform', campaign?.platform || 'both'));
+        const status = String(getCampaignContractField(deliveryPolicy, 'status', 'status', campaign?.status || 'draft'));
+        const startDateRaw = getCampaignContractField(deliveryPolicy, 'startDate', 'startDate', campaign?.startDate || '');
+        const endDateRaw = getCampaignContractField(deliveryPolicy, 'endDate', 'endDate', campaign?.endDate || '');
+
+        return {
+            ...campaign,
+            id: campaign._id || campaign.id,
+            audience,
+            deliveryPolicy,
+            retryPolicy,
+            compliancePolicy,
+            analytics,
+            startDate: startDateRaw ? String(startDateRaw).slice(0, 10) : '',
+            endDate: endDateRaw ? String(endDateRaw).slice(0, 10) : '',
+            platform,
+            status,
+            objective,
+            targeting: getCampaignContractField(audience, 'targeting', 'targeting', campaign?.targeting || ''),
+            dailyBudget: Number(getCampaignContractField(deliveryPolicy, 'dailyBudget', 'dailyBudget', campaign?.dailyBudget || 0) || 0),
+            lifetimeBudget: Number(getCampaignContractField(deliveryPolicy, 'lifetimeBudget', 'lifetimeBudget', campaign?.lifetimeBudget || 0) || 0),
+            spent: Number(getCampaignContractField(analytics, 'spent', 'spent', campaign?.spent || 0) || 0),
+            impressions: Number(getCampaignContractField(analytics, 'impressions', 'impressions', campaign?.impressions || 0) || 0),
+            clicks: Number(getCampaignContractField(analytics, 'clicks', 'clicks', campaign?.clicks || 0) || 0),
+            ctr: Number(getCampaignContractField(analytics, 'ctr', 'ctr', campaign?.ctr || 0) || 0),
+            cpc: Number(getCampaignContractField(analytics, 'cpc', 'cpc', campaign?.cpc || 0) || 0),
+            revenue: Number(getCampaignContractField(analytics, 'revenue', 'revenue', campaign?.revenue || 0) || 0),
+            conversions: campaign.conversions ?? campaign.leads ?? 0,
+            ageMin: Number(getCampaignContractField(audience, 'ageMin', 'ageMin', campaign?.ageMin || 18) || 18),
+            ageMax: Number(getCampaignContractField(audience, 'ageMax', 'ageMax', campaign?.ageMax || 65) || 65),
+            gender: getCampaignContractField(audience, 'gender', 'gender', campaign?.gender || 'all'),
+            interests: getCampaignContractField(audience, 'interests', 'interests', campaign?.interests || ''),
+            behaviors: getCampaignContractField(audience, 'behaviors', 'behaviors', campaign?.behaviors || ''),
+            primaryText: campaign.primaryText || '',
+            headline: campaign.headline || '',
+            description: campaign.description || '',
+            destinationUrl: campaign.destinationUrl || '',
+            imageUrl: campaign.imageUrl || '',
+            videoUrl: campaign.videoUrl || '',
+            mediaType: campaign.mediaType || (campaign.videoUrl ? 'video' : 'image'),
+            callToAction: campaign.callToAction || 'LEARN_MORE',
+            optimizationGoal: campaign.optimizationGoal || getDefaultOptimizationGoal(objective),
+            bidStrategy: campaign.bidStrategy || 'LOWEST_COST_WITHOUT_CAP',
+            metaCampaignId: campaign.metaCampaignId || '',
+            metaAdSetId: campaign.metaAdSetId || '',
+            metaAdId: campaign.metaAdId || '',
+            lifecycleStatus: campaign.lifecycleStatus || (status === 'active' ? 'running' : status === 'paused' ? 'paused' : 'draft'),
+            paymentStatus: campaign.paymentStatus || 'verified',
+            reviewStatus: campaign.reviewStatus || 'approved',
+            deliveryStatus: campaign.deliveryStatus || (status === 'active' ? 'active' : status === 'paused' ? 'paused' : 'not_published'),
+            reviewNotes: campaign.reviewNotes || '',
+            source: campaign.source || 'local',
+            readOnly: Boolean(campaign.readOnly),
+            syncedFromMeta: Boolean(campaign.syncedFromMeta)
+        };
+    };
 
     const getSafeRatio = (numerator, denominator) => {
         const top = Number(numerator || 0);
@@ -171,50 +215,96 @@ const CampaignManagement = () => {
     };
 
     const sanitizePayload = (data) => {
-        const payload = { ...data };
+        const normalizedMediaType = String(data?.mediaType || 'image').toLowerCase() === 'video' ? 'video' : 'image';
+        const dailyBudget = toNumberOrNull(data?.dailyBudget);
+        const lifetimeBudget = toNumberOrNull(data?.lifetimeBudget);
+        const hasDailyBudget = dailyBudget !== null && dailyBudget > 0;
+        const hasLifetimeBudget = lifetimeBudget !== null && lifetimeBudget > 0;
 
-        // Remove empty strings
-        [
-            'startDate',
-            'endDate',
-            'targeting',
-            'interests',
-            'behaviors',
-            'primaryText',
-            'headline',
-            'description',
-            'destinationUrl',
-            'imageUrl',
-            'videoUrl'
-        ].forEach((key) => {
-            if (!payload[key]) delete payload[key];
-        });
+        const payload = {
+            name: String(data?.name || '').trim(),
+            platform: String(data?.platform || 'both'),
+            objective: String(data?.objective || 'awareness'),
+            status: String(data?.status || 'draft'),
+            mediaType: normalizedMediaType,
+            primaryText: String(data?.primaryText || '').trim(),
+            headline: String(data?.headline || '').trim(),
+            description: String(data?.description || '').trim(),
+            destinationUrl: String(data?.destinationUrl || '').trim(),
+            callToAction: String(data?.callToAction || 'LEARN_MORE'),
+            optimizationGoal: String(data?.optimizationGoal || getDefaultOptimizationGoal(data?.objective || 'awareness')),
+            bidStrategy: String(data?.bidStrategy || 'LOWEST_COST_WITHOUT_CAP'),
+            audience: {
+                ...(data?.audience && typeof data.audience === 'object' ? data.audience : {}),
+                name: String(data?.name || '').trim(),
+                platform: String(data?.platform || 'both'),
+                objective: String(data?.objective || 'awareness'),
+                targeting: String(data?.targeting || '').trim(),
+                ageMin: toNumberOrNull(data?.ageMin) ?? 18,
+                ageMax: toNumberOrNull(data?.ageMax) ?? 65,
+                gender: String(data?.gender || 'all'),
+                interests: String(data?.interests || '').trim(),
+                behaviors: String(data?.behaviors || '').trim()
+            },
+            deliveryPolicy: {
+                ...(data?.deliveryPolicy && typeof data.deliveryPolicy === 'object' ? data.deliveryPolicy : {}),
+                status: String(data?.status || 'draft'),
+                dailyBudget: hasDailyBudget ? dailyBudget : null,
+                lifetimeBudget: !hasDailyBudget && hasLifetimeBudget ? lifetimeBudget : null,
+                startDate: data?.startDate ? new Date(data.startDate).toISOString() : null,
+                endDate: data?.endDate ? new Date(data.endDate).toISOString() : null
+            },
+            retryPolicy: {
+                ...(data?.retryPolicy && typeof data.retryPolicy === 'object' ? data.retryPolicy : {})
+            },
+            compliancePolicy: {
+                respectOptOut: true,
+                ...(data?.compliancePolicy && typeof data.compliancePolicy === 'object' ? data.compliancePolicy : {})
+            },
+            analytics: {
+                ...(data?.analytics && typeof data.analytics === 'object' ? data.analytics : {}),
+                spent: toNumberOrNull(data?.spent) ?? 0,
+                impressions: toNumberOrNull(data?.impressions) ?? 0,
+                clicks: toNumberOrNull(data?.clicks) ?? 0,
+                ctr: toNumberOrNull(data?.ctr) ?? 0,
+                cpc: toNumberOrNull(data?.cpc) ?? 0,
+                revenue: toNumberOrNull(data?.revenue) ?? 0
+            },
+            ageMin: toNumberOrNull(data?.ageMin) ?? 18,
+            ageMax: toNumberOrNull(data?.ageMax) ?? 65,
+            gender: String(data?.gender || 'all'),
+            targeting: String(data?.targeting || '').trim(),
+            interests: String(data?.interests || '').trim(),
+            behaviors: String(data?.behaviors || '').trim(),
+            dailyBudget: hasDailyBudget ? dailyBudget : undefined,
+            lifetimeBudget: !hasDailyBudget && hasLifetimeBudget ? lifetimeBudget : undefined,
+            startDate: data?.startDate ? new Date(data.startDate).toISOString() : undefined,
+            endDate: data?.endDate ? new Date(data.endDate).toISOString() : undefined,
+            imageUrl: normalizedMediaType === 'image' ? String(data?.imageUrl || '').trim() : undefined,
+            videoUrl: normalizedMediaType === 'video' ? String(data?.videoUrl || '').trim() : undefined
+        };
+
+        if (!payload.imageUrl) delete payload.imageUrl;
+        if (!payload.videoUrl) delete payload.videoUrl;
+        if (!payload.primaryText) delete payload.primaryText;
+        if (!payload.headline) delete payload.headline;
+        if (!payload.description) delete payload.description;
+        if (!payload.destinationUrl) delete payload.destinationUrl;
+        if (!payload.targeting) delete payload.targeting;
+        if (!payload.interests) delete payload.interests;
+        if (!payload.behaviors) delete payload.behaviors;
+        if (!payload.endDate) delete payload.endDate;
+        if (!payload.startDate) delete payload.startDate;
+        if (!payload.dailyBudget) delete payload.dailyBudget;
+        if (!payload.lifetimeBudget) delete payload.lifetimeBudget;
 
         delete payload.creativeImage;
         delete payload.creativeVideo;
-
-        const normalizedMediaType = String(payload.mediaType || 'image').toLowerCase();
-        payload.mediaType = normalizedMediaType === 'video' ? 'video' : 'image';
-        if (payload.mediaType === 'video') {
-            delete payload.imageUrl;
-        } else {
-            delete payload.videoUrl;
-        }
-
-        // Numbers
-        ['dailyBudget', 'lifetimeBudget', 'spent', 'impressions', 'clicks', 'ctr', 'cpc', 'revenue', 'ageMin', 'ageMax'].forEach((key) => {
-            if (payload[key] === '' || payload[key] === null || payload[key] === undefined) {
-                delete payload[key];
-            } else {
-                payload[key] = Number(payload[key]);
-                if (Number.isNaN(payload[key])) delete payload[key];
-            }
-        });
-
-        // Prevent sending both budgets
-        if (payload.dailyBudget && payload.lifetimeBudget) {
-            delete payload.lifetimeBudget;
-        }
+        delete payload.id;
+        delete payload._id;
+        delete payload.readOnly;
+        delete payload.source;
+        delete payload.syncedFromMeta;
 
         return payload;
     };
@@ -232,7 +322,11 @@ const CampaignManagement = () => {
         const formData = new FormData();
         Object.entries(payload).forEach(([key, value]) => {
             if (value !== undefined && value !== null && value !== '') {
-                formData.append(key, value);
+                if (value && typeof value === 'object' && !(value instanceof Date) && !(value instanceof File) && !Array.isArray(value)) {
+                    formData.append(key, JSON.stringify(value));
+                } else {
+                    formData.append(key, value);
+                }
             }
         });
         if (hasImageFile) {
@@ -259,7 +353,9 @@ const CampaignManagement = () => {
                 params: {
                     platform: selectedPlatform !== 'all' ? selectedPlatform : undefined,
                     status: selectedStatus !== 'all' ? selectedStatus : undefined,
-                    search: searchQuery || undefined
+                    search: searchQuery || undefined,
+                    dateRange: dateRange || undefined,
+                    includeLiveMetrics: 'true'
                 }
             });
             const data = response.data?.data || [];
@@ -271,7 +367,7 @@ const CampaignManagement = () => {
         } finally {
             setLoading(false);
         }
-    }, [api, getAuthHeaders, searchQuery, selectedPlatform, selectedStatus]);
+    }, [dateRange, getAuthHeaders, searchQuery, selectedPlatform, selectedStatus]);
 
     const fetchMetaSetupState = useCallback(async () => {
         setMetaSetupLoading(true);
@@ -312,6 +408,19 @@ const CampaignManagement = () => {
                              campaign.objective.toLowerCase().includes(searchQuery.toLowerCase());
         return matchesPlatform && matchesStatus && matchesSearch;
     });
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [selectedPlatform, selectedStatus, searchQuery, dateRange]);
+
+    useEffect(() => {
+        const maxPage = Math.max(1, Math.ceil(filteredCampaigns.length / ITEMS_PER_PAGE));
+        setCurrentPage((prev) => Math.min(prev, maxPage));
+    }, [filteredCampaigns.length]);
+
+    useEffect(() => {
+        setBrokenImageIds({});
+    }, [campaigns]);
 
     const handleCreateCampaign = async (campaignData) => {
         if (USE_MOCK) {
@@ -503,58 +612,17 @@ const CampaignManagement = () => {
         runWorkflowAction(campaignId, 'publish', 'Publish campaign failed.');
     };
 
-    const getStatusBadge = (campaignOrStatus) => {
-        const status = typeof campaignOrStatus === 'string' ? campaignOrStatus : campaignOrStatus?.status;
-        const lifecycleStatus = typeof campaignOrStatus === 'object' ? campaignOrStatus?.lifecycleStatus : null;
-        const statusKey = lifecycleStatus || status;
-        const statusConfig = {
-            active: { icon: <Play size={14} />, class: 'status-active', label: 'Active' },
-            running: { icon: <Play size={14} />, class: 'status-active', label: 'Running' },
-            paused: { icon: <Pause size={14} />, class: 'status-paused', label: 'Paused' },
-            draft: { icon: <Clock size={14} />, class: 'status-draft', label: 'Draft' },
-            publishing: { icon: <RefreshCw size={14} />, class: 'status-review', label: 'Publishing' },
-            rejected: { icon: <XCircle size={14} />, class: 'status-ended', label: 'Rejected' },
-            completed: { icon: <CheckCircle size={14} />, class: 'status-approved', label: 'Completed' },
-            ended: { icon: <XCircle size={14} />, class: 'status-ended', label: 'Ended' }
-        };
-        const config = statusConfig[statusKey] || statusConfig.draft;
-        return (
-            <span className={`status-badge ${config.class}`}>
-                {config.icon}
-                {config.label}
-            </span>
-        );
-    };
-
-    const getMiniBadge = (label, tone = 'neutral') => (
-        <span className={`mini-badge mini-${tone}`}>{label}</span>
-    );
-
-    const getCampaignStageMeta = (campaign) => {
-        const deliveryMap = {
-            active: getMiniBadge('Live on Meta', 'success'),
-            paused: getMiniBadge('Delivery Paused', 'warning'),
-            publishing: getMiniBadge('Publishing', 'info'),
-            rejected: getMiniBadge('Delivery Rejected', 'danger'),
-            not_published: getMiniBadge('Not Published', 'neutral')
-        };
-
-        return [
-            deliveryMap[campaign.deliveryStatus] || deliveryMap.not_published
-        ];
-    };
-
     const getWorkflowActions = (campaign, variant = 'card') => {
         if (campaign.readOnly) return [];
 
-        const actionClass = variant === 'table' ? 'table-workflow-btn' : 'workflow-btn';
+        const actionClass = variant === 'table' ? 'cm-action-btn' : 'cm-action-btn';
         const actions = [];
 
         if (campaign.lifecycleStatus === 'draft' || campaign.lifecycleStatus === 'approved' || campaign.lifecycleStatus === 'pending_review') {
             actions.push({
                 key: 'publish',
                 label: 'Publish',
-                className: `${actionClass} workflow-primary`,
+                className: `${actionClass} cm-action-primary`,
                 icon: <Play size={14} />,
                 onClick: () => handlePublishCampaign(campaign.id)
             });
@@ -564,7 +632,7 @@ const CampaignManagement = () => {
             actions.push({
                 key: 'pause',
                 label: 'Pause',
-                className: `${actionClass} workflow-secondary`,
+                className: `${actionClass} cm-action-secondary`,
                 icon: <Pause size={14} />,
                 onClick: () => handlePauseCampaign(campaign.id)
             });
@@ -572,58 +640,13 @@ const CampaignManagement = () => {
             actions.push({
                 key: 'resume',
                 label: 'Resume',
-                className: `${actionClass} workflow-secondary`,
+                className: `${actionClass} cm-action-secondary`,
                 icon: <Play size={14} />,
                 onClick: () => handleResumeCampaign(campaign.id)
             });
         }
 
         return actions;
-    };
-
-    const getPlatformIcon = (platform) => {
-        switch(platform) {
-            case 'facebook':
-                return <Facebook size={16} className="platform-icon facebook" />;
-            case 'instagram':
-                return <Instagram size={16} className="platform-icon instagram" />;
-            case 'both':
-                return (
-                    <div className="platform-icon both">
-                        <Facebook size={16} />
-                        <Instagram size={16} />
-                    </div>
-                );
-            default:
-                return null;
-        }
-    };
-
-    const getPerformanceMetric = (campaign) => {
-        const roi = (getSafeRatio(campaign.revenue - campaign.spent, campaign.spent) * 100).toFixed(1);
-        const roas = getSafeRatio(campaign.revenue, campaign.spent).toFixed(2);
-        return (
-            <div className="performance-metric">
-                <div className="metric-row">
-                    <span className="metric-label">ROAS:</span>
-                    <span className="metric-value">{roas}x</span>
-                </div>
-                <div className="metric-row">
-                    <span className="metric-label">CTR:</span>
-                    <span className="metric-value">{campaign.ctr}%</span>
-                </div>
-                <div className="metric-row">
-                    <span className="metric-label">CPC:</span>
-                    <span className="metric-value">${campaign.cpc}</span>
-                </div>
-                <div className="metric-row">
-                    <span className="metric-label">ROI:</span>
-                    <span className={`metric-value ${roi >= 0 ? 'positive' : 'negative'}`}>
-                        {roi}%
-                    </span>
-                </div>
-            </div>
-        );
     };
 
     const getCampaignBudgetBase = (campaign) => {
@@ -647,378 +670,504 @@ const CampaignManagement = () => {
         return '$0';
     };
 
+    const totalPages = Math.max(1, Math.ceil(filteredCampaigns.length / ITEMS_PER_PAGE));
+    const safeCurrentPage = Math.min(currentPage, totalPages);
+    const startIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE;
+    const endIndex = startIndex + ITEMS_PER_PAGE;
+    const displayCampaigns = filteredCampaigns.slice(startIndex, endIndex);
+    const pageNumbers = Array.from({ length: totalPages }, (_, idx) => idx + 1);
+    const showingStart = filteredCampaigns.length === 0 ? 0 : startIndex + 1;
+    const showingEnd = filteredCampaigns.length === 0 ? 0 : Math.min(endIndex, filteredCampaigns.length);
+    const activeCampaignsCount = campaigns.filter((campaign) => campaign.lifecycleStatus === 'running' || campaign.status === 'active').length;
+    const totalSpend = campaigns.reduce((sum, campaign) => sum + Number(campaign.spent || 0), 0);
+    const totalRevenue = campaigns.reduce((sum, campaign) => sum + Number(campaign.revenue || 0), 0);
+    const totalImpressions = campaigns.reduce((sum, campaign) => sum + Number(campaign.impressions || 0), 0);
+    const getCampaignImageSrc = (campaign) => {
+        const mediaType = String(campaign?.mediaType || '').toLowerCase();
+        if (mediaType === 'video') return '';
+
+        const raw = String(campaign?.imageUrl || '').trim();
+        if (!raw) return '';
+
+        // Block known template/dummy creative URLs from design mocks.
+        if (
+            /lh3\.googleusercontent\.com\/aida-public/i.test(raw) ||
+            /googleusercontent\.com\/aida-public/i.test(raw)
+        ) {
+            return '';
+        }
+
+        if (/^(https?:)?\/\//i.test(raw) || raw.startsWith('/') || raw.startsWith('data:image/')) {
+            return raw;
+        }
+        return '';
+    };
+    const compactMoney = (value) => {
+        const amount = Number(value || 0);
+        if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
+        if (amount >= 1000) return `$${(amount / 1000).toFixed(1)}K`;
+        return `$${amount.toFixed(0)}`;
+    };
+    const compactCount = (value) => {
+        const amount = Number(value || 0);
+        if (amount >= 1000000) return `${(amount / 1000000).toFixed(1)}M`;
+        if (amount >= 1000) return `${(amount / 1000).toFixed(1)}K`;
+        return `${amount.toFixed(0)}`;
+    };
+    const formatCurrency = (value, digits = 0) => {
+        const amount = Number(value);
+        if (!Number.isFinite(amount)) return '--';
+        return `$${amount.toLocaleString(undefined, {
+            minimumFractionDigits: digits,
+            maximumFractionDigits: digits
+        })}`;
+    };
+    const formatPercent = (value, digits = 2) => {
+        const amount = Number(value);
+        if (!Number.isFinite(amount)) return '--';
+        return `${amount.toFixed(digits)}%`;
+    };
+    const formatRatio = (value, digits = 1) => {
+        const amount = Number(value);
+        if (!Number.isFinite(amount)) return '--';
+        return `${amount.toFixed(digits)}x`;
+    };
+    const getCampaignStatusMeta = (campaign) => {
+        const statusKey = String(campaign?.lifecycleStatus || campaign?.status || 'draft').toLowerCase();
+        const map = {
+            active: { label: 'ACTIVE', badgeClass: 'cm-status-running', metricsClass: '' },
+            running: { label: 'RUNNING', badgeClass: 'cm-status-running', metricsClass: '' },
+            paused: { label: 'PAUSED', badgeClass: 'cm-status-paused', metricsClass: 'cm-faded-metrics' },
+            draft: { label: 'DRAFT', badgeClass: 'cm-status-draft', metricsClass: 'cm-faded-metrics' },
+            ended: { label: 'ENDED', badgeClass: 'cm-status-ended', metricsClass: 'cm-faded-metrics' },
+            rejected: { label: 'REJECTED', badgeClass: 'cm-status-ended', metricsClass: 'cm-faded-metrics' },
+            publishing: { label: 'PUBLISHING', badgeClass: 'cm-status-review', metricsClass: '' }
+        };
+        return map[statusKey] || map.draft;
+    };
+    const totalBudgetBase = campaigns.reduce((sum, campaign) => sum + getCampaignBudgetBase(campaign), 0);
+    const spendTargetPercentage = totalBudgetBase > 0 ? Math.round((totalSpend / totalBudgetBase) * 100) : null;
+    const avgImpressionsPerCampaign = campaigns.length > 0 ? totalImpressions / campaigns.length : null;
+    const activeCampaignsTrendLabel = campaigns.length
+        ? `${Math.round((activeCampaignsCount / campaigns.length) * 100)}% active`
+        : '+12% vs LY';
+    const spendTrendLabel = spendTargetPercentage !== null
+        ? `${spendTargetPercentage}% of budget`
+        : '88% of target';
+    const revenueTrendLabel = totalSpend > 0
+        ? `${formatRatio(getSafeRatio(totalRevenue, totalSpend), 2)} ROAS`
+        : '+24% MoM';
+    const impressionsTrendLabel = avgImpressionsPerCampaign !== null
+        ? `${compactCount(avgImpressionsPerCampaign)} avg`
+        : 'Stable';
+    const selectedDateRangeLabel = dateRangeLabels[dateRange] || 'Last 30 Days';
+    const activeFillPercent = campaigns.length ? Math.min(100, Math.round((activeCampaignsCount / campaigns.length) * 100)) : 0;
+    const spendFillPercent = spendTargetPercentage !== null ? Math.min(100, Math.max(0, spendTargetPercentage)) : 50;
+    const roasValue = getSafeRatio(totalRevenue, totalSpend);
+    const revenueFillPercent = totalSpend > 0 ? Math.min(100, Math.max(0, Math.round(roasValue * 20))) : 0;
+    const impressionFillPercent = campaigns.length > 0 && avgImpressionsPerCampaign !== null
+        ? Math.min(100, Math.max(10, Math.round((avgImpressionsPerCampaign / (totalImpressions || 1)) * 100 * 3)))
+        : 66;
+
     return (
         <div className="meta-access-shell">
         <div className={`campaign-management ${!metaSetupLoading && !metaSetupReady ? 'meta-access-blurred' : ''}`}>
-            {/* Header */}
-            <div className="campaign-header">
-                <div className="header-left">
-                    <h1>Campaign Management</h1>
-                    <p className="header-subtitle">
-                        Create, edit, and manage your Facebook and Instagram ad campaigns
-                    </p>
-                </div>
-                <div className="header-actions">
-                    {!metaSetupLoading && !metaSetupReady ? (
-                        <button className="btn btn-secondary" onClick={() => navigate('/meta-connect')}>
-                            <Facebook size={18} />
-                            Connect Meta
-                        </button>
-                    ) : null}
-                    <button className="btn btn-secondary" onClick={() => console.log('Export data')}>
-                        <Download size={18} />
-                        Export
-                    </button>
-                    <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-                        <Plus size={18} />
-                        Create Campaign
-                    </button>
-                </div>
-            </div>
-
-            {/* Filters Bar */}
-            <div className="filters-bar">
-                <div className="search-box">
-                    <Search size={18} className="search-icon" />
-                    <input
-                        type="text"
-                        placeholder="Search campaigns..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        className="search-input"
-                    />
-                </div>
-
-                <div className="filter-group">
-                    <select 
-                        className="filter-select"
-                        value={selectedPlatform}
-                        onChange={(e) => setSelectedPlatform(e.target.value)}
-                    >
-                        <option value="all">All Platforms</option>
-                        <option value="facebook">Facebook Only</option>
-                        <option value="instagram">Instagram Only</option>
-                        <option value="both">Both Platforms</option>
-                    </select>
-
-                    <select 
-                        className="filter-select"
-                        value={selectedStatus}
-                        onChange={(e) => setSelectedStatus(e.target.value)}
-                    >
-                        <option value="all">All Status</option>
-                        <option value="active">Active</option>
-                        <option value="paused">Paused</option>
-                        <option value="draft">Draft</option>
-                        <option value="ended">Ended</option>
-                    </select>
-
-                    <select 
-                        className="filter-select"
-                        value={dateRange}
-                        onChange={(e) => setDateRange(e.target.value)}
-                    >
-                        <option value="today">Today</option>
-                        <option value="yesterday">Yesterday</option>
-                        <option value="last7days">Last 7 Days</option>
-                        <option value="last30days">Last 30 Days</option>
-                        <option value="thisMonth">This Month</option>
-                        <option value="lastMonth">Last Month</option>
-                        <option value="custom">Custom Range</option>
-                    </select>
-
-                    <button className="btn btn-ghost">
-                        <Filter size={18} />
-                        More Filters
-                    </button>
-                </div>
-
-                <div className="view-toggle">
-                    <button 
-                        className={`view-btn ${viewMode === 'grid' ? 'active' : ''}`}
-                        onClick={() => setViewMode('grid')}
-                    >
-                        <BarChart3 size={18} />
-                    </button>
-                    <button 
-                        className={`view-btn ${viewMode === 'list' ? 'active' : ''}`}
-                        onClick={() => setViewMode('list')}
-                    >
-                        <PieChart size={18} />
-                    </button>
-                </div>
-            </div>
-
-            {error && (
-                <div className="error-banner">
-                    <AlertCircle size={16} />
-                    <span>{error}</span>
-                    <button onClick={fetchCampaigns} className="retry-btn">Retry</button>
-                </div>
-            )}
-
-            {/* Campaigns Stats Overview */}
-            <div className="campaigns-stats">
-                <div className="stat-card">
-                    <div className="stat-icon active">
-                        <Play size={20} />
-                    </div>
-                    <div className="stat-details">
-                        <span className="stat-label">Active Campaigns</span>
-                        <span className="stat-value">
-                            {campaigns.filter(c => c.lifecycleStatus === 'running' || c.status === 'active').length}
-                        </span>
-                    </div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-icon total">
-                        <DollarSign size={20} />
-                    </div>
-                    <div className="stat-details">
-                        <span className="stat-label">Total Spend</span>
-                        <span className="stat-value">
-                            ${campaigns.reduce((sum, c) => sum + c.spent, 0).toLocaleString()}
-                        </span>
-                    </div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-icon revenue">
-                        <TrendingUp size={20} />
-                    </div>
-                    <div className="stat-details">
-                        <span className="stat-label">Total Revenue</span>
-                        <span className="stat-value">
-                            ${campaigns.reduce((sum, c) => sum + c.revenue, 0).toLocaleString()}
-                        </span>
-                    </div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-icon impressions">
-                        <Eye size={20} />
-                    </div>
-                    <div className="stat-details">
-                        <span className="stat-label">Total Impressions</span>
-                        <span className="stat-value">
-                            {(campaigns.reduce((sum, c) => sum + c.impressions, 0) / 1000000).toFixed(1)}M
-                        </span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Campaigns Grid/List */}
-            <div className={`campaigns-container ${viewMode}`}>
-                {filteredCampaigns.length === 0 ? (
-                    <div className="no-campaigns">
-                        {loading ? (
-                            <>
-                                <RefreshCw size={32} className="spinner" />
-                                <h3>Loading campaigns...</h3>
-                                <p>Please wait while we fetch your campaigns.</p>
-                            </>
-                        ) : (
-                            <>
-                                <AlertCircle size={48} />
-                                <h3>No campaigns found</h3>
-                                <p>Try adjusting your filters or create a new campaign</p>
-                                <button className="btn btn-primary" onClick={() => setShowCreateModal(true)}>
-                                    <Plus size={18} />
-                                    Create Campaign
-                                </button>
-                            </>
-                        )}
-                    </div>
-                ) : viewMode === 'grid' ? (
-                    <div className="campaigns-grid">
-                        {filteredCampaigns.map(campaign => (
-                            <div key={campaign.id} className="campaign-card">
-                                <div className="card-header">
-                                    <div className="platform-status">
-                                        {getPlatformIcon(campaign.platform)}
-                                        {getStatusBadge(campaign)}
-                                    </div>
-                                    <div className="card-actions">
-                                        {campaign.readOnly ? (
-                                            <>
-                                                <span className="status-badge status-draft">Meta</span>
-                                                <button className="action-btn" onClick={() => handleDeleteCampaign(campaign)}>
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </>
-                                        ) : (
-                                            <>
-                                                {!campaign.metaCampaignId ? (
-                                                    <button className="action-btn" onClick={() => {
-                                                        setSelectedCampaign(campaign);
-                                                        setShowEditModal(true);
-                                                    }}>
-                                                        <Edit size={16} />
-                                                    </button>
-                                                ) : null}
-                                                <button className="action-btn" onClick={() => handleDuplicateCampaign(campaign)}>
-                                                    <Copy size={16} />
-                                                </button>
-                                                <button className="action-btn" onClick={() => handleDeleteCampaign(campaign)}>
-                                                    <Trash2 size={16} />
-                                                </button>
-                                            </>
-                                        )}
-                                    </div>
-                                </div>
-
-                                <div className="card-content">
-                                    <h3 className="campaign-name">{campaign.name}</h3>
-                                    <p className="campaign-objective">
-                                        {campaign.objective}
-                                        {campaign.readOnly ? ' • Synced from Meta Ads' : ''}
-                                    </p>
-                                    <div className="campaign-stage-row">
-                                        {getCampaignStageMeta(campaign).map((badge, index) => (
-                                            <React.Fragment key={`${campaign.id}-stage-${index}`}>{badge}</React.Fragment>
-                                        ))}
-                                    </div>
-
-                                    <div className="campaign-details">
-                                        <div className="detail-item">
-                                            <DollarSign size={14} />
-                                            <span>{getCampaignBudgetLabel(campaign)}</span>
-                                        </div>
-                                        <div className="detail-item">
-                                            <Calendar size={14} />
-                                            <span>{campaign.startDate} - {campaign.endDate || 'Ongoing'}</span>
-                                        </div>
-                                        <div className="detail-item">
-                                            <Target size={14} />
-                                            <span>{campaign.targeting}</span>
-                                        </div>
-                                    </div>
-
-                                    <div className="campaign-progress">
-                                        <div className="progress-header">
-                                            <span>Budget Used</span>
-                                            <span>{(getSafeRatio(campaign.spent, getCampaignBudgetBase(campaign)) * 100).toFixed(1)}%</span>
-                                        </div>
-                                        <div className="progress-bar">
-                                            <div 
-                                                className="progress-fill"
-                                                style={{ width: `${Math.min(100, getSafeRatio(campaign.spent, getCampaignBudgetBase(campaign)) * 100)}%` }}
-                                            ></div>
-                                        </div>
-                                    </div>
-
-                                    {getPerformanceMetric(campaign)}
-
-                                    <div className="card-footer">
-                                        <div className="footer-actions">
-                                            {getWorkflowActions(campaign).map((action) => (
-                                                <button
-                                                    key={action.key}
-                                                    className={action.className}
-                                                    onClick={action.onClick}
-                                                    type="button"
-                                                >
-                                                    {action.icon}
-                                                    {action.label}
-                                                </button>
-                                            ))}
-                                        </div>
-                                        <button className="more-btn">
-                                            <MoreVertical size={16} />
-                                        </button>
-                                    </div>
-                                </div>
+            <main className="cm-strict">
+                <section className="cm-strict-container">
+                    <div className="cm-toolbar">
+                        <div className="cm-search-area">
+                            <div className="cm-search-wrap">
+                                <span className="cm-search-icon material-symbols-outlined">search</span>
+                                <input
+                                    className="cm-search-input"
+                                    placeholder="Search campaign name or ID..."
+                                    type="text"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                />
                             </div>
-                        ))}
+                        </div>
+                        <div className="cm-toolbar-actions">
+                            <label className="cm-filter-chip">
+                                <span className="material-symbols-outlined cm-chip-icon">filter_list</span>
+                                <span className="cm-chip-label">Platforms</span>
+                                <span className="material-symbols-outlined cm-chip-icon">expand_more</span>
+                                <select
+                                    className="template-select-overlay"
+                                    value={selectedPlatform}
+                                    onChange={(e) => setSelectedPlatform(e.target.value)}
+                                >
+                                    <option value="all">All</option>
+                                    <option value="facebook">Facebook</option>
+                                    <option value="instagram">Instagram</option>
+                                    <option value="both">Both</option>
+                                </select>
+                            </label>
+
+                            <label className="cm-filter-chip">
+                                <span className="material-symbols-outlined cm-chip-icon">radio_button_checked</span>
+                                <span className="cm-chip-label">Status</span>
+                                <span className="material-symbols-outlined cm-chip-icon">expand_more</span>
+                                <select
+                                    className="template-select-overlay"
+                                    value={selectedStatus}
+                                    onChange={(e) => setSelectedStatus(e.target.value)}
+                                >
+                                    <option value="all">All</option>
+                                    <option value="active">Active</option>
+                                    <option value="paused">Paused</option>
+                                    <option value="draft">Draft</option>
+                                    <option value="ended">Ended</option>
+                                </select>
+                            </label>
+
+                            <label className="cm-filter-chip">
+                                <span className="material-symbols-outlined cm-chip-icon">calendar_today</span>
+                                <span className="cm-chip-label">{selectedDateRangeLabel}</span>
+                                <span className="material-symbols-outlined cm-chip-icon">expand_more</span>
+                                <select
+                                    className="template-select-overlay"
+                                    value={dateRange}
+                                    onChange={(e) => setDateRange(e.target.value)}
+                                >
+                                    <option value="today">Today</option>
+                                    <option value="yesterday">Yesterday</option>
+                                    <option value="last7days">Last 7 Days</option>
+                                    <option value="last30days">Last 30 Days</option>
+                                    <option value="thisMonth">This Month</option>
+                                    <option value="lastMonth">Last Month</option>
+                                </select>
+                            </label>
+
+                            <button className="cm-refresh-btn" type="button" onClick={fetchCampaigns}>
+                                <span className="material-symbols-outlined">refresh</span>
+                            </button>
+                            <button
+                                className="cm-create-btn"
+                                type="button"
+                                onClick={() => setShowCreateModal(true)}
+                            >
+                                Create Campaign
+                            </button>
+                        </div>
                     </div>
-                ) : (
-                    <div className="campaigns-list">
-                        <table className="campaigns-table">
-                            <thead>
-                                <tr>
-                                    <th>Campaign</th>
-                                    <th>Platform</th>
-                                    <th>Status</th>
-                                    <th>Budget</th>
-                                    <th>Spent</th>
-                                    <th>Impressions</th>
-                                    <th>Clicks</th>
-                                    <th>CTR</th>
-                                    <th>CPC</th>
-                                    <th>Revenue</th>
-                                    <th>ROAS</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filteredCampaigns.map(campaign => (
-                                    <tr key={campaign.id}>
-                                        <td>
-                                            <div className="campaign-cell">
-                                                <strong>{campaign.name}</strong>
-                                                <small>{campaign.objective}</small>
-                                                <div className="table-stage-row">
-                                                    {getCampaignStageMeta(campaign).map((badge, index) => (
-                                                        <React.Fragment key={`${campaign.id}-table-stage-${index}`}>{badge}</React.Fragment>
-                                                    ))}
+
+                    <div className="cm-kpi-grid">
+                        <div className="cm-kpi-card">
+                            <div className="cm-kpi-top">
+                                <div className="cm-kpi-icon cm-kpi-icon-primary">
+                                    <span className="material-symbols-outlined">rocket_launch</span>
+                                </div>
+                                <span className="cm-kpi-trend cm-kpi-trend-primary">{activeCampaignsTrendLabel}</span>
+                            </div>
+                            <p className="cm-kpi-label">Active Campaigns</p>
+                            <h3 className="cm-kpi-value headline-font">{activeCampaignsCount}</h3>
+                            <div className="cm-kpi-track">
+                                <div className="cm-kpi-fill cm-kpi-fill-primary" style={{ width: `${activeFillPercent}%` }} />
+                            </div>
+                        </div>
+
+                        <div className="cm-kpi-card">
+                            <div className="cm-kpi-top">
+                                <div className="cm-kpi-icon cm-kpi-icon-secondary">
+                                    <span className="material-symbols-outlined">payments</span>
+                                </div>
+                                <span className="cm-kpi-trend cm-kpi-trend-muted">{spendTrendLabel}</span>
+                            </div>
+                            <p className="cm-kpi-label">Total Spend</p>
+                            <h3 className="cm-kpi-value headline-font">{compactMoney(totalSpend)}</h3>
+                            <div className="cm-kpi-track">
+                                <div className="cm-kpi-fill cm-kpi-fill-secondary" style={{ width: `${spendFillPercent}%` }} />
+                            </div>
+                        </div>
+
+                        <div className="cm-kpi-card">
+                            <div className="cm-kpi-top">
+                                <div className="cm-kpi-icon cm-kpi-icon-tertiary">
+                                    <span className="material-symbols-outlined">account_balance_wallet</span>
+                                </div>
+                                <span className="cm-kpi-trend cm-kpi-trend-tertiary">{revenueTrendLabel}</span>
+                            </div>
+                            <p className="cm-kpi-label">Total Revenue</p>
+                            <h3 className="cm-kpi-value headline-font">{compactMoney(totalRevenue)}</h3>
+                            <div className="cm-kpi-track">
+                                <div className="cm-kpi-fill cm-kpi-fill-tertiary" style={{ width: `${revenueFillPercent}%` }} />
+                            </div>
+                        </div>
+
+                        <div className="cm-kpi-card">
+                            <div className="cm-kpi-top">
+                                <div className="cm-kpi-icon cm-kpi-icon-blue">
+                                    <span className="material-symbols-outlined">visibility</span>
+                                </div>
+                                <span className="cm-kpi-trend cm-kpi-trend-blue">{impressionsTrendLabel}</span>
+                            </div>
+                            <p className="cm-kpi-label">Total Impressions</p>
+                            <h3 className="cm-kpi-value headline-font">{compactCount(totalImpressions)}</h3>
+                            <div className="cm-kpi-track">
+                                <div className="cm-kpi-fill cm-kpi-fill-blue" style={{ width: `${impressionFillPercent}%` }} />
+                            </div>
+                        </div>
+                    </div>
+
+                    <div className="cm-campaigns-head">
+                        <h3 className="headline-font">Recent Campaigns</h3>
+                        <div className="cm-view-toggle">
+                            <button
+                                className={`cm-view-btn ${viewMode === 'grid' ? 'cm-view-btn-active' : ''}`}
+                                type="button"
+                                onClick={() => setViewMode('grid')}
+                                aria-pressed={viewMode === 'grid'}
+                            >
+                                <span className="material-symbols-outlined cm-filled">grid_view</span>
+                            </button>
+                            <button
+                                className={`cm-view-btn ${viewMode === 'list' ? 'cm-view-btn-active' : ''}`}
+                                type="button"
+                                onClick={() => setViewMode('list')}
+                                aria-pressed={viewMode === 'list'}
+                            >
+                                <span className="material-symbols-outlined">list</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {displayCampaigns.length === 0 ? (
+                        <div className="cm-state-card">
+                            {loading ? (
+                                <>
+                                    <RefreshCw size={32} className="spinner" />
+                                    <h3>Loading campaigns...</h3>
+                                    <p>Please wait while we fetch your campaigns.</p>
+                                </>
+                            ) : error ? (
+                                <>
+                                    <AlertCircle size={44} />
+                                    <h3>Unable to load campaigns</h3>
+                                    <p>{error}</p>
+                                    <button className="cm-create-btn" onClick={fetchCampaigns} type="button">
+                                        Retry
+                                    </button>
+                                </>
+                            ) : (
+                                <>
+                                    <AlertCircle size={44} />
+                                    <h3>No campaigns found</h3>
+                                    <p>Try adjusting your filters or create a new campaign.</p>
+                                    <button className="cm-create-btn" onClick={() => setShowCreateModal(true)} type="button">
+                                        Create Campaign
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    ) : viewMode === 'list' ? (
+                        <div className="cm-list-stack">
+                            {displayCampaigns.map((campaign) => {
+                                const workflowActions = getWorkflowActions(campaign, 'table');
+                                const roas = getSafeRatio(campaign.revenue, campaign.spent);
+                                const statusMeta = getCampaignStatusMeta(campaign);
+                                return (
+                                    <article key={campaign.id} className="cm-list-card">
+                                        <div className="cm-list-main">
+                                            <div className="cm-list-title-wrap">
+                                                <h4 className="cm-list-title headline-font">{campaign.name}</h4>
+                                                <div className="cm-list-meta">
+                                                    <span className="material-symbols-outlined">calendar_today</span>
+                                                    <span>{campaign.startDate || 'Not set'} - {campaign.endDate || 'Ongoing'}</span>
                                                 </div>
                                             </div>
-                                        </td>
-                                        <td>{getPlatformIcon(campaign.platform)}</td>
-                                        <td>{getStatusBadge(campaign)}</td>
-                                        <td>{getCampaignBudgetLabel(campaign)}</td>
-                                        <td>${campaign.spent.toLocaleString()}</td>
-                                        <td>{(campaign.impressions / 1000).toFixed(1)}K</td>
-                                        <td>{campaign.clicks.toLocaleString()}</td>
-                                        <td>{campaign.ctr}%</td>
-                                        <td>${campaign.cpc}</td>
-                                        <td>${campaign.revenue.toLocaleString()}</td>
-                                        <td>{getSafeRatio(campaign.revenue, campaign.spent).toFixed(2)}x</td>
-                                        <td>
-                                            <div className="table-actions">
-                                                {campaign.readOnly ? (
-                                                    <>
-                                                        <span className="status-badge status-draft">Meta</span>
-                                                        <button className="table-action" onClick={() => handleDeleteCampaign(campaign)}>
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    </>
-                                                ) : (
-                                                    <>
-                                                        {getWorkflowActions(campaign, 'table').map((action) => (
-                                                            <button
-                                                                key={action.key}
-                                                                className={action.className}
-                                                                onClick={action.onClick}
-                                                                type="button"
-                                                                title={action.label}
-                                                            >
-                                                                {action.icon}
-                                                            </button>
-                                                        ))}
-                                                        {!campaign.metaCampaignId ? (
-                                                            <button className="table-action" onClick={() => {
-                                                                setSelectedCampaign(campaign);
-                                                                setShowEditModal(true);
-                                                            }}>
-                                                                <Edit size={14} />
-                                                            </button>
-                                                        ) : null}
-                                                        <button className="table-action" onClick={() => handleDuplicateCampaign(campaign)}>
-                                                            <Copy size={14} />
-                                                        </button>
-                                                        <button className="table-action" onClick={() => handleDeleteCampaign(campaign)}>
-                                                            <Trash2 size={14} />
-                                                        </button>
-                                                    </>
-                                                )}
+                                            <span className={`cm-status-badge cm-list-status ${statusMeta.badgeClass}`}>{statusMeta.label}</span>
+                                        </div>
+                                        <div className="cm-list-details">
+                                            <div className="cm-list-platforms">
+                                                {(campaign.platform === 'facebook' || campaign.platform === 'both') ? (
+                                                    <span className="cm-platform-chip">
+                                                        <Facebook size={16} className="cm-platform-icon cm-platform-icon-facebook" />
+                                                    </span>
+                                                ) : null}
+                                                {(campaign.platform === 'instagram' || campaign.platform === 'both') ? (
+                                                    <span className="cm-platform-chip">
+                                                        <Instagram size={16} className="cm-platform-icon cm-platform-icon-instagram" />
+                                                    </span>
+                                                ) : null}
                                             </div>
-                                        </td>
-                                    </tr>
+                                            <div className={`cm-list-metrics ${statusMeta.metricsClass}`}>
+                                                <div className="cm-metric"><span>Budget</span><strong>{getCampaignBudgetLabel(campaign)}</strong></div>
+                                                <div className="cm-metric"><span>Spend</span><strong>{formatCurrency(campaign.spent || 0)}</strong></div>
+                                                <div className="cm-metric"><span>ROAS</span><strong className={roas > 0 ? 'cm-metric-primary' : ''}>{formatRatio(roas, 1)}</strong></div>
+                                                <div className="cm-metric"><span>CTR</span><strong>{formatPercent(campaign.ctr || 0)}</strong></div>
+                                                <div className="cm-metric"><span>CPC</span><strong>{formatCurrency(campaign.cpc || 0, 2)}</strong></div>
+                                                <div className="cm-metric"><span>Conversions</span><strong>{Number(campaign.conversions ?? campaign.clicks ?? 0).toLocaleString()}</strong></div>
+                                            </div>
+                                        </div>
+                                        <div className="cm-list-actions">
+                                            {workflowActions.map((action) => (
+                                                <button
+                                                    key={action.key}
+                                                    type="button"
+                                                    className={action.className}
+                                                    onClick={action.onClick}
+                                                    title={action.label}
+                                                >
+                                                    {action.icon}
+                                                </button>
+                                            ))}
+                                            <button
+                                                type="button"
+                                                className="cm-action-btn cm-action-secondary"
+                                                onClick={() => {
+                                                    setSelectedCampaign(campaign);
+                                                    setShowEditModal(true);
+                                                }}
+                                                title="Edit"
+                                            >
+                                                <Edit size={14} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="cm-action-btn cm-action-secondary"
+                                                onClick={() => handleDuplicateCampaign(campaign)}
+                                                title="Duplicate"
+                                            >
+                                                <Copy size={14} />
+                                            </button>
+                                            <button
+                                                type="button"
+                                                className="cm-action-btn cm-action-danger"
+                                                onClick={() => handleDeleteCampaign(campaign)}
+                                                title="Delete"
+                                            >
+                                                <Trash2 size={14} />
+                                            </button>
+                                        </div>
+                                    </article>
+                                );
+                            })}
+                        </div>
+                    ) : (
+                        <div className="cm-cards-grid">
+                            {displayCampaigns.map((campaign) => {
+                                const roas = getSafeRatio(campaign.revenue, campaign.spent);
+                                const statusMeta = getCampaignStatusMeta(campaign);
+                                const imageSrc = getCampaignImageSrc(campaign);
+                                const isImageBroken = Boolean(brokenImageIds[campaign.id]);
+                                const shouldShowImage = Boolean(imageSrc && !isImageBroken);
+                                return (
+                                    <div key={campaign.id} className="cm-campaign-card">
+                                        <div className="cm-card-media">
+                                            {shouldShowImage ? (
+                                                <img
+                                                    className="cm-card-media-img"
+                                                    src={imageSrc}
+                                                    alt={campaign.name}
+                                                    onError={() =>
+                                                        setBrokenImageIds((prev) => ({
+                                                            ...prev,
+                                                            [campaign.id]: true
+                                                        }))
+                                                    }
+                                                />
+                                            ) : (
+                                                <div className="cm-card-media-fallback">
+                                                    <span className="material-symbols-outlined">image</span>
+                                                </div>
+                                            )}
+                                            <div className="cm-card-media-overlay" />
+                                            <div className="cm-card-platforms">
+                                                {(campaign.platform === 'facebook' || campaign.platform === 'both') ? (
+                                                    <div className="cm-platform-chip">
+                                                        <Facebook size={16} className="cm-platform-icon cm-platform-icon-facebook" />
+                                                    </div>
+                                                ) : null}
+                                                {(campaign.platform === 'instagram' || campaign.platform === 'both') ? (
+                                                    <div className="cm-platform-chip">
+                                                        <Instagram size={16} className="cm-platform-icon cm-platform-icon-instagram" />
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                            <div className={`cm-status-badge ${statusMeta.badgeClass}`}>{statusMeta.label}</div>
+                                        </div>
+                                        <div className="cm-card-body">
+                                            <div className="cm-card-head">
+                                                <div>
+                                                    <h4 className="cm-card-title headline-font">{campaign.name}</h4>
+                                                    <div className="cm-card-date">
+                                                        <span className="material-symbols-outlined">calendar_today</span>
+                                                        <span>{campaign.startDate || 'Not set'} - {campaign.endDate || 'Ongoing'}</span>
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    className="cm-card-menu"
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedCampaign(campaign);
+                                                        setShowEditModal(true);
+                                                    }}
+                                                    title="Edit campaign"
+                                                >
+                                                    <span className="material-symbols-outlined">more_vert</span>
+                                                </button>
+                                            </div>
+                                            <div className="cm-budget-box">
+                                                <div>
+                                                    <p className="cm-budget-label">Daily Budget</p>
+                                                    <p className="cm-budget-value">{getCampaignBudgetLabel(campaign)}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="cm-budget-label">Target ROI</p>
+                                                    <p className="cm-budget-value">{formatRatio(roas, 1)}</p>
+                                                </div>
+                                            </div>
+                                            <div className={`cm-metrics-grid ${statusMeta.metricsClass}`}>
+                                                <div className="cm-metric"><span>ROAS</span><strong className={roas > 0 ? 'cm-metric-primary' : ''}>{formatRatio(roas, 1)}</strong></div>
+                                                <div className="cm-metric"><span>CTR</span><strong>{formatPercent(campaign.ctr || 0)}</strong></div>
+                                                <div className="cm-metric"><span>CPC</span><strong>{formatCurrency(campaign.cpc || 0, 2)}</strong></div>
+                                                <div className="cm-metric"><span>Conversions</span><strong>{Number(campaign.conversions ?? campaign.clicks ?? 0).toLocaleString()}</strong></div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+
+                    {filteredCampaigns.length > 0 ? (
+                        <div className="cm-pagination">
+                            <div className="cm-pagination-text">
+                                Showing <span className="cm-pagination-strong">{showingStart}-{showingEnd}</span> of <span className="cm-pagination-strong">{filteredCampaigns.length}</span> campaigns
+                            </div>
+                            <div className="cm-pagination-controls">
+                                <button
+                                    className="cm-page-btn"
+                                    type="button"
+                                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                                    disabled={safeCurrentPage === 1}
+                                >
+                                    <span className="material-symbols-outlined">chevron_left</span>
+                                </button>
+                                {pageNumbers.map((pageNo) => (
+                                    <button
+                                        key={pageNo}
+                                        className={`cm-page-btn ${safeCurrentPage === pageNo ? 'cm-page-btn-active' : ''}`}
+                                        type="button"
+                                        onClick={() => setCurrentPage(pageNo)}
+                                    >
+                                        {pageNo}
+                                    </button>
                                 ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )}
-            </div>
+                                <button
+                                    className="cm-page-btn"
+                                    type="button"
+                                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                                    disabled={safeCurrentPage === totalPages}
+                                >
+                                    <span className="material-symbols-outlined">chevron_right</span>
+                                </button>
+                            </div>
+                        </div>
+                    ) : null}
+                </section>
+            </main>
 
             {/* Create Campaign Modal */}
             {showCreateModal && (
@@ -1102,18 +1251,6 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
     const activeTabIndex = tabSteps.findIndex((tab) => tab.key === activeTab);
     const isFirstTab = activeTabIndex <= 0;
     const isLastTab = activeTabIndex === tabSteps.length - 1;
-
-    useEffect(() => {
-        const allowedOptions = getOptimizationGoalOptions(formData.objective);
-        const allowedValues = allowedOptions.map((option) => option.value);
-
-        if (!allowedValues.includes(formData.optimizationGoal)) {
-            setFormData((prev) => ({
-                ...prev,
-                optimizationGoal: allowedOptions[0]?.value || prev.optimizationGoal
-            }));
-        }
-    }, [formData.objective, formData.optimizationGoal]);
 
     const handleSubmit = (e) => {
         e.preventDefault();
@@ -1224,7 +1361,14 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
                                         <label>Campaign Objective</label>
                                         <select
                                             value={formData.objective}
-                                            onChange={(e) => setFormData({...formData, objective: e.target.value})}
+                                            onChange={(e) => {
+                                                const objective = e.target.value;
+                                                setFormData((prev) => ({
+                                                    ...prev,
+                                                    objective,
+                                                    optimizationGoal: getDefaultOptimizationGoal(objective)
+                                                }));
+                                            }}
                                         >
                                             <option value="awareness">Brand Awareness</option>
                                             <option value="traffic">Traffic</option>

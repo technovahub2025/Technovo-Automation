@@ -913,3 +913,40 @@
         right: -50px;
     }
 }
+
+/* Column class-based sizing to keep layout stable when new columns are added */
+.data-table th.col-name,
+.data-table td.col-name {
+    min-width: 220px;
+}
+
+.data-table th.col-time,
+.data-table td.col-time {
+    min-width: 170px;
+}
+
+.data-table th.col-recipients,
+.data-table td.col-recipients,
+.data-table th.col-failed,
+.data-table td.col-failed {
+    min-width: 120px;
+    text-align: left !important;
+}
+
+.data-table th.col-reliability,
+.data-table td.col-reliability {
+    min-width: 95px;
+}
+
+.data-table th.col-status,
+.data-table td.col-status {
+    min-width: 240px;
+    text-align: left !important;
+}
+
+.data-table th.col-actions,
+.data-table td.col-actions {
+    min-width: 150px !important;
+    width: 150px !important;
+    white-space: nowrap !important;
+}

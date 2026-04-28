@@ -156,6 +156,11 @@ export const metaAdsService = {
     return response.data;
   },
 
+  async getBillingSummary() {
+    const response = await apiService.get("/api/meta-ads/billing-summary");
+    return response.data;
+  },
+
   async getWallet() {
     const response = await apiService.get("/api/meta-ads/wallet");
     return response.data;

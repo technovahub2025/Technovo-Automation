@@ -109,8 +109,21 @@ const Contacts = () => {
     const [auditLoading, setAuditLoading] = useState(false);
     const [auditError, setAuditError] = useState('');
     const [auditData, setAuditData] = useState(null);
+    const [notification, setNotification] = useState(null);
     const fileInputRef = useRef(null);
     const currentUserId = resolveCacheUserId();
+
+    const showNotification = useCallback((message, type = 'success') => {
+        const nextMessage = String(message || '').trim();
+        if (!nextMessage) return;
+        setNotification({ message: nextMessage, type: String(type || 'success').trim() || 'success' });
+    }, []);
+
+    useEffect(() => {
+        if (!notification?.message) return undefined;
+        const timer = window.setTimeout(() => setNotification(null), 2800);
+        return () => window.clearTimeout(timer);
+    }, [notification]);
 
     useEffect(() => {
         const cachedContacts = readSidebarPageCache(CONTACTS_CACHE_NAMESPACE, {
@@ -186,16 +199,16 @@ const persistContactsCache = useCallback((nextContacts) => {
             scope: 'marketing'
         });
         if (!link) {
-            alert('Unable to generate public opt-in link.');
+            showNotification('Unable to generate public opt-in link.', 'error');
             return;
         }
         try {
             await navigator.clipboard.writeText(link);
-            alert('Public opt-in link copied successfully.');
+            showNotification('Public opt-in link copied successfully.');
         } catch {
-            window.prompt('Copy this public opt-in link', link);
+            showNotification('Clipboard blocked. Open the opt-in page and copy the link manually.', 'error');
         }
-    }, []);
+    }, [showNotification]);
 
     const openPublicOptInLink = useCallback((contact) => {
         const link = buildPublicWhatsAppOptInDemoUrl(contact, {
@@ -203,15 +216,16 @@ const persistContactsCache = useCallback((nextContacts) => {
             scope: 'marketing'
         });
         if (!link) {
-            alert('Unable to generate public opt-in link.');
+            showNotification('Unable to generate public opt-in link.', 'error');
             return;
         }
         window.open(link, '_blank', 'noopener,noreferrer');
-    }, []);
+        showNotification('Public opt-in page opened in a new tab.');
+    }, [showNotification]);
 
     const handleAddContact = async () => {
         if (!newContact.phone) {
-            alert('Phone number is required');
+            showNotification('Phone number is required', 'error');
             return;
         }
 
@@ -231,9 +245,9 @@ const persistContactsCache = useCallback((nextContacts) => {
             await loadContacts({ silent: true });
             setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Unknown' });
             setShowAddModal(false);
-            alert('Contact added successfully!');
+            showNotification('Contact added successfully!');
         } catch (error) {
-            alert('Failed to add contact: ' + error.message);
+            showNotification('Failed to add contact: ' + error.message, 'error');
         }
     };
 
@@ -322,9 +336,9 @@ const persistContactsCache = useCallback((nextContacts) => {
             setEditingContact(null);
             setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Unknown' });
             setShowEditModal(false);
-            alert('Contact updated successfully!');
+            showNotification('Contact updated successfully!');
         } catch (error) {
-            alert('Failed to update contact: ' + error.message);
+            showNotification('Failed to update contact: ' + error.message, 'error');
         }
     };
 
@@ -346,9 +360,9 @@ const persistContactsCache = useCallback((nextContacts) => {
             }
 
             await loadContacts({ silent: true });
-            alert('Contact deleted successfully!');
+            showNotification('Contact deleted successfully!');
         } catch (error) {
-            alert('Failed to delete contact: ' + error.message);
+            showNotification('Failed to delete contact: ' + error.message, 'error');
         }
     };
 
@@ -373,7 +387,7 @@ const persistContactsCache = useCallback((nextContacts) => {
 
     const handleBulkDelete = async () => {
         if (selectedContacts.size === 0) {
-            alert('Please select at least one contact to delete');
+            showNotification('Please select at least one contact to delete', 'error');
             return;
         }
 
@@ -389,9 +403,9 @@ const persistContactsCache = useCallback((nextContacts) => {
             await Promise.all(deletePromises);
             await loadContacts({ silent: true });
             setSelectedContacts(new Set());
-            alert(`${selectedContacts.size} contact(s) deleted successfully!`);
+            showNotification(`${selectedContacts.size} contact(s) deleted successfully!`);
         } catch (error) {
-            alert('Failed to delete some contacts: ' + error.message);
+            showNotification('Failed to delete some contacts: ' + error.message, 'error');
         }
     };
 
@@ -434,6 +448,7 @@ const persistContactsCache = useCallback((nextContacts) => {
             });
             await loadContacts({ silent: true });
             closeWhatsAppOptInModal();
+            showNotification('WhatsApp opt-in updated successfully.');
         } catch (error) {
             setOptInError(error?.response?.data?.error || error.message || 'Failed to update WhatsApp opt-in.');
         } finally {
@@ -445,8 +460,9 @@ const persistContactsCache = useCallback((nextContacts) => {
         try {
             await apiClient.markContactWhatsAppOptOut(contact._id, { source: 'contacts_ui' });
             await loadContacts({ silent: true });
+            showNotification('WhatsApp opt-out updated.');
         } catch (error) {
-            alert('Failed to update WhatsApp opt-out: ' + error.message);
+            showNotification('Failed to update WhatsApp opt-out: ' + error.message, 'error');
         }
     };
 
@@ -496,13 +512,17 @@ const persistContactsCache = useCallback((nextContacts) => {
         const raw = (contact?.sourceType || contact?.source || '').toString().toLowerCase();
         if (raw === 'incoming_message' || raw === 'message' || raw === 'conversation') return 'incoming_message';
         if (raw === 'imported' || raw === 'import') return 'imported';
+        if (raw === 'public_opt_in' || raw === 'landing_page' || raw === 'qr_page' || raw === 'contacts_share') return 'public_opt_in';
+        if (raw === 'meta_lead_ads' || raw === 'meta_lead') return 'meta_lead_ads';
         return 'manual';
     };
 
     const sourceLabelMap = {
         manual: 'User Created',
         imported: 'CSV Import',
-        incoming_message: 'Message'
+        incoming_message: 'Message',
+        public_opt_in: 'Public Opt-In',
+        meta_lead_ads: 'Meta Lead Ad'
     };
 
     // Import functions
@@ -521,7 +541,7 @@ const persistContactsCache = useCallback((nextContacts) => {
             const lines = text.split('\n').filter(line => line.trim());
             
             if (lines.length < 2) {
-                alert('CSV file must contain at least a header row and one data row');
+                showNotification('CSV file must contain at least a header row and one data row', 'error');
                 return;
             }
 
@@ -610,7 +630,7 @@ const persistContactsCache = useCallback((nextContacts) => {
         const mappedContacts = getMappedContacts();
         
         if (mappedContacts.length === 0) {
-            alert('No valid contacts to import');
+            showNotification('No valid contacts to import', 'error');
             return;
         }
 
@@ -619,7 +639,7 @@ const persistContactsCache = useCallback((nextContacts) => {
             const result = await apiClient.importContacts(mappedContacts);
             
             if (result.data.success) {
-                alert(`Successfully imported ${mappedContacts.length} contacts!`);
+                showNotification(`Successfully imported ${mappedContacts.length} contacts!`);
                 setShowImportModal(false);
                 setImportFile(null);
                 setImportPreview([]);
@@ -627,10 +647,10 @@ const persistContactsCache = useCallback((nextContacts) => {
                 setImportStep('upload');
                 await loadContacts({ silent: true });
             } else {
-                alert('Import failed: ' + (result.data.error || 'Unknown error'));
+                showNotification('Import failed: ' + (result.data.error || 'Unknown error'), 'error');
             }
         } catch (error) {
-            alert('Import failed: ' + error.message);
+            showNotification('Import failed: ' + error.message, 'error');
         } finally {
             setLoading(false);
         }
@@ -779,6 +799,12 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                     )}
                 </div>
             </div>
+
+            {notification?.message ? (
+                <div className={`notification ${notification.type === 'error' ? 'error' : 'success'}`}>
+                    {notification.message}
+                </div>
+            ) : null}
 
             <div className="contacts-controls">
                 <div className="search-box">
@@ -929,7 +955,11 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
 
             <div className="contacts-table-container">
                 {loading ? (
-                    <div className="loading">Loading contacts...</div>
+                    <div className="contacts-skeleton">
+                        {Array.from({ length: 6 }, (_, index) => (
+                            <div key={`contacts-skeleton-${index}`} className="contacts-skeleton-row" />
+                        ))}
+                    </div>
                 ) : displayedContacts.length > 0 ? (
                     <table className="contacts-table">
                         <thead>

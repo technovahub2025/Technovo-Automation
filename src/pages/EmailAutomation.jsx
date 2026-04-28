@@ -98,12 +98,12 @@ const parseCsvRecipients = (text = "") => {
     }
 
     if (!emailRegex.test(email)) {
-      errors.push(`Row ${rowNumber}: invalid email \"${email}\".`);
+      errors.push(`Row ${rowNumber}: invalid email "${email}".`);
       continue;
     }
 
     if (seen.has(email)) {
-      errors.push(`Row ${rowNumber}: duplicate email \"${email}\".`);
+      errors.push(`Row ${rowNumber}: duplicate email "${email}".`);
       continue;
     }
 

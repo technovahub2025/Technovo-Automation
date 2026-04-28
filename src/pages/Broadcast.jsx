@@ -8,6 +8,7 @@ import { useBroadcast, useCampaignAutomation } from '../hooks/useBroadcast';
 import BroadcastHeader from '../components/broadcastComponents/BroadcastHeader';
 import DateRangeFilter from '../components/broadcastComponents/DateRangeFilter';
 import OverviewStats from '../components/broadcastComponents/OverviewStats';
+import ReliabilityInsights from '../components/broadcastComponents/ReliabilityInsights';
 
 import { getCachedOverviewStats } from '../utils/stableBroadcastStats';
 
@@ -187,6 +188,26 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const [metaLeadBatchResult, setMetaLeadBatchResult] = useState(null);
   const [broadcastMode, setBroadcastMode] = useState('whatsapp');
   const [outboundPhaseTab, setOutboundPhaseTab] = useState('quick');
+  const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
+  const [quietHoursStartHour, setQuietHoursStartHour] = useState(22);
+  const [quietHoursEndHour, setQuietHoursEndHour] = useState(9);
+  const [quietHoursTimezone, setQuietHoursTimezone] = useState('Asia/Kolkata');
+  const [quietHoursAction, setQuietHoursAction] = useState('defer');
+  const [retryPolicyEnabled, setRetryPolicyEnabled] = useState(true);
+  const [retryMaxAttempts, setRetryMaxAttempts] = useState(3);
+  const [retryBackoffSeconds, setRetryBackoffSeconds] = useState(45);
+  const [respectOptOut, setRespectOptOut] = useState(true);
+  const [suppressionListRaw, setSuppressionListRaw] = useState('');
+  const [reliabilitySummary, setReliabilitySummary] = useState({
+    campaigns: 0,
+    recipientCount: 0,
+    suppressed: 0,
+    deferred: 0,
+    retried: 0,
+    skippedQuietHours: 0,
+    failureCodeBreakdown: {},
+    topFailureCode: null
+  });
   const broadcastSubmitInFlightRef = useRef(false);
   const {
     scheduleLoading,
@@ -263,6 +284,70 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
   const paginate = (pageNumber) => setCurrentPage(pageNumber);
   const stats = getCachedOverviewStats(broadcasts);
+  const mergedOverviewStats = {
+    ...stats,
+    suppressed: Number(reliabilitySummary?.suppressed || 0),
+    deferred: Number(reliabilitySummary?.deferred || 0),
+    retried: Number(reliabilitySummary?.retried || 0),
+    skippedQuietHours: Number(reliabilitySummary?.skippedQuietHours || 0)
+  };
+
+  useEffect(() => {
+    let isAlive = true;
+
+    const loadReliabilitySummary = async () => {
+      const params = {};
+      if (statusFilter && statusFilter !== 'all') {
+        params.status = statusFilter;
+      }
+      if (startDate) {
+        params.dateFrom = startDate;
+      }
+      if (endDate) {
+        params.dateTo = endDate;
+      }
+
+      try {
+        const response = await apiClient.getBroadcastReliabilitySummary(params);
+        const payload = response?.data?.data || {};
+        if (!isAlive) return;
+        setReliabilitySummary({
+          campaigns: Number(payload?.campaigns || 0),
+          recipientCount: Number(payload?.recipientCount || 0),
+          suppressed: Number(payload?.suppressed || 0),
+          deferred: Number(payload?.deferred || 0),
+          retried: Number(payload?.retried || 0),
+          skippedQuietHours: Number(payload?.skippedQuietHours || 0),
+          failureCodeBreakdown:
+            payload?.failureCodeBreakdown && typeof payload.failureCodeBreakdown === 'object'
+              ? payload.failureCodeBreakdown
+              : {},
+          topFailureCode:
+            payload?.topFailureCode && typeof payload.topFailureCode === 'object'
+              ? payload.topFailureCode
+              : null
+        });
+      } catch (_error) {
+        if (!isAlive) return;
+        setReliabilitySummary({
+          campaigns: 0,
+          recipientCount: 0,
+          suppressed: 0,
+          deferred: 0,
+          retried: 0,
+          skippedQuietHours: 0,
+          failureCodeBreakdown: {},
+          topFailureCode: null
+        });
+      }
+    };
+
+    loadReliabilitySummary();
+
+    return () => {
+      isAlive = false;
+    };
+  }, [broadcasts, statusFilter, startDate, endDate]);
 
 
 
@@ -606,12 +691,155 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
   };
 
+  const clearBroadcastCsvInputs = () => {
+    const popupFileInput = document.getElementById('csv-file-popup');
+    if (popupFileInput) {
+      popupFileInput.value = '';
+    }
+    const scheduleFileInput = document.getElementById('broadcast-csv-upload');
+    if (scheduleFileInput) {
+      scheduleFileInput.value = '';
+    }
+  };
+
   const buildProcessedRecipients = () =>
     recipients.map((recipient) => ({
       phone: recipient.phone,
       variables: recipient.variables || [],
       data: recipient.data || recipient.fullData || recipient
     }));
+
+  const prepareRecipientsForDelivery = () => {
+    const processedRecipients = buildProcessedRecipients();
+    const seenPhones = new Set();
+    let missingPhoneCount = 0;
+    let duplicatePhoneCount = 0;
+
+    const eligibleRecipients = processedRecipients.filter((recipient) => {
+      const phone = String(recipient?.phone || '').trim();
+      if (!phone || phone === '-') {
+        missingPhoneCount += 1;
+        return false;
+      }
+      if (seenPhones.has(phone)) {
+        duplicatePhoneCount += 1;
+        return false;
+      }
+      seenPhones.add(phone);
+      return true;
+    });
+
+    return {
+      eligibleRecipients,
+      missingPhoneCount,
+      duplicatePhoneCount
+    };
+  };
+
+  const validatePreparedRecipients = ({
+    eligibleRecipients,
+    missingPhoneCount,
+    duplicatePhoneCount
+  }) => {
+    if (!eligibleRecipients.length) {
+      alert('No valid recipients found. Please ensure CSV has unique phone numbers.');
+      return false;
+    }
+
+    if (missingPhoneCount > 0 || duplicatePhoneCount > 0) {
+      alert(
+        `Recipient issues found: ${missingPhoneCount} missing-phone and ${duplicatePhoneCount} duplicate rows. Please run Auto-clean before sending.`
+      );
+      return false;
+    }
+
+    return true;
+  };
+
+  const getScheduledAtIso = () => {
+    if (!scheduledTime) return null;
+    const parsed = new Date(scheduledTime);
+    if (Number.isNaN(parsed.getTime())) return null;
+    return parsed.toISOString();
+  };
+
+  const validateScheduledTime = () => {
+    if (!scheduledTime) return true;
+    const scheduledIso = getScheduledAtIso();
+    if (!scheduledIso) {
+      alert('Invalid scheduled time. Please choose a valid date and time.');
+      return false;
+    }
+    if (new Date(scheduledIso).getTime() <= Date.now()) {
+      alert('Scheduled time must be in the future.');
+      return false;
+    }
+    return true;
+  };
+
+  const parseIntegerInRange = (value, { min, max, fallback }) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(max, Math.max(min, Math.trunc(parsed)));
+  };
+
+  const buildPolicyPayload = () => {
+    const suppressionListPhones = Array.from(
+      new Set(
+        String(suppressionListRaw || '')
+          .split(/[\n,;\s]+/)
+          .map((item) => item.trim())
+          .filter(Boolean)
+      )
+    );
+
+    return {
+      deliveryPolicy: {
+        quietHours: {
+          enabled: Boolean(quietHoursEnabled),
+          startHour: parseIntegerInRange(quietHoursStartHour, { min: 0, max: 23, fallback: 22 }),
+          endHour: parseIntegerInRange(quietHoursEndHour, { min: 0, max: 23, fallback: 9 }),
+          timezone: String(quietHoursTimezone || '').trim() || 'Asia/Kolkata',
+          action: String(quietHoursAction || '').toLowerCase() === 'skip' ? 'skip' : 'defer'
+        }
+      },
+      retryPolicy: {
+        enabled: Boolean(retryPolicyEnabled),
+        maxAttempts: parseIntegerInRange(retryMaxAttempts, { min: 1, max: 5, fallback: 3 }),
+        backoffSeconds: parseIntegerInRange(retryBackoffSeconds, { min: 0, max: 300, fallback: 45 })
+      },
+      compliancePolicy: {
+        respectOptOut: respectOptOut !== false,
+        suppressionListPhones
+      }
+    };
+  };
+
+  const handleAutoCleanRecipients = () => {
+    if (!Array.isArray(recipients) || recipients.length === 0) {
+      alert('No recipients available to clean.');
+      return;
+    }
+
+    const {
+      eligibleRecipients,
+      missingPhoneCount,
+      duplicatePhoneCount
+    } = prepareRecipientsForDelivery();
+    const removedCount = missingPhoneCount + duplicatePhoneCount;
+
+    if (removedCount === 0) {
+      alert('Recipients are already clean. No missing or duplicate phone rows found.');
+      return;
+    }
+
+    setRecipients(eligibleRecipients);
+    if (!eligibleRecipients.length) {
+      setFileVariables([]);
+    }
+    clearBroadcastCsvInputs();
+    alert(`Auto-clean completed. Removed ${removedCount} issue rows.`);
+  };
 
   const validateAudienceOrAbort = async ({ recipientsPayload, selectedTemplate }) => {
     const templateCategory =
@@ -667,6 +895,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
     }
 
+    if (!validateScheduledTime()) {
+      return;
+    }
+
 
 
     try {
@@ -689,6 +921,11 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
     let templateContent = '';
     let selectedTemplate = null;
+
+    if (messageType === 'text' && !String(customMessage || '').trim()) {
+      alert('Please enter a custom message.');
+      return;
+    }
 
     if (messageType === 'template') {
 
@@ -742,9 +979,12 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     try {
       broadcastSubmitInFlightRef.current = true;
       setIsSending(true);
-      const processedRecipients = buildProcessedRecipients();
+      const recipientPreparation = prepareRecipientsForDelivery();
+      if (!validatePreparedRecipients(recipientPreparation)) {
+        return;
+      }
       const audienceValidation = await validateAudienceOrAbort({
-        recipientsPayload: processedRecipients,
+        recipientsPayload: recipientPreparation.eligibleRecipients,
         selectedTemplate
       });
       if (!audienceValidation) {
@@ -761,7 +1001,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         messageType,
 
-        recipients: audienceValidation.validation?.eligibleRecipients || processedRecipients,
+        recipients: audienceValidation.validation?.eligibleRecipients || recipientPreparation.eligibleRecipients,
 
         ...(messageType === 'template' ? {
 
@@ -782,9 +1022,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         } : { customMessage }),
 
-        ...(scheduledTime ? { 
-          scheduledAt: new Date(scheduledTime).toISOString() 
+        ...(scheduledTime && getScheduledAtIso() ? {
+          scheduledAt: getScheduledAtIso()
         } : {}),
+        ...buildPolicyPayload()
 
       };
 
@@ -819,6 +1060,16 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         setRecipients([]);
 
         setFileVariables([]);
+        setQuietHoursEnabled(false);
+        setQuietHoursStartHour(22);
+        setQuietHoursEndHour(9);
+        setQuietHoursTimezone('Asia/Kolkata');
+        setQuietHoursAction('defer');
+        setRetryPolicyEnabled(true);
+        setRetryMaxAttempts(3);
+        setRetryBackoffSeconds(45);
+        setRespectOptOut(true);
+        setSuppressionListRaw('');
 
 
 
@@ -897,6 +1148,11 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     let templateContent = '';
     let selectedTemplate = null;
 
+    if (messageType === 'text' && !String(customMessage || '').trim()) {
+      alert('Please enter a custom message.');
+      return;
+    }
+
     if (messageType === 'template') {
 
       if (!templateName) {
@@ -953,9 +1209,12 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
     try {
-      const processedRecipients = buildProcessedRecipients();
+      const recipientPreparation = prepareRecipientsForDelivery();
+      if (!validatePreparedRecipients(recipientPreparation)) {
+        return;
+      }
       const audienceValidation = await validateAudienceOrAbort({
-        recipientsPayload: processedRecipients,
+        recipientsPayload: recipientPreparation.eligibleRecipients,
         selectedTemplate
       });
       if (!audienceValidation) {
@@ -974,7 +1233,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         messageType,
 
-        recipients: audienceValidation.validation?.eligibleRecipients || processedRecipients,
+        recipients: audienceValidation.validation?.eligibleRecipients || recipientPreparation.eligibleRecipients,
 
         ...(messageType === 'template' ? { 
           templateName, 
@@ -982,6 +1241,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           templateContent,
           templateCategory: audienceValidation.templateCategory
         } : { customMessage }),
+        ...buildPolicyPayload()
 
       };
 
@@ -1020,6 +1280,16 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         setScheduledTime('');
 
         setMessageType('template');
+        setQuietHoursEnabled(false);
+        setQuietHoursStartHour(22);
+        setQuietHoursEndHour(9);
+        setQuietHoursTimezone('Asia/Kolkata');
+        setQuietHoursAction('defer');
+        setRetryPolicyEnabled(true);
+        setRetryMaxAttempts(3);
+        setRetryBackoffSeconds(45);
+        setRespectOptOut(true);
+        setSuppressionListRaw('');
 
         if (composerMode) {
           navigate('/broadcast');
@@ -1207,6 +1477,16 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     setTemplateVariables([]);
     setSelectedLocalTemplate('');
     setMessageType('template');
+    setQuietHoursEnabled(false);
+    setQuietHoursStartHour(22);
+    setQuietHoursEndHour(9);
+    setQuietHoursTimezone('Asia/Kolkata');
+    setQuietHoursAction('defer');
+    setRetryPolicyEnabled(true);
+    setRetryMaxAttempts(3);
+    setRetryBackoffSeconds(45);
+    setRespectOptOut(true);
+    setSuppressionListRaw('');
   };
 
   const buildBroadcastPayloadFromValidation = ({
@@ -1247,9 +1527,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         : mode === 'send'
           ? { customMessage }
           : { customMessage }),
-      ...(mode === 'create' && scheduledTime
-        ? { scheduledAt: new Date(scheduledTime).toISOString() }
-        : {})
+      ...(mode === 'create' && getScheduledAtIso()
+        ? { scheduledAt: getScheduledAtIso() }
+        : {}),
+      ...buildPolicyPayload()
     };
   };
 
@@ -1260,14 +1541,29 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       return;
     }
 
-    const processedRecipients = buildProcessedRecipients();
+    if (scheduledTime && !validateScheduledTime()) {
+      closeAudienceValidationModal();
+      return;
+    }
+
+    if (messageType === 'text' && !String(customMessage || '').trim()) {
+      closeAudienceValidationModal();
+      alert('Please enter a custom message.');
+      return;
+    }
+
+    const recipientPreparation = prepareRecipientsForDelivery();
+    if (!validatePreparedRecipients(recipientPreparation)) {
+      closeAudienceValidationModal();
+      return;
+    }
     const selectedTemplate = messageType === 'template'
       ? officialTemplates.find((t) => t.name === templateName) || null
       : null;
     const mode = scheduledTime ? 'create' : 'send';
     const payload = buildBroadcastPayloadFromValidation({
       validationResult,
-      recipientsPayload: processedRecipients,
+      recipientsPayload: recipientPreparation.eligibleRecipients,
       selectedTemplate,
       mode
     });
@@ -1412,6 +1708,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           recipients={recipients}
           fileVariables={fileVariables}
           onClearUpload={handleClearUpload}
+          onAutoCleanRecipients={handleAutoCleanRecipients}
           scheduledTime={scheduledTime}
           onScheduledTimeChange={(e) => setScheduledTime(e.target.value)}
           isSending={isSending}
@@ -1423,6 +1720,26 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           onMetaLeadBatchSync={handleMetaLeadBatchSync}
           metaLeadBatchLoading={metaLeadBatchLoading}
           metaLeadBatchResult={metaLeadBatchResult}
+          quietHoursEnabled={quietHoursEnabled}
+          onQuietHoursEnabledChange={setQuietHoursEnabled}
+          quietHoursStartHour={quietHoursStartHour}
+          onQuietHoursStartHourChange={setQuietHoursStartHour}
+          quietHoursEndHour={quietHoursEndHour}
+          onQuietHoursEndHourChange={setQuietHoursEndHour}
+          quietHoursTimezone={quietHoursTimezone}
+          onQuietHoursTimezoneChange={setQuietHoursTimezone}
+          quietHoursAction={quietHoursAction}
+          onQuietHoursActionChange={setQuietHoursAction}
+          retryPolicyEnabled={retryPolicyEnabled}
+          onRetryPolicyEnabledChange={setRetryPolicyEnabled}
+          retryMaxAttempts={retryMaxAttempts}
+          onRetryMaxAttemptsChange={setRetryMaxAttempts}
+          retryBackoffSeconds={retryBackoffSeconds}
+          onRetryBackoffSecondsChange={setRetryBackoffSeconds}
+          respectOptOut={respectOptOut}
+          onRespectOptOutChange={setRespectOptOut}
+          suppressionListRaw={suppressionListRaw}
+          onSuppressionListRawChange={setSuppressionListRaw}
         />
       </div>
     );
@@ -1559,7 +1876,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
 
-          <OverviewStats stats={stats} />
+          <OverviewStats stats={mergedOverviewStats} />
+          <ReliabilityInsights data={reliabilitySummary} />
 
 
 
@@ -1676,6 +1994,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           fileVariables={fileVariables}
 
           onClearUpload={handleClearUpload}
+          onAutoCleanRecipients={handleAutoCleanRecipients}
 
           scheduledTime={scheduledTime}
 
@@ -1698,6 +2017,26 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           metaLeadBatchLoading={metaLeadBatchLoading}
 
           metaLeadBatchResult={metaLeadBatchResult}
+          quietHoursEnabled={quietHoursEnabled}
+          onQuietHoursEnabledChange={setQuietHoursEnabled}
+          quietHoursStartHour={quietHoursStartHour}
+          onQuietHoursStartHourChange={setQuietHoursStartHour}
+          quietHoursEndHour={quietHoursEndHour}
+          onQuietHoursEndHourChange={setQuietHoursEndHour}
+          quietHoursTimezone={quietHoursTimezone}
+          onQuietHoursTimezoneChange={setQuietHoursTimezone}
+          quietHoursAction={quietHoursAction}
+          onQuietHoursActionChange={setQuietHoursAction}
+          retryPolicyEnabled={retryPolicyEnabled}
+          onRetryPolicyEnabledChange={setRetryPolicyEnabled}
+          retryMaxAttempts={retryMaxAttempts}
+          onRetryMaxAttemptsChange={setRetryMaxAttempts}
+          retryBackoffSeconds={retryBackoffSeconds}
+          onRetryBackoffSecondsChange={setRetryBackoffSeconds}
+          respectOptOut={respectOptOut}
+          onRespectOptOutChange={setRespectOptOut}
+          suppressionListRaw={suppressionListRaw}
+          onSuppressionListRawChange={setSuppressionListRaw}
 
         />
 
@@ -1803,6 +2142,26 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         }}
 
         getCurrentTime={getCurrentTime}
+        quietHoursEnabled={quietHoursEnabled}
+        onQuietHoursEnabledChange={setQuietHoursEnabled}
+        quietHoursStartHour={quietHoursStartHour}
+        onQuietHoursStartHourChange={setQuietHoursStartHour}
+        quietHoursEndHour={quietHoursEndHour}
+        onQuietHoursEndHourChange={setQuietHoursEndHour}
+        quietHoursTimezone={quietHoursTimezone}
+        onQuietHoursTimezoneChange={setQuietHoursTimezone}
+        quietHoursAction={quietHoursAction}
+        onQuietHoursActionChange={setQuietHoursAction}
+        retryPolicyEnabled={retryPolicyEnabled}
+        onRetryPolicyEnabledChange={setRetryPolicyEnabled}
+        retryMaxAttempts={retryMaxAttempts}
+        onRetryMaxAttemptsChange={setRetryMaxAttempts}
+        retryBackoffSeconds={retryBackoffSeconds}
+        onRetryBackoffSecondsChange={setRetryBackoffSeconds}
+        respectOptOut={respectOptOut}
+        onRespectOptOutChange={setRespectOptOut}
+        suppressionListRaw={suppressionListRaw}
+        onSuppressionListRawChange={setSuppressionListRaw}
 
       />
 
@@ -1821,6 +2180,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         onClose={() => { }}
         getReadPercentage={getReadPercentage}
         getStatusClass={getStatusClass}
+        onViewAnalytics={handleViewAnalytics}
         onStopBroadcast={stopBroadcast}
         onDeleteClick={handleDeleteClick}
       />

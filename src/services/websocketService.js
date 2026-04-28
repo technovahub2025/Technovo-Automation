@@ -67,7 +67,11 @@ const deriveWsUrlFromApiBase = (apiBaseUrl) => {
   const trimmed = String(apiBaseUrl || '').trim();
   if (!trimmed) return '';
 
-  const normalized = trimmed.replace(/\/api\/?$/i, '');
+  const normalized = trimmed
+    .replace(/^ws:\/\//i, 'http://')
+    .replace(/^wss:\/\//i, 'https://')
+    .replace(/\/api\/?$/i, '')
+    .replace(/\/+$/g, '');
   if (/^https:\/\//i.test(normalized)) return normalized.replace(/^https:\/\//i, 'wss://');
   if (/^http:\/\//i.test(normalized)) return normalized.replace(/^http:\/\//i, 'ws://');
   return normalized;
@@ -89,7 +93,7 @@ class WebSocketService extends EventEmitter {
     this.reconnectInterval = 2000; // Start with 2 seconds
     this.maxReconnectInterval = 30000; // Max 30 seconds
     this.heartbeatInterval = null;
-    this.isConnecting = false;
+    this.connecting = false;
     this.connectionPromise = null;
     
     // WebSocket URL from env, with API base fallback
@@ -103,7 +107,7 @@ class WebSocketService extends EventEmitter {
       '';
 
     this.wsUrl =
-      String(explicitWsUrl || '').trim() ||
+      deriveWsUrlFromApiBase(String(explicitWsUrl || '').trim()) ||
       deriveWsUrlFromApiBase(apiBaseForFallback) ||
       'ws://localhost:3001';
     console.log('🔌 WebSocket URL:', this.wsUrl);
@@ -137,31 +141,32 @@ class WebSocketService extends EventEmitter {
     this.currentUserId = userId;
     this.messageHandler = onMessage;
     this.manualClose = false;
-    this.isConnecting = true;
+    this.connecting = true;
 
     this.connectionPromise = new Promise((resolve, reject) => {
       this.clearReconnect();
+      let timeoutId = null;
       
       try {
         console.log(`🔌 Connecting to WebSocket: ${this.wsUrl}`);
         this.ws = new WebSocket(this.wsUrl);
         
         // Set up event listeners
-        this.ws.onopen = (event) => this.handleOpen(event, resolve, reject);
+        this.ws.onopen = (event) => this.handleOpen(event, resolve, reject, timeoutId);
         this.ws.onmessage = this.handleMessage;
-        this.ws.onerror = (error) => this.handleError(error, reject);
+        this.ws.onerror = (error) => this.handleError(error, reject, timeoutId);
         this.ws.onclose = (event) => this.handleClose(event);
         
         // Set connection timeout
-        setTimeout(() => {
-          if (this.isConnecting) {
-            this.isConnecting = false;
+        timeoutId = setTimeout(() => {
+          if (this.connecting) {
+            this.connecting = false;
             reject(new Error('WebSocket connection timeout'));
           }
         }, 10000);
         
       } catch (error) {
-        this.isConnecting = false;
+        this.connecting = false;
         reject(error);
       }
     });
@@ -172,9 +177,10 @@ class WebSocketService extends EventEmitter {
   /**
    * Handle WebSocket open event
    */
-  handleOpen(event, resolve, reject) {
+  handleOpen(event, resolve, _reject, timeoutId) {
+    if (timeoutId) clearTimeout(timeoutId);
     console.log('✅ WebSocket connected successfully');
-    this.isConnecting = false;
+    this.connecting = false;
     this.reconnectAttempts = 0;
     this.reconnectInterval = 2000; // Reset reconnect interval
     
@@ -223,15 +229,17 @@ class WebSocketService extends EventEmitter {
   /**
    * Handle WebSocket error event
    */
-  handleError(error, reject) {
+  handleError(error, reject, timeoutId) {
+    if (timeoutId) clearTimeout(timeoutId);
     console.error('❌ WebSocket error:', error);
-    this.isConnecting = false;
+    const wasConnecting = this.connecting;
+    this.connecting = false;
     
     // Emit error event
     this.emit('error', { type: 'websocket_error', error });
     
     // Reject connection promise if still connecting
-    if (reject && this.isConnecting) {
+    if (reject && wasConnecting) {
       reject(error);
     }
   }
@@ -243,7 +251,7 @@ class WebSocketService extends EventEmitter {
     console.log(`🔌 WebSocket disconnected. Code: ${event.code}, Reason: ${event.reason}`);
     this.ws = null;
     this.stopHeartbeat();
-    this.isConnecting = false;
+    this.connecting = false;
     this.connectionPromise = null;
     
     // Emit disconnect event
@@ -339,7 +347,9 @@ class WebSocketService extends EventEmitter {
       try {
         const message = JSON.stringify(data);
         this.ws.send(message);
-        console.log('📤 WebSocket message sent:', data.type);
+        if (data?.type !== 'ping') {
+          console.log('📤 WebSocket message sent:', data.type);
+        }
         return true;
       } catch (error) {
         console.error('❌ Failed to send WebSocket message:', error);
@@ -359,7 +369,7 @@ class WebSocketService extends EventEmitter {
     this.manualClose = true;
     this.clearReconnect();
     this.stopHeartbeat();
-    this.isConnecting = false;
+    this.connecting = false;
     this.connectionPromise = null;
     
     if (this.ws) {
@@ -404,7 +414,7 @@ class WebSocketService extends EventEmitter {
    * @returns {boolean} Connecting status
    */
   isConnecting() {
-    return this.isConnecting || (this.ws && this.ws.readyState === WebSocket.CONNECTING);
+    return this.connecting || (this.ws && this.ws.readyState === WebSocket.CONNECTING);
   }
 
   /**
@@ -463,8 +473,8 @@ class WebSocketService extends EventEmitter {
    * @param {string} url - New WebSocket URL
    */
   setWebSocketUrl(url) {
-    this.wsUrl = url;
-    console.log(`🔗 WebSocket URL updated to: ${url}`);
+    this.wsUrl = deriveWsUrlFromApiBase(url) || this.wsUrl;
+    console.log(`🔗 WebSocket URL updated to: ${this.wsUrl}`);
   }
 }
 

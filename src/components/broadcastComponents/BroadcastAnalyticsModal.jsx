@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { X, TrendingUp, Users, MessageCircle, CheckCircle, Eye, AlertCircle } from 'lucide-react';
 import './BroadcastAnalyticsModal.css';
 import { apiClient } from '../../services/whatsappapi';
@@ -7,9 +7,25 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
   const [activeTab, setActiveTab] = useState('overview');
   const [recipientDetails, setRecipientDetails] = useState([]);
   const [isRecipientLoading, setIsRecipientLoading] = useState(false);
+  const [broadcastDetails, setBroadcastDetails] = useState(null);
+  const [retryLoading, setRetryLoading] = useState(false);
+  const [retryMessage, setRetryMessage] = useState('');
   const safeBroadcast = broadcast || {};
-  const stats = safeBroadcast.stats || {};
-  const totalRecipients = safeBroadcast.recipientCount || safeBroadcast.recipients?.length || 0;
+  const mergedBroadcast = broadcastDetails || safeBroadcast;
+  const stats = mergedBroadcast.stats || {};
+  const totalRecipients = mergedBroadcast.recipientCount || mergedBroadcast.recipients?.length || 0;
+  const statusBreakdown = mergedBroadcast.statusBreakdown || {};
+  const retrySummary = mergedBroadcast.retrySummary || {};
+  const reliabilityAnalytics = retrySummary.analytics || {};
+  const retryPolicy = retrySummary.retryPolicy || {};
+  const deliveryPolicy = retrySummary.deliveryPolicy || {};
+  const compliancePolicy = retrySummary.compliancePolicy || {};
+  const quietHours = deliveryPolicy.quietHours || {};
+  const failureCodeBreakdown = reliabilityAnalytics.failureCodeBreakdown || {};
+  const failureCodeRows = Object.entries(failureCodeBreakdown)
+    .map(([code, count]) => ({ code, count: Number(count || 0) }))
+    .filter((item) => item.count > 0)
+    .sort((a, b) => b.count - a.count);
 
   // Calculate percentages
   const deliveryRate = totalRecipients > 0 ? Math.round((stats.delivered / totalRecipients) * 100) : 0;
@@ -57,7 +73,7 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
 
   const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
 
-  const buildNameMap = (items = []) => {
+  const buildNameMap = useCallback((items = []) => {
     const map = new Map();
     (Array.isArray(items) ? items : []).forEach((recipient) => {
       const rawPhone = recipient?.phone || recipient;
@@ -68,9 +84,9 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
       }
     });
     return map;
-  };
+  }, []);
 
-  const applyRecipientNames = (rows = [], nameMap = new Map()) =>
+  const applyRecipientNames = useCallback((rows = [], nameMap = new Map()) =>
     (Array.isArray(rows) ? rows : []).map((row) => {
       const currentName = String(row?.name || '').trim();
       if (currentName) return row;
@@ -79,11 +95,14 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
         ...row,
         name: mappedName || ''
       };
-    });
+    }), []);
 
-  useEffect(() => {
-    const loadRecipientDetails = async () => {
-      if (!isOpen || !safeBroadcast?._id) return;
+  const loadRecipientDetails = useCallback(async () => {
+      if (!isOpen || !safeBroadcast?._id) {
+        setBroadcastDetails(null);
+        setRetryMessage('');
+        return;
+      }
       setIsRecipientLoading(true);
       try {
         const [broadcastResult, contactsResult] = await Promise.allSettled([
@@ -97,6 +116,7 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
           contactsResult.status === 'fulfilled' ? contactsResult.value : null;
 
         const payload = response?.data?.data || response?.data || {};
+        setBroadcastDetails(payload);
         const contactsPayload =
           contactsResponse?.data?.data || contactsResponse?.data || [];
         const apiRows = Array.isArray(payload?.recipientDetails) ? payload.recipientDetails : [];
@@ -116,16 +136,51 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
       } finally {
         setIsRecipientLoading(false);
       }
-    };
+  }, [isOpen, safeBroadcast?._id, safeBroadcast?.recipients, applyRecipientNames, buildNameMap]);
 
+  useEffect(() => {
     loadRecipientDetails();
-  }, [isOpen, safeBroadcast?._id]);
+  }, [loadRecipientDetails]);
+
+  const handleRetryFailedRecipients = async () => {
+    if (!safeBroadcast?._id) return;
+    setRetryLoading(true);
+    setRetryMessage('');
+
+    try {
+      const response = await apiClient.retryFailedBroadcastRecipients(safeBroadcast._id);
+      const payload = response?.data?.data || response?.data || {};
+      const retriedCount = Number(payload?.retriedRecipients || 0);
+      setRetryMessage(
+        retriedCount > 0
+          ? `Retry started for ${retriedCount} recipients.`
+          : 'Retry request completed.'
+      );
+      await loadRecipientDetails();
+      setActiveTab('recipients');
+    } catch (error) {
+      const message = error?.response?.data?.error || error?.message || 'Retry failed';
+      setRetryMessage(message);
+    } finally {
+      setRetryLoading(false);
+    }
+  };
 
   const formatDateTime = (value) => {
     if (!value) return '-';
     const parsed = new Date(value);
     if (Number.isNaN(parsed.getTime())) return '-';
     return parsed.toLocaleString();
+  };
+
+  const formatBoolean = (value) => (value ? 'Enabled' : 'Disabled');
+
+  const formatQuietHours = () => {
+    if (!quietHours?.enabled) return 'Disabled';
+    const startHour = Number(quietHours.startHour);
+    const endHour = Number(quietHours.endHour);
+    if (!Number.isFinite(startHour) || !Number.isFinite(endHour)) return 'Enabled';
+    return `${startHour}:00 - ${endHour}:00 (${quietHours.timezone || 'UTC'})`;
   };
 
   if (!isOpen || !broadcast) return null;
@@ -233,9 +288,24 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
           <h3>{broadcast.name}</h3>
           <p>Status: <span className={`badge ${broadcast.status}`}>{broadcast.status}</span></p>
           <p>Total Recipients: {totalRecipients}</p>
+          <p>Retry Candidates: {Number(retrySummary.retryCandidates || 0)}</p>
+          <p>Suppressed: {Number(reliabilityAnalytics.suppressed || 0)}</p>
+          <p>Deferred: {Number(reliabilityAnalytics.deferred || 0)}</p>
+          <p>Retried: {Number(reliabilityAnalytics.retried || 0)}</p>
           {broadcast.scheduledAt && (
             <p>Scheduled: {new Date(broadcast.scheduledAt).toLocaleString()}</p>
           )}
+          <div className="retry-actions">
+            <button
+              type="button"
+              className="retry-failed-btn"
+              onClick={handleRetryFailedRecipients}
+              disabled={retryLoading || !retrySummary.canRetry}
+            >
+              {retryLoading ? 'Retrying...' : 'Retry Failed Recipients'}
+            </button>
+            {retryMessage ? <small className="retry-message">{retryMessage}</small> : null}
+          </div>
         </div>
 
         <div className="analytics-tabs">
@@ -374,6 +444,78 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
                   <span>Last Updated:</span>
                   <span>{new Date(broadcast.updatedAt).toLocaleString()}</span>
                 </div>
+              </div>
+
+              <div className="detail-card">
+                <h4>Status Breakdown</h4>
+                <div className="detail-row">
+                  <span>Pending:</span>
+                  <span>{Number(statusBreakdown.pending || 0)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Sent:</span>
+                  <span>{Number(statusBreakdown.sent || 0)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Delivered:</span>
+                  <span>{Number(statusBreakdown.delivered || 0)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Read:</span>
+                  <span>{Number(statusBreakdown.read || 0)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Failed:</span>
+                  <span>{Number(statusBreakdown.failed || 0)}</span>
+                </div>
+              </div>
+
+              <div className="detail-card">
+                <h4>Reliability Policy</h4>
+                <div className="detail-row">
+                  <span>Quiet Hours:</span>
+                  <span>{formatQuietHours()}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Quiet Action:</span>
+                  <span>{String(quietHours.action || 'defer').toUpperCase()}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Retry Policy:</span>
+                  <span>{formatBoolean(retryPolicy.enabled)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Max Attempts:</span>
+                  <span>{Number(retryPolicy.maxAttempts || 0)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Backoff (sec):</span>
+                  <span>{Number(retryPolicy.backoffSeconds || 0)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Respect Opt-out:</span>
+                  <span>{formatBoolean(compliancePolicy.respectOptOut)}</span>
+                </div>
+                <div className="detail-row">
+                  <span>Suppression List:</span>
+                  <span>{Number(compliancePolicy.suppressionListCount || 0)}</span>
+                </div>
+              </div>
+
+              <div className="detail-card">
+                <h4>Failure Codes</h4>
+                {failureCodeRows.length ? (
+                  <div className="failure-code-list">
+                    {failureCodeRows.map((item) => (
+                      <div key={item.code} className="detail-row">
+                        <span>{item.code}</span>
+                        <span>{item.count}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="no-data compact">No failure codes recorded</div>
+                )}
               </div>
             </div>
           )}

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
   Download,
@@ -79,12 +79,12 @@ const AttachmentComposerOverlay = ({
   const [isSendingItems, setIsSendingItems] = useState(false);
   const [composerMessage, setComposerMessage] = useState('');
 
-  const registerPreviewUrl = (file) => {
+  const registerPreviewUrl = useCallback((file) => {
     if (inferAttachmentComposerMediaType(file) !== 'image') return '';
     const objectUrl = URL.createObjectURL(file);
     createdPreviewUrlsRef.current.add(objectUrl);
     return objectUrl;
-  };
+  }, []);
 
   const revokePreviewUrl = (objectUrl = '') => {
     const nextUrl = String(objectUrl || '').trim();
@@ -136,7 +136,7 @@ const AttachmentComposerOverlay = ({
     setComposerMessage('');
     setIsApplyingEdit(false);
     setIsSendingItems(false);
-  }, [pendingAttachment]);
+  }, [pendingAttachment, registerPreviewUrl]);
 
   useEffect(() => {
     if (!textDraft || !textEditorRef.current) return;
@@ -170,7 +170,7 @@ const AttachmentComposerOverlay = ({
     setTextDraft(null);
   }, [activeItemId]);
 
-  const getActiveImageMetrics = () => {
+  const getActiveImageMetrics = useCallback(() => {
     if (!imageShellRef.current || !imageElementRef.current || !activeImageItem) return null;
     const shellRect = imageShellRef.current.getBoundingClientRect();
     const naturalWidth = Number(imageElementRef.current.naturalWidth || 0);
@@ -185,9 +185,9 @@ const AttachmentComposerOverlay = ({
       left: shellRect.left,
       top: shellRect.top
     };
-  };
+  }, [activeImageItem]);
 
-  const getClampedDisplayPoint = (event) => {
+  const getClampedDisplayPoint = useCallback((event) => {
     const metrics = getActiveImageMetrics();
     if (!metrics) return null;
     return {
@@ -195,7 +195,7 @@ const AttachmentComposerOverlay = ({
       x: clamp(Number(event.clientX || 0) - metrics.left, 0, metrics.displayWidth),
       y: clamp(Number(event.clientY || 0) - metrics.top, 0, metrics.displayHeight)
     };
-  };
+  }, [getActiveImageMetrics]);
 
   const convertDisplayPointToNatural = (point, metrics) => ({
     x: Math.round((point.x / metrics.displayWidth) * metrics.naturalWidth),
@@ -209,18 +209,18 @@ const AttachmentComposerOverlay = ({
     height: Math.max(1, Math.round((rect.height / metrics.displayHeight) * metrics.naturalHeight))
   });
 
-  const updateComposerItems = (updater) => {
+  const updateComposerItems = useCallback((updater) => {
     setComposerItems((currentItems) => updater(currentItems));
-  };
+  }, []);
 
-  const updateActiveItem = (updater) => {
+  const updateActiveItem = useCallback((updater) => {
     if (!activeItem) return;
     updateComposerItems((currentItems) =>
       currentItems.map((item) => (item.id === activeItem.id ? updater(item) : item))
     );
-  };
+  }, [activeItem, updateComposerItems]);
 
-  const replaceActiveImageFile = (nextFile) => {
+  const replaceActiveImageFile = useCallback((nextFile) => {
     if (!activeItem) return;
     const nextMediaType = inferAttachmentComposerMediaType(nextFile);
     const nextPreviewUrl = nextMediaType === 'image' ? registerPreviewUrl(nextFile) : '';
@@ -239,7 +239,7 @@ const AttachmentComposerOverlay = ({
         }
       ]
     }));
-  };
+  }, [activeItem, registerPreviewUrl, updateActiveItem]);
 
   const clearToolDrafts = () => {
     setSelectionDraft(null);
@@ -259,7 +259,7 @@ const AttachmentComposerOverlay = ({
     setComposerMessage(String(message || '').trim());
   };
 
-  const performImageEdit = async (work) => {
+  const performImageEdit = useCallback(async (work) => {
     if (!activeImageItem || editorBusy) return;
     setIsApplyingEdit(true);
     setComposerMessage('');
@@ -276,7 +276,7 @@ const AttachmentComposerOverlay = ({
     } finally {
       setIsApplyingEdit(false);
     }
-  };
+  }, [activeImageItem, editorBusy, replaceActiveImageFile, activeItem?.file]);
 
   useEffect(() => {
     if (!selectionDraft && !drawDraft) return undefined;
@@ -349,7 +349,7 @@ const AttachmentComposerOverlay = ({
       window.removeEventListener('mousemove', handlePointerMove);
       window.removeEventListener('mouseup', handlePointerUp);
     };
-  }, [selectionDraft, drawDraft, activeImageItem, activeItem, drawColor, drawSize, editorBusy]);
+  }, [selectionDraft, drawDraft, activeImageItem, activeItem, drawColor, drawSize, editorBusy, getActiveImageMetrics, getClampedDisplayPoint, performImageEdit]);
 
   const handleStagePointerDown = (event) => {
     if (!activeImageItem || editorBusy) return;

@@ -26,7 +26,13 @@ const CampaignManagement = lazy(() => import("./pages/campaignmanagement"));
 const Insights = lazy(() => import("./pages/Insights"));
 const MetaConnect = lazy(() => import("./pages/MetaConnect"));
 const CrmPipeline = lazy(() => import("./pages/CrmPipeline"));
+const CrmHome = lazy(() => import("./pages/CrmHome"));
 const CrmTasks = lazy(() => import("./pages/CrmTasks"));
+const CrmTaskCalendar = lazy(() => import("./pages/CrmTaskCalendar"));
+const CrmDeals = lazy(() => import("./pages/CrmDeals"));
+const CrmMeetings = lazy(() => import("./pages/CrmMeetings"));
+const CrmOps = lazy(() => import("./pages/CrmOps"));
+const CrmReports = lazy(() => import("./pages/CrmReports"));
 const InboundCalls = lazy(() => import("./components/inbound/InboundCalls"));
 const OutboundCall = lazy(() => import("./components/outbound/OutboundCall"));
 const OutboundSchedules = lazy(() => import("./components/outbound/OutboundSchedules"));
@@ -77,6 +83,18 @@ function App() {
         {/* App layout with nested routes */}
         <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}> 
           <Route index element={renderLazyRoute(<Dashboard />, "Loading dashboard...")} />
+          <Route path="crm" element={<Navigate to="/crm/home" replace />} />
+          <Route path="crm/home" element={renderLazyRoute(<CrmHome />, "Loading CRM home...")} />
+          <Route path="conversations" element={<Navigate to="/inbox" replace />} />
+          <Route path="campaigns" element={<Navigate to="/broadcast-dashboard" replace />} />
+          <Route path="automation" element={<Navigate to="/crm/ops" replace />} />
+          <Route path="conversations/inbox" element={<Navigate to="/inbox" replace />} />
+          <Route path="campaigns/dashboard" element={<Navigate to="/broadcast-dashboard" replace />} />
+          <Route path="campaigns/broadcasts" element={<Navigate to="/broadcast" replace />} />
+          <Route path="campaigns/templates" element={<Navigate to="/templates" replace />} />
+          <Route path="automation/workflows" element={<Navigate to="/whatsapp-workflow" replace />} />
+          <Route path="automation/follow-ups" element={<Navigate to="/crm/tasks" replace />} />
+          <Route path="automation/task-calendar" element={<Navigate to="/crm/tasks-calendar" replace />} />
           <Route path="ads-manager" element={renderLazyRoute(<CampaignManagement />, "Loading ads manager...")} />
           <Route path="meta-connect" element={renderLazyRoute(<MetaConnect />, "Loading Meta connect...")} />
           <Route path="insights" element={renderLazyRoute(<Insights />, "Loading insights...")} />
@@ -92,6 +110,11 @@ function App() {
           <Route path="contacts" element={renderLazyRoute(<Contacts />, "Loading contacts...")} />
           <Route path="crm/pipeline" element={renderLazyRoute(<CrmPipeline />, "Loading CRM pipeline...")} />
           <Route path="crm/tasks" element={renderLazyRoute(<CrmTasks />, "Loading CRM tasks...")} />
+          <Route path="crm/tasks-calendar" element={renderLazyRoute(<CrmTaskCalendar />, "Loading task calendar...")} />
+          <Route path="crm/deals" element={renderLazyRoute(<CrmDeals />, "Loading CRM deals...")} />
+          <Route path="crm/meetings" element={renderLazyRoute(<CrmMeetings />, "Loading CRM meetings...")} />
+          <Route path="crm/ops" element={renderLazyRoute(<CrmOps />, "Loading CRM ops...")} />
+          <Route path="crm/reports" element={renderLazyRoute(<CrmReports />, "Loading CRM reports...")} />
           <Route path="campaignmanagement" element={renderLazyRoute(<CampaignManagement />, "Loading campaign manager...")} />
           <Route
             path="whatsapp-workflow"

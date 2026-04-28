@@ -92,7 +92,7 @@ function readLocal() {
       library,
       activeId: library.some((item) => item.id === rawActive) ? rawActive : library[0]?.id || null,
     };
-  } catch (error) {
+  } catch {
     return { library: [], activeId: null };
   }
 }
@@ -107,7 +107,7 @@ function writeLocal(library, activeId) {
     if (activeId) {
       localStorage.setItem(STORAGE_ACTIVE_KEY, String(activeId));
     }
-  } catch (error) {
+  } catch {
     // Intentionally ignored: local cache should not block workflow actions.
   }
 }
@@ -174,7 +174,7 @@ const whatsappWorkflowService = {
         writeLocal(remoteLibrary, activeId);
         return { source: "remote", library: remoteLibrary, activeId };
       }
-    } catch (error) {
+    } catch {
       // Fallback to local snapshot when backend is unavailable.
     }
 
@@ -210,7 +210,7 @@ const whatsappWorkflowService = {
       const library = upsertWorkflow(localSnapshot.library, saved, normalizedInput.id);
       writeLocal(library, saved.id);
       return { source: "remote", workflow: saved, library, activeId: saved.id };
-    } catch (updateError) {
+    } catch {
       try {
         const { response } = await requestFirstSuccess((endpoint) =>
           apiService.post(endpoint, normalizedInput, QUIET_REQUEST_CONFIG)
@@ -221,7 +221,7 @@ const whatsappWorkflowService = {
         const library = upsertWorkflow(localSnapshot.library, saved, normalizedInput.id);
         writeLocal(library, saved.id);
         return { source: "remote", workflow: saved, library, activeId: saved.id };
-      } catch (createError) {
+      } catch {
         const localSaved = {
           ...normalizedInput,
           updatedAt: new Date().toISOString(),

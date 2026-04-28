@@ -17,7 +17,6 @@ const Register = () => {
   const navigate = useNavigate();
   const { login: loginUser } = useContext(AuthContext);
   const [showPassword, setShowPassword] = useState(false);
-  const [activeTab, setActiveTab] = useState("email");
   const [googleLoading, setGoogleLoading] = useState(false);
   const [otpPhone, setOtpPhone] = useState("");
   const [otpCode, setOtpCode] = useState("");

@@ -69,6 +69,34 @@ const OverviewStats = ({ stats }) => {
       label: 'Queued',
       icon: Clock,
       bgColor: bgColor
+    },
+    {
+      value: safeStats.suppressed || 0,
+      label: 'Suppressed',
+      icon: X,
+      bgColor: '#fff7ed',
+      iconColor: '#c2410c'
+    },
+    {
+      value: safeStats.deferred || 0,
+      label: 'Deferred',
+      icon: Clock,
+      bgColor: '#ecfeff',
+      iconColor: '#0e7490'
+    },
+    {
+      value: safeStats.retried || 0,
+      label: 'Retried',
+      icon: RefreshCw,
+      bgColor: '#eff6ff',
+      iconColor: '#1d4ed8'
+    },
+    {
+      value: safeStats.skippedQuietHours || 0,
+      label: 'Quiet Skips',
+      icon: Clock,
+      bgColor: '#f5f3ff',
+      iconColor: '#6d28d9'
     }
   ];
 

@@ -64,7 +64,10 @@ export const AuthProvider = ({ children }) => {
   const refreshFromBackend = async () => {
     const API_URL = import.meta.env.VITE_API_ADMIN_URL;
     const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
-    const token = localStorage.getItem(tokenKey) || localStorage.getItem("authToken");
+    const token =
+      localStorage.getItem(tokenKey) ||
+      localStorage.getItem("authToken") ||
+      localStorage.getItem("token");
     if (!token) return { ok: false, message: "No token found" };
     try {
       const res = await axios.get(`${API_URL}/api/user/credentials`, {
@@ -131,7 +134,10 @@ export const AuthProvider = ({ children }) => {
 
   useEffect(() => {
     const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
-    const token = localStorage.getItem(tokenKey) || localStorage.getItem("authToken");
+    const token =
+      localStorage.getItem(tokenKey) ||
+      localStorage.getItem("authToken") ||
+      localStorage.getItem("token");
     const provider = localStorage.getItem("authProvider");
     if (!token || provider === "firebase") return;
     refreshFromBackend();

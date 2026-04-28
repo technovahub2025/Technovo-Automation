@@ -4,6 +4,7 @@
  */
 import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
+import { registerUnauthorizedAxiosInterceptor } from "./serviceAuth";
 
 const API_BASE_URL = resolveApiBaseUrl();
 
@@ -20,7 +21,10 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
-    const token = localStorage.getItem(tokenKey) || localStorage.getItem("authToken");
+    const token =
+      localStorage.getItem(tokenKey) ||
+      localStorage.getItem("authToken") ||
+      localStorage.getItem("token");
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -73,6 +77,8 @@ api.interceptors.response.use(
     return Promise.reject(error);
   }
 );
+
+registerUnauthorizedAxiosInterceptor(api);
 
 // WhatsApp Business Platform API Methods
 export const apiClient = {
@@ -247,6 +253,11 @@ export const apiClient = {
    * @param {string} id - Broadcast ID
    */
   getBroadcast: (id) => api.get(`/broadcasts/${id}`),
+
+  getBroadcastReliabilitySummary: (params = {}) =>
+    api.get('/broadcasts/analytics/reliability', { params }),
+
+  retryFailedBroadcastRecipients: (id) => api.post(`/broadcasts/${id}/retry-failed`),
   
   /**
    * Create new broadcast campaign

@@ -86,7 +86,6 @@ const UsersListPage = () => {
   const [metaUserAccessToken, setMetaUserAccessToken] = useState("");
   const [metaAdAccountId, setMetaAdAccountId] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
-  const [missedCallWebhook, setMissedCallWebhook] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [showTwilioToken, setShowTwilioToken] = useState(false);
   const [showMetaSecret, setShowMetaSecret] = useState(false);
@@ -129,7 +128,6 @@ const UsersListPage = () => {
     setMetaUserAccessToken("");
     setMetaAdAccountId("");
     setPhoneNumber("");
-    setMissedCallWebhook("");
     setShowToken(false);
     setShowTwilioToken(false);
     setShowMetaSecret(false);
@@ -306,7 +304,6 @@ const UsersListPage = () => {
     setMetaUserAccessToken(selectedUser.metaUserAccessToken ?? selectedUser.metauseraccesstoken ?? "");
     setMetaAdAccountId(selectedUser.metaAdAccountId ?? selectedUser.metaadaccountid ?? "");
     setPhoneNumber(selectedUser.phoneNumber ?? selectedUser.phonenumber ?? "");
-    setMissedCallWebhook(selectedUser.missedCallWebhook ?? selectedUser.missedcallwebhook ?? "");
     setErrors({});
     setShowEditModal(true);
   };
@@ -534,8 +531,7 @@ const UsersListPage = () => {
       !whatsappId ||
       !whatsappToken ||
       !whatsappBusiness ||
-      !phoneNumber ||
-      !missedCallWebhook
+      !phoneNumber
     ) {
       setErrors({ register: "All fields are required" });
       return;
@@ -557,8 +553,7 @@ const UsersListPage = () => {
         metaRedirectUri: String(metaRedirectUri || "").trim(),
         metaUserAccessToken: String(metaUserAccessToken || "").trim(),
         metaAdAccountId: String(metaAdAccountId || "").trim(),
-        phoneNumber: String(phoneNumber || "").trim(),
-        missedCallWebhook: String(missedCallWebhook || "").trim()
+        phoneNumber: String(phoneNumber || "").trim()
       });
       closeModal();
       fetchUsers();
@@ -674,11 +669,6 @@ const UsersListPage = () => {
                 <label>Phone Number</label>
                 <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
               </div>
-              <div className="form-row">
-                <label>Missed Call Webhook</label>
-                <input value={missedCallWebhook} onChange={(e) => setMissedCallWebhook(e.target.value)} />
-              </div>
-
               {errors.register && <span className="error-text">{errors.register}</span>}
 
               <div className="modal-actions">

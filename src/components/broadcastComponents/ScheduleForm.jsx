@@ -12,8 +12,28 @@ import {
 } from 'lucide-react';
 import MessagePreview from './MessagePreview';
 import './ScheduleForm.css';
+import { downloadCsv } from '../../utils/csvExport';
 
 const META_RETRY_HISTORY_KEY = 'metaLeadBatchRetryHistory:v1';
+const BROADCAST_SCHEDULE_DRAFT_KEY = 'broadcast:schedule-form:draft:v1';
+const parseLeadIds = (input = '') =>
+  Array.from(
+    new Set(
+      String(input || '')
+        .split(/[\n,\s]+/)
+        .map((item) => item.trim())
+        .filter(Boolean)
+    )
+  );
+const parseSuppressionListEntries = (input = '') =>
+  String(input || '')
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+const isValidSuppressionPhone = (value = '') => /^\+?[1-9]\d{7,14}$/.test(String(value || '').trim());
+const canUseSessionStorage = () =>
+  typeof window !== 'undefined' &&
+  typeof window.sessionStorage !== 'undefined';
 
 const ScheduleForm = ({
   messageType,
@@ -35,6 +55,7 @@ const ScheduleForm = ({
   recipients,
   fileVariables,
   onClearUpload,
+  onAutoCleanRecipients,
   scheduledTime,
   onScheduledTimeChange,
   isSending,
@@ -43,11 +64,34 @@ const ScheduleForm = ({
   sendResults,
   onBackToOverview,
   onResetForm,
+  resetVersion = 0,
   onMetaLeadBatchSync,
+  onToast,
   metaLeadBatchLoading = false,
-  metaLeadBatchResult = null
+  metaLeadBatchResult = null,
+  quietHoursEnabled = false,
+  onQuietHoursEnabledChange = () => {},
+  quietHoursStartHour = 22,
+  onQuietHoursStartHourChange = () => {},
+  quietHoursEndHour = 9,
+  onQuietHoursEndHourChange = () => {},
+  quietHoursTimezone = 'Asia/Kolkata',
+  onQuietHoursTimezoneChange = () => {},
+  quietHoursAction = 'defer',
+  onQuietHoursActionChange = () => {},
+  retryPolicyEnabled = true,
+  onRetryPolicyEnabledChange = () => {},
+  retryMaxAttempts = 3,
+  onRetryMaxAttemptsChange = () => {},
+  retryBackoffSeconds = 45,
+  onRetryBackoffSecondsChange = () => {},
+  respectOptOut = true,
+  onRespectOptOutChange = () => {},
+  suppressionListRaw = '',
+  onSuppressionListRawChange = () => {}
 }) => {
   const scheduleInputRef = React.useRef(null);
+  const hasAppliedResetVersion = React.useRef(false);
   const [isDragOver, setIsDragOver] = React.useState(false);
   const [metaLeadIdsText, setMetaLeadIdsText] = React.useState('');
   const [metaSendTemplate, setMetaSendTemplate] = React.useState(false);
@@ -56,8 +100,13 @@ const ScheduleForm = ({
   const [metaLastRetryAt, setMetaLastRetryAt] = React.useState(null);
   const [metaLastRetryLeadCount, setMetaLastRetryLeadCount] = React.useState(0);
   const [metaRetryHistory, setMetaRetryHistory] = React.useState([]);
+  const [draftSavedAt, setDraftSavedAt] = React.useState(null);
+  const [hasStoredDraft, setHasStoredDraft] = React.useState(false);
+  const hasRestoredDraftRef = React.useRef(false);
+  const lastDraftPayloadRef = React.useRef('');
 
   React.useEffect(() => {
+    if (!canUseSessionStorage()) return;
     try {
       const raw = window.sessionStorage.getItem(META_RETRY_HISTORY_KEY);
       if (!raw) return;
@@ -76,15 +125,246 @@ const ScheduleForm = ({
         setMetaLastRetryAt(latest.at);
         setMetaLastRetryLeadCount(latest.leadCount);
       }
-    } catch (_error) {
+    } catch {
       // ignore invalid session cache
     }
   }, []);
 
+  React.useEffect(() => {
+    if (!hasAppliedResetVersion.current) {
+      hasAppliedResetVersion.current = true;
+      return;
+    }
+
+    setMetaLeadIdsText('');
+    setMetaSendTemplate(false);
+    setMetaDryRun(true);
+    setMetaRetryCount(0);
+    setMetaLastRetryAt(null);
+    setMetaLastRetryLeadCount(0);
+    setMetaRetryHistory([]);
+    setDraftSavedAt(null);
+    setHasStoredDraft(false);
+    hasRestoredDraftRef.current = false;
+    lastDraftPayloadRef.current = '';
+    if (!canUseSessionStorage()) return;
+    try {
+      window.sessionStorage.removeItem(META_RETRY_HISTORY_KEY);
+      window.sessionStorage.removeItem(BROADCAST_SCHEDULE_DRAFT_KEY);
+    } catch {
+      // ignore storage errors
+    }
+  }, [resetVersion]);
+
+  React.useEffect(() => {
+    if (!canUseSessionStorage() || hasRestoredDraftRef.current) return;
+    hasRestoredDraftRef.current = true;
+
+    const hasExistingData =
+      String(broadcastName || '').trim().length > 0 ||
+      String(templateName || '').trim().length > 0 ||
+      String(customMessage || '').trim().length > 0 ||
+      String(scheduledTime || '').trim().length > 0 ||
+      String(suppressionListRaw || '').trim().length > 0 ||
+      String(metaLeadIdsText || '').trim().length > 0 ||
+      quietHoursEnabled ||
+      (Array.isArray(recipients) && recipients.length > 0);
+    if (hasExistingData) return;
+
+    try {
+      const raw = window.sessionStorage.getItem(BROADCAST_SCHEDULE_DRAFT_KEY);
+      if (!raw) return;
+      setHasStoredDraft(true);
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return;
+
+      if (typeof parsed.broadcastName === 'string') {
+        onBroadcastNameChange?.({ target: { value: parsed.broadcastName } });
+      }
+      if (typeof parsed.templateName === 'string') {
+        onTemplateNameChange?.({ target: { value: parsed.templateName } });
+      }
+      if (typeof parsed.templateFilter === 'string') {
+        onTemplateFilterChange?.(parsed.templateFilter);
+      }
+      if (typeof parsed.customMessage === 'string') {
+        onCustomMessageChange?.({ target: { value: parsed.customMessage } });
+      }
+      if (typeof parsed.scheduledTime === 'string') {
+        onScheduledTimeChange?.({ target: { value: parsed.scheduledTime } });
+      }
+      if (typeof parsed.quietHoursEnabled === 'boolean') {
+        onQuietHoursEnabledChange?.(parsed.quietHoursEnabled);
+      }
+      if (typeof parsed.quietHoursStartHour !== 'undefined') {
+        onQuietHoursStartHourChange?.(String(parsed.quietHoursStartHour));
+      }
+      if (typeof parsed.quietHoursEndHour !== 'undefined') {
+        onQuietHoursEndHourChange?.(String(parsed.quietHoursEndHour));
+      }
+      if (typeof parsed.quietHoursTimezone === 'string') {
+        onQuietHoursTimezoneChange?.(parsed.quietHoursTimezone);
+      }
+      if (typeof parsed.quietHoursAction === 'string') {
+        onQuietHoursActionChange?.(parsed.quietHoursAction);
+      }
+      if (typeof parsed.retryPolicyEnabled === 'boolean') {
+        onRetryPolicyEnabledChange?.(parsed.retryPolicyEnabled);
+      }
+      if (typeof parsed.retryMaxAttempts !== 'undefined') {
+        onRetryMaxAttemptsChange?.(String(parsed.retryMaxAttempts));
+      }
+      if (typeof parsed.retryBackoffSeconds !== 'undefined') {
+        onRetryBackoffSecondsChange?.(String(parsed.retryBackoffSeconds));
+      }
+      if (typeof parsed.respectOptOut === 'boolean') {
+        onRespectOptOutChange?.(parsed.respectOptOut);
+      }
+      if (typeof parsed.suppressionListRaw === 'string') {
+        onSuppressionListRawChange?.(parsed.suppressionListRaw);
+      }
+      if (typeof parsed.metaLeadIdsText === 'string') {
+        setMetaLeadIdsText(parsed.metaLeadIdsText);
+      }
+      if (typeof parsed.metaSendTemplate === 'boolean') {
+        setMetaSendTemplate(parsed.metaSendTemplate);
+      }
+      if (typeof parsed.metaDryRun === 'boolean') {
+        setMetaDryRun(parsed.metaDryRun);
+      }
+    } catch {
+      // ignore invalid draft payload
+    }
+  }, [
+    broadcastName,
+    templateName,
+    customMessage,
+    scheduledTime,
+    suppressionListRaw,
+    metaLeadIdsText,
+    quietHoursEnabled,
+    recipients,
+    onBroadcastNameChange,
+    onTemplateNameChange,
+    onTemplateFilterChange,
+    onCustomMessageChange,
+    onScheduledTimeChange,
+    onQuietHoursEnabledChange,
+    onQuietHoursStartHourChange,
+    onQuietHoursEndHourChange,
+    onQuietHoursTimezoneChange,
+    onQuietHoursActionChange,
+    onRetryPolicyEnabledChange,
+    onRetryMaxAttemptsChange,
+    onRetryBackoffSecondsChange,
+    onRespectOptOutChange,
+    onSuppressionListRawChange
+  ]);
+
+  const buildDraftPayload = React.useCallback(() => ({
+    broadcastName: String(broadcastName || ''),
+    templateName: String(templateName || ''),
+    templateFilter: String(templateFilter || ''),
+    customMessage: String(customMessage || ''),
+    scheduledTime: String(scheduledTime || ''),
+    quietHoursEnabled: Boolean(quietHoursEnabled),
+    quietHoursStartHour,
+    quietHoursEndHour,
+    quietHoursTimezone: String(quietHoursTimezone || ''),
+    quietHoursAction: String(quietHoursAction || ''),
+    retryPolicyEnabled: Boolean(retryPolicyEnabled),
+    retryMaxAttempts,
+    retryBackoffSeconds,
+    respectOptOut: Boolean(respectOptOut),
+    suppressionListRaw: String(suppressionListRaw || ''),
+    metaLeadIdsText: String(metaLeadIdsText || ''),
+    metaSendTemplate: Boolean(metaSendTemplate),
+    metaDryRun: Boolean(metaDryRun)
+  }), [
+    broadcastName,
+    templateName,
+    templateFilter,
+    customMessage,
+    scheduledTime,
+    quietHoursEnabled,
+    quietHoursStartHour,
+    quietHoursEndHour,
+    quietHoursTimezone,
+    quietHoursAction,
+    retryPolicyEnabled,
+    retryMaxAttempts,
+    retryBackoffSeconds,
+    respectOptOut,
+    suppressionListRaw,
+    metaLeadIdsText,
+    metaSendTemplate,
+    metaDryRun
+  ]);
+
+  const hasFormProgress = React.useMemo(() => {
+    const hasCampaignMeta =
+      String(broadcastName || '').trim().length > 0 ||
+      String(templateName || '').trim().length > 0 ||
+      String(customMessage || '').trim().length > 0;
+    const hasUploadOrRecipients = Boolean(uploadedFile) || (Array.isArray(recipients) && recipients.length > 0);
+    const hasScheduleOrPolicy =
+      String(scheduledTime || '').trim().length > 0 ||
+      quietHoursEnabled ||
+      String(suppressionListRaw || '').trim().length > 0;
+    const hasMetaLeadDraft = String(metaLeadIdsText || '').trim().length > 0;
+    return hasCampaignMeta || hasUploadOrRecipients || hasScheduleOrPolicy || hasMetaLeadDraft;
+  }, [
+    broadcastName,
+    templateName,
+    customMessage,
+    uploadedFile,
+    recipients,
+    scheduledTime,
+    quietHoursEnabled,
+    suppressionListRaw,
+    metaLeadIdsText
+  ]);
+
+  React.useEffect(() => {
+    if (!canUseSessionStorage()) return;
+    if (!hasFormProgress) {
+      try {
+        window.sessionStorage.removeItem(BROADCAST_SCHEDULE_DRAFT_KEY);
+      } catch {
+        // ignore storage errors
+      }
+      lastDraftPayloadRef.current = '';
+      if (hasStoredDraft || draftSavedAt) {
+        setHasStoredDraft(false);
+        setDraftSavedAt(null);
+      }
+      return;
+    }
+
+    const payload = buildDraftPayload();
+    const serializedPayload = JSON.stringify(payload);
+    if (serializedPayload === lastDraftPayloadRef.current) return;
+
+    try {
+      window.sessionStorage.setItem(BROADCAST_SCHEDULE_DRAFT_KEY, serializedPayload);
+      lastDraftPayloadRef.current = serializedPayload;
+      setHasStoredDraft(true);
+      setDraftSavedAt(new Date());
+    } catch {
+      // ignore storage errors
+    }
+  }, [
+    buildDraftPayload,
+    hasFormProgress,
+    hasStoredDraft,
+    draftSavedAt
+  ]);
+
   const persistRetryHistory = React.useCallback((history) => {
+    if (!canUseSessionStorage()) return;
     try {
       window.sessionStorage.setItem(META_RETRY_HISTORY_KEY, JSON.stringify(history));
-    } catch (_error) {
+    } catch {
       // ignore storage errors
     }
   }, []);
@@ -159,13 +439,15 @@ const ScheduleForm = ({
 
   const downloadSampleCsv = () => {
     const csvRows = buildSampleCsvRows();
-    const blob = new Blob([csvRows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = 'broadcast_contacts_sample.csv';
-    link.click();
-    window.URL.revokeObjectURL(url);
+    const [headerLine, ...dataLines] = csvRows;
+    const headers = String(headerLine || '').split(',');
+    const rows = dataLines.map((line) => String(line || '').split(','));
+    downloadCsv({
+      filename: 'broadcast_contacts_sample.csv',
+      headers,
+      rows,
+      exportType: 'broadcast_contacts_sample'
+    });
   };
 
   const triggerCsvPicker = () => {
@@ -191,7 +473,7 @@ const ScheduleForm = ({
     if (!droppedFile) return;
 
     if (!String(droppedFile.name || '').toLowerCase().endsWith('.csv')) {
-      alert('Please drop a valid CSV file');
+      onToast?.('Please drop a valid CSV file.', 'error');
       return;
     }
 
@@ -212,18 +494,127 @@ const ScheduleForm = ({
     onScheduledTimeChange({ target: { value: '' } });
   };
 
-  const getContactRows = () => {
-    return (recipients || []).slice(0, 5).map((recipient, index) => {
-      const raw = recipient?.data || recipient || {};
-      const fullData = raw.fullData || raw || {};
-      const phone = recipient?.phone || raw.phone || fullData.phone || fullData.mobile || fullData.number || '-';
-      const name = raw.name || fullData.name || `Contact ${index + 1}`;
-      const customFieldCount = Object.keys(fullData).filter((key) => !['phone', 'mobile', 'number', 'name', 'variables'].includes(String(key).toLowerCase())).length;
-      return { index, phone, name, customFieldCount };
-    });
+  const clampNumber = (value, min, max, fallback) => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return fallback;
+    if (parsed < min) return min;
+    if (parsed > max) return max;
+    return Math.trunc(parsed);
   };
 
-  const contactRows = getContactRows();
+  const normalizeQuietStartHour = () => {
+    const normalized = clampNumber(quietHoursStartHour, 0, 23, 22);
+    onQuietHoursStartHourChange(String(normalized));
+  };
+
+  const normalizeQuietEndHour = () => {
+    const normalized = clampNumber(quietHoursEndHour, 0, 23, 9);
+    onQuietHoursEndHourChange(String(normalized));
+  };
+
+  const normalizeRetryAttempts = () => {
+    const normalized = clampNumber(retryMaxAttempts, 1, 10, 3);
+    onRetryMaxAttemptsChange(String(normalized));
+  };
+
+  const normalizeRetryBackoff = () => {
+    const normalized = clampNumber(retryBackoffSeconds, 5, 600, 45);
+    onRetryBackoffSecondsChange(String(normalized));
+  };
+
+  const normalizeQuietTimezone = () => {
+    const trimmed = String(quietHoursTimezone || '').trim();
+    onQuietHoursTimezoneChange(trimmed || 'Asia/Kolkata');
+  };
+
+  const getCurrentDateTimeLocal = () => {
+    const now = new Date();
+    const tzOffset = now.getTimezoneOffset() * 60000;
+    return new Date(now.getTime() - tzOffset).toISOString().slice(0, 16);
+  };
+
+  const getRecipientDiagnostics = React.useCallback(() => {
+    const phoneCountMap = new Map();
+    (recipients || []).forEach((recipient) => {
+      const raw = recipient?.data || recipient || {};
+      const fullData = raw.fullData || raw || {};
+      const phone = String(
+        recipient?.phone ||
+        raw.phone ||
+        fullData.phone ||
+        fullData.mobile ||
+        fullData.number ||
+        ''
+      ).trim();
+      if (!phone || phone === '-') return;
+      phoneCountMap.set(phone, (phoneCountMap.get(phone) || 0) + 1);
+    });
+
+    const rows = (recipients || []).map((recipient, index) => {
+      const raw = recipient?.data || recipient || {};
+      const fullData = raw.fullData || raw || {};
+      const normalizedPhone = String(
+        recipient?.phone ||
+        raw.phone ||
+        fullData.phone ||
+        fullData.mobile ||
+        fullData.number ||
+        ''
+      ).trim();
+      const phone = normalizedPhone || '-';
+      const name = raw.name || fullData.name || `Contact ${index + 1}`;
+      const customFieldCount = Object.keys(fullData).filter((key) => !['phone', 'mobile', 'number', 'name', 'variables'].includes(String(key).toLowerCase())).length;
+      const isMissingPhone = !normalizedPhone || normalizedPhone === '-';
+      const isDuplicatePhone = !isMissingPhone && (phoneCountMap.get(normalizedPhone) || 0) > 1;
+
+      return {
+        index,
+        phone,
+        name,
+        customFieldCount,
+        qualityLabel: isMissingPhone ? 'Missing phone' : isDuplicatePhone ? 'Duplicate phone' : 'Valid',
+        qualityTone: isMissingPhone || isDuplicatePhone ? 'issue' : 'ok'
+      };
+    });
+
+    const missingPhoneCount = rows.filter((row) => row.qualityLabel === 'Missing phone').length;
+    const duplicatePhoneCount = rows.filter((row) => row.qualityLabel === 'Duplicate phone').length;
+    const validCount = rows.filter((row) => row.qualityTone === 'ok').length;
+    const skippedCount = missingPhoneCount + duplicatePhoneCount;
+
+    return {
+      rows,
+      summary: {
+        validCount,
+        skippedCount,
+        missingPhoneCount,
+        duplicatePhoneCount,
+        hasIssues: skippedCount > 0
+      }
+    };
+  }, [recipients]);
+
+  const recipientDiagnostics = React.useMemo(() => getRecipientDiagnostics(), [getRecipientDiagnostics]);
+  const contactRows = React.useMemo(
+    () => recipientDiagnostics.rows.slice(0, 5),
+    [recipientDiagnostics]
+  );
+  const recipientQualitySummary = recipientDiagnostics.summary;
+
+  const downloadRecipientIssueCsv = () => {
+    const issueRows = recipientDiagnostics.rows.filter((row) => row.qualityTone === 'issue');
+    if (!issueRows.length) {
+      onToast?.('No issue rows available for export.', 'info');
+      return;
+    }
+
+    downloadCsv({
+      filename: `recipient_quality_issues_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`,
+      headers: ['rowNumber', 'phone', 'name', 'issueType'],
+      rows: issueRows.map((row) => [row.index + 1, row.phone, row.name, row.qualityLabel]),
+      exportType: 'recipient_quality_issues'
+    });
+  };
 
   const requiredColumnsLabel = React.useMemo(() => {
     const selectedTemplate = (officialTemplates || []).find((t) => t.name === templateName);
@@ -256,14 +647,21 @@ const ScheduleForm = ({
 
   const handleMetaBatchSubmit = () => {
     if (typeof onMetaLeadBatchSync !== 'function') return;
+    const leadIds = parsedMetaLeadIds;
+    if (!leadIds.length) {
+      onToast?.('Please enter at least one Meta lead ID.', 'error');
+      return;
+    }
     onMetaLeadBatchSync({
-      leadIdsText: metaLeadIdsText,
+      leadIdsText: leadIds.join('\n'),
       enableTemplateSend: Boolean(metaSendTemplate),
       dryRun: Boolean(metaDryRun)
     });
   };
 
   const downloadMetaBatchFailureCsv = () => {
+    const exportGeneratedAt = new Date().toISOString();
+    const lastRetryAtIso = metaLastRetryAt instanceof Date ? metaLastRetryAt.toISOString() : '';
     const syncResults = Array.isArray(metaLeadBatchResult?.syncResults)
       ? metaLeadBatchResult.syncResults
       : [];
@@ -278,6 +676,8 @@ const ScheduleForm = ({
         leadId: String(item?.leadId || ''),
         phone: String(item?.phone || ''),
         error: String(item?.error || ''),
+        messageId: String(item?.messageId || item?.response?.messages?.[0]?.id || ''),
+        status: String(item?.status || ''),
       }));
 
     const sendFailures = sendResults
@@ -287,44 +687,40 @@ const ScheduleForm = ({
         leadId: String(item?.leadId || ''),
         phone: String(item?.phone || ''),
         error: String(item?.error || ''),
+        messageId: String(item?.messageId || item?.response?.messages?.[0]?.id || ''),
+        status: String(item?.status || ''),
       }));
 
     const failures = [...syncFailures, ...sendFailures];
     if (!failures.length) {
-      alert('No failed rows available for export.');
+      onToast?.('No failed rows available for export.', 'info');
       return;
     }
 
-    const escapeCsvCell = (value) => {
-      const normalized = String(value ?? '');
-      if (/[",\n]/.test(normalized)) {
-        return `"${normalized.replace(/"/g, '""')}"`;
-      }
-      return normalized;
-    };
+    const headers = ['type', 'leadId', 'phone', 'status', 'messageId', 'error', 'retryCount', 'lastRetryAt', 'exportGeneratedAt'];
+    const rows = failures.map((row) => [
+      row.type,
+      row.leadId,
+      row.phone,
+      row.status,
+      row.messageId,
+      row.error,
+      metaRetryCount,
+      lastRetryAtIso,
+      exportGeneratedAt
+    ]);
 
-    const rows = [
-      'type,leadId,phone,error',
-      ...failures.map((row) =>
-        [
-          escapeCsvCell(row.type),
-          escapeCsvCell(row.leadId),
-          escapeCsvCell(row.phone),
-          escapeCsvCell(row.error)
-        ].join(',')
-      )
-    ];
-
-    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `meta_lead_batch_failures_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
-    link.click();
-    window.URL.revokeObjectURL(url);
+    downloadCsv({
+      filename: `meta_lead_batch_failures_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`,
+      headers,
+      rows,
+      exportType: 'meta_lead_batch_failures'
+    });
   };
 
   const downloadMetaBatchFullCsv = () => {
+    const exportGeneratedAt = new Date().toISOString();
+    const lastRetryAtIso = metaLastRetryAt instanceof Date ? metaLastRetryAt.toISOString() : '';
     const syncResults = Array.isArray(metaLeadBatchResult?.syncResults)
       ? metaLeadBatchResult.syncResults
       : [];
@@ -338,6 +734,7 @@ const ScheduleForm = ({
       leadId: String(item?.leadId || ''),
       phone: String(item?.phone || ''),
       contactId: String(item?.contactId || ''),
+      messageId: String(item?.messageId || item?.response?.messages?.[0]?.id || ''),
       error: String(item?.error || '')
     }));
 
@@ -346,45 +743,37 @@ const ScheduleForm = ({
       status: item?.success ? 'success' : 'failed',
       leadId: String(item?.leadId || ''),
       phone: String(item?.phone || ''),
-      contactId: '',
+      contactId: String(item?.contactId || ''),
+      messageId: String(item?.messageId || item?.response?.messages?.[0]?.id || ''),
       error: String(item?.error || '')
     }));
 
     const rowsData = [...syncRows, ...sendRows];
     if (!rowsData.length) {
-      alert('No batch rows available for export.');
+      onToast?.('No batch rows available for export.', 'info');
       return;
     }
 
-    const escapeCsvCell = (value) => {
-      const normalized = String(value ?? '');
-      if (/[",\n]/.test(normalized)) {
-        return `"${normalized.replace(/"/g, '""')}"`;
-      }
-      return normalized;
-    };
+    const headers = ['stage', 'status', 'leadId', 'phone', 'contactId', 'messageId', 'error', 'retryCount', 'lastRetryAt', 'exportGeneratedAt'];
+    const rows = rowsData.map((row) => [
+      row.stage,
+      row.status,
+      row.leadId,
+      row.phone,
+      row.contactId,
+      row.messageId,
+      row.error,
+      metaRetryCount,
+      lastRetryAtIso,
+      exportGeneratedAt
+    ]);
 
-    const rows = [
-      'stage,status,leadId,phone,contactId,error',
-      ...rowsData.map((row) =>
-        [
-          escapeCsvCell(row.stage),
-          escapeCsvCell(row.status),
-          escapeCsvCell(row.leadId),
-          escapeCsvCell(row.phone),
-          escapeCsvCell(row.contactId),
-          escapeCsvCell(row.error)
-        ].join(',')
-      )
-    ];
-
-    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
-    const url = window.URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `meta_lead_batch_full_report_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`;
-    link.click();
-    window.URL.revokeObjectURL(url);
+    downloadCsv({
+      filename: `meta_lead_batch_full_report_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`,
+      headers,
+      rows,
+      exportType: 'meta_lead_batch_full_report'
+    });
   };
 
   const retryFailedMetaSends = () => {
@@ -400,10 +789,13 @@ const ScheduleForm = ({
     );
 
     if (!failedLeadIds.length) {
-      alert('No failed send rows with lead IDs found for retry.');
+      onToast?.('No failed send rows with lead IDs found for retry.', 'info');
       return;
     }
 
+    setMetaLeadIdsText(failedLeadIds.join('\n'));
+    setMetaSendTemplate(true);
+    setMetaDryRun(false);
     setMetaRetryCount((prev) => prev + 1);
     const retryAt = new Date();
     setMetaLastRetryAt(retryAt);
@@ -421,14 +813,266 @@ const ScheduleForm = ({
     });
   };
 
+  const parsedMetaLeadIds = parseLeadIds(metaLeadIdsText);
+  const suppressionListMeta = React.useMemo(() => {
+    const entries = parseSuppressionListEntries(suppressionListRaw);
+    const uniqueEntries = Array.from(new Set(entries));
+    const invalidEntries = uniqueEntries.filter((entry) => !isValidSuppressionPhone(entry));
+    return {
+      total: uniqueEntries.length,
+      invalidEntries
+    };
+  }, [suppressionListRaw]);
+  const hasMetaLeadIds = React.useMemo(
+    () => parsedMetaLeadIds.length > 0,
+    [parsedMetaLeadIds]
+  );
+  const hasRecipientIssues = recipientQualitySummary.hasIssues;
+  const policyValidation = React.useMemo(() => {
+    if (!quietHoursEnabled && !retryPolicyEnabled) {
+      return { isInvalid: false, reason: '' };
+    }
+
+    const toInteger = (value) => {
+      const parsed = Number(value);
+      return Number.isFinite(parsed) ? Math.trunc(parsed) : Number.NaN;
+    };
+
+    if (quietHoursEnabled) {
+      const startHour = toInteger(quietHoursStartHour);
+      const endHour = toInteger(quietHoursEndHour);
+      if (Number.isNaN(startHour) || startHour < 0 || startHour > 23) {
+        return { isInvalid: true, reason: 'Quiet hours start must be between 0 and 23.' };
+      }
+      if (Number.isNaN(endHour) || endHour < 0 || endHour > 23) {
+        return { isInvalid: true, reason: 'Quiet hours end must be between 0 and 23.' };
+      }
+      if (startHour === endHour) {
+        return { isInvalid: true, reason: 'Quiet hours start and end cannot be the same.' };
+      }
+      if (!String(quietHoursTimezone || '').trim()) {
+        return { isInvalid: true, reason: 'Quiet hours timezone is required when quiet hours are enabled.' };
+      }
+    }
+
+    if (retryPolicyEnabled) {
+      const attempts = toInteger(retryMaxAttempts);
+      const backoff = toInteger(retryBackoffSeconds);
+      if (Number.isNaN(attempts) || attempts < 1 || attempts > 10) {
+        return { isInvalid: true, reason: 'Retry max attempts must be between 1 and 10.' };
+      }
+      if (Number.isNaN(backoff) || backoff < 5 || backoff > 600) {
+        return { isInvalid: true, reason: 'Retry backoff must be between 5 and 600 seconds.' };
+      }
+    }
+
+    if (suppressionListMeta.invalidEntries.length > 0) {
+      return {
+        isInvalid: true,
+        reason: `Invalid suppression numbers: ${suppressionListMeta.invalidEntries.slice(0, 3).join(', ')}${
+          suppressionListMeta.invalidEntries.length > 3 ? '...' : ''
+        }`
+      };
+    }
+
+    return { isInvalid: false, reason: '' };
+  }, [
+    quietHoursEnabled,
+    quietHoursStartHour,
+    quietHoursEndHour,
+    quietHoursTimezone,
+    retryPolicyEnabled,
+    retryMaxAttempts,
+    retryBackoffSeconds,
+    suppressionListMeta
+  ]);
+
+  const scheduleValidation = React.useMemo(() => {
+    const raw = String(scheduledTime || '').trim();
+    if (!raw) {
+      return { isInvalid: false, reason: '' };
+    }
+
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) {
+      return { isInvalid: true, reason: 'Selected schedule date/time is invalid.' };
+    }
+
+    const now = new Date();
+    if (parsed.getTime() <= now.getTime()) {
+      return { isInvalid: true, reason: 'Schedule time must be in the future.' };
+    }
+
+    return { isInvalid: false, reason: '' };
+  }, [scheduledTime]);
+
+  const canSubmitCampaign = React.useMemo(() => {
+    const hasRecipients = Array.isArray(recipients) && recipients.length > 0;
+    const hasName = String(broadcastName || '').trim().length > 0;
+    if (!hasRecipients || !hasName) return false;
+
+    if (messageType === 'template') {
+      return String(templateName || '').trim().length > 0;
+    }
+
+    return String(customMessage || '').trim().length > 0;
+  }, [recipients, broadcastName, messageType, templateName, customMessage]);
+
+  React.useEffect(() => {
+    if (!hasFormProgress || typeof window === 'undefined') return undefined;
+
+    const handleBeforeUnload = (event) => {
+      event.preventDefault();
+      event.returnValue = '';
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
+  }, [hasFormProgress]);
+
+  const handleResetClick = () => {
+    if (!hasFormProgress) {
+      onResetForm?.();
+      return;
+    }
+
+    const message =
+      'Reset will clear campaign name, message/template, contacts, schedule and policy settings. Continue?';
+    const shouldReset = typeof window === 'undefined' ? true : window.confirm(message);
+    if (!shouldReset) return;
+    if (canUseSessionStorage()) {
+      try {
+        window.sessionStorage.removeItem(BROADCAST_SCHEDULE_DRAFT_KEY);
+      } catch {
+        // ignore storage errors
+      }
+    }
+    setHasStoredDraft(false);
+    setDraftSavedAt(null);
+    lastDraftPayloadRef.current = '';
+    onResetForm?.();
+  };
+
+  const handleBackToOverviewClick = () => {
+    if (!hasFormProgress) {
+      onBackToOverview?.();
+      return;
+    }
+
+    const message = 'You have unsaved campaign changes. Leave this page and go back to overview?';
+    const shouldLeave = typeof window === 'undefined' ? true : window.confirm(message);
+    if (!shouldLeave) return;
+    onBackToOverview?.();
+  };
+
+  React.useEffect(() => {
+    if (!sendResults || !canUseSessionStorage()) return;
+    try {
+      window.sessionStorage.removeItem(BROADCAST_SCHEDULE_DRAFT_KEY);
+      setHasStoredDraft(false);
+      setDraftSavedAt(null);
+      lastDraftPayloadRef.current = '';
+    } catch {
+      // ignore storage errors
+    }
+  }, [sendResults]);
+
+  const handleClearSavedDraft = () => {
+    if (!canUseSessionStorage()) return;
+    try {
+      window.sessionStorage.removeItem(BROADCAST_SCHEDULE_DRAFT_KEY);
+      setHasStoredDraft(false);
+      setDraftSavedAt(null);
+      lastDraftPayloadRef.current = '';
+      onToast?.('Saved draft cleared.', 'success');
+    } catch {
+      onToast?.('Unable to clear saved draft right now.', 'error');
+    }
+  };
+
+  const handleSaveDraftNow = React.useCallback(() => {
+    if (!canUseSessionStorage()) {
+      onToast?.('Draft save is unavailable in this environment.', 'error');
+      return;
+    }
+    if (!hasFormProgress) {
+      onToast?.('Nothing to save yet. Fill campaign details first.', 'info');
+      return;
+    }
+
+    const payload = buildDraftPayload();
+
+    try {
+      const serializedPayload = JSON.stringify(payload);
+      window.sessionStorage.setItem(BROADCAST_SCHEDULE_DRAFT_KEY, serializedPayload);
+      lastDraftPayloadRef.current = serializedPayload;
+      setHasStoredDraft(true);
+      setDraftSavedAt(new Date());
+      onToast?.('Draft saved.', 'success');
+    } catch {
+      onToast?.('Unable to save draft right now.', 'error');
+    }
+  }, [buildDraftPayload, hasFormProgress, onToast]);
+
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const onKeyDown = (event) => {
+      const isSaveCombo = (event.ctrlKey || event.metaKey) && String(event.key || '').toLowerCase() === 's';
+      if (!isSaveCombo) return;
+      if (!hasFormProgress) return;
+      event.preventDefault();
+      handleSaveDraftNow();
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [handleSaveDraftNow, hasFormProgress]);
+
+  const handleCreateBroadcastClick = () => {
+    if (hasRecipientIssues) {
+      onToast?.(
+        `Please resolve recipient issues before scheduling (${recipientQualitySummary.missingPhoneCount} missing phone, ${recipientQualitySummary.duplicatePhoneCount} duplicates).`,
+        'error'
+      );
+      return;
+    }
+    if (scheduleValidation.isInvalid) {
+      onToast?.(scheduleValidation.reason, 'error');
+      return;
+    }
+    if (policyValidation.isInvalid) {
+      onToast?.(policyValidation.reason, 'error');
+      return;
+    }
+    onCreateBroadcast?.();
+  };
+
+  const handleSendBroadcastClick = () => {
+    if (hasRecipientIssues) {
+      onToast?.(
+        `Please resolve recipient issues before sending (${recipientQualitySummary.missingPhoneCount} missing phone, ${recipientQualitySummary.duplicatePhoneCount} duplicates).`,
+        'error'
+      );
+      return;
+    }
+    if (policyValidation.isInvalid) {
+      onToast?.(policyValidation.reason, 'error');
+      return;
+    }
+    onSendBroadcast?.();
+  };
+
   const clearMetaRetryHistory = () => {
     setMetaRetryCount(0);
     setMetaLastRetryAt(null);
     setMetaLastRetryLeadCount(0);
     setMetaRetryHistory([]);
+    if (!canUseSessionStorage()) return;
     try {
       window.sessionStorage.removeItem(META_RETRY_HISTORY_KEY);
-    } catch (_error) {
+    } catch {
       // ignore storage errors
     }
   };
@@ -573,6 +1217,11 @@ const ScheduleForm = ({
               onChange={(e) => setMetaLeadIdsText(e.target.value)}
               placeholder="Paste Meta lead IDs (comma/newline separated)"
             />
+            <small className="meta-lead-sync-summary">
+              {hasMetaLeadIds
+                ? `${parsedMetaLeadIds.length} lead ID${parsedMetaLeadIds.length === 1 ? '' : 's'} ready`
+                : 'No lead IDs parsed yet'}
+            </small>
             <div className="meta-lead-sync-row">
               <label className="meta-lead-sync-check">
                 <input
@@ -594,7 +1243,7 @@ const ScheduleForm = ({
                 type="button"
                 className="secondary-btn"
                 onClick={handleMetaBatchSubmit}
-                disabled={metaLeadBatchLoading}
+                disabled={metaLeadBatchLoading || !hasMetaLeadIds}
               >
                 {metaLeadBatchLoading ? 'Syncing...' : 'Run Lead Sync'}
               </button>
@@ -717,6 +1366,39 @@ const ScheduleForm = ({
                     </button>
                   </div>
 
+                  <div className={`recipient-quality-summary ${recipientQualitySummary.hasIssues ? 'has-issues' : 'is-clean'}`}>
+                    {recipientQualitySummary.hasIssues ? (
+                      <>
+                        <strong>{recipientQualitySummary.validCount} valid contacts ready.</strong>{' '}
+                        Skipping {recipientQualitySummary.skippedCount} rows
+                        ({recipientQualitySummary.missingPhoneCount} missing phone, {recipientQualitySummary.duplicatePhoneCount} duplicates).
+                      </>
+                    ) : (
+                      <>
+                        <strong>All {recipientQualitySummary.validCount} contacts are valid.</strong> No missing or duplicate phone rows detected.
+                      </>
+                    )}
+                  </div>
+
+                  <div className="recipient-quality-actions">
+                    <button
+                      type="button"
+                      className="contacts-clean-btn"
+                      onClick={onAutoCleanRecipients}
+                      disabled={!recipientQualitySummary.hasIssues || typeof onAutoCleanRecipients !== 'function'}
+                    >
+                      Auto-clean rows
+                    </button>
+                    <button
+                      type="button"
+                      className="contacts-clean-btn"
+                      onClick={downloadRecipientIssueCsv}
+                      disabled={!recipientQualitySummary.hasIssues}
+                    >
+                      Download issue rows
+                    </button>
+                  </div>
+
                   <div className="contacts-preview-table-wrap">
                     <table className="contacts-preview-table">
                       <thead>
@@ -729,9 +1411,17 @@ const ScheduleForm = ({
                       </thead>
                       <tbody>
                         {contactRows.map((row) => (
-                          <tr key={`${row.phone}-${row.index}`}>
+                          <tr
+                            key={`${row.phone}-${row.index}`}
+                            className={row.qualityTone === 'issue' ? 'contact-row-issue' : ''}
+                          >
                             <td>{row.index + 1}</td>
-                            <td className="phone-cell">{row.phone}</td>
+                            <td className="phone-cell">
+                              <span>{row.phone}</span>
+                              <span className={`phone-quality-badge ${row.qualityTone}`}>
+                                {row.qualityLabel}
+                              </span>
+                            </td>
                             <td>{row.name}</td>
                             <td>
                               {row.customFieldCount > 0 ? (
@@ -779,7 +1469,7 @@ const ScheduleForm = ({
                       value={scheduledTime}
                       onChange={onScheduledTimeChange}
                       onFocus={openSchedulePicker}
-                      min={new Date().toISOString().slice(0, 16)}
+                      min={getCurrentDateTimeLocal()}
                     />
                   </div>
 
@@ -797,6 +1487,144 @@ const ScheduleForm = ({
                 <small>
                   Select date/time to schedule. Use <strong>Clear</strong> for immediate send.
                 </small>
+                {scheduleValidation.isInvalid ? (
+                  <small className="schedule-validation-error">{scheduleValidation.reason}</small>
+                ) : null}
+              </div>
+            </details>
+          </div>
+
+          <div className="form-group policy-settings-block">
+            <details>
+              <summary>
+                <Settings size={16} />
+                Delivery & Compliance Policy
+              </summary>
+              <div className="policy-settings-content">
+                <label className="policy-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={quietHoursEnabled}
+                    onChange={(event) => onQuietHoursEnabledChange(event.target.checked)}
+                  />
+                  <span>Enable quiet hours</span>
+                </label>
+
+                {quietHoursEnabled ? (
+                  <div className="policy-grid">
+                    <div className="policy-field">
+                      <span>Start hour</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="23"
+                        value={quietHoursStartHour}
+                        onChange={(event) => onQuietHoursStartHourChange(event.target.value)}
+                        onBlur={normalizeQuietStartHour}
+                      />
+                    </div>
+                    <div className="policy-field">
+                      <span>End hour</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max="23"
+                        value={quietHoursEndHour}
+                        onChange={(event) => onQuietHoursEndHourChange(event.target.value)}
+                        onBlur={normalizeQuietEndHour}
+                      />
+                    </div>
+                    <div className="policy-field">
+                      <span>Timezone</span>
+                      <input
+                        type="text"
+                        value={quietHoursTimezone}
+                        onChange={(event) => onQuietHoursTimezoneChange(event.target.value)}
+                        onBlur={normalizeQuietTimezone}
+                        placeholder="Asia/Kolkata"
+                      />
+                    </div>
+                    <div className="policy-field">
+                      <span>Action</span>
+                      <select
+                        value={quietHoursAction}
+                        onChange={(event) => onQuietHoursActionChange(event.target.value)}
+                      >
+                        <option value="defer">Defer send</option>
+                        <option value="skip">Skip send</option>
+                      </select>
+                    </div>
+                  </div>
+                ) : null}
+
+                <label className="policy-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={retryPolicyEnabled}
+                    onChange={(event) => onRetryPolicyEnabledChange(event.target.checked)}
+                  />
+                  <span>Enable retry policy</span>
+                </label>
+
+                <div className="policy-grid">
+                  <div className="policy-field">
+                    <span>Max attempts</span>
+                    <input
+                      type="number"
+                      min="1"
+                      max="10"
+                      value={retryMaxAttempts}
+                      disabled={!retryPolicyEnabled}
+                      onChange={(event) => onRetryMaxAttemptsChange(event.target.value)}
+                      onBlur={normalizeRetryAttempts}
+                    />
+                  </div>
+                  <div className="policy-field">
+                    <span>Backoff (seconds)</span>
+                    <input
+                      type="number"
+                      min="5"
+                      max="600"
+                      value={retryBackoffSeconds}
+                      disabled={!retryPolicyEnabled}
+                      onChange={(event) => onRetryBackoffSecondsChange(event.target.value)}
+                      onBlur={normalizeRetryBackoff}
+                    />
+                  </div>
+                </div>
+
+                <label className="policy-checkbox-row">
+                  <input
+                    type="checkbox"
+                    checked={respectOptOut}
+                    onChange={(event) => onRespectOptOutChange(event.target.checked)}
+                  />
+                  <span>Respect opted-out recipients</span>
+                </label>
+
+                <div className="policy-field suppression-list-field">
+                  <span>Suppression list (comma/newline separated)</span>
+                  <textarea
+                    rows={3}
+                    value={suppressionListRaw}
+                    onChange={(event) => onSuppressionListRawChange(event.target.value)}
+                    placeholder="+919999999999, +919888888888"
+                  />
+                  <small className="suppression-list-meta">
+                    {suppressionListMeta.total > 0
+                      ? `${suppressionListMeta.total} unique number${suppressionListMeta.total === 1 ? '' : 's'}`
+                      : 'No suppression numbers added'}
+                  </small>
+                  {suppressionListMeta.invalidEntries.length > 0 ? (
+                    <small className="suppression-list-error">
+                      Invalid format: {suppressionListMeta.invalidEntries.slice(0, 5).join(', ')}
+                      {suppressionListMeta.invalidEntries.length > 5 ? '...' : ''}
+                    </small>
+                  ) : null}
+                </div>
+                {policyValidation.isInvalid ? (
+                  <small className="policy-validation-error">{policyValidation.reason}</small>
+                ) : null}
               </div>
             </details>
           </div>
@@ -808,21 +1636,53 @@ const ScheduleForm = ({
           )}
 
           <div className="form-actions">
-            <button className="secondary-btn" onClick={onResetForm}>
+            {hasStoredDraft ? (
+              <div className="draft-status-meta">
+                {draftSavedAt
+                  ? `Draft auto-saved at ${draftSavedAt.toLocaleTimeString()}`
+                  : 'Draft auto-save is enabled'}
+              </div>
+            ) : null}
+
+            {hasRecipientIssues ? (
+              <div className="submit-block-warning">
+                <strong>Broadcast blocked:</strong> fix recipient issues first ({recipientQualitySummary.missingPhoneCount} missing phone, {recipientQualitySummary.duplicatePhoneCount} duplicates).
+              </div>
+            ) : null}
+
+            <button type="button" className="secondary-btn" onClick={handleSaveDraftNow}>
+              Save Draft Now
+            </button>
+
+            {hasStoredDraft ? (
+              <button type="button" className="secondary-btn" onClick={handleClearSavedDraft}>
+                Clear Saved Draft
+              </button>
+            ) : null}
+
+            <button className="secondary-btn" onClick={handleResetClick}>
               Reset
             </button>
 
-            <button className="secondary-btn" onClick={onBackToOverview}>
+            <button className="secondary-btn" onClick={handleBackToOverviewClick}>
               Back to Overview
             </button>
 
             {scheduledTime ? (
-              <button className="primary-btn" onClick={onCreateBroadcast} disabled={isSending || !recipients.length}>
+              <button
+                className="primary-btn"
+                onClick={handleCreateBroadcastClick}
+                disabled={isSending || !canSubmitCampaign || hasRecipientIssues || scheduleValidation.isInvalid || policyValidation.isInvalid}
+              >
                 <Calendar size={16} />
                 {isSending ? 'Scheduling...' : `Schedule Broadcast (${recipients.length} contacts)`}
               </button>
             ) : (
-              <button className="primary-btn" onClick={onSendBroadcast} disabled={isSending || !recipients.length}>
+              <button
+                className="primary-btn"
+                onClick={handleSendBroadcastClick}
+                disabled={isSending || !canSubmitCampaign || hasRecipientIssues || policyValidation.isInvalid}
+              >
                 {isSending ? (
                   <>
                     <Clock size={16} className="animate-spin" />
@@ -883,4 +1743,3 @@ const ScheduleForm = ({
 };
 
 export default ScheduleForm;
-

@@ -1,12 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Users, LayoutPanelTop } from 'lucide-react';
 
-const formatCompactNumber = (value) =>
-  new Intl.NumberFormat('en-IN', {
-    notation: 'compact',
-    maximumFractionDigits: 1
-  }).format(Number(value || 0));
-
 const formatFullNumber = (value) =>
   new Intl.NumberFormat('en-IN').format(Number(value || 0));
 

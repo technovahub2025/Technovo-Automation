@@ -1,0 +1,133 @@
+.reliability-insights {
+  margin-bottom: 24px;
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 16px;
+}
+
+.reliability-insights__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.reliability-insights__header h3 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.reliability-insights__score {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.reliability-insights__score.healthy {
+  background: #ecfdf3;
+  color: #166534;
+}
+
+.reliability-insights__score.moderate {
+  background: #fff7ed;
+  color: #9a3412;
+}
+
+.reliability-insights__score.critical {
+  background: #fef2f2;
+  color: #991b1b;
+}
+
+.reliability-insights__metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.reliability-insights__metric {
+  border: 1px solid #eef2f7;
+  background: #f8fafc;
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.reliability-insights__metric span {
+  display: block;
+  font-size: 12px;
+  color: #64748b;
+  margin-bottom: 4px;
+}
+
+.reliability-insights__metric strong {
+  font-size: 18px;
+  color: #0f172a;
+}
+
+.reliability-insights__failure {
+  border-top: 1px solid #eef2f7;
+  padding-top: 12px;
+}
+
+.reliability-insights__failure-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #334155;
+  font-size: 13px;
+  margin-bottom: 8px;
+}
+
+.reliability-insights__failure-list {
+  display: grid;
+  gap: 6px;
+}
+
+.reliability-insights__failure-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid #f1f5f9;
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.reliability-insights__failure-row span {
+  color: #334155;
+}
+
+.reliability-insights__failure-row strong {
+  color: #111827;
+}
+
+.reliability-insights__empty {
+  margin: 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+@media (max-width: 992px) {
+  .reliability-insights__metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .reliability-insights__header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .reliability-insights__metrics {
+    grid-template-columns: 1fr;
+  }
+}

@@ -3,6 +3,7 @@ import { Search, Bell, BellOff, VolumeX } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import { whatsappService } from "../services/whatsappService";
+import { crmService } from "../services/crmService";
 import socketService from "../services/socketService";
 import { AuthContext } from "../pages/authcontext";
 import {
@@ -48,12 +49,14 @@ const Header = () => {
   const [notifications, setNotifications] = useState([]);
   const [docNotifications, setDocNotifications] = useState([]);
   const [systemNotifications, setSystemNotifications] = useState([]);
+  const [crmOwnerNotifications, setCrmOwnerNotifications] = useState([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [notificationMode, setNotificationModeState] = useState(() =>
     getTeamInboxNotificationMode()
   );
   const notificationRef = useRef(null);
   const closeTimerRef = useRef(null);
+  const shownCrmNotificationIdsRef = useRef(new Set());
   const API_URL = import.meta.env.VITE_API_ADMIN_URL;
   const token = localStorage.getItem("authToken") || localStorage.getItem("token");
   const storedUser = user || (() => {
@@ -142,7 +145,8 @@ const Header = () => {
       try {
         const requests = [
           whatsappService.getConversations(),
-          whatsappService.getContacts()
+          whatsappService.getContacts(),
+          crmService.getOwnerNotifications({ status: "unread", limit: 12 })
         ];
         if (API_URL && token) {
           requests.push(
@@ -155,7 +159,8 @@ const Header = () => {
         const results = await Promise.all(requests);
         const conversations = results[0];
         const contacts = results[1];
-        const rejectedDocs = results[2]?.data?.data || [];
+        const crmNotificationsResult = results[2];
+        const rejectedDocs = results[3]?.data?.data || [];
 
         const contactNameMap = new Map();
         (Array.isArray(contacts) ? contacts : []).forEach((contact) => {
@@ -243,6 +248,22 @@ const Header = () => {
         );
         setNotifications(mapped);
 
+        const ownerAlerts = Array.isArray(crmNotificationsResult?.data)
+          ? crmNotificationsResult.data.map((item) => ({
+              id: item?._id || "",
+              title: item?.contact?.name || item?.contact?.phone || "Assigned lead",
+              message:
+                item?.recommendedTemplate
+                  ? `Recommended template: ${item.recommendedTemplate}`
+                  : "A CRM automation alert needs your attention.",
+              time: item?.createdAt || null,
+              contactId: item?.contact?._id || "",
+              phone: item?.contact?.phone || "",
+              automationRule: item?.automationRule || ""
+            }))
+          : [];
+        setCrmOwnerNotifications(ownerAlerts);
+
         const docAlerts = (Array.isArray(rejectedDocs) ? rejectedDocs : []).map((doc) => ({
           id: doc._id || `${doc.docType}-${doc.createdAt || ""}`,
           docType: doc.docType || "Document",
@@ -296,12 +317,41 @@ const Header = () => {
               : [])
           ]
         );
+
+        if (
+          notificationMode !== TEAM_INBOX_NOTIFICATION_MODES.OFF &&
+          typeof window !== "undefined" &&
+          "Notification" in window &&
+          window.Notification?.permission === "granted"
+        ) {
+          ownerAlerts.forEach((item) => {
+            if (!item.id || shownCrmNotificationIdsRef.current.has(item.id)) return;
+            shownCrmNotificationIdsRef.current.add(item.id);
+            try {
+              const notification = new window.Notification(item.title, {
+                body: item.message,
+                tag: `crm-owner-alert:${item.id}`,
+                renotify: true,
+                silent: notificationMode === TEAM_INBOX_NOTIFICATION_MODES.SILENT
+              });
+              notification.onclick = () => {
+                window.focus?.();
+                navigate("/crm/ops");
+                notification.close();
+              };
+              window.setTimeout(() => notification.close(), 8000);
+            } catch {
+              // ignore browser notification failures
+            }
+          });
+        }
       } catch (error) {
         console.error("Failed to load notifications:", error);
         setNotifications([]);
         setUnreadCount(0);
         setDocNotifications([]);
         setSystemNotifications([]);
+        setCrmOwnerNotifications([]);
       }
     };
 
@@ -355,6 +405,15 @@ const Header = () => {
     setNotificationModeState(setTeamInboxNotificationMode(mode));
   };
 
+  const handleCrmOwnerNotificationClick = async (item) => {
+    if (item?.id) {
+      await crmService.markOwnerNotificationRead(item.id);
+      setCrmOwnerNotifications((previous) => previous.filter((entry) => entry.id !== item.id));
+    }
+    setShowNotificationBox(false);
+    navigate("/crm/ops");
+  };
+
   const handleSystemNotificationClick = () => {
     const hasDismissableSystemNotice = systemNotifications.some((item) => !item.persistent);
     if (storedUser) {
@@ -375,7 +434,8 @@ const Header = () => {
     setShowNotificationBox(false);
   };
 
-  const totalNotifications = unreadCount + docNotifications.length + systemNotifications.length;
+  const totalNotifications =
+    unreadCount + docNotifications.length + systemNotifications.length + crmOwnerNotifications.length;
   const notificationModeIndex = Math.max(
     0,
     NOTIFICATION_MODE_OPTIONS.findIndex((option) => option.value === notificationMode)
@@ -485,12 +545,34 @@ const Header = () => {
               </div>
               {docNotifications.length === 0 &&
               notifications.length === 0 &&
+              crmOwnerNotifications.length === 0 &&
               systemNotifications.length === 0 ? (
                 <div className="notification-box-item muted">
                   <span>No unread messages</span>
                 </div>
               ) : (
                 <>
+                  {crmOwnerNotifications.length > 0 && (
+                    <div className="notification-box-section">CRM Owner Alerts</div>
+                  )}
+                  {crmOwnerNotifications.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className="notification-box-item"
+                      onClick={() => handleCrmOwnerNotificationClick(item)}
+                    >
+                      <span className="notification-mini-dot active"></span>
+                      <div className="notification-content">
+                        <div className="notification-top-row">
+                          <strong>{item.title}</strong>
+                          <span>{formatNotificationTime(item.time)}</span>
+                        </div>
+                        <div className="notification-message">{item.message}</div>
+                      </div>
+                    </button>
+                  ))}
+
                   {systemNotifications.length > 0 && (
                     <div className="notification-box-section">Account Updates</div>
                   )}
