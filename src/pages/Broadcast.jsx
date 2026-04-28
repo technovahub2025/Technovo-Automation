@@ -34,6 +34,7 @@ import { stripAppRouteBase } from '../utils/appRouteBase';
 import '../styles/whatsapp.css';
 import '../styles/message-preview.css';
 import '../styles/broadcast-list-controls.css';
+import './Broadcast.css';
 
 
 
@@ -266,23 +267,37 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
 
-  // Show only 5 recent campaigns by default
-
-  const displayBroadcasts = filteredBroadcasts.slice(0, 5);
-
-
-
-  const indexOfLastItem = currentPage * itemsPerPage;
-
+  const totalPages = Math.max(1, Math.ceil(filteredBroadcasts.length / itemsPerPage));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const indexOfLastItem = safeCurrentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
+  const currentBroadcasts = filteredBroadcasts.slice(indexOfFirstItem, indexOfLastItem);
 
-  const currentBroadcasts = displayBroadcasts;
+  const paginate = (pageNumber) => {
+    const nextPage = Math.min(Math.max(1, pageNumber), totalPages);
+    setCurrentPage(nextPage);
+  };
 
-  const totalPages = Math.ceil(displayBroadcasts.length / itemsPerPage);
+  const getVisiblePages = () => {
+    const pages = [];
+    const windowSize = 2;
+    const start = Math.max(1, safeCurrentPage - windowSize);
+    const end = Math.min(totalPages, safeCurrentPage + windowSize);
 
+    for (let page = start; page <= end; page += 1) {
+      pages.push(page);
+    }
 
+    return pages;
+  };
 
-  const paginate = (pageNumber) => setCurrentPage(pageNumber);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, sortBy, sortOrder, dateFilter, startDate, endDate, selectedPeriod]);
+
+  useEffect(() => {
+    setCurrentPage((prev) => Math.min(prev, totalPages));
+  }, [totalPages]);
   const stats = getCachedOverviewStats(broadcasts);
   const mergedOverviewStats = {
     ...stats,
@@ -1903,7 +1918,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
               onRefresh={() => loadBroadcasts()}
 
-              totalBroadcasts={currentBroadcasts.length}
+              totalBroadcasts={filteredBroadcasts.length}
 
               lastUpdated={broadcasts.length > 0 ? Math.max(...broadcasts.map(b => new Date(b.updatedAt || b.createdAt))) : new Date()}
 
@@ -1940,6 +1955,47 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
               onViewAnalytics={handleViewAnalytics}
 
             />
+
+            {totalPages > 1 && (
+              <div className="broadcast-pagination-bar">
+                <div className="broadcast-pagination-info">
+                  Showing <span className="broadcast-pagination-strong">{indexOfFirstItem + 1}-{Math.min(indexOfLastItem, filteredBroadcasts.length)}</span> of <span className="broadcast-pagination-strong">{filteredBroadcasts.length}</span> campaigns
+                </div>
+
+                <div className="broadcast-pagination-controls">
+                  <button
+                    type="button"
+                    className="broadcast-pagination-btn"
+                    onClick={() => paginate(safeCurrentPage - 1)}
+                    disabled={safeCurrentPage <= 1}
+                  >
+                    Prev
+                  </button>
+
+                  <div className="broadcast-pagination-pages">
+                    {getVisiblePages().map((pageNo) => (
+                      <button
+                        key={pageNo}
+                        type="button"
+                        className={`broadcast-pagination-page ${pageNo === safeCurrentPage ? 'active' : ''}`}
+                        onClick={() => paginate(pageNo)}
+                      >
+                        {pageNo}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    type="button"
+                    className="broadcast-pagination-btn"
+                    onClick={() => paginate(safeCurrentPage + 1)}
+                    disabled={safeCurrentPage >= totalPages}
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
 
           </div>
 

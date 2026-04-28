@@ -381,6 +381,14 @@
     border: none;
 }
 
+.table-container {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+}
+
 .data-table,
 .data-table thead,
 .data-table tbody,
@@ -903,12 +911,6 @@
 }
 
 @media (max-width: 480px) {
-    .data-table {
-        display: block;
-        overflow-x: auto;
-        white-space: nowrap;
-    }
-
     .read-count-tooltip {
         right: -50px;
     }

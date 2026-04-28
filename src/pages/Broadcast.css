@@ -15,6 +15,84 @@
   overflow-x: hidden;
 }
 
+.broadcast-pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.broadcast-pagination-info {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.broadcast-pagination-strong {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.broadcast-pagination-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.broadcast-pagination-pages {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+
+.broadcast-pagination-btn,
+.broadcast-pagination-page {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 36px;
+  height: 36px;
+  padding: 0 12px;
+  border: 1px solid #dbe3ea;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  box-sizing: border-box;
+  line-height: 1;
+}
+
+.broadcast-pagination-btn:hover:not(:disabled),
+.broadcast-pagination-page:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.broadcast-pagination-page.active {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.broadcast-pagination-btn:disabled,
+.broadcast-pagination-page:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* Tablet Responsive */
 @media (max-width: 1024px) {
   .broadcast-page {
@@ -34,6 +112,18 @@
     padding: 8px 16px;
     font-size: 13px;
   }
+
+  .broadcast-pagination-bar {
+    justify-content: space-between;
+  }
+
+  .broadcast-pagination-controls {
+    width: 100%;
+    justify-content: center;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+  }
 }
 
 /* Small Mobile */
@@ -48,6 +138,22 @@
     font-size: 12px;
     width: 100%;
     justify-content: center;
+  }
+
+  .broadcast-pagination-info {
+    text-align: center;
+  }
+
+  .broadcast-pagination-btn,
+  .broadcast-pagination-page {
+    min-width: 32px;
+    height: 32px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
+
+  .broadcast-pagination-controls {
+    justify-content: flex-start;
   }
 }
 
