@@ -134,6 +134,7 @@ export const useBroadcast = () => {
   const [wsConnected, setWsConnected] = useState(false);
   const loadRequestSeqRef = useRef(0);
   const latestAppliedSeqRef = useRef(0);
+  const broadcastRefreshTimerRef = useRef(null);
   const currentUserId = resolveCacheUserId();
   const broadcastPageCacheRef = useRef(null);
 
@@ -280,8 +281,20 @@ export const useBroadcast = () => {
 
         return updatedBroadcasts;
       });
+
+      if (broadcastRefreshTimerRef.current) {
+        clearTimeout(broadcastRefreshTimerRef.current);
+      }
+      broadcastRefreshTimerRef.current = setTimeout(() => loadBroadcasts(), 200);
     }
-  }, []);
+  }, [loadBroadcasts]);
+
+  const handleBroadcastListChange = useCallback(() => {
+    if (broadcastRefreshTimerRef.current) {
+      clearTimeout(broadcastRefreshTimerRef.current);
+    }
+    broadcastRefreshTimerRef.current = setTimeout(() => loadBroadcasts(), 100);
+  }, [loadBroadcasts]);
 
   // Handle message status updates
   const handleMessageStatusUpdate = useCallback((data) => {
@@ -433,11 +446,19 @@ export const useBroadcast = () => {
 
         webSocketService.on('broadcast_stats_updated', handleBroadcastStatsUpdate);
         webSocketService.on('message_status', handleMessageStatusUpdate);
+        webSocketService.on('broadcast_created', handleBroadcastListChange);
+        webSocketService.on('broadcast_updated', handleBroadcastListChange);
+        webSocketService.on('broadcast_deleted', handleBroadcastListChange);
 
         return () => {
           webSocketService.off('connected', handleConnected);
           webSocketService.off('disconnected', handleDisconnected);
           webSocketService.off('error', handleError);
+          webSocketService.off('broadcast_stats_updated', handleBroadcastStatsUpdate);
+          webSocketService.off('message_status', handleMessageStatusUpdate);
+          webSocketService.off('broadcast_created', handleBroadcastListChange);
+          webSocketService.off('broadcast_updated', handleBroadcastListChange);
+          webSocketService.off('broadcast_deleted', handleBroadcastListChange);
         };
       } catch (error) {
         console.error('Failed to connect WebSocket:', error);
@@ -457,9 +478,15 @@ export const useBroadcast = () => {
       if (cleanupEvents) cleanupEvents();
       webSocketService.off('broadcast_stats_updated', handleBroadcastStatsUpdate);
       webSocketService.off('message_status', handleMessageStatusUpdate);
+      webSocketService.off('broadcast_created', handleBroadcastListChange);
+      webSocketService.off('broadcast_updated', handleBroadcastListChange);
+      webSocketService.off('broadcast_deleted', handleBroadcastListChange);
+      if (broadcastRefreshTimerRef.current) {
+        clearTimeout(broadcastRefreshTimerRef.current);
+      }
       setWsConnected(false);
     };
-  }, [currentUserId, handleBroadcastStatsUpdate, handleMessageStatusUpdate, handleWebSocketMessage, loadBroadcasts, loadTemplates]);
+  }, [currentUserId, handleBroadcastListChange, handleBroadcastStatsUpdate, handleMessageStatusUpdate, handleWebSocketMessage, loadBroadcasts, loadTemplates]);
 
   // Fallback polling only when websocket is unavailable.
   useEffect(() => {

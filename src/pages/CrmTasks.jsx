@@ -15,7 +15,7 @@ import {
   resolveCacheUserId,
   writeSidebarPageCache
 } from "../utils/sidebarPageCache";
-import { addCrmContactSyncListener } from "../utils/crmSyncEvents";
+import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
 import CrmContactDrawer from "../components/crm/CrmContactDrawer";
 import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
 import CrmToast from "../components/crm/CrmToast";
@@ -176,7 +176,6 @@ const CrmTasks = () => {
   const [selectedContact, setSelectedContact] = useState(null);
   const [toast, setToast] = useState(null);
   const hasInitializedFilterEffectRef = useRef(false);
-  const lastExternalSyncAtRef = useRef(0);
   const currentUserId = resolveCacheUserId();
   const requestedBucketFilter = String(searchParams.get("bucket") || "all").trim().toLowerCase();
   const requestedStatusFilter = String(searchParams.get("status") || "all").trim().toLowerCase();
@@ -293,6 +292,15 @@ const CrmTasks = () => {
       taskTypeFilter
     ]
   );
+
+  const handleRealtimeRefresh = useCallback(() => {
+    loadData({ silent: true });
+  }, [loadData]);
+
+  useCrmRealtimeRefresh({
+    currentUserId,
+    onRefresh: handleRealtimeRefresh
+  });
 
   useEffect(() => {
     setForm(getInitialTaskForm(currentUserId));
@@ -433,19 +441,6 @@ const CrmTasks = () => {
     }
     loadData({ silent: true });
   }, [assignedToFilter, bucketFilter, loadData, priorityFilter, statusFilter, taskTypeFilter]);
-
-  useEffect(() => {
-    const unsubscribe = addCrmContactSyncListener(() => {
-      const now = Date.now();
-      if (now - lastExternalSyncAtRef.current < 900) return;
-      lastExternalSyncAtRef.current = now;
-      loadData({ silent: true });
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [loadData]);
 
   const contactOptions = useMemo(
     () =>

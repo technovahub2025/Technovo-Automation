@@ -47,26 +47,24 @@
         var originalPath = window.location.pathname + window.location.search + window.location.hash;
         var appShellPath = window.location.pathname.startsWith('/nexion/') ? '/nexion/' : '/';
 
-        fetch(appShellPath, {
-          method: 'GET',
-          credentials: 'same-origin',
-          cache: 'no-store'
-        })
-          .then(function (response) {
-            if (!response.ok) {
-              throw new Error('Failed to load app shell');
-            }
-            return response.text();
-          })
-          .then(function (html) {
+        var xhr = new XMLHttpRequest();
+        xhr.open('GET', appShellPath, true);
+        xhr.setRequestHeader('cache-control', 'no-cache');
+        xhr.onreadystatechange = function () {
+          if (xhr.readyState !== 4) return;
+          if (xhr.status >= 200 && xhr.status < 300) {
             window.history.replaceState(null, '', originalPath);
             document.open();
-            document.write(html);
+            document.write(xhr.responseText);
             document.close();
-          })
-          .catch(function () {
-            statusEl.textContent = 'Unable to restore this page automatically. Please go back and reopen the app.';
-          });
+            return;
+          }
+          statusEl.textContent = 'Unable to restore this page automatically. Please go back and reopen the app.';
+        };
+        xhr.onerror = function () {
+          statusEl.textContent = 'Unable to restore this page automatically. Please go back and reopen the app.';
+        };
+        xhr.send(null);
       })();
     </script>
   </body>

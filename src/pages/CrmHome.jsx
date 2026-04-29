@@ -14,6 +14,7 @@ import CrmPageHeader from "../components/crm/CrmPageHeader";
 import CrmMetricCard from "../components/crm/CrmMetricCard";
 import CrmOnboardingChecklist from "../components/crm/CrmOnboardingChecklist";
 import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
+import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
 import "./CrmWorkspace.css";
 
 const actionCards = [
@@ -83,6 +84,10 @@ const CrmHome = () => {
       setRefreshing(false);
     }
   }, []);
+
+  useCrmRealtimeRefresh({
+    onRefresh: () => loadHomeData({ silent: true })
+  });
 
   useEffect(() => {
     loadHomeData();

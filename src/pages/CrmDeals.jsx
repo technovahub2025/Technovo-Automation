@@ -8,7 +8,7 @@ import {
   resolveCacheUserId,
   writeSidebarPageCache
 } from "../utils/sidebarPageCache";
-import { addCrmContactSyncListener } from "../utils/crmSyncEvents";
+import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
 import CrmContactDrawer from "../components/crm/CrmContactDrawer";
 import CrmDealDrawer from "../components/crm/CrmDealDrawer";
 import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
@@ -123,7 +123,6 @@ const CrmDeals = () => {
     source: ""
   });
   const hasInitializedFilterEffectRef = useRef(false);
-  const lastExternalSyncAtRef = useRef(0);
   const currentUserId = resolveCacheUserId();
   const requestedSearchQuery = String(searchParams.get("q") || "").trim();
   const requestedStatusFilter = String(searchParams.get("status") || "all").trim().toLowerCase();
@@ -243,6 +242,15 @@ const CrmDeals = () => {
     [persistCache, searchQuery, statusFilter]
   );
 
+  const handleRealtimeRefresh = useCallback(() => {
+    loadData({ silent: true });
+  }, [loadData]);
+
+  useCrmRealtimeRefresh({
+    currentUserId,
+    onRefresh: handleRealtimeRefresh
+  });
+
   useEffect(() => {
     const cachedDeals = readSidebarPageCache(CRM_DEALS_CACHE_NAMESPACE, {
       currentUserId,
@@ -273,19 +281,6 @@ const CrmDeals = () => {
 
     return () => clearTimeout(timer);
   }, [loadData, searchQuery, statusFilter]);
-
-  useEffect(() => {
-    const unsubscribe = addCrmContactSyncListener(() => {
-      const now = Date.now();
-      if (now - lastExternalSyncAtRef.current < 900) return;
-      lastExternalSyncAtRef.current = now;
-      loadData({ silent: true });
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [loadData]);
 
   const contactOptions = useMemo(
     () =>

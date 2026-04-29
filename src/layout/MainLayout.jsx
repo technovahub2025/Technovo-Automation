@@ -138,7 +138,7 @@ const MainLayout = () => {
             </button>
           </div>
         )}
-        <main className="page-content">
+        <main className={`page-content ${currentPath === "/crm/pipeline" ? "page-content--crm-pipeline" : ""}`}>
           <Outlet />
         </main>
       </div>

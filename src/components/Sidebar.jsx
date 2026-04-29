@@ -17,7 +17,6 @@ import {
     MessageSquare,
     Radio,
     Users,
-    Zap,
     LogOut,
     FileText,
     Phone,
@@ -185,8 +184,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
     const userName = user?.username || user?.name || "Guest";
     const userRole = user?.role || "guest";
     const isSuperAdmin = userRole === "superadmin";
-    const subscriptionStatus = String(user?.subscriptionStatus || '').toLowerCase();
-    const workspaceAccessState = String(user?.workspaceAccessState || '').toLowerCase();
     const featureFlags = user?.featureFlags || {};
     const canViewAnalytics = user?.canViewAnalytics !== false;
     const canUseMetaAds = isSuperAdmin || Boolean(featureFlags.adsManager || featureFlags.analytics || featureFlags.metaConnect);
@@ -205,10 +202,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
     );
     const canUseMissedCalls = isSuperAdmin || Boolean(featureFlags.missedCall);
     const canUseEmailAutomation = isSuperAdmin || Boolean(featureFlags.workflowAutomation || featureFlags.analytics);
-    const canUseWhatsAppWorkflow = isSuperAdmin || Boolean(
-        featureFlags.workflowAutomation || featureFlags.teamInbox || featureFlags.broadcastMessaging
-    );
-    const canUseAdvancedCrm = isSuperAdmin;
+    const canUseAdvancedCrm = isSuperAdmin || canUseBroadcast;
 
     useEffect(() => {
         if (!isLoggedIn && openMenu) {
@@ -615,7 +609,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
     };
 
     const loadHubBadges = useCallback(async () => {
-        if (!isLoggedIn || (!canUseBroadcast && !canUseWhatsAppWorkflow)) {
+        if (!isLoggedIn || !canUseBroadcast) {
             setHubBadges({
                 conversationsUnread: 0,
                 overdueTasks: 0,
@@ -656,7 +650,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         } catch (_error) {
             // Keep existing badge values on transient failures.
         }
-    }, [canUseBroadcast, canUseWhatsAppWorkflow, isLoggedIn]);
+    }, [canUseBroadcast, isLoggedIn]);
 
     useEffect(() => {
         loadHubBadges();
@@ -749,17 +743,11 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
     const isCampaignsRouteActive =
         isRouteActive('/broadcast-dashboard') ||
         isRouteActive('/broadcast') ||
-        isRouteActive('/templates');
-    const isCrmRouteActive =
-        currentPath.startsWith('/crm/') ||
+        isRouteActive('/templates') ||
         isRouteActive('/contacts');
+    const isCrmRouteActive =
+        currentPath.startsWith('/crm/');
     const isLeadScoringSettingsActive = showLeadScoringModal;
-    const isGoogleCalendarSettingsActive = showGoogleCalendarModal;
-    const isAutomationRouteActive =
-        isRouteActive('/whatsapp-workflow') ||
-        isRouteActive('/crm/ops') ||
-        isLeadScoringSettingsActive ||
-        isGoogleCalendarSettingsActive;
     const isVoiceRouteActive =
         isRouteActive('/voice-broadcast') ||
         currentPath.startsWith('/voice-automation/inbound') ||
@@ -795,7 +783,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
             <aside
                 className={`sidebar-dark ${isCompactMobile ? (isMobileSidebarOpen ? 'open' : 'closed') : ''}`}
                 onMouseLeave={() => {
-                    if (!isMobile && (openMenu === 'campaigns' || openMenu === 'crm' || openMenu === 'automationHub' || openMenu === 'metaAds' || openMenu === 'voice' || openMenu === 'settings')) {
+                    if (!isMobile && (openMenu === 'campaigns' || openMenu === 'crm' || openMenu === 'metaAds' || openMenu === 'voice' || openMenu === 'settings')) {
                         scheduleDesktopFlyoutClose();
                     }
                 }}
@@ -875,6 +863,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     prefetchRoute('/broadcast-dashboard');
                                     prefetchRoute('/broadcast');
                                     prefetchRoute('/templates');
+                                    prefetchRoute('/contacts');
                                 }
                             }}
                             onClick={(e) => handleHubMenuToggle('campaigns', e)}
@@ -900,6 +889,8 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     openDesktopFlyout('crm', e);
                                     prefetchRoute('/crm/home');
                                     prefetchRoute('/crm/pipeline');
+                                    prefetchRoute('/crm/tasks-calendar');
+                                    prefetchRoute('/crm/ops');
                                 }
                             }}
                             onClick={(e) => handleHubMenuToggle('crm', e)}
@@ -914,33 +905,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                             <span className="icon-label">CRM</span>
                             <span className="submenu-arrow-indicator" aria-hidden="true">
                                 {openMenu === 'crm' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
-                            </span>
-                        </div>
-                    )}
-
-                    {isLoggedIn && (canUseWhatsAppWorkflow || canUseBroadcast) && (
-                        <div
-                            className={`icon-item ${isAutomationRouteActive ? 'active' : ''} ${openMenu === 'automationHub' ? 'expanded' : ''}`}
-                            onMouseEnter={(e) => {
-                                if (!isMobile) {
-                                    cancelDesktopFlyoutClose();
-                                    openDesktopFlyout('automationHub', e);
-                                    prefetchRoute('/crm/ops');
-                                    prefetchRoute('/whatsapp-workflow');
-                                }
-                            }}
-                            onClick={(e) => handleHubMenuToggle('automationHub', e)}
-                            title="Automation"
-                        >
-                            <Zap size={24} />
-                            {renderHubBadge(
-                                hubBadges.automationAlerts,
-                                'Automation alerts',
-                                '/crm/ops?historyStatus=error'
-                            )}
-                            <span className="icon-label">Automation</span>
-                            <span className="submenu-arrow-indicator" aria-hidden="true">
-                                {openMenu === 'automationHub' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
                             </span>
                         </div>
                     )}
@@ -1217,6 +1181,16 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     <FileText size={20} />
                                     <span>Templates</span>
                                 </NavLink>
+                                <NavLink
+                                    to="/contacts"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/contacts')}
+                                    onFocus={() => prefetchRoute('/contacts')}
+                                    onClick={closeMobileMenusAfterNavigate}
+                                >
+                                    <Users size={20} />
+                                    <span>Contacts</span>
+                                </NavLink>
                             </nav>
                         </>
                     )}
@@ -1241,16 +1215,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 >
                                     <LayoutDashboard size={20} />
                                     <span>CRM Home</span>
-                                </NavLink>
-                                <NavLink
-                                    to="/contacts"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onMouseEnter={() => prefetchRoute('/contacts')}
-                                    onFocus={() => prefetchRoute('/contacts')}
-                                    onClick={closeMobileMenusAfterNavigate}
-                                >
-                                    <Users size={20} />
-                                    <span>Contacts</span>
                                 </NavLink>
                                 <NavLink
                                     to="/crm/pipeline"
@@ -1302,56 +1266,32 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     <BarChart3 size={20} />
                                     <span>Reports</span>
                                 </NavLink>
+                                <div className="panel-submenu-heading">Automation</div>
                                 {canUseAdvancedCrm && (
                                     <NavLink
                                         to="/crm/ops"
-                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        className={({ isActive }) => `panel-item panel-item-submenu ${isActive ? 'active' : ''}`}
                                         onMouseEnter={() => prefetchRoute('/crm/ops')}
                                         onFocus={() => prefetchRoute('/crm/ops')}
                                         onClick={closeMobileMenusAfterNavigate}
                                     >
-                                        <Settings size={20} />
-                                        <span>CRM Ops</span>
+                                        <LineChart size={20} />
+                                        <span>Follow-up Ops</span>
                                     </NavLink>
                                 )}
-                            </nav>
-                        </>
-                    )}
-
-                    {openMenu === 'automationHub' && (
-                        <>
-                            <div className="panel-header">
-                                <h3>Automation</h3>
-                                {isMobile && (
-                                    <button className="panel-close-btn" onClick={toggleOverlay} title="Close menu">
-                                        <X size={20} />
-                                    </button>
-                                )}
-                            </div>
-                            <nav className="panel-menu">
-                                <NavLink
-                                    to="/crm/ops"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onMouseEnter={() => prefetchRoute('/crm/ops')}
-                                    onFocus={() => prefetchRoute('/crm/ops')}
-                                    onClick={closeMobileMenusAfterNavigate}
-                                >
-                                    <LineChart size={20} />
-                                    <span>Follow-up Ops</span>
-                                </NavLink>
-                                <NavLink
+                                {/* <NavLink
                                     to="/whatsapp-workflow"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    className={({ isActive }) => `panel-item panel-item-submenu ${isActive ? 'active' : ''}`}
                                     onMouseEnter={() => prefetchRoute('/whatsapp-workflow')}
                                     onFocus={() => prefetchRoute('/whatsapp-workflow')}
                                     onClick={closeMobileMenusAfterNavigate}
                                 >
                                     <MessageSquare size={20} />
                                     <span>WhatsApp Workflow</span>
-                                </NavLink>
+                                </NavLink> */}
                                 <button
                                     type="button"
-                                    className={`panel-item panel-item-button ${isLeadScoringSettingsActive ? 'active' : ''}`}
+                                    className={`panel-item panel-item-button panel-item-submenu ${isLeadScoringSettingsActive ? 'active' : ''}`}
                                     onClick={openLeadScoringModal}
                                 >
                                     <BarChart3 size={20} />
@@ -1359,7 +1299,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 </button>
                                 <NavLink
                                     to="/crm/tasks-calendar"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    className={({ isActive }) => `panel-item panel-item-submenu ${isActive ? 'active' : ''}`}
                                     onMouseEnter={() => prefetchRoute('/crm/tasks-calendar')}
                                     onFocus={() => prefetchRoute('/crm/tasks-calendar')}
                                     onClick={closeMobileMenusAfterNavigate}

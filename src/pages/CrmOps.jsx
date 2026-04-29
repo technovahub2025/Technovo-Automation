@@ -16,12 +16,13 @@ import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
 import { whatsappService } from "../services/whatsappService";
 import CrmToast from "../components/crm/CrmToast";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
+import { DEFAULT_PIPELINE_STAGE_OPTIONS, normalizePipelineStageOption } from "../utils/crmPipelineStages";
 import {
   readSidebarPageCache,
   resolveCacheUserId,
   writeSidebarPageCache
 } from "../utils/sidebarPageCache";
-import { addCrmContactSyncListener } from "../utils/crmSyncEvents";
+import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
 import "./CrmWorkspace.css";
 
 const CRM_OPS_LOADING_TIMEOUT_MS = 8000;
@@ -37,15 +38,10 @@ const AUTOMATION_RULE_LABELS = {
   lead_score_threshold: "Lead Score Threshold"
 };
 
-const STAGE_OPTIONS = [
-  { key: "new", label: "New" },
-  { key: "contacted", label: "Contacted" },
-  { key: "nurturing", label: "Nurturing" },
-  { key: "qualified", label: "Qualified" },
-  { key: "proposal", label: "Proposal" },
-  { key: "won", label: "Won" },
-  { key: "lost", label: "Lost" }
-];
+const DEFAULT_STAGE_OPTIONS = DEFAULT_PIPELINE_STAGE_OPTIONS.map((stage) => ({
+  key: stage.key,
+  label: String(stage.label || "").replace(" Lead", "") || "New"
+}));
 
 const sanitizeOwnerRow = (owner = {}) => ({
   ownerId: String(owner?.ownerId || "").trim(),
@@ -317,6 +313,7 @@ const CrmOps = () => {
     sanitizeLeadScoringSettings({})
   );
   const [leadScoringForm, setLeadScoringForm] = useState(() => buildLeadScoringForm({}));
+  const [leadStageOptions, setLeadStageOptions] = useState(DEFAULT_STAGE_OPTIONS);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [previewing, setPreviewing] = useState(false);
@@ -333,7 +330,6 @@ const CrmOps = () => {
   const [toast, setToast] = useState(null);
   const currentUserId = resolveCacheUserId();
   const hasLoadedFromCacheRef = useRef(false);
-  const lastExternalSyncAtRef = useRef(0);
   const requestedHistoryStatus = String(searchParams.get("historyStatus") || "all")
     .trim()
     .toLowerCase();
@@ -343,6 +339,28 @@ const CrmOps = () => {
     const timer = window.setTimeout(() => setToast(null), 2600);
     return () => window.clearTimeout(timer);
   }, [toast]);
+
+  useEffect(() => {
+    let cancelled = false;
+    crmService.getPipelineStages().then((result) => {
+      if (cancelled) return;
+      if (result?.success === false) return;
+
+      const nextStages = Array.isArray(result?.data?.stages) && result.data.stages.length
+        ? result.data.stages.map((stage, index) =>
+            normalizePipelineStageOption(stage, index)
+          ).map((stage) => ({
+            key: stage.key,
+            label: String(stage.label || "").replace(" Lead", "") || "New"
+          }))
+        : DEFAULT_STAGE_OPTIONS;
+      setLeadStageOptions(nextStages);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!["all", "success", "error"].includes(requestedHistoryStatus)) return;
@@ -462,6 +480,15 @@ const CrmOps = () => {
     [persistCache]
   );
 
+  const handleRealtimeRefresh = useCallback(() => {
+    loadDashboard({ silent: true });
+  }, [loadDashboard]);
+
+  useCrmRealtimeRefresh({
+    currentUserId,
+    onRefresh: handleRealtimeRefresh
+  });
+
   useEffect(() => {
     if (hasLoadedFromCacheRef.current) return;
     hasLoadedFromCacheRef.current = true;
@@ -487,19 +514,6 @@ const CrmOps = () => {
     loadDashboard();
     loadLeadScoringSettings();
   }, [currentUserId, loadDashboard, loadLeadScoringSettings]);
-
-  useEffect(() => {
-    const unsubscribe = addCrmContactSyncListener(() => {
-      const now = Date.now();
-      if (now - lastExternalSyncAtRef.current < 900) return;
-      lastExternalSyncAtRef.current = now;
-      loadDashboard({ silent: true });
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [loadDashboard]);
 
   const runAutomation = useCallback(
     async (dryRun) => {
@@ -1145,7 +1159,7 @@ const CrmOps = () => {
                     onChange={(event) => updateLeadScoringForm("stageOnThreshold", event.target.value)}
                     disabled={leadScoringLoading || leadScoringSaving}
                   >
-                    {STAGE_OPTIONS.map((option) => (
+                    {leadStageOptions.map((option) => (
                       <option key={option.key} value={option.key}>
                         {option.label}
                       </option>

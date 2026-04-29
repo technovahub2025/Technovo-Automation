@@ -13,7 +13,7 @@ import CrmToast from "../components/crm/CrmToast";
 import { crmService } from "../services/crmService";
 import { googleCalendarService } from "../services/googleCalendarService";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
-import { addCrmContactSyncListener } from "../utils/crmSyncEvents";
+import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
 import { resolveApiBaseUrl } from "../services/apiBaseUrl";
 import {
   buildGoogleOAuthTrustedOrigins,
@@ -112,7 +112,6 @@ const CrmMeetings = () => {
   const [toast, setToast] = useState(null);
   const [googleConnecting, setGoogleConnecting] = useState(false);
   const oauthPopupRef = useRef(null);
-  const lastExternalSyncAtRef = useRef(0);
 
   useEffect(() => {
     if (!toast?.message) return undefined;
@@ -172,6 +171,14 @@ const CrmMeetings = () => {
     [bucket, searchQuery]
   );
 
+  const handleRealtimeRefresh = useCallback(() => {
+    loadMeetings({ silent: true });
+  }, [loadMeetings]);
+
+  useCrmRealtimeRefresh({
+    onRefresh: handleRealtimeRefresh
+  });
+
   useEffect(() => {
     loadMeetings();
   }, [loadMeetings]);
@@ -183,19 +190,6 @@ const CrmMeetings = () => {
 
     return () => window.clearTimeout(timer);
   }, [bucket, loadMeetings, searchQuery]);
-
-  useEffect(() => {
-    const unsubscribe = addCrmContactSyncListener(() => {
-      const now = Date.now();
-      if (now - lastExternalSyncAtRef.current < 900) return;
-      lastExternalSyncAtRef.current = now;
-      loadMeetings({ silent: true });
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [loadMeetings]);
 
   const upcomingMeetings = useMemo(
     () =>
