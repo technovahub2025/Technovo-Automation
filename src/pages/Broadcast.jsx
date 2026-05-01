@@ -1010,19 +1010,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
     try {
-
-      const healthCheck = await apiClient.healthCheck();
-
+      await apiClient.healthCheck();
       console.log('✅ Backend health check passed');
-
     } catch (error) {
-
-      console.error('❌ Backend health check failed:', error);
-
-      alert('Backend server is not responding. Please check if the server is running on localhost:3001');
-
-      return;
-
+      console.warn('⚠️ Backend health check skipped/failed, continuing broadcast flow:', error);
     }
 
 
@@ -1237,19 +1228,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
     try {
-
-      const healthCheck = await apiClient.healthCheck();
-
+      await apiClient.healthCheck();
       console.log('✅ Backend health check passed');
-
     } catch (error) {
-
-      console.error('❌ Backend health check failed:', error);
-
-      alert('Backend server is not responding. Please check if the server is running on localhost:3001');
-
-      return;
-
+      console.warn('⚠️ Backend health check skipped/failed, continuing broadcast flow:', error);
     }
 
 
