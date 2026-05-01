@@ -191,6 +191,10 @@
 .meta-button-primary {
   background: linear-gradient(135deg, #0c6c58 0%, #149470 100%);
   color: #fff;
+  box-shadow: 0 12px 26px rgba(12, 108, 88, 0.22);
+  background-clip: padding-box;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .meta-button-secondary {
@@ -202,11 +206,84 @@
 .meta-button-facebook {
   background: #1877f2;
   color: #fff;
+  box-shadow: 0 12px 26px rgba(24, 119, 242, 0.22);
 }
 
 .meta-button:disabled {
-  opacity: 0.72;
   cursor: not-allowed;
+}
+
+.meta-button-primary:disabled,
+.meta-button-primary:disabled:hover,
+.meta-button-primary:disabled:focus-visible {
+  opacity: 1;
+  background: linear-gradient(135deg, #0c6c58 0%, #149470 100%);
+  color: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 12px 26px rgba(12, 108, 88, 0.18);
+  border-color: transparent;
+}
+
+.meta-button-primary:hover:not(:disabled),
+.meta-button-primary:focus-visible:not(:disabled) {
+  background: linear-gradient(135deg, #0f84d9 0%, #2957f1 48%, #6c4ff7 100%);
+  color: #fff;
+  box-shadow: 0 16px 30px rgba(41, 87, 241, 0.26);
+  transform: translateY(-1px);
+}
+
+.meta-wizard-footer-actions .meta-button-primary,
+.meta-wizard-footer-actions .meta-button-primary:hover:not(:disabled),
+.meta-wizard-footer-actions .meta-button-primary:focus-visible:not(:disabled),
+.meta-wizard-footer-actions .meta-button-primary:disabled,
+.meta-wizard-footer-actions .meta-button-primary:disabled:hover,
+.meta-wizard-footer-actions .meta-button-primary:disabled:focus-visible {
+  background-image: linear-gradient(135deg, #0c6c58 0%, #149470 100%);
+}
+
+.meta-wizard-footer-actions > button.meta-button-primary,
+.meta-wizard-footer-actions > button.meta-button-primary:hover,
+.meta-wizard-footer-actions > button.meta-button-primary:focus,
+.meta-wizard-footer-actions > button.meta-button-primary:focus-visible,
+.meta-wizard-footer-actions > button.meta-button-primary:active,
+.meta-wizard-footer-actions > button.meta-button-primary:disabled,
+.meta-wizard-footer-actions > button.meta-button-primary:disabled:hover,
+.meta-wizard-footer-actions > button.meta-button-primary:disabled:focus-visible {
+  background: linear-gradient(135deg, #0c6c58 0%, #149470 100%) !important;
+  background-color: #0c6c58 !important;
+  background-image: linear-gradient(135deg, #0c6c58 0%, #149470 100%) !important;
+  border-color: transparent !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 26px rgba(12, 108, 88, 0.22) !important;
+  opacity: 1 !important;
+  transform: none !important;
+  transition: none !important;
+  filter: none !important;
+  -webkit-appearance: none !important;
+  appearance: none !important;
+}
+
+.meta-wizard-footer-actions > button.meta-button-primary:hover:not(:disabled),
+.meta-wizard-footer-actions > button.meta-button-primary:focus-visible:not(:disabled) {
+  background: linear-gradient(135deg, #0c6c58 0%, #149470 100%) !important;
+  background-color: #0c6c58 !important;
+  background-image: linear-gradient(135deg, #0c6c58 0%, #149470 100%) !important;
+  box-shadow: 0 12px 26px rgba(12, 108, 88, 0.22) !important;
+  transform: none !important;
+}
+
+.meta-button-facebook:hover:not(:disabled),
+.meta-button-facebook:focus-visible:not(:disabled) {
+  background: linear-gradient(135deg, #1b8cff 0%, #165ee8 55%, #7b62ff 100%);
+  color: #fff;
+  box-shadow: 0 16px 30px rgba(27, 140, 255, 0.24);
+  transform: translateY(-1px);
+}
+
+.meta-button-secondary:hover:not(:disabled),
+.meta-button-secondary:focus-visible:not(:disabled) {
+  background: linear-gradient(135deg, #eef5ff 0%, #e2ecff 100%);
+  border-color: #b7cafc;
+  color: #14329a;
 }
 
 .meta-banner {

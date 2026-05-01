@@ -106,6 +106,39 @@ const getCampaignContractField = (campaign, contractKey, fallbackKey, defaultVal
     return defaultValue;
 };
 
+const getCampaignCreativeImageUrl = (campaign = {}) => {
+    const candidates = [
+        campaign?.imageUrl,
+        campaign?.mediaUrl,
+        campaign?.creative?.mediaUrl,
+        campaign?.creative?.imageUrl,
+        campaign?.metaResponse?.creative?.mediaUrl,
+        campaign?.metaResponse?.creative?.imageUrl,
+        campaign?.metaResponse?.creativeUpload?.mediaUrl,
+        campaign?.metaResponse?.creativeUpload?.secureUrl,
+        campaign?.metaResponse?.mediaUrl,
+        campaign?.metaResponse?.imageUrl
+    ];
+
+    for (const candidate of candidates) {
+        const raw = String(candidate || '').trim();
+        if (!raw) continue;
+
+        if (
+            /lh3\.googleusercontent\.com\/aida-public/i.test(raw) ||
+            /googleusercontent\.com\/aida-public/i.test(raw)
+        ) {
+            continue;
+        }
+
+        if (/^(https?:)?\/\//i.test(raw) || raw.startsWith('/') || raw.startsWith('data:image/')) {
+            return raw;
+        }
+    }
+
+    return '';
+};
+
 const CampaignManagement = () => {
     const navigate = useNavigate();
     const [campaigns, setCampaigns] = useState([]);
@@ -120,7 +153,6 @@ const CampaignManagement = () => {
     const [viewMode, setViewMode] = useState('grid'); // grid or list
     const [dateRange, setDateRange] = useState('last30days');
     const [currentPage, setCurrentPage] = useState(1);
-    const [brokenImageIds, setBrokenImageIds] = useState({});
     const [metaSetupReady, setMetaSetupReady] = useState(true);
     const [metaSetupLoading, setMetaSetupLoading] = useState(true);
     const [metaSetupMessage, setMetaSetupMessage] = useState('');
@@ -185,7 +217,7 @@ const CampaignManagement = () => {
             headline: campaign.headline || '',
             description: campaign.description || '',
             destinationUrl: campaign.destinationUrl || '',
-            imageUrl: campaign.imageUrl || '',
+            imageUrl: getCampaignCreativeImageUrl(campaign),
             videoUrl: campaign.videoUrl || '',
             mediaType: campaign.mediaType || (campaign.videoUrl ? 'video' : 'image'),
             callToAction: campaign.callToAction || 'LEARN_MORE',
@@ -417,10 +449,6 @@ const CampaignManagement = () => {
         const maxPage = Math.max(1, Math.ceil(filteredCampaigns.length / ITEMS_PER_PAGE));
         setCurrentPage((prev) => Math.min(prev, maxPage));
     }, [filteredCampaigns.length]);
-
-    useEffect(() => {
-        setBrokenImageIds({});
-    }, [campaigns]);
 
     const handleCreateCampaign = async (campaignData) => {
         if (USE_MOCK) {
@@ -683,24 +711,7 @@ const CampaignManagement = () => {
     const totalRevenue = campaigns.reduce((sum, campaign) => sum + Number(campaign.revenue || 0), 0);
     const totalImpressions = campaigns.reduce((sum, campaign) => sum + Number(campaign.impressions || 0), 0);
     const getCampaignImageSrc = (campaign) => {
-        const mediaType = String(campaign?.mediaType || '').toLowerCase();
-        if (mediaType === 'video') return '';
-
-        const raw = String(campaign?.imageUrl || '').trim();
-        if (!raw) return '';
-
-        // Block known template/dummy creative URLs from design mocks.
-        if (
-            /lh3\.googleusercontent\.com\/aida-public/i.test(raw) ||
-            /googleusercontent\.com\/aida-public/i.test(raw)
-        ) {
-            return '';
-        }
-
-        if (/^(https?:)?\/\//i.test(raw) || raw.startsWith('/') || raw.startsWith('data:image/')) {
-            return raw;
-        }
-        return '';
+        return getCampaignCreativeImageUrl(campaign);
     };
     const compactMoney = (value) => {
         const amount = Number(value || 0);
@@ -1050,22 +1061,19 @@ const CampaignManagement = () => {
                                 const roas = getSafeRatio(campaign.revenue, campaign.spent);
                                 const statusMeta = getCampaignStatusMeta(campaign);
                                 const imageSrc = getCampaignImageSrc(campaign);
-                                const isImageBroken = Boolean(brokenImageIds[campaign.id]);
-                                const shouldShowImage = Boolean(imageSrc && !isImageBroken);
+                                const shouldShowImage = Boolean(imageSrc);
                                 return (
                                     <div key={campaign.id} className="cm-campaign-card">
                                         <div className="cm-card-media">
                                             {shouldShowImage ? (
                                                 <img
+                                                    key={imageSrc}
                                                     className="cm-card-media-img"
                                                     src={imageSrc}
                                                     alt={campaign.name}
-                                                    onError={() =>
-                                                        setBrokenImageIds((prev) => ({
-                                                            ...prev,
-                                                            [campaign.id]: true
-                                                        }))
-                                                    }
+                                                    onError={(event) => {
+                                                        event.currentTarget.removeAttribute("src");
+                                                    }}
                                                 />
                                             ) : (
                                                 <div className="cm-card-media-fallback">

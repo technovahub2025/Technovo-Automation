@@ -26,7 +26,7 @@
 .crm-workspace--pipeline-static {
   height: 100%;
   min-height: 0;
-  overflow: hidden;
+  overflow: visible;
   display: flex;
   flex-direction: column;
 }
@@ -775,8 +775,9 @@
 }
 
 .crm-pipeline-board-shell {
-  position: relative;
-  z-index: 6;
+  position: sticky;
+  top: 12px;
+  z-index: 18;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -787,14 +788,48 @@
   box-shadow: 0 12px 28px rgba(18, 58, 100, 0.06);
   flex: 1;
   min-height: 0;
+  min-height: calc(100dvh - 140px);
+  max-height: calc(100dvh - 24px);
+  overflow: hidden;
+}
+
+.crm-pipeline-board-shell__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #b8c9dc transparent;
+}
+
+.crm-pipeline-board-shell__body::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+
+.crm-pipeline-board-shell__body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.crm-pipeline-board-shell__body::-webkit-scrollbar-thumb {
+  background: rgba(184, 201, 220, 0.72);
+  border-radius: 999px;
+  border: 0;
+  background-clip: border-box;
+}
+
+.crm-pipeline-board-shell__body::-webkit-scrollbar-thumb:hover {
+  background: rgba(159, 180, 202, 0.9);
+  border: 0;
+  background-clip: border-box;
 }
 
 .crm-pipeline-section-label--sticky {
   position: sticky;
   top: 0;
   z-index: 8;
-  margin: 10px 0 8px;
+  margin: 0 0 8px;
   padding: 6px 10px 6px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.98));
   border: 1px solid #d6e3f1;
@@ -816,6 +851,30 @@
   overscroll-behavior-x: contain;
   justify-content: start;
   min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #b8c9dc transparent;
+}
+
+.crm-pipeline-board::-webkit-scrollbar {
+  width: 3px;
+  height: 3px;
+}
+
+.crm-pipeline-board::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.crm-pipeline-board::-webkit-scrollbar-thumb {
+  background: rgba(184, 201, 220, 0.72);
+  border-radius: 999px;
+  border: 0;
+  background-clip: border-box;
+}
+
+.crm-pipeline-board::-webkit-scrollbar-thumb:hover {
+  background: rgba(159, 180, 202, 0.9);
+  border: 0;
+  background-clip: border-box;
 }
 
 .crm-pipeline-toolbar {
@@ -1125,7 +1184,7 @@
   border: 1px solid #d2dfec;
   border-top: 4px solid var(--stage-accent);
   border-radius: 14px;
-  min-height: 412px;
+  min-height: 560px;
   display: flex;
   flex-direction: column;
   overflow: visible;
@@ -1253,8 +1312,29 @@
   flex-direction: column;
   gap: 7px;
   overflow-x: hidden;
+  overflow-y: auto;
   min-height: 100px;
   flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(184, 201, 220, 0.65) transparent;
+}
+
+.crm-stage-list::-webkit-scrollbar {
+  width: 2px;
+  height: 2px;
+}
+
+.crm-stage-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.crm-stage-list::-webkit-scrollbar-thumb {
+  background: rgba(184, 201, 220, 0.65);
+  border-radius: 999px;
+}
+
+.crm-stage-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(159, 180, 202, 0.85);
 }
 
 .crm-contact-card {
@@ -1811,6 +1891,24 @@
   grid-template-columns: repeat(6, minmax(120px, 1fr));
 }
 
+.crm-pipeline-stage-panel .crm-create-task-grid--wide {
+  grid-template-columns: minmax(0, 2.2fr) minmax(180px, 0.9fr) max-content;
+  align-items: end;
+}
+
+.crm-pipeline-stage-panel .crm-inline-actions {
+  justify-self: end;
+  align-self: end;
+  width: max-content;
+}
+
+.crm-pipeline-stage-panel .crm-contact-action-btn {
+  width: auto;
+  min-width: 140px;
+  padding-inline: 16px;
+  white-space: nowrap;
+}
+
 .crm-pipeline-views {
   display: flex;
   align-items: stretch;
@@ -1964,6 +2062,7 @@
   display: grid;
   gap: 6px;
   align-content: start;
+  min-width: 180px;
 }
 
 .crm-pipeline-stage-color-field input[type="color"] {
@@ -2359,6 +2458,7 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 .crm-drawer-card-header {
@@ -2386,6 +2486,17 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+}
+
+.crm-drawer-form-grid .crm-field {
+  min-width: 0;
+}
+
+.crm-drawer-form-grid .crm-input,
+.crm-drawer-form-grid .crm-select,
+.crm-drawer-form-grid .crm-textarea {
+  width: 100%;
+  min-width: 0;
 }
 
 .crm-field {

@@ -1506,139 +1506,140 @@ const CrmPipeline = () => {
 
         {viewMode === "board" ? (
           <>
-            <div className="crm-pipeline-section-label crm-pipeline-section-label--sticky crm-pipeline-section-label--board">
-              <strong>Lead Pipeline Stages</strong>
-              <span>Move leads across the funnel, or open a lead to update its profile and follow-up plan.</span>
-            </div>
-
             <div className="crm-pipeline-board-shell">
-
-            {error ? <div className="crm-alert crm-alert-error">{error}</div> : null}
-            {loading ? <CrmPageSkeleton variant="board" /> : null}
-
-            {!loading && visibleContacts.length === 0 ? (
-              <CrmEmptyState
-                title="No leads match this pipeline view."
-                description="Try changing the lead queue, status, owner, or search filters."
-              />
-            ) : null}
-
-            {!loading && visibleContacts.length > 0 ? (
-              <div className="crm-pipeline-board">
-                {stageOptions.map((stage) => (
-                  <section
-                    key={stage.key}
-                    className={`${getStageColumnClass(stage.key)} ${
-                      dropTargetContactStageId === stage.key && draggingContactId ? "crm-stage-column--drop-active" : ""
-                    }`}
-                    style={getStageColumnStyle(stage)}
-                    onDragOver={(event) => handleLeadDragOver(event, stage.key)}
-                    onDrop={(event) => handleLeadDrop(event, stage.key)}
-                  >
-                    <header className="crm-stage-header">
-                      <div>
-                        <div className="crm-stage-header__topline">
-                          <span className="crm-stage-header__badge">
-                            {STAGE_BADGE_LABELS[stage.key] || String(stage.label || stage.key || "Stage")
-                              .slice(0, 10)
-                              .toUpperCase()}
-                          </span>
-                          <h3>{stage.label}</h3>
-                        </div>
-                        <p className="crm-stage-header__helper">{STAGE_HELPER_TEXT[stage.key] || "Pipeline activity in this step."}</p>
-                        <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#5a7590" }}>
-                          Lead value {formatCurrency(
-                            (contactsByStage[stage.key] || []).reduce(
-                              (sum, contact) => sum + (Number(contact?.dealValue) || 0),
-                              0
-                            )
-                          )}
-                        </p>
-                      </div>
-                      <span>{(contactsByStage[stage.key] || []).length}</span>
-                    </header>
-
-                    <div className="crm-stage-list">
-                      {(contactsByStage[stage.key] || []).map((contact) => {
-                        const contactId = getEntityId(contact);
-                        const currentStage = normalizeLeadStage(contact?.stage);
-                        const isLeadDragging = draggingContactId === contactId;
-                        const isLeadDropTarget = dropTargetContactStageId === stage.key && draggingContactId && !isLeadDragging;
-
-                        return (
-                          <article
-                            key={contactId}
-                            className={`crm-contact-card ${isLeadDragging ? "crm-contact-card--dragging" : ""} ${
-                              isLeadDropTarget ? "crm-contact-card--drop-target" : ""
-                            }`}
-                            draggable={pipelineStagesEnabled}
-                            onDragStart={(event) => handleLeadDragStart(event, contactId, stage.key)}
-                            onDragEnd={handleLeadDragEnd}
-                            onDragOver={(event) => handleLeadDragOver(event, stage.key)}
-                            onDrop={(event) => handleLeadDrop(event, stage.key)}
-                          >
-                            <div className="crm-contact-card__stage-move">
-                              <span className="crm-contact-card__move-badge crm-move-badge">
-                                <GripVertical size={12} />
-                                Drag to move
-                              </span>
-                              <select
-                                className="crm-select crm-select--inline crm-contact-card__stage-select"
-                                value={currentStage}
-                                onChange={(event) => moveContactToStage(contact, event.target.value)}
-                                aria-label={`Move ${contact?.name || "lead"} to stage`}
-                              >
-                                {stageOptions.map((stageOption) => (
-                                  <option key={stageOption.key} value={stageOption.key}>
-                                    {stageOption.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </div>
-
-                            <div className="crm-contact-head">
-                              <strong>{contact?.name || "Untitled Lead"}</strong>
-                              <span className={`crm-status-badge ${getStatusBadgeClass(contact?.status)}`}>
-                                {formatLeadStatusLabel(contact?.status)}
-                              </span>
-                            </div>
-
-                            <div className="crm-contact-meta">
-                              <span>Phone: {contact?.phone || "-"}</span>
-                              <span>
-                                <BadgeDollarSign size={13} />
-                                Lead value {formatCurrency(contact?.dealValue)}
-                              </span>
-                              <span>
-                                <UserRound size={13} />
-                                Lead score {Number(contact?.leadScore || 0)}
-                              </span>
-                              <span>Lead owner: {contact?.ownerId || "Unassigned"}</span>
-                              <span>Next follow-up touch: {formatDate(contact?.nextFollowUpAt)}</span>
-                              <span>Lead source: {contact?.source || "-"}</span>
-                            </div>
-
-                            <button
-                              type="button"
-                              className="crm-link-btn"
-                              onClick={() => {
-                                setSelectedContact(contact);
-                                setSelectedContactId(contactId);
-                              }}
-                            >
-                              Open Lead Profile
-                            </button>
-                          </article>
-                        );
-                      })}
-                      {(contactsByStage[stage.key] || []).length === 0 && (
-                        <div className="crm-empty-column">This stage has no leads yet.</div>
-                      )}
-                    </div>
-                  </section>
-                ))}
+              <div className="crm-pipeline-section-label crm-pipeline-section-label--sticky crm-pipeline-section-label--board">
+                <strong>Lead Pipeline Stages</strong>
+                <span>Move leads across the funnel, or open a lead to update its profile and follow-up plan.</span>
               </div>
-            ) : null}
+
+              <div className="crm-pipeline-board-shell__body">
+                {error ? <div className="crm-alert crm-alert-error">{error}</div> : null}
+                {loading ? <CrmPageSkeleton variant="board" /> : null}
+
+                {!loading && visibleContacts.length === 0 ? (
+                  <CrmEmptyState
+                    title="No leads match this pipeline view."
+                    description="Try changing the lead queue, status, owner, or search filters."
+                  />
+                ) : null}
+
+                {!loading && visibleContacts.length > 0 ? (
+                  <div className="crm-pipeline-board">
+                    {stageOptions.map((stage) => (
+                      <section
+                        key={stage.key}
+                        className={`${getStageColumnClass(stage.key)} ${
+                          dropTargetContactStageId === stage.key && draggingContactId ? "crm-stage-column--drop-active" : ""
+                        }`}
+                        style={getStageColumnStyle(stage)}
+                        onDragOver={(event) => handleLeadDragOver(event, stage.key)}
+                        onDrop={(event) => handleLeadDrop(event, stage.key)}
+                      >
+                        <header className="crm-stage-header">
+                          <div>
+                            <div className="crm-stage-header__topline">
+                              <span className="crm-stage-header__badge">
+                                {STAGE_BADGE_LABELS[stage.key] || String(stage.label || stage.key || "Stage")
+                                  .slice(0, 10)
+                                  .toUpperCase()}
+                              </span>
+                              <h3>{stage.label}</h3>
+                            </div>
+                            <p className="crm-stage-header__helper">{STAGE_HELPER_TEXT[stage.key] || "Pipeline activity in this step."}</p>
+                            <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#5a7590" }}>
+                              Lead value {formatCurrency(
+                                (contactsByStage[stage.key] || []).reduce(
+                                  (sum, contact) => sum + (Number(contact?.dealValue) || 0),
+                                  0
+                                )
+                              )}
+                            </p>
+                          </div>
+                          <span>{(contactsByStage[stage.key] || []).length}</span>
+                        </header>
+
+                        <div className="crm-stage-list">
+                          {(contactsByStage[stage.key] || []).map((contact) => {
+                            const contactId = getEntityId(contact);
+                            const currentStage = normalizeLeadStage(contact?.stage);
+                            const isLeadDragging = draggingContactId === contactId;
+                            const isLeadDropTarget = dropTargetContactStageId === stage.key && draggingContactId && !isLeadDragging;
+
+                            return (
+                              <article
+                                key={contactId}
+                                className={`crm-contact-card ${isLeadDragging ? "crm-contact-card--dragging" : ""} ${
+                                  isLeadDropTarget ? "crm-contact-card--drop-target" : ""
+                                }`}
+                                draggable={pipelineStagesEnabled}
+                                onDragStart={(event) => handleLeadDragStart(event, contactId, stage.key)}
+                                onDragEnd={handleLeadDragEnd}
+                                onDragOver={(event) => handleLeadDragOver(event, stage.key)}
+                                onDrop={(event) => handleLeadDrop(event, stage.key)}
+                              >
+                                <div className="crm-contact-card__stage-move">
+                                  <span className="crm-contact-card__move-badge crm-move-badge">
+                                    <GripVertical size={12} />
+                                    Drag to move
+                                  </span>
+                                  <select
+                                    className="crm-select crm-select--inline crm-contact-card__stage-select"
+                                    value={currentStage}
+                                    onChange={(event) => moveContactToStage(contact, event.target.value)}
+                                    aria-label={`Move ${contact?.name || "lead"} to stage`}
+                                  >
+                                    {stageOptions.map((stageOption) => (
+                                      <option key={stageOption.key} value={stageOption.key}>
+                                        {stageOption.label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </div>
+
+                                <div className="crm-contact-head">
+                                  <strong>{contact?.name || "Untitled Lead"}</strong>
+                                  <span className={`crm-status-badge ${getStatusBadgeClass(contact?.status)}`}>
+                                    {formatLeadStatusLabel(contact?.status)}
+                                  </span>
+                                </div>
+
+                                <div className="crm-contact-meta">
+                                  <span>Phone: {contact?.phone || "-"}</span>
+                                  <span>
+                                    <BadgeDollarSign size={13} />
+                                    Lead value {formatCurrency(contact?.dealValue)}
+                                  </span>
+                                  <span>
+                                    <UserRound size={13} />
+                                    Lead score {Number(contact?.leadScore || 0)}
+                                  </span>
+                                  <span>Lead owner: {contact?.ownerId || "Unassigned"}</span>
+                                  <span>Next follow-up touch: {formatDate(contact?.nextFollowUpAt)}</span>
+                                  <span>Lead source: {contact?.source || "-"}</span>
+                                </div>
+
+                                <button
+                                  type="button"
+                                  className="crm-link-btn"
+                                  onClick={() => {
+                                    setSelectedContact(contact);
+                                    setSelectedContactId(contactId);
+                                  }}
+                                >
+                                  Open Lead Profile
+                                </button>
+                              </article>
+                            );
+                          })}
+                          {(contactsByStage[stage.key] || []).length === 0 && (
+                            <div className="crm-empty-column">This stage has no leads yet.</div>
+                          )}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
             </div>
           </>
         ) : null}
