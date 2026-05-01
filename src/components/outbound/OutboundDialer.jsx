@@ -221,6 +221,7 @@ const OutboundDialer = ({
         workflowId: singleWorkflowId,
         scheduleType: singleScheduleType,
         scheduledAt: singleScheduledAt || null,
+        scheduledAtLocal: singleScheduledAt || null,
         recurrence: 'none',
         timezone: 'Asia/Kolkata',
         allowedWindowStart: '09:00',
@@ -299,6 +300,7 @@ const OutboundDialer = ({
         workflowId: bulkWorkflowId,
         scheduleType: bulkScheduleType,
         scheduledAt: bulkScheduledAt || null,
+        scheduledAtLocal: bulkScheduledAt || null,
         recurrence: bulkRecurrence,
         timezone: 'Asia/Kolkata',
         allowedWindowStart: bulkAllowedWindowStart,
@@ -603,6 +605,7 @@ const OutboundDialer = ({
                     value={singleScheduledAt}
                     onChange={(event) => setSingleScheduledAt(event.target.value)}
                   />
+                  <p className="outbound-muted">This time is scheduled in Indian Standard Time (IST).</p>
                 </div>
               ) : (
                 <div />
@@ -972,12 +975,15 @@ const OutboundDialer = ({
                   <div>
                     <label>{bulkScheduleType === 'once' ? 'Scheduled Date & Time' : 'Recurrence'}</label>
                     {bulkScheduleType === 'once' ? (
-                      <input
-                        className="outbound-input"
-                        type="datetime-local"
-                        value={bulkScheduledAt}
-                        onChange={(event) => setBulkScheduledAt(event.target.value)}
-                      />
+                      <>
+                        <input
+                          className="outbound-input"
+                          type="datetime-local"
+                          value={bulkScheduledAt}
+                          onChange={(event) => setBulkScheduledAt(event.target.value)}
+                        />
+                        <p className="outbound-muted">This time is scheduled in Indian Standard Time (IST).</p>
+                      </>
                     ) : (
                       <select
                         className="outbound-input"

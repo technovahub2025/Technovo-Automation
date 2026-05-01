@@ -1,154 +1,264 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import apiService from '../services/api';
 import socketService from '../services/socketService';
 
 const normalizeAnalytics = (payload) => payload?.data || payload || null;
 
 const normalizeQueueStatus = (raw) => {
-  if (!raw || typeof raw !== 'object') return {};
+  const source = raw?.queueStatus || raw?.queues || raw || {};
+  if (!source || typeof source !== 'object') return {};
 
   const normalized = {};
-  Object.entries(raw).forEach(([queueName, queueValue]) => {
-    if (Array.isArray(queueValue)) {
-      normalized[queueName] = queueValue;
-      return;
-    }
+  Object.entries(source).forEach(([queueName, queueValue]) => {
+    const calls = Array.isArray(queueValue)
+      ? queueValue
+      : queueValue && Array.isArray(queueValue.calls)
+        ? queueValue.calls
+        : null;
 
-    if (queueValue && Array.isArray(queueValue.calls)) {
-      normalized[queueName] = queueValue.calls.map((caller) => ({
+    if (!calls) return;
+
+    normalized[queueName] = calls
+      .map((caller, index) => ({
         ...caller,
-        phoneNumber: caller.phoneNumber || caller.from || caller.callerNumber || '-'
-      }));
-    }
+        callSid: caller?.callSid || caller?.id || `${queueName}-${index}`,
+        phoneNumber: caller?.phoneNumber || caller?.from || caller?.callerNumber || '-',
+        queuedAt: caller?.queuedAt || caller?.createdAt || null,
+        position: Number.isFinite(Number(caller?.position)) ? Number(caller.position) : index + 1
+      }))
+      .sort((a, b) => {
+        const aPosition = Number.isFinite(Number(a.position)) ? Number(a.position) : Number.MAX_SAFE_INTEGER;
+        const bPosition = Number.isFinite(Number(b.position)) ? Number(b.position) : Number.MAX_SAFE_INTEGER;
+        if (aPosition !== bPosition) return aPosition - bPosition;
+
+        const aTime = Date.parse(a.queuedAt || '');
+        const bTime = Date.parse(b.queuedAt || '');
+        if (!Number.isFinite(aTime) && !Number.isFinite(bTime)) return 0;
+        if (!Number.isFinite(aTime)) return 1;
+        if (!Number.isFinite(bTime)) return -1;
+        return aTime - bTime;
+      });
   });
 
   return normalized;
 };
 
-export const useInbound = () => {
+const mergeQueueStatus = (previous, incoming) => {
+  const normalized = normalizeQueueStatus(incoming);
+  if (!Object.keys(normalized).length) return previous;
+
+  const next = { ...previous };
+  Object.entries(normalized).forEach(([queueName, callers]) => {
+    if (!Array.isArray(callers) || callers.length === 0) {
+      delete next[queueName];
+      return;
+    }
+    next[queueName] = callers;
+  });
+  return next;
+};
+
+const normalizeInboundSnapshot = (payload = {}) => ({
+  analytics: normalizeAnalytics(payload.overview || payload.analytics || null),
+  queueStatus: normalizeQueueStatus(payload.queues || payload.queueStatus || {}),
+  routingRules: Array.isArray(payload.routingRules) ? payload.routingRules : [],
+  leadsSummary: payload.leadsSummary || { contactsUsed: 0, total: 0 },
+  timestamp: payload.timestamp || new Date().toISOString()
+});
+
+const fetchInboundFallback = async (period) => {
+  const [analyticsRes, queueRes] = await Promise.allSettled([
+    apiService.getInboundAnalytics(period),
+    apiService.getQueueStatus()
+  ]);
+
+  const analytics = analyticsRes.status === 'fulfilled'
+    ? normalizeAnalytics(analyticsRes.value.data)
+    : null;
+  const queueStatus = queueRes.status === 'fulfilled'
+    ? normalizeQueueStatus(queueRes.value.data)
+    : {};
+
+  const error = [
+    analyticsRes.status === 'rejected'
+      ? analyticsRes.reason?.response?.data?.error || analyticsRes.reason?.message || 'Failed to load analytics'
+      : '',
+    queueRes.status === 'rejected'
+      ? queueRes.reason?.response?.data?.error || queueRes.reason?.message || 'Failed to load queue status'
+      : ''
+  ].filter(Boolean).join('; ');
+
+  return {
+    analytics,
+    queueStatus,
+    routingRules: [],
+    leadsSummary: { contactsUsed: 0, total: 0 },
+    error
+  };
+};
+
+export const useInbound = (period = 'today') => {
   const [analytics, setAnalytics] = useState(null);
   const [queueStatus, setQueueStatus] = useState({});
-  const [loading, setLoading] = useState(false);
+  const [routingRules, setRoutingRules] = useState([]);
+  const [leadsSummary, setLeadsSummary] = useState({ contactsUsed: 0, total: 0 });
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
+  const pendingSnapshotRef = useRef(false);
+  const mountedRef = useRef(false);
 
-  const refreshAnalytics = useCallback(async (period = 'today', retryCount = 0) => {
-    try {
+  const applySnapshot = useCallback((payload = {}) => {
+    const snapshot = normalizeInboundSnapshot(payload);
+    setAnalytics(snapshot.analytics);
+    setQueueStatus(snapshot.queueStatus);
+    setRoutingRules(snapshot.routingRules);
+    setLeadsSummary(snapshot.leadsSummary);
+    setError(null);
+  }, []);
+
+  const refreshInbound = useCallback(async () => {
+    const socket = socketService.connect();
+    if (!socket) {
       setLoading(true);
-      setError(null);
+      const fallback = await fetchInboundFallback(period);
+      if (!mountedRef.current) return;
+      setAnalytics(fallback.analytics);
+      setQueueStatus(fallback.queueStatus);
+      setError(fallback.error || null);
+      setLoading(false);
+      return;
+    }
 
-      const response = await apiService.getInboundAnalytics(period);
-      setAnalytics(normalizeAnalytics(response.data));
-    } catch (err) {
-      if (retryCount < 2 && (err.code === 'NETWORK_ERROR' || err.code === 'ECONNABORTED')) {
-        setTimeout(() => refreshAnalytics(period, retryCount + 1), 1000 * (retryCount + 1));
+    if (pendingSnapshotRef.current) return;
+    pendingSnapshotRef.current = true;
+    setLoading(true);
+
+    const fallbackAfterFailure = async (message = '') => {
+      const fallback = await fetchInboundFallback(period);
+      if (!mountedRef.current) return;
+      setAnalytics(fallback.analytics);
+      setQueueStatus(fallback.queueStatus);
+      setError(message || fallback.error || null);
+      setLoading(false);
+    };
+
+    const timeoutId = window.setTimeout(() => {
+      if (!pendingSnapshotRef.current) return;
+      pendingSnapshotRef.current = false;
+      fallbackAfterFailure('Inbound socket snapshot timed out');
+    }, 7000);
+
+    socket.emit('inbound:subscribe', { period }, async (response = {}) => {
+      window.clearTimeout(timeoutId);
+      pendingSnapshotRef.current = false;
+      if (!mountedRef.current) return;
+
+      if (response?.success !== false && (response?.overview || response?.queues || response?.queueStatus)) {
+        applySnapshot(response);
+        setLoading(false);
         return;
       }
-      setError(err.response?.data?.error || err.message || 'Failed to load analytics');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
-  const refreshQueueStatus = useCallback(async (retryCount = 0) => {
-    try {
-      setError(null);
-
-      const response = await apiService.getQueueStatus();
-      setQueueStatus(normalizeQueueStatus(response.data));
-    } catch (err) {
-      if (retryCount < 2 && (err.code === 'NETWORK_ERROR' || err.code === 'ECONNABORTED')) {
-        setTimeout(() => refreshQueueStatus(retryCount + 1), 1000 * (retryCount + 1));
-        return;
-      }
-      setError(err.response?.data?.error || err.message || 'Failed to load queue status');
-    }
-  }, []);
-
-  const refreshInbound = useCallback(async (period = 'today') => {
-    try {
-      setLoading(true);
-      setError(null);
-
-      const [analyticsRes, queueRes] = await Promise.allSettled([
-        apiService.getInboundAnalytics(period),
-        apiService.getQueueStatus()
-      ]);
-
-      if (analyticsRes.status === 'fulfilled') {
-        setAnalytics(normalizeAnalytics(analyticsRes.value.data));
-      } else {
-        const errorMessage = analyticsRes.reason?.response?.data?.error ||
-          analyticsRes.reason?.message ||
-          'Failed to load analytics';
-        setError(errorMessage);
-      }
-
-      if (queueRes.status === 'fulfilled') {
-        setQueueStatus(normalizeQueueStatus(queueRes.value.data));
-      } else {
-        const errorMessage = queueRes.reason?.response?.data?.error ||
-          queueRes.reason?.message ||
-          'Failed to load queue status';
-        setError((prev) => (prev ? `${prev}; ${errorMessage}` : errorMessage));
-      }
-
-      const socket = socketService.connect();
-      if (socket && socketService.isConnected()) {
-        socket.emit('inbound_data_refreshed', {
-          period,
-          timestamp: new Date().toISOString(),
-          analyticsFetched: analyticsRes.status === 'fulfilled',
-          queueStatusFetched: queueRes.status === 'fulfilled'
-        });
-      }
-    } catch (err) {
-      setError(err.response?.data?.error || err.message || 'Failed to refresh data');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      await fallbackAfterFailure(response?.error || 'Failed to load inbound snapshot');
+    });
+  }, [applySnapshot, period]);
 
   useEffect(() => {
+    mountedRef.current = true;
     const socket = socketService.connect();
 
     const updateSocketConnectionStatus = () => {
       setSocketConnected(socketService.isConnected());
     };
 
+    const handleSnapshot = (payload) => {
+      applySnapshot(payload);
+      setLoading(false);
+    };
+
+    const handleCallUpdate = (payload = {}) => {
+      if (payload.overview) {
+        setAnalytics(normalizeAnalytics(payload.overview));
+      } else if (payload.summary || payload.recentCalls) {
+        setAnalytics((prev) => ({
+          ...(prev || {}),
+          ...payload
+        }));
+      }
+    };
+
+    const handleQueueUpdate = (payload = {}) => {
+      setQueueStatus((prev) => mergeQueueStatus(prev, payload));
+    };
+
+    const handleRoutingRulesUpdate = (payload = {}) => {
+      if (Array.isArray(payload.routingRules)) {
+        setRoutingRules(payload.routingRules);
+      }
+    };
+
+    const handleLeadUpdate = (payload = {}) => {
+      if (payload.action === 'created') {
+        setLeadsSummary((prev) => ({
+          contactsUsed: Number(prev.contactsUsed || prev.total || 0) + 1,
+          total: Number(prev.total || prev.contactsUsed || 0) + 1
+        }));
+      }
+    };
+
+    const handleConnect = () => {
+      updateSocketConnectionStatus();
+      refreshInbound();
+    };
+
     updateSocketConnectionStatus();
 
     if (socket) {
-      const handleInboundCallUpdate = () => refreshAnalytics();
-      const handleQueueUpdate = () => refreshQueueStatus();
-      const handleCallStatusUpdate = () => refreshInbound();
-
-      socket.on('connect', updateSocketConnectionStatus);
+      socket.on('connect', handleConnect);
       socket.on('disconnect', updateSocketConnectionStatus);
-      socket.on('inbound_call_update', handleInboundCallUpdate);
-      socket.on('queue_update', handleQueueUpdate);
-      socket.on('call_status_update', handleCallStatusUpdate);
+      socket.on('inbound:snapshot', handleSnapshot);
+      socket.on('inbound:call:update', handleCallUpdate);
+      socket.on('inbound:queue:update', handleQueueUpdate);
+      socket.on('inbound:routing_rules:update', handleRoutingRulesUpdate);
+      socket.on('routing_rules:changed', handleRoutingRulesUpdate);
+      socket.on('inbound_lead_update', handleLeadUpdate);
 
-      return () => {
-        socket.off('connect', updateSocketConnectionStatus);
-        socket.off('disconnect', updateSocketConnectionStatus);
-        socket.off('inbound_call_update', handleInboundCallUpdate);
-        socket.off('queue_update', handleQueueUpdate);
-        socket.off('call_status_update', handleCallStatusUpdate);
-      };
+      if (socket.connected || socketService.isConnected()) {
+        window.setTimeout(() => {
+          if (mountedRef.current) {
+            refreshInbound();
+          }
+        }, 0);
+      } else if (typeof socket.connect === 'function') {
+        socket.connect();
+      }
     }
 
-    return undefined;
-  }, [refreshAnalytics, refreshQueueStatus, refreshInbound]);
+    return () => {
+      mountedRef.current = false;
+      pendingSnapshotRef.current = false;
+      if (!socket) return;
+      socket.emit('inbound:unsubscribe');
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', updateSocketConnectionStatus);
+      socket.off('inbound:snapshot', handleSnapshot);
+      socket.off('inbound:call:update', handleCallUpdate);
+      socket.off('inbound:queue:update', handleQueueUpdate);
+      socket.off('inbound:routing_rules:update', handleRoutingRulesUpdate);
+      socket.off('routing_rules:changed', handleRoutingRulesUpdate);
+      socket.off('inbound_lead_update', handleLeadUpdate);
+    };
+  }, [applySnapshot, refreshInbound]);
 
   return {
     analytics,
     queueStatus,
+    routingRules,
+    leadsSummary,
     loading,
     error,
     socketConnected,
-    refreshAnalytics,
-    refreshQueueStatus,
     refreshInbound,
     setError
   };

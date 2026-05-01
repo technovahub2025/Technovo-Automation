@@ -1,15 +1,33 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Play, Pause, Trash2, Users, Edit3, Phone, Clock, CheckCircle, Save, X, GitBranch, Workflow, AlertTriangle } from 'lucide-react';
+import {
+  Play,
+  Pause,
+  Trash2,
+  Users,
+  Edit3,
+  Phone,
+  Clock,
+  CheckCircle,
+  Save,
+  X,
+  GitBranch,
+  Workflow,
+  AlertTriangle,
+  CircleDot,
+  Route,
+  Volume2,
+  LogIn,
+  BadgeCheck
+} from 'lucide-react';
 import useIVRWorkflowSocket from '../../../hooks/useIVRWorkflowSocket';
 import socketService from '../../../services/socketService';
 import WorkflowBuilderCanvas from './WorkflowBuilderCanvas';
 import { ivrService } from '../../../services/ivrService';
 import './IVRMenuCard.css';
 
-function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
+function IVRMenuCard({ menu, onUpdate, onDelete }) {
   const [isEditing, setIsEditing] = useState(false);
-  const [isTesting, setIsTesting] = useState(false);
-  const [activeUsers, setActiveUsers] = useState([]);
+  const [activeUsers] = useState([]);
   const [draftWorkflow, setDraftWorkflow] = useState(null);
   const [isDirty, setIsDirty] = useState(false);
   const [isSavingWorkflow, setIsSavingWorkflow] = useState(false);
@@ -24,8 +42,8 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
   const [currentStatus, setCurrentStatus] = useState(menu?.status || 'draft');
   
   // Track which node is being edited to prevent socket updates
-  const [editingNodeId, setEditingNodeId] = useState(null);
-  const [lastEditTimestamp, setLastEditTimestamp] = useState(0);
+  const [, setEditingNodeId] = useState(null);
+  const [, setLastEditTimestamp] = useState(0);
 
 
   const {
@@ -44,11 +62,13 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
 
   const safeMenu = menu ?? {};
 
-  const workflow = safeMenu.workflowConfig ?? safeMenu.workflow ?? {
-    nodes: [],
-    edges: [],
-    settings: {}
-  };
+  const workflow = useMemo(() => (
+    safeMenu.workflowConfig ?? safeMenu.workflow ?? {
+      nodes: [],
+      edges: [],
+      settings: {}
+    }
+  ), [safeMenu.workflowConfig, safeMenu.workflow]);
   const effectiveWorkflow = draftWorkflow ?? workflow;
 
   const ensureUniqueNodeIds = (workflowData) => {
@@ -510,15 +530,6 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
     setIsEditing(!isEditing);
   };
 
-  const handleTest = async () => {
-    setIsTesting(true);
-    try {
-      await onTest(menu._id);
-    } finally {
-      setIsTesting(false);
-    }
-  };
-
   const handleActivate = async () => {
     if (validationErrors.length > 0) return;
     const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
@@ -646,16 +657,6 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
           if (!transformedNode.data.audio_asset_id) {
             transformedNode.data.audio_asset_id = transformedNode.data.audioPublicId;
           }
-        }
-        
-        // Map voice to expected format
-        if (transformedNode.data.voice) {
-          transformedNode.data.voice = transformedNode.data.voice;
-        }
-        
-        // Map language to expected format
-        if (transformedNode.data.language) {
-          transformedNode.data.language = transformedNode.data.language;
         }
         
         // Keep mode/afterPlayback/fallbackAudioNodeId for frontend compatibility.
@@ -1047,6 +1048,9 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
     <div className={`menu-card ${isEditing ? 'editing' : ''}`}>
       <div className="menu-card-top">
         <div className="menu-card-title">
+          <div className="menu-title-icon" aria-hidden="true">
+            <Workflow size={17} />
+          </div>
           <div className="title-text">
             <h3>{menu.displayName || menu.ivrName || menu.name || 'Untitled IVR'}</h3>
             <span
@@ -1208,18 +1212,18 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
         <div className="menu-card-body">
             <>
               <div className="workflow-summary">
-                <strong>Workflow Details</strong>
+                <strong className="summary-title"><Workflow size={15} /> Workflow Details</strong>
                 <div className="workflow-info">
-                  <span>Nodes: {flowMetrics.nodeCount}</span>
-                  <span>Edges: {flowMetrics.edgeCount}</span>
-                  <span>Contacts Used: {menu.contactsUsed || 0}</span>
-                  <span>Status: {currentStatus || 'draft'}</span>
+                  <span><CircleDot size={13} /> Nodes: {flowMetrics.nodeCount}</span>
+                  <span><Route size={13} /> Edges: {flowMetrics.edgeCount}</span>
+                  <span><Users size={13} /> Contacts Used: {menu.contactsUsed || 0}</span>
+                  <span><BadgeCheck size={13} /> Status: {currentStatus || 'draft'}</span>
                 </div>
               </div>
 
               <div className={`flow-health-summary flow-${flowMetrics.health}`}>
                 <div className="flow-health-header">
-                  <strong>Flow Health</strong>
+                  <strong className="summary-title"><GitBranch size={15} /> Flow Health</strong>
                   <span className="flow-health-badge">
                     {flowMetrics.health === 'good' ? <Workflow size={12} /> : <AlertTriangle size={12} />}
                     {flowMetrics.health === 'good' ? 'Healthy' : flowMetrics.health === 'empty' ? 'No Flow' : 'Needs Attention'}
@@ -1227,9 +1231,9 @@ function IVRMenuCard({ menu, onUpdate, onDelete, onTest }) {
                 </div>
                 <div className="flow-metrics-grid">
                   <span><GitBranch size={12} /> Connectivity: {flowMetrics.connectivityPercent}%</span>
-                  <span>Audio Nodes: {flowMetrics.audioNodeCount}</span>
-                  <span>Input Nodes: {flowMetrics.inputNodeCount}</span>
-                  <span>Start/End: {flowMetrics.hasStartNode ? 'Yes' : 'No'}/{flowMetrics.hasEndNode ? 'Yes' : 'No'}</span>
+                  <span><Volume2 size={12} /> Audio Nodes: {flowMetrics.audioNodeCount}</span>
+                  <span><LogIn size={12} /> Input Nodes: {flowMetrics.inputNodeCount}</span>
+                  <span><CheckCircle size={12} /> Start/End: {flowMetrics.hasStartNode ? 'Yes' : 'No'}/{flowMetrics.hasEndNode ? 'Yes' : 'No'}</span>
                 </div>
                 {flowMetrics.issues.length > 0 && (
                   <div className="flow-issues">
