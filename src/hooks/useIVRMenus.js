@@ -1,21 +1,20 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import apiService from '../services/api';
 import socketService from '../services/socketService';
 
 const normalizeMenusResponse = (data) => {
   if (Array.isArray(data)) return data;
-  if (Array.isArray(data?.menus)) return data.menus;
   if (Array.isArray(data?.ivrMenus)) return data.ivrMenus;
+  if (Array.isArray(data?.menus)) return data.menus;
   if (Array.isArray(data?.data)) return data.data;
   return [];
 };
 
 const findMenuById = (menus, menuId) =>
   menus.find((menu) =>
-    menu._id === menuId ||
-    menu.id === menuId ||
-    menu.promptKey === menuId ||
-    menu.menuName === menuId
+    String(menu._id || '') === String(menuId) ||
+    String(menu.id || '') === String(menuId) ||
+    String(menu.promptKey || '') === String(menuId) ||
+    String(menu.menuName || '') === String(menuId)
   );
 
 const buildConfigPayload = (menuData = {}, existingMenu = null) => {
@@ -42,13 +41,30 @@ const buildConfigPayload = (menuData = {}, existingMenu = null) => {
   };
 };
 
+const emitWithAck = (socket, eventName, payload) =>
+  new Promise((resolve, reject) => {
+    if (!socket) {
+      reject(new Error('Socket unavailable. Unable to process IVR menu request.'));
+      return;
+    }
+
+    socket.emit(eventName, payload, (response = {}) => {
+      if (response.success === false) {
+        reject(new Error(response.error || 'IVR socket request failed'));
+        return;
+      }
+      resolve(response);
+    });
+  });
+
 const useIVRMenus = () => {
   const [ivrMenus, setIvrMenus] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [socketConnected, setSocketConnected] = useState(false);
   const requestTimeoutRef = useRef(null);
-  const pendingRequestRef = useRef(null);
+  const pendingListRequestRef = useRef(null);
+  const menusCountRef = useRef(0);
 
   const clearRequestTimeout = useCallback(() => {
     if (requestTimeoutRef.current) {
@@ -57,14 +73,12 @@ const useIVRMenus = () => {
     }
   }, []);
 
-  const resolvePendingRequest = useCallback((fnName, payload) => {
-    if (!pendingRequestRef.current) return;
-    const pending = pendingRequestRef.current;
-    pendingRequestRef.current = null;
+  const settlePendingListRequest = useCallback((type, value) => {
+    const pending = pendingListRequestRef.current;
+    if (!pending) return;
+    pendingListRequestRef.current = null;
     clearRequestTimeout();
-    if (typeof pending[fnName] === 'function') {
-      pending[fnName](payload);
-    }
+    pending[type](value);
   }, [clearRequestTimeout]);
 
   const requestMenus = useCallback((options = {}) => {
@@ -77,58 +91,64 @@ const useIVRMenus = () => {
       return Promise.reject(new Error(message));
     }
 
-    clearRequestTimeout();
-    if (!silent) {
-      setLoading(true);
+    if (pendingListRequestRef.current) {
+      pendingListRequestRef.current.reject(new Error('IVR menu request superseded.'));
+      pendingListRequestRef.current = null;
     }
+
+    clearRequestTimeout();
+    if (!silent) setLoading(true);
     setError(null);
 
     return new Promise((resolve, reject) => {
-      pendingRequestRef.current = { resolve, reject };
+      pendingListRequestRef.current = { resolve, reject };
       requestTimeoutRef.current = setTimeout(() => {
-        const timeoutMessage = 'IVR menus request timed out. Please try again.';
-        if (!silent) {
-          setLoading(false);
-        }
-        setError(timeoutMessage);
-        resolvePendingRequest('reject', new Error(timeoutMessage));
+        const timeoutError = new Error('IVR menus request timed out. Please try again.');
+        if (!silent) setLoading(false);
+        setError(timeoutError.message);
+        settlePendingListRequest('reject', timeoutError);
       }, 8000);
 
+      const emitListRequest = () => socket.emit('ivr_menu:list');
       if (socket.connected || socketService.isConnected()) {
-        socket.emit('request_ivr_menus');
+        emitListRequest();
       } else if (typeof socket.connect === 'function') {
         socket.connect();
       }
     });
-  }, [clearRequestTimeout, resolvePendingRequest]);
+  }, [clearRequestTimeout, settlePendingListRequest]);
 
   useEffect(() => {
     const socket = socketService.connect();
     let isMounted = true;
 
-    const handleIVRConfigs = (data) => {
+    const applyListPayload = (payload = {}) => {
       if (!isMounted) return;
+      const menus = normalizeMenusResponse(payload);
       clearRequestTimeout();
-      setIvrMenus(normalizeMenusResponse(data));
+      menusCountRef.current = menus.length;
+      setIvrMenus(menus);
       setLoading(false);
       setError(null);
-      resolvePendingRequest('resolve', normalizeMenusResponse(data));
+      settlePendingListRequest('resolve', menus);
     };
 
-    const handleError = (eventError) => {
+    const handleListError = (eventError = {}) => {
       if (!isMounted) return;
+      const message = eventError.error || eventError.message || 'Failed to load IVR menus';
       clearRequestTimeout();
-      const message = eventError?.error || eventError?.message || 'Failed to load IVR menus';
       setError(message);
       setLoading(false);
-      resolvePendingRequest('reject', new Error(message));
+      settlePendingListRequest('reject', new Error(message));
     };
 
     const handleConnect = () => {
       if (!isMounted) return;
       setSocketConnected(true);
-      if (pendingRequestRef.current) {
-        socket.emit('request_ivr_menus');
+      if (pendingListRequestRef.current) {
+        socket.emit('ivr_menu:list');
+      } else {
+        requestMenus({ silent: menusCountRef.current > 0 }).catch(() => {});
       }
     };
 
@@ -137,117 +157,127 @@ const useIVRMenus = () => {
       setSocketConnected(false);
     };
 
-    const handleConfigChanged = () => {
-      if (socket.connected || socketService.isConnected()) {
-        socket.emit('request_ivr_menus');
-      }
+    const handleMenuChanged = () => {
+      if (!isMounted) return;
+      setError(null);
     };
 
     if (socket) {
-      socket.on('ivr_menus_list', handleIVRConfigs);
-      socket.on('ivr_menus_error', handleError);
+      socket.on('ivr_menu:list:success', applyListPayload);
+      socket.on('ivr_menu:list:error', handleListError);
+      socket.on('ivr_menu:changed', handleMenuChanged);
       socket.on('connect', handleConnect);
       socket.on('disconnect', handleDisconnect);
-      socket.on('ivr_config_created', handleConfigChanged);
-      socket.on('ivr_config_updated', handleConfigChanged);
-      socket.on('ivr_config_deleted', handleConfigChanged);
       setSocketConnected(socket.connected);
     }
 
-    requestMenus({ silent: ivrMenus.length > 0 }).catch(() => {});
+    requestMenus({ silent: menusCountRef.current > 0 }).catch(() => {});
 
     return () => {
       isMounted = false;
       clearRequestTimeout();
-      if (pendingRequestRef.current) {
-        pendingRequestRef.current.reject(new Error('IVR menu request cancelled.'));
-        pendingRequestRef.current = null;
+      if (pendingListRequestRef.current) {
+        pendingListRequestRef.current.reject(new Error('IVR menu request cancelled.'));
+        pendingListRequestRef.current = null;
       }
       if (!socket) return;
-      socket.off('ivr_menus_list', handleIVRConfigs);
-      socket.off('ivr_menus_error', handleError);
+      socket.off('ivr_menu:list:success', applyListPayload);
+      socket.off('ivr_menu:list:error', handleListError);
+      socket.off('ivr_menu:changed', handleMenuChanged);
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
-      socket.off('ivr_config_created', handleConfigChanged);
-      socket.off('ivr_config_updated', handleConfigChanged);
-      socket.off('ivr_config_deleted', handleConfigChanged);
     };
-  }, [clearRequestTimeout, requestMenus, resolvePendingRequest, ivrMenus.length]);
+  }, [clearRequestTimeout, requestMenus, settlePendingListRequest]);
 
   const createMenu = useCallback(async (menuData) => {
+    const socket = socketService.connect();
+    const hasExistingMenus = ivrMenus.length > 0;
     try {
-      const hasExistingMenus = ivrMenus.length > 0;
-      if (!hasExistingMenus) {
-        setLoading(true);
-      }
+      if (!hasExistingMenus) setLoading(true);
       setError(null);
 
       const menuName = menuData.promptKey || menuData.displayName || menuData.name;
-      if (!menuName) {
-        throw new Error('Menu name is required');
-      }
+      if (!menuName) throw new Error('Menu name is required');
 
-      const config = buildConfigPayload(menuData);
-      const response = await apiService.createIVRConfig(menuName, config);
-      await requestMenus({ silent: hasExistingMenus });
-      return response.data;
+      const response = await emitWithAck(socket, 'ivr_menu:create', {
+        menuName,
+        config: buildConfigPayload(menuData)
+      });
+
+      if (response.snapshot) {
+        const menus = normalizeMenusResponse(response.snapshot);
+        menusCountRef.current = menus.length;
+        setIvrMenus(menus);
+      }
+      return response;
     } catch (err) {
-      const errorMessage = err.response?.data?.error || err.message || 'Failed to create IVR menu';
+      const errorMessage = err.message || 'Failed to create IVR menu';
       setError(errorMessage);
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
     }
-  }, [requestMenus, ivrMenus.length]);
+  }, [ivrMenus.length]);
 
   const updateMenu = useCallback(async (menuId, menuData) => {
+    const socket = socketService.connect();
+    const hasExistingMenus = ivrMenus.length > 0;
     try {
-      const hasExistingMenus = ivrMenus.length > 0;
-      if (!hasExistingMenus) {
-        setLoading(true);
-      }
+      if (!hasExistingMenus) setLoading(true);
       setError(null);
 
       const existingMenu = findMenuById(ivrMenus, menuId);
-      const menuName = existingMenu?.promptKey || menuData?.promptKey || menuId;
+      const menuName = existingMenu?._id || existingMenu?.promptKey || menuData?.promptKey || menuId;
+      if (!menuName) throw new Error('Unable to resolve IVR menu name for update');
 
-      if (!menuName) {
-        throw new Error('Unable to resolve IVR menu name for update');
+      const response = await emitWithAck(socket, 'ivr_menu:update', {
+        menuName,
+        config: buildConfigPayload(menuData, existingMenu)
+      });
+
+      if (response.snapshot) {
+        const menus = normalizeMenusResponse(response.snapshot);
+        menusCountRef.current = menus.length;
+        setIvrMenus(menus);
       }
-
-      const config = buildConfigPayload(menuData, existingMenu);
-      const response = await apiService.createIVRConfig(menuName, config);
-      await requestMenus({ silent: hasExistingMenus });
-      return response.data;
+      return response;
     } catch (err) {
-      const errorMessage = err.response?.data?.error || err.message || 'Failed to update IVR menu';
+      const errorMessage = err.message || 'Failed to update IVR menu';
       setError(errorMessage);
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
     }
-  }, [ivrMenus, requestMenus]);
+  }, [ivrMenus]);
 
   const deleteMenu = useCallback(async (menuId) => {
+    const socket = socketService.connect();
+    const hasExistingMenus = ivrMenus.length > 0;
     try {
-      const hasExistingMenus = ivrMenus.length > 0;
-      if (!hasExistingMenus) {
-        setLoading(true);
-      }
+      if (!hasExistingMenus) setLoading(true);
       setError(null);
 
-      const response = await apiService.deleteIVRConfig(menuId);
-      setIvrMenus((prev) => prev.filter((menu) => menu._id !== menuId && menu.id !== menuId));
-      await requestMenus({ silent: hasExistingMenus });
-      return response.data;
+      const response = await emitWithAck(socket, 'ivr_menu:delete', { menuId });
+      if (response.snapshot) {
+        const menus = normalizeMenusResponse(response.snapshot);
+        menusCountRef.current = menus.length;
+        setIvrMenus(menus);
+      } else {
+        setIvrMenus((prev) => {
+          const menus = prev.filter((menu) => String(menu._id) !== String(menuId) && String(menu.id) !== String(menuId));
+          menusCountRef.current = menus.length;
+          return menus;
+        });
+      }
+      return response;
     } catch (err) {
-      const errorMessage = err.response?.data?.error || err.message || 'Failed to delete IVR menu';
+      const errorMessage = err.message || 'Failed to delete IVR menu';
       setError(errorMessage);
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
     }
-  }, [requestMenus, ivrMenus.length]);
+  }, [ivrMenus.length]);
 
   return {
     ivrMenus,

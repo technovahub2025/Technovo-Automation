@@ -1,15 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Save, X, ArrowUp, ArrowDown, PlayCircle, AlertCircle, Route } from 'lucide-react';
 import apiService from '../services/api';
+import useIVRMenus from '../hooks/useIVRMenus';
 import './RoutingRules.css';
 
 const normalizeRules = (responseData) => {
   const raw = responseData?.data || responseData?.rules || responseData || [];
-  return Array.isArray(raw) ? raw : [];
-};
-
-const normalizeIvrMenus = (responseData) => {
-  const raw = responseData?.ivrMenus || responseData?.data || responseData || [];
   return Array.isArray(raw) ? raw : [];
 };
 
@@ -38,8 +34,12 @@ const buildRuleDraft = (rule, ivrMenus = []) => {
 };
 
 const RoutingRules = () => {
+  const {
+    ivrMenus,
+    loading: ivrLoading,
+    error: ivrError
+  } = useIVRMenus();
   const [rules, setRules] = useState([]);
-  const [ivrMenus, setIvrMenus] = useState([]);
   const [editingRule, setEditingRule] = useState(null);
   const [isAddingRule, setIsAddingRule] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -48,7 +48,11 @@ const RoutingRules = () => {
   const [error, setError] = useState('');
   const [testResult, setTestResult] = useState(null);
 
-  const hasIvrMenus = useMemo(() => ivrMenus.length > 0, [ivrMenus]);
+  const activeIvrMenus = useMemo(
+    () => ivrMenus.filter((menu) => String(menu?.status || '').toLowerCase() === 'active'),
+    [ivrMenus]
+  );
+  const hasActiveIvrMenus = activeIvrMenus.length > 0;
 
   const fetchRoutingRules = async () => {
     const response = await apiService.getRoutingRules();
@@ -56,20 +60,14 @@ const RoutingRules = () => {
     setRules(nextRules);
   };
 
-  const fetchIvrMenus = async () => {
-    const response = await apiService.getIVRConfigs();
-    const menus = normalizeIvrMenus(response.data);
-    setIvrMenus(menus);
-  };
-
   useEffect(() => {
     const bootstrap = async () => {
       try {
         setLoading(true);
         setError('');
-        await Promise.all([fetchRoutingRules(), fetchIvrMenus()]);
+        await fetchRoutingRules();
       } catch (err) {
-        console.error('Failed to fetch routing rules or IVR menus:', err);
+        console.error('Failed to fetch routing rules:', err);
         setError(err.response?.data?.error || err.message || 'Failed to fetch routing rules');
       } finally {
         setLoading(false);
@@ -80,7 +78,7 @@ const RoutingRules = () => {
   }, []);
 
   const handleAddRule = () => {
-    const firstMenu = ivrMenus[0];
+    const firstMenu = activeIvrMenus[0];
     setEditingRule({
       id: '',
       name: '',
@@ -105,7 +103,7 @@ const RoutingRules = () => {
   const handleActionTypeChange = (value) => {
     if (!editingRule) return;
     if (value === 'ivr') {
-      const firstMenu = ivrMenus[0];
+      const firstMenu = activeIvrMenus[0];
       setEditingRule((prev) => ({
         ...prev,
         actionType: 'ivr',
@@ -126,7 +124,7 @@ const RoutingRules = () => {
   };
 
   const handleIvrMenuChange = (menuId) => {
-    const selectedMenu = ivrMenus.find((menu) => menu._id === menuId);
+    const selectedMenu = activeIvrMenus.find((menu) => menu._id === menuId);
     setEditingRule((prev) => ({
       ...prev,
       ivrMenuId: selectedMenu?._id || '',
@@ -276,7 +274,7 @@ const RoutingRules = () => {
     return menu ? `IVR: ${menu.displayName || menu.promptKey}` : `IVR: ${promptKey || 'Not linked'}`;
   };
 
-  if (loading) {
+  if (loading || (ivrLoading && ivrMenus.length === 0)) {
     return (
       <div className="routing-rules loading">
         <div className="loading-spinner"></div>
@@ -299,10 +297,11 @@ const RoutingRules = () => {
       </div>
 
       {error && <p className="error-message">{error}</p>}
+      {ivrError && <p className="error-message">{ivrError}</p>}
 
-      {!hasIvrMenus && (
+      {!hasActiveIvrMenus && (
         <p className="error-message">
-          No active IVR menus found. Create an IVR first, then link it to routing rules.
+          No active IVR menus found. Activate an IVR first, then link it to routing rules.
         </p>
       )}
 
@@ -356,10 +355,10 @@ const RoutingRules = () => {
               <select
                 value={editingRule.ivrMenuId}
                 onChange={(e) => handleIvrMenuChange(e.target.value)}
-                disabled={!hasIvrMenus}
+                disabled={!hasActiveIvrMenus}
               >
-                {!hasIvrMenus && <option value="">No IVR menu available</option>}
-                {ivrMenus.map((menu) => (
+                {!hasActiveIvrMenus && <option value="">No active IVR menu available</option>}
+                {activeIvrMenus.map((menu) => (
                   <option key={menu._id} value={menu._id}>
                     {menu.displayName || menu.promptKey}
                   </option>

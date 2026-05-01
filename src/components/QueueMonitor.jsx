@@ -18,6 +18,10 @@ const getWaitSeconds = (queuedAt) => {
 const normalizeQueueData = (raw) => {
   if (!raw || typeof raw !== 'object') return {};
 
+  if (raw.name && Array.isArray(raw.calls)) {
+    return normalizeQueueData({ [raw.name]: raw.calls });
+  }
+
   const normalized = {};
   Object.entries(raw).forEach(([queueName, queueValue]) => {
     const calls = Array.isArray(queueValue)
@@ -51,6 +55,22 @@ const normalizeQueueData = (raw) => {
   });
 
   return normalized;
+};
+
+const mergeQueueData = (previous, incoming) => {
+  const next = { ...previous };
+
+  Object.entries(incoming).forEach(([queueName, queue]) => {
+    const queueArray = Array.isArray(queue) ? queue : [];
+    if (queueArray.length === 0) {
+      delete next[queueName];
+      return;
+    }
+
+    next[queueName] = queueArray;
+  });
+
+  return next;
 };
 
 const normalizeAnalyticsQueue = (payload) => {
@@ -122,7 +142,7 @@ const QueueMonitor = ({ socket }) => {
       return;
     }
 
-    setQueues((prev) => ({ ...prev, ...normalized }));
+    setQueues((prev) => mergeQueueData(prev, normalized));
   }, [fetchQueueData]);
 
   const handleCallerJoined = useCallback((data) => {
@@ -151,10 +171,19 @@ const QueueMonitor = ({ socket }) => {
   const handleCallerLeft = useCallback((data) => {
     if (!data?.queueName || !data?.callSid) return;
 
-    setQueues((prev) => ({
-      ...prev,
-      [data.queueName]: (prev[data.queueName] || []).filter((caller) => caller.callSid !== data.callSid)
-    }));
+    setQueues((prev) => {
+      const nextQueue = (prev[data.queueName] || []).filter((caller) => caller.callSid !== data.callSid);
+      if (!nextQueue.length) {
+        const next = { ...prev };
+        delete next[data.queueName];
+        return next;
+      }
+
+      return {
+        ...prev,
+        [data.queueName]: nextQueue
+      };
+    });
   }, []);
 
   useEffect(() => {
@@ -204,11 +233,11 @@ const QueueMonitor = ({ socket }) => {
     return {
       totalInQueue,
       avgWaitTime:
-        Number.isFinite(analyticsQueueStats.avgWaitTime) && analyticsQueueStats.avgWaitTime !== null
+        Number.isFinite(analyticsQueueStats.avgWaitTime) && analyticsQueueStats.avgWaitTime !== null && (callerCount === 0 || Number(analyticsQueueStats.avgWaitTime) > 0)
           ? Math.max(0, Math.floor(analyticsQueueStats.avgWaitTime))
           : avgWaitTime,
       longestWait:
-        Number.isFinite(analyticsQueueStats.maxWaitTime) && analyticsQueueStats.maxWaitTime !== null
+        Number.isFinite(analyticsQueueStats.maxWaitTime) && analyticsQueueStats.maxWaitTime !== null && (callerCount === 0 || Number(analyticsQueueStats.maxWaitTime) > 0)
           ? Math.max(longestWait, Math.floor(analyticsQueueStats.maxWaitTime))
           : longestWait,
       abandonmentRate:

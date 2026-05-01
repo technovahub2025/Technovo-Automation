@@ -9,6 +9,7 @@ import useSocket from '../../hooks/useSocket';
 import { useInbound } from '../../hooks/useInbound';
 
 const ACTIVE_CALL_STATUSES = new Set(['initiated', 'ringing', 'in-progress']);
+const RECENT_CALLS_LIMIT = 100;
 
 const toTimestamp = (value) => {
   if (!value) return null;
@@ -214,7 +215,12 @@ const InboundCalls = () => {
     ? Number(analytics.queue.avgWaitTime)
     : queueOverview.avgWaitTime;
 
-  const recentCalls = Array.isArray(analytics?.recentCalls) ? analytics.recentCalls.slice(0, 6) : [];
+  const recentCalls = useMemo(() => {
+    const rows = Array.isArray(analytics?.recentCalls) ? analytics.recentCalls : [];
+    return [...rows]
+      .sort((a, b) => (toTimestamp(b?.createdAt) || 0) - (toTimestamp(a?.createdAt) || 0))
+      .slice(0, RECENT_CALLS_LIMIT);
+  }, [analytics?.recentCalls]);
 
   const handleBack = () => {
     window.history.back();

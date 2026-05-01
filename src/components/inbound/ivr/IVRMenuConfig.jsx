@@ -1,10 +1,28 @@
-import React, { useState, useCallback, useEffect } from 'react';
-import { Plus } from 'lucide-react';
+import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import { ChevronDown, ChevronLeft, ChevronRight, Filter, Plus, Search } from 'lucide-react';
 import useIVRMenus from '../../../hooks/useIVRMenus';
-import useSocket from '../../../hooks/useSocket';
 import apiService from '../../../services/api';
 import IVRMenuCard from './IVRMenuCard';
 import './IVRMenuConfig.css';
+
+const PAGE_SIZE = 12;
+const STATUS_FILTERS = ['all', 'active', 'draft', 'inactive'];
+const STATUS_RANK = {
+  active: 0,
+  draft: 1,
+  inactive: 2,
+  archived: 3
+};
+
+const getMenuStatus = (menu) => String(menu?.status || 'draft').toLowerCase();
+
+const getMenuTimestamp = (menu) => {
+  const timestamp = new Date(menu?.updatedAt || menu?.createdAt || 0).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+};
+
+const getMenuName = (menu) =>
+  menu?.displayName || menu?.ivrName || menu?.name || menu?.promptKey || 'Untitled IVR';
 
 
 
@@ -18,82 +36,90 @@ const IVRMenuConfig = () => {
     setError,
   } = useIVRMenus();
 
-  const { socket, connected } = useSocket();
-
   const [newIvrName, setNewIvrName] = useState('');
+  const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [filterOpen, setFilterOpen] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const createInputRef = useRef(null);
+
+  const sortedMenus = useMemo(() => {
+    if (!Array.isArray(ivrMenus)) return [];
+    return [...ivrMenus].sort((a, b) => {
+      const statusDelta = (STATUS_RANK[getMenuStatus(a)] ?? 99) - (STATUS_RANK[getMenuStatus(b)] ?? 99);
+      if (statusDelta !== 0) return statusDelta;
+      return getMenuTimestamp(b) - getMenuTimestamp(a);
+    });
+  }, [ivrMenus]);
+
+  const statusCounts = useMemo(() => {
+    const counts = { all: sortedMenus.length, active: 0, draft: 0, inactive: 0 };
+    sortedMenus.forEach((menu) => {
+      const status = getMenuStatus(menu);
+      if (Object.prototype.hasOwnProperty.call(counts, status)) {
+        counts[status] += 1;
+      }
+    });
+    return counts;
+  }, [sortedMenus]);
+
+  const filteredMenus = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLowerCase();
+
+    return sortedMenus.filter((menu) => {
+      const status = getMenuStatus(menu);
+      const matchesStatus = statusFilter === 'all' || status === statusFilter;
+      if (!matchesStatus) return false;
+
+      if (!normalizedSearch) return true;
+
+      const searchableText = [
+        getMenuName(menu),
+        menu?.promptKey,
+        menu?.ivrName,
+        menu?.name,
+        status
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .toLowerCase();
+
+      return searchableText.includes(normalizedSearch);
+    });
+  }, [searchQuery, sortedMenus, statusFilter]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredMenus.length / PAGE_SIZE));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStartIndex = (safeCurrentPage - 1) * PAGE_SIZE;
+  const pageEndIndex = Math.min(pageStartIndex + PAGE_SIZE, filteredMenus.length);
+  const paginatedMenus = filteredMenus.slice(pageStartIndex, pageStartIndex + PAGE_SIZE);
+
+  const hasMenus = sortedMenus.length > 0;
+  const hasFilteredMenus = paginatedMenus.length > 0;
 
   useEffect(() => {
-    if (socket && connected) {
-      const handleWorkflowCreated = (data) => {
-        console.log('Workflow created via socket:', data);
-      };
+    if (!createModalOpen) return undefined;
 
-      const handleWorkflowUpdated = (data) => {
-        console.log('Workflow updated via socket:', data);
-      };
+    createInputRef.current?.focus();
 
-      const handleWorkflowDeleted = (data) => {
-        console.log('Workflow deleted via socket:', data);
-      };
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        setCreateModalOpen(false);
+        setNewIvrName('');
+      }
+    };
 
-      const handleIvrConfigCreated = (data) => {
-        console.log('IVR config created via socket:', data);
-        setError(null);
-      };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [createModalOpen]);
 
-      const handleIvrConfigUpdated = (data) => {
-        console.log('IVR config updated via socket:', data);
-        setError(null);
-      };
+  const handleCloseCreateModal = useCallback(() => {
+    setCreateModalOpen(false);
+    setNewIvrName('');
+  }, []);
 
-      const handleIvrConfigDeleted = (data) => {
-        console.log('IVR config deleted via socket:', data);
-        setError(null);
-      };
-
-      const handleIvrTestResult = (data) => {
-        console.log('IVR test result via socket:', data);
-        if (data.success) {
-          setError(null);
-        } else {
-          setError(`Test failed: ${data.error || 'Unknown error'}`);
-        }
-      };
-
-      const handleSocketConnect = () => {
-        console.log('IVR Socket connected');
-      };
-
-      const handleSocketDisconnect = () => {
-        console.log('IVR Socket disconnected');
-        setError('Connection lost. Some features may not work properly.');
-      };
-
-      socket.on('workflow_created', handleWorkflowCreated);
-      socket.on('workflow_updated', handleWorkflowUpdated);
-      socket.on('workflow_deleted', handleWorkflowDeleted);
-      socket.on('ivr_config_created', handleIvrConfigCreated);
-      socket.on('ivr_config_updated', handleIvrConfigUpdated);
-      socket.on('ivr_config_deleted', handleIvrConfigDeleted);
-      socket.on('ivr_test_result', handleIvrTestResult);
-      socket.on('connect', handleSocketConnect);
-      socket.on('disconnect', handleSocketDisconnect);
-
-      return () => {
-        socket.off('workflow_created', handleWorkflowCreated);
-        socket.off('workflow_updated', handleWorkflowUpdated);
-        socket.off('workflow_deleted', handleWorkflowDeleted);
-        socket.off('ivr_config_created', handleIvrConfigCreated);
-        socket.off('ivr_config_updated', handleIvrConfigUpdated);
-        socket.off('ivr_config_deleted', handleIvrConfigDeleted);
-        socket.off('ivr_test_result', handleIvrTestResult);
-        socket.off('connect', handleSocketConnect);
-        socket.off('disconnect', handleSocketDisconnect);
-      };
-    }
-  }, [socket, connected, setError]);
-
-  const handleInlineCreate = useCallback(async () => {
+  const handleCreateMenu = useCallback(async () => {
     const trimmedName = newIvrName.trim();
     if (!trimmedName) {
       setError('IVR name is required');
@@ -115,6 +141,7 @@ const IVRMenuConfig = () => {
 
       await createMenu(menuData);
       setNewIvrName('');
+      setCreateModalOpen(false);
       setError(null);
     } catch (error) {
       console.error('Error creating IVR:', error);
@@ -198,7 +225,11 @@ const IVRMenuConfig = () => {
       console.error('Error testing workflow:', error);
       setError(`Failed to test workflow: ${error.response?.data?.error || error.message}`);
     }
-  }, []);
+  }, [setError]);
+
+  const currentFilterLabel = statusFilter === 'all'
+    ? 'All'
+    : statusFilter.charAt(0).toUpperCase() + statusFilter.slice(1);
 
 
   return (
@@ -208,56 +239,193 @@ const IVRMenuConfig = () => {
       </div>
 
       <div className="ivr-inline-create">
+        <div className="ivr-create-group">
+          <button
+            type="button"
+            className="btn btn-primary ivr-open-create"
+            onClick={() => setCreateModalOpen(true)}
+            disabled={loading}
+          >
+            <Plus size={18} />
+            Create IVR
+          </button>
+        </div>
 
-            <div className="inline-input">
-              <label htmlFor="ivr-name">IVR Name</label>
+        <div className="ivr-search-box">
+          <Search size={16} />
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(event) => {
+              setSearchQuery(event.target.value);
+              setCurrentPage(1);
+            }}
+            placeholder="Search IVRs..."
+            aria-label="Search IVR workflows"
+          />
+        </div>
+
+        <div className="ivr-filter-menu">
+          <button
+            type="button"
+            className={`ivr-filter-button ${filterOpen ? 'active' : ''}`}
+            onClick={() => setFilterOpen((open) => !open)}
+            aria-haspopup="menu"
+            aria-expanded={filterOpen}
+          >
+            <Filter size={16} />
+            <span>Filter: {currentFilterLabel}</span>
+            <strong>{statusCounts[statusFilter] || 0}</strong>
+            <ChevronDown size={16} />
+          </button>
+
+          {filterOpen && (
+            <div className="ivr-filter-dropdown" role="menu" aria-label="Filter IVR workflows by status">
+              {STATUS_FILTERS.map((status) => (
+                <button
+                  key={status}
+                  type="button"
+                  role="menuitem"
+                  className={`ivr-filter-option ${statusFilter === status ? 'active' : ''}`}
+                  onClick={() => {
+                    setStatusFilter(status);
+                    setCurrentPage(1);
+                    setFilterOpen(false);
+                  }}
+                >
+                  <span>{status === 'all' ? 'All' : status}</span>
+                  <strong>{statusCounts[status] || 0}</strong>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {createModalOpen && (
+        <div
+          className="ivr-create-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) {
+              handleCloseCreateModal();
+            }
+          }}
+        >
+          <form
+            className="ivr-create-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="ivr-create-modal-title"
+            onSubmit={(event) => {
+              event.preventDefault();
+              handleCreateMenu();
+            }}
+          >
+            <div className="ivr-create-modal-header">
+              <h3 id="ivr-create-modal-title">Create IVR</h3>
+            </div>
+            <div className="ivr-create-modal-body">
+              <label htmlFor="ivr-create-name">IVR Name</label>
               <input
-                id="ivr-name"
+                id="ivr-create-name"
+                ref={createInputRef}
                 type="text"
                 value={newIvrName}
-                onChange={(e) => setNewIvrName(e.target.value)}
+                onChange={(event) => setNewIvrName(event.target.value)}
                 placeholder="Type IVR name..."
                 disabled={loading}
               />
             </div>
-            <button
-              type="button"
-              className="btn btn-primary"
-              onClick={handleInlineCreate}
-              disabled={loading || !newIvrName.trim()}
-            >
-              <Plus size={18} />
-              Create
-            </button>
-          </div>
+            <div className="ivr-create-modal-footer">
+              <button
+                type="button"
+                className="ivr-modal-secondary"
+                onClick={handleCloseCreateModal}
+                disabled={loading}
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                className="btn btn-primary ivr-modal-primary"
+                disabled={loading || !newIvrName.trim()}
+              >
+                <Plus size={16} />
+                Create
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
           <div className="menus-list-section">
-            {loading && (!Array.isArray(ivrMenus) || ivrMenus.length === 0) ? (
+            <div className="ivr-list-summary">
+              <span>
+                {filteredMenus.length === 0
+                  ? 'No workflows to show'
+                  : `Showing ${pageStartIndex + 1}-${pageEndIndex} of ${filteredMenus.length} workflows`}
+              </span>
+              {statusCounts.active > 0 && <span>Active workflows are pinned first.</span>}
+            </div>
+
+            {loading && !hasMenus ? (
               <div className="empty-state">
                 <div className="empty-state-content">
                   <h3>Loading IVR Configurations...</h3>
                   <p>Please wait while your workflows are being fetched.</p>
                 </div>
               </div>
-            ) : !Array.isArray(ivrMenus) || ivrMenus.length === 0 ? (
+            ) : !hasMenus ? (
               <div className="empty-state">
                 <div className="empty-state-content">
                   <h3>No IVR Configurations Yet</h3>
-                  <p>Type an IVR name above to create your first workflow.</p>
+                  <p>Use Create IVR above to create your first workflow.</p>
+                </div>
+              </div>
+            ) : !hasFilteredMenus ? (
+              <div className="empty-state">
+                <div className="empty-state-content">
+                  <h3>No Matching IVR Configurations</h3>
+                  <p>Adjust the search or status filter to find a workflow.</p>
                 </div>
               </div>
             ) : (
-              <div className="menus-grid">
-                {ivrMenus.map((menu, index) => (
-                  <IVRMenuCard
-                    key={menu._id || menu.promptKey || menu.ivrName || menu.name || `menu-${index}`}
-                    menu={menu}
-                    onUpdate={handleWorkflowUpdate}
-                    onDelete={handleMenuDelete}
-                    onTest={handleWorkflowTest}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="menus-grid">
+                  {paginatedMenus.map((menu, index) => (
+                    <IVRMenuCard
+                      key={menu._id || menu.promptKey || menu.ivrName || menu.name || `menu-${index}`}
+                      menu={menu}
+                      onUpdate={handleWorkflowUpdate}
+                      onDelete={handleMenuDelete}
+                      onTest={handleWorkflowTest}
+                    />
+                  ))}
+                </div>
+
+                {totalPages > 1 && (
+                  <div className="ivr-pagination" aria-label="IVR workflow pagination">
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+                      disabled={safeCurrentPage === 1}
+                    >
+                      <ChevronLeft size={16} />
+                      Previous
+                    </button>
+                    <span>Page {safeCurrentPage} of {totalPages}</span>
+                    <button
+                      type="button"
+                      onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+                      disabled={safeCurrentPage === totalPages}
+                    >
+                      Next
+                      <ChevronRight size={16} />
+                    </button>
+                  </div>
+                )}
+              </>
             )}
       </div>
     </div>

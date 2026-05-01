@@ -7,6 +7,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 20px;
   margin-bottom: 24px;
   padding-bottom: 16px;
   border-bottom: 1px solid #e2e8f0;
@@ -20,6 +21,8 @@
 
 .queue-stats {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 24px;
 }
 
@@ -29,6 +32,7 @@
   gap: 8px;
   font-size: 14px;
   color: #64748b;
+  white-space: nowrap;
 }
 
 .queue-grid {
@@ -50,6 +54,7 @@
   border-radius: 12px;
   overflow: hidden;
   transition: all 0.2s;
+  min-width: 0;
 }
 
 .queue-card:hover {
@@ -70,6 +75,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
   margin-bottom: 12px;
 }
 
@@ -78,6 +84,8 @@
   font-weight: 600;
   color: #1e293b;
   margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .queue-badge {
@@ -86,10 +94,12 @@
   font-size: 12px;
   font-weight: 500;
   color: white;
+  flex-shrink: 0;
 }
 
 .queue-metrics {
   display: flex;
+  flex-wrap: wrap;
   gap: 16px;
 }
 
@@ -110,6 +120,22 @@
   max-height: 300px;
   overflow-y: auto;
   margin-bottom: 16px;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.queue-callers::-webkit-scrollbar {
+  width: 6px;
+}
+
+.queue-callers::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.queue-callers::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
 }
 
 .empty-queue {
@@ -145,6 +171,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
+  min-width: 0;
 }
 
 .caller-position {
@@ -164,12 +191,14 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
+  min-width: 0;
 }
 
 .caller-phone {
   font-size: 14px;
   font-weight: 500;
   color: #1e293b;
+  overflow-wrap: anywhere;
 }
 
 .caller-wait {
