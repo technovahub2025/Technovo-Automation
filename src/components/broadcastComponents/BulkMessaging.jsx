@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Send, FileText, Download, X, RefreshCw } from 'lucide-react';
 import { apiClient } from '../services/whatsappapi';
 import CampaignResults from './CampaignResults';
+import ContactAudiencePickerModal from './ContactAudiencePickerModal';
 import './BulkMessaging.css';
 
 const parseCSVLine = (line = '') => {
@@ -48,6 +49,8 @@ const BulkMessaging = () => {
   const [csvPreview, setCsvPreview] = useState([]);
   const [recipients, setRecipients] = useState([]);
   const [syncing, setSyncing] = useState(false);
+  const [showContactAudiencePicker, setShowContactAudiencePicker] = useState(false);
+  const [audienceSourceLabel, setAudienceSourceLabel] = useState('');
 
   useEffect(() => {
     fetchTemplates();
@@ -73,6 +76,52 @@ const BulkMessaging = () => {
       alert('Error syncing templates: ' + error.message);
     } finally {
       setSyncing(false);
+    }
+  };
+
+  const normalizeContactToRecipient = (contact = {}) => ({
+    phone: String(contact?.phone || '').trim(),
+    name: String(contact?.name || contact?.displayName || '').trim(),
+    contactId: String(contact?._id || contact?.id || '').trim(),
+    sourceType: String(contact?.sourceType || 'manual').trim() || 'manual',
+    variables: [],
+    data: contact,
+    fullData: contact
+  });
+
+  const openContactAudiencePicker = () => {
+    setShowContactAudiencePicker(true);
+  };
+
+  const closeContactAudiencePicker = () => {
+    setShowContactAudiencePicker(false);
+  };
+
+  const applyContactAudienceSelection = (selectedContacts = []) => {
+    const normalizedRecipients = Array.isArray(selectedContacts)
+      ? selectedContacts.map((contact) => normalizeContactToRecipient(contact)).filter((recipient) => recipient.phone)
+      : [];
+
+    setCsvFile(null);
+    setCsvPreview([]);
+    setRecipients(normalizedRecipients);
+    setAudienceSourceLabel(normalizedRecipients.length > 0 ? 'Selected CRM contacts' : '');
+
+    const fileInput = document.getElementById('csv-upload');
+    if (fileInput) {
+      fileInput.value = '';
+    }
+  };
+
+  const clearAudienceSelection = () => {
+    setRecipients([]);
+    setCsvFile(null);
+    setCsvPreview([]);
+    setAudienceSourceLabel('');
+
+    const fileInput = document.getElementById('csv-upload');
+    if (fileInput) {
+      fileInput.value = '';
     }
   };
 
@@ -117,6 +166,7 @@ const BulkMessaging = () => {
         
         setCsvPreview(lines);
         setRecipients(parsedRecipients);
+        setAudienceSourceLabel('CSV upload');
       };
       reader.readAsText(file);
     }
@@ -126,6 +176,7 @@ const BulkMessaging = () => {
     setCsvFile(null);
     setCsvPreview([]);
     setRecipients([]);
+    setAudienceSourceLabel('');
     // Clear the file input
     const fileInput = document.getElementById('csv-upload');
     if (fileInput) {
@@ -134,8 +185,8 @@ const BulkMessaging = () => {
   };
 
   const validateForm = () => {
-    if (!csvFile) {
-      alert('Please upload a CSV file');
+    if (!csvFile && recipients.length === 0) {
+      alert('Please upload a CSV file or select contacts');
       return false;
     }
 
@@ -161,17 +212,18 @@ const BulkMessaging = () => {
     setResults(null);
 
     try {
-      // First upload CSV to get recipients
-      const uploadResult = await apiClient.uploadCSV(csvFile);
-      
-      if (!uploadResult.success) {
-        throw new Error(uploadResult.error || 'Failed to upload CSV');
+      let audienceRecipients = recipients;
+      if (csvFile) {
+        const uploadResult = await apiClient.uploadCSV(csvFile);
+        if (!uploadResult.success) {
+          throw new Error(uploadResult.error || 'Failed to upload CSV');
+        }
+        audienceRecipients = uploadResult.data?.csvData || uploadResult.recipients || recipients || [];
       }
 
-      // Then send bulk messages
       const bulkData = {
         messageType: messageType,
-        recipients: uploadResult.data?.csvData || uploadResult.recipients || recipients || [],
+        recipients: audienceRecipients,
         ...(messageType === 'template' 
           ? { templateName, language }
           : { customMessage }
@@ -361,7 +413,7 @@ const BulkMessaging = () => {
         {/* CSV Upload */}
         <div className="form-group">
           <div className="csv-upload-header">
-            <label className="form-label">Upload CSV File</label>
+            <label className="form-label">Audience Source</label>
             <button
               type="button"
               onClick={downloadSampleCSV}
@@ -371,6 +423,25 @@ const BulkMessaging = () => {
               Download Sample
             </button>
           </div>
+
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+            <button
+              type="button"
+              onClick={openContactAudiencePicker}
+              className="download-sample-btn"
+            >
+              Select from Contacts
+            </button>
+            {(csvFile || recipients.length > 0) && (
+              <button
+                type="button"
+                onClick={clearAudienceSelection}
+                className="download-sample-btn"
+              >
+                Clear Audience
+              </button>
+            )}
+          </div>
           
           <div className="csv-upload-area">
             <input
@@ -379,14 +450,13 @@ const BulkMessaging = () => {
               onChange={handleFileChange}
               className="csv-input"
               id="csv-upload"
-              required
             />
             <label htmlFor="csv-upload" className="csv-upload-label">
               <p className="upload-text">
-                {csvFile ? csvFile.name : 'Click to upload CSV file'}
+                {csvFile ? csvFile.name : 'Click to upload CSV file or choose contacts'}
               </p>
               <p className="upload-help">
-                Format: phone,var1,var2,... or just phone numbers
+                Format: phone,var1,var2,... or use CRM contacts instead
               </p>
             </label>
           </div>
@@ -403,6 +473,12 @@ const BulkMessaging = () => {
                 <X size={16} />
               </button>
             </div>
+            )}
+
+          {audienceSourceLabel && (
+            <p className="form-help">
+              Audience source: {audienceSourceLabel}
+            </p>
           )}
 
           {csvPreview.length > 0 && (
@@ -460,6 +536,13 @@ const BulkMessaging = () => {
           onRetry={handleRetryFailed}
         />
       )}
+
+      <ContactAudiencePickerModal
+        open={showContactAudiencePicker}
+        onClose={closeContactAudiencePicker}
+        onConfirm={applyContactAudienceSelection}
+        initialSelectedContacts={recipients}
+      />
     </div>
   );
 };

@@ -1,4 +1,4 @@
-import React, { useContext, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import RegisterDocuments from "./RegisterDocuments";
 import socketService from "../services/socketService";
@@ -39,13 +39,12 @@ const Dashboard = () => {
   const navigate = useNavigate();
   const { user, refreshFromBackend } = useContext(AuthContext);
   const [viewMode, setViewMode] = useState("landing");
-  const [documentsSubmitted, setDocumentsSubmitted] = useState(false);
   const [embedError, setEmbedError] = useState("");
   const landingUrl = useMemo(() => resolveLandingUrl(), []);
   const landingOrigin = useMemo(() => {
     try {
       return new URL(landingUrl, window.location.origin).origin;
-    } catch (error) {
+    } catch {
       return window.location.origin;
     }
   }, [landingUrl]);
@@ -53,11 +52,21 @@ const Dashboard = () => {
   const workspaceAccessState = String(user?.workspaceAccessState || "").toLowerCase();
   const subscriptionStatus = String(user?.subscriptionStatus || "").toLowerCase();
   const isTrialing = workspaceAccessState === "trialing" || subscriptionStatus === "trialing";
-  const showDocumentWarning = ["paid_pending_documents", "paid_pending_review", "documents_rejected"].includes(
-    workspaceAccessState
-  );
   const shouldAutoOpenPricing = Boolean(location.state?.openPricing);
-  const shouldShowEmbeddedLanding = viewMode !== "documents" && !embedError;
+  const effectiveViewMode = workspaceAccessState === "active" && viewMode === "documents" ? "landing" : viewMode;
+  const shouldShowEmbeddedLanding = effectiveViewMode !== "documents" && !embedError;
+
+  const openPricing = useCallback(() => {
+    if (embedError) return;
+    setViewMode("landing");
+    const frameWindow = iframeRef.current?.contentWindow;
+    if (!frameWindow) {
+      pendingOpenPricingRef.current = true;
+      return;
+    }
+    pendingOpenPricingRef.current = true;
+    frameWindow.postMessage({ type: "nexion-open-pricing" }, landingOrigin);
+  }, [embedError, landingOrigin]);
 
   const handleIframeLoad = () => {
     try {
@@ -70,28 +79,12 @@ const Dashboard = () => {
       }
 
       setEmbedError("");
-    } catch (error) {
+    } catch {
       // Cross-origin iframe: cannot inspect window marker, which is expected in production.
     }
   };
 
   useEffect(() => {
-    if (workspaceAccessState === "paid_pending_documents" || workspaceAccessState === "documents_rejected") {
-      setDocumentsSubmitted(false);
-    }
-    if (workspaceAccessState === "paid_pending_review" || workspaceAccessState === "active") {
-      setDocumentsSubmitted(true);
-    }
-    if (workspaceAccessState === "active" && viewMode === "documents") {
-      setViewMode("landing");
-    }
-  }, [workspaceAccessState, viewMode]);
-
-  useEffect(() => {
-    const handleOpenPricing = () => {
-      openPricing();
-    };
-
     const syncEmbeddedContext = () => {
       const frameWindow = iframeRef.current?.contentWindow;
       if (!frameWindow) return;
@@ -140,18 +133,17 @@ const Dashboard = () => {
 
       if (data.type === "nexion-payment-verified") {
         await refreshFromBackend();
-        setDocumentsSubmitted(false);
         setViewMode("documents");
       }
     };
 
     window.addEventListener("message", handleMessage);
-    window.addEventListener("nexion:open-pricing", handleOpenPricing);
+    window.addEventListener("nexion:open-pricing", openPricing);
     return () => {
       window.removeEventListener("message", handleMessage);
-      window.removeEventListener("nexion:open-pricing", handleOpenPricing);
+      window.removeEventListener("nexion:open-pricing", openPricing);
     };
-  }, [landingOrigin, refreshFromBackend, user]);
+  }, [landingOrigin, openPricing, refreshFromBackend, user]);
 
   useEffect(() => {
     if (!shouldAutoOpenPricing) return;
@@ -161,7 +153,7 @@ const Dashboard = () => {
     }, 150);
 
     return () => window.clearTimeout(timeoutId);
-  }, [location.pathname, navigate, shouldAutoOpenPricing]);
+  }, [location.pathname, navigate, openPricing, shouldAutoOpenPricing]);
 
   useEffect(() => {
     socketService.connect(import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_SOCKET_URL);
@@ -180,31 +172,14 @@ const Dashboard = () => {
     };
   }, [refreshFromBackend]);
 
-  const openPricing = () => {
-    if (embedError) return;
-    setViewMode("landing");
-    const frameWindow = iframeRef.current?.contentWindow;
-    if (!frameWindow) {
-      pendingOpenPricingRef.current = true;
-      return;
-    }
-    pendingOpenPricingRef.current = true;
-    frameWindow.postMessage({ type: "nexion-open-pricing" }, landingOrigin);
-  };
-
-  const openDocuments = () => {
-    setViewMode("documents");
-  };
-
   const handleDocumentsComplete = async () => {
-    setDocumentsSubmitted(true);
     setViewMode("landing");
     await refreshFromBackend();
   };
 
   return (
     <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", gap: "16px" }}>
-      {viewMode === "documents" ? (
+      {effectiveViewMode === "documents" ? (
         <div
           style={{
             background: "linear-gradient(180deg, #ffffff 0%, #f8fbff 100%)",
@@ -289,7 +264,7 @@ const Dashboard = () => {
         </div>
       )}
 
-      {isTrialing && viewMode !== "documents" && !embedError ? (
+      {isTrialing && effectiveViewMode !== "documents" && !embedError ? (
         <div style={{ display: "flex", justifyContent: "flex-end" }}>
           <button
             type="button"

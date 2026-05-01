@@ -39,10 +39,10 @@ const WhatsAppConsentAuditModal = ({
           <div>
             <h3>WhatsApp Consent Audit</h3>
             <p className="whatsapp-consent-audit-subtitle">
-              {renderValue(contactName)}{phone ? ` · ${phone}` : ''}
+              {renderValue(contactName)}{phone ? ` \u00B7 ${phone}` : ''}
             </p>
           </div>
-          <button className="close-btn" onClick={onClose}>×</button>
+          <button className="close-btn" type="button" aria-label="Close consent audit dialog" onClick={onClose}>{"\u00D7"}</button>
         </div>
 
         <div className="modal-body whatsapp-consent-audit-body">

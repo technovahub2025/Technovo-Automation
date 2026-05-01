@@ -2,6 +2,8 @@
 import React, { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import "./missedcall.css";
+import AppToast from "../components/common/AppToast";
+import crmService from "../services/crmService";
 import {
   PhoneMissed, 
   RefreshCcw,
@@ -29,12 +31,14 @@ import {
   X
 } from "lucide-react";
 import { apiClient } from "../services/whatsappapi";
+import useSocket from "../hooks/useSocket";
 import { stripAppRouteBase, toAppPath } from "../utils/appRouteBase";
 
 const MissedCalls = ({ page = "all" }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = stripAppRouteBase(location.pathname);
+  const { socket, connected: socketConnected, error: socketError } = useSocket();
   const isCallsOnlyPage = page === "calls";
   const isAutomationOnlyPage = page === "automation";
   const isOverviewOnlyPage = page === "overview";
@@ -46,6 +50,20 @@ const MissedCalls = ({ page = "all" }) => {
     { value: "callTime", label: "Call Time" },
     { value: "static", label: "Static Value" }
   ];
+  const commonTimezoneOptions = [
+    "Asia/Kolkata",
+    "Asia/Dubai",
+    "Asia/Singapore",
+    "Asia/Riyadh",
+    "Europe/London",
+    "Europe/Berlin",
+    "Europe/Paris",
+    "America/New_York",
+    "America/Chicago",
+    "America/Denver",
+    "America/Los_Angeles",
+    "Australia/Sydney"
+  ];
 
   const [allCalls, setAllCalls] = useState([]);
   const [filteredCalls, setFilteredCalls] = useState([]);
@@ -56,6 +74,9 @@ const MissedCalls = ({ page = "all" }) => {
   const [showForm, setShowForm] = useState(false);
   const [selectedCall, setSelectedCall] = useState(null);
   const [viewMode, setViewMode] = useState("list");
+  const [sortMode, setSortMode] = useState("newest");
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
   const [activeSection, setActiveSection] = useState(() => {
     if (isAutomationOnlyPage) return "automation";
     if (isOverviewOnlyPage) return "overview";
@@ -70,6 +91,7 @@ const MissedCalls = ({ page = "all" }) => {
   const [settingsMessage, setSettingsMessage] = useState("");
   const [settingsError, setSettingsError] = useState("");
   const [templateOptions, setTemplateOptions] = useState([]);
+  const [toast, setToast] = useState(null);
   const [automationSettings, setAutomationSettings] = useState({
     missedCallWebhook: "",
     missedCallAutomationEnabled: true,
@@ -85,6 +107,28 @@ const MissedCalls = ({ page = "all" }) => {
   const [showConnectGuide, setShowConnectGuide] = useState(false);
   const [guideStep, setGuideStep] = useState(0);
   const [copiedKey, setCopiedKey] = useState("");
+  const [noteDraft, setNoteDraft] = useState("");
+  const [taskTitleDraft, setTaskTitleDraft] = useState("");
+  const [taskDueDraft, setTaskDueDraft] = useState("");
+  const [contactLookup, setContactLookup] = useState(null);
+  const [contactLookupLoading, setContactLookupLoading] = useState(false);
+  const [webhookHealth, setWebhookHealth] = useState({ status: "unknown", message: "" });
+  const commonLanguageOptions = [
+    "en_US",
+    "en_GB",
+    "hi_IN",
+    "es_ES",
+    "fr_FR",
+    "de_DE",
+    "pt_BR",
+    "ar_SA",
+    "id_ID",
+    "bn_IN"
+  ];
+
+  const showToast = (message, type = "info") => {
+    setToast({ message, type });
+  };
 
   const getLocalWebhookIdentity = () => {
     try {
@@ -402,11 +446,10 @@ const MissedCalls = ({ page = "all" }) => {
       });
 
       setAllCalls(mapped);
-      setFilteredCalls(mapped);
       setLastOverviewUpdated(new Date());
     } catch (error) {
       setAllCalls([]);
-      setFilteredCalls([]);
+      showToast(error?.response?.data?.error || "Failed to load missed calls", "error");
     } finally {
       setLoading(false);
     }
@@ -482,6 +525,7 @@ const MissedCalls = ({ page = "all" }) => {
       setSettingsError(
         error?.response?.data?.error || "Failed to load missed call automation settings"
       );
+      showToast(error?.response?.data?.error || "Failed to load automation settings", "error");
     } finally {
       setSettingsLoading(false);
     }
@@ -640,49 +684,6 @@ const MissedCalls = ({ page = "all" }) => {
 
   const applyFilter = (filter) => {
     setActiveFilter(filter);
-    let filtered = [...allCalls];
-
-    if (filter === "inbound") {
-      filtered = filtered.filter(call => call.callType === "inbound");
-    } else if (filter === "outbound") {
-      filtered = filtered.filter(call => call.callType === "outbound");
-    } else if (filter === "missed") {
-      filtered = filtered.filter(call => call.status === "missed");
-    } else if (filter === "resolved") {
-      filtered = filtered.filter(call => call.status === "resolved");
-    } else if (filter === "today") {
-      const today = new Date().toISOString().split('T')[0];
-      filtered = filtered.filter(call => call.date === today);
-    } else if (filter === "pending") {
-      filtered = filtered.filter(call => call.automationStatus === "pending");
-    } else if (filter === "processing") {
-      filtered = filtered.filter(call => call.automationStatus === "processing");
-    } else if (filter === "sent") {
-      filtered = filtered.filter(call => call.automationStatus === "sent");
-    } else if (filter === "failed") {
-      filtered = filtered.filter(call => call.automationStatus === "failed");
-    }
-
-    // Apply date range filter
-    if (dateRange.startDate && dateRange.endDate) {
-      filtered = filtered.filter(call => {
-        const callDate = new Date(call.date);
-        const startDate = new Date(dateRange.startDate);
-        const endDate = new Date(dateRange.endDate);
-        return callDate >= startDate && callDate <= endDate;
-      });
-    }
-
-    if (searchQuery) {
-      filtered = filtered.filter(call =>
-        call.phone.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        call.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        call.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        call.email?.toLowerCase().includes(searchQuery.toLowerCase())
-      );
-    }
-
-    setFilteredCalls(filtered);
   };
 
   const handleDateRangeChange = (e) => {
@@ -694,7 +695,7 @@ const MissedCalls = ({ page = "all" }) => {
   };
 
   const applyDateFilter = () => {
-    fetchCalls();
+    setFilteredCalls(applyLocalFilters(allCalls, activeFilter, searchQuery, dateRange));
   };
 
   const clearDateFilter = () => {
@@ -702,69 +703,23 @@ const MissedCalls = ({ page = "all" }) => {
       startDate: "",
       endDate: ""
     });
-    fetchCalls();
   };
 
   const handleSearch = (e) => {
     const query = e.target.value;
     setSearchQuery(query);
-    
-    let filtered = [...allCalls];
-    
-    // Apply active filter first
-    if (activeFilter === "inbound") {
-      filtered = filtered.filter(call => call.callType === "inbound");
-    } else if (activeFilter === "outbound") {
-      filtered = filtered.filter(call => call.callType === "outbound");
-    } else if (activeFilter === "missed") {
-      filtered = filtered.filter(call => call.status === "missed");
-    } else if (activeFilter === "resolved") {
-      filtered = filtered.filter(call => call.status === "resolved");
-    } else if (activeFilter === "today") {
-      const today = new Date().toISOString().split('T')[0];
-      filtered = filtered.filter(call => call.date === today);
-    } else if (activeFilter === "pending") {
-      filtered = filtered.filter(call => call.automationStatus === "pending");
-    } else if (activeFilter === "processing") {
-      filtered = filtered.filter(call => call.automationStatus === "processing");
-    } else if (activeFilter === "sent") {
-      filtered = filtered.filter(call => call.automationStatus === "sent");
-    } else if (activeFilter === "failed") {
-      filtered = filtered.filter(call => call.automationStatus === "failed");
-    }
-    
-    // Apply date range filter
-    if (dateRange.startDate && dateRange.endDate) {
-      filtered = filtered.filter(call => {
-        const callDate = new Date(call.date);
-        const startDate = new Date(dateRange.startDate);
-        const endDate = new Date(dateRange.endDate);
-        return callDate >= startDate && callDate <= endDate;
-      });
-    }
-    
-    // Apply search query
-    if (query) {
-      filtered = filtered.filter(call =>
-        call.phone.toLowerCase().includes(query.toLowerCase()) ||
-        call.name.toLowerCase().includes(query.toLowerCase()) ||
-        call.location.toLowerCase().includes(query.toLowerCase()) ||
-        call.email?.toLowerCase().includes(query.toLowerCase())
-      );
-    }
-    
-    setFilteredCalls(filtered);
   };
 
   const resolveCall = async (callId) => {
     try {
       await apiClient.resolveMissedCall(callId);
       await fetchCalls();
+      showToast("Missed call marked as resolved", "success");
       if (selectedCall && selectedCall.id === callId) {
         setSelectedCall((prev) => (prev ? { ...prev, status: "resolved" } : prev));
       }
     } catch (error) {
-      // no-op
+      showToast(error?.response?.data?.error || "Failed to resolve missed call", "error");
     }
   };
 
@@ -772,6 +727,7 @@ const MissedCalls = ({ page = "all" }) => {
     try {
       await apiClient.runMissedCallNow(callId);
       await fetchCalls();
+      showToast("Automation re-queued for this missed call", "success");
       if (selectedCall && selectedCall.id === callId) {
         setSelectedCall((prev) =>
           prev
@@ -780,13 +736,140 @@ const MissedCalls = ({ page = "all" }) => {
                 automationStatus: "pending",
                 automationNextRunAt: new Date().toISOString(),
                 automationLastError: ""
-              }
+            }
             : prev
         );
       }
     } catch (error) {
-      // no-op
+      showToast(error?.response?.data?.error || "Failed to queue automation", "error");
     }
+  };
+
+  const normalizePhoneDigits = (value) => String(value || "").replace(/\D/g, "");
+
+  const resolveOrCreateContact = async (call) => {
+    const phone = String(call?.phone || "").trim();
+    if (!phone) {
+      throw new Error("Caller phone number is missing");
+    }
+
+    const lookupResponse = await apiClient.getContacts({ search: phone });
+    const contacts = Array.isArray(lookupResponse?.data?.data) ? lookupResponse.data.data : [];
+    const normalizedPhone = normalizePhoneDigits(phone);
+    const existingContact = contacts.find((contact) => {
+      const candidatePhone = normalizePhoneDigits(contact?.phone);
+      return candidatePhone === normalizedPhone || candidatePhone.endsWith(normalizedPhone.slice(-10));
+    }) || null;
+
+    if (existingContact) {
+      return existingContact;
+    }
+
+    const createResponse = await apiClient.createContact({
+      name: String(call?.name || phone || "Missed Call").trim(),
+      phone,
+      email: String(call?.email || "").trim(),
+      notes: String(call?.notes || "").trim(),
+      sourceType: "incoming_call"
+    });
+    return createResponse?.data?.data || null;
+  };
+
+  const handleSaveNote = async () => {
+    const note = String(noteDraft || "").trim();
+    if (!note) {
+      showToast("Add a note before saving", "error");
+      return;
+    }
+
+    try {
+      const contact = await resolveOrCreateContact(selectedCall);
+      if (!contact?._id) {
+        throw new Error("Could not link this call to a contact");
+      }
+
+      const result = await crmService.saveContactNotes(contact._id, note);
+      if (result?.success === false) {
+        throw new Error(result?.error || "Failed to save contact note");
+      }
+
+      setContactLookup(result?.data || contact);
+      setSelectedCall((prev) => (prev ? { ...prev, notes: note } : prev));
+      showToast("Note saved to contact", "success");
+    } catch (error) {
+      showToast(error?.message || "Failed to save note", "error");
+    }
+  };
+
+  const handleCreateFollowUpTask = async () => {
+    const title = String(taskTitleDraft || "").trim();
+    if (!title) {
+      showToast("Task title is required", "error");
+      return;
+    }
+
+    const dueAt = String(taskDueDraft || "").trim();
+    const parsedDueAt = dueAt ? new Date(dueAt) : null;
+    if (dueAt && (!parsedDueAt || Number.isNaN(parsedDueAt.getTime()))) {
+      showToast("Enter a valid follow-up date and time", "error");
+      return;
+    }
+
+    try {
+      const contact = await resolveOrCreateContact(selectedCall);
+      if (!contact?._id) {
+        throw new Error("Could not link this call to a contact");
+      }
+
+      const result = await crmService.createTask({
+        contactId: contact._id,
+        title,
+        description: `Follow-up created from missed call${selectedCall?.phone ? ` (${selectedCall.phone})` : ""}`,
+        dueAt: parsedDueAt ? parsedDueAt.toISOString() : undefined,
+        priority: "medium",
+        taskType: "follow_up"
+      });
+
+      if (result?.success === false) {
+        throw new Error(result?.error || "Failed to create follow-up task");
+      }
+
+      showToast("Follow-up task created", "success");
+      setTaskTitleDraft(selectedCall?.name ? `Follow up with ${selectedCall.name}` : "Follow up missed call");
+      setTaskDueDraft("");
+    } catch (error) {
+      showToast(error?.message || "Failed to create follow-up task", "error");
+    }
+  };
+
+  const handleCallBack = () => {
+    const phone = String(selectedCall?.phone || "").trim();
+    if (!phone) {
+      showToast("Caller phone number is missing", "error");
+      return;
+    }
+    window.location.href = `tel:${phone}`;
+    showToast("Opening call app", "info");
+  };
+
+  const handleSendSms = () => {
+    const phone = String(selectedCall?.phone || "").trim();
+    if (!phone) {
+      showToast("Caller phone number is missing", "error");
+      return;
+    }
+    window.location.href = `sms:${phone}`;
+    showToast("Opening SMS app", "info");
+  };
+
+  const handleSendEmail = () => {
+    const email = String(selectedCall?.email || "").trim();
+    if (!email) {
+      showToast("No email address available for this caller", "error");
+      return;
+    }
+    window.location.href = `mailto:${email}`;
+    showToast("Opening email client", "info");
   };
 
   const handleInputChange = (e) => {
@@ -834,7 +917,214 @@ const MissedCalls = ({ page = "all" }) => {
     setSelectedCall(call);
     setViewMode("details");
     setActiveSection("details");
+    setNoteDraft(call?.notes || "");
+    setTaskTitleDraft(call?.name ? `Follow up with ${call.name}` : "Follow up missed call");
+    setTaskDueDraft("");
   };
+
+  const applyLocalFilters = (calls, filter, query, range) => {
+    let filtered = [...calls];
+
+    if (filter === "inbound") {
+      filtered = filtered.filter((call) => call.callType === "inbound");
+    } else if (filter === "outbound") {
+      filtered = filtered.filter((call) => call.callType === "outbound");
+    } else if (filter === "missed") {
+      filtered = filtered.filter((call) => call.status === "missed");
+    } else if (filter === "resolved") {
+      filtered = filtered.filter((call) => call.status === "resolved");
+    } else if (filter === "today") {
+      const today = new Date().toISOString().split("T")[0];
+      filtered = filtered.filter((call) => call.date === today);
+    } else if (filter === "pending") {
+      filtered = filtered.filter((call) => call.automationStatus === "pending");
+    } else if (filter === "processing") {
+      filtered = filtered.filter((call) => call.automationStatus === "processing");
+    } else if (filter === "sent") {
+      filtered = filtered.filter((call) => call.automationStatus === "sent");
+    } else if (filter === "failed") {
+      filtered = filtered.filter((call) => call.automationStatus === "failed");
+    }
+
+    if (range.startDate && range.endDate) {
+      filtered = filtered.filter((call) => {
+        const callDate = new Date(call.date);
+        const startDate = new Date(range.startDate);
+        const endDate = new Date(range.endDate);
+        return callDate >= startDate && callDate <= endDate;
+      });
+    }
+
+    if (query) {
+      const normalizedQuery = query.toLowerCase();
+      filtered = filtered.filter((call) =>
+        call.phone.toLowerCase().includes(normalizedQuery) ||
+        call.name.toLowerCase().includes(normalizedQuery) ||
+        call.location.toLowerCase().includes(normalizedQuery) ||
+        call.email?.toLowerCase().includes(normalizedQuery)
+      );
+    }
+
+    return filtered;
+  };
+
+  useEffect(() => {
+    setFilteredCalls(applyLocalFilters(allCalls, activeFilter, searchQuery, dateRange));
+  }, [allCalls, activeFilter, searchQuery, dateRange]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [activeFilter, searchQuery, dateRange, sortMode, pageSize, allCalls.length]);
+
+  useEffect(() => {
+    if (!socket) return undefined;
+
+    const handleMissedCallEvent = (payload) => {
+      const callId = payload?.missedCallId || payload?.call?._id || payload?.call?.id;
+      const callerName = payload?.call?.callerName || payload?.call?.fromNumber || "New missed call";
+      if (payload?.type === "missed_call_new") {
+        showToast(`New missed call from ${callerName}`, "info");
+      } else if (payload?.type === "missed_call_automation_sent") {
+        showToast(`Automation sent for ${callerName}`, "success");
+      } else if (payload?.type === "missed_call_automation_failed") {
+        showToast(payload?.error || "Missed call automation failed", "error");
+      }
+
+      if (callId) {
+        fetchCalls();
+      } else if (payload?.type === "missed_call_new") {
+        fetchCalls();
+      }
+    };
+
+    socket.on("missed_call_new", handleMissedCallEvent);
+    socket.on("missed_call_automation_sent", handleMissedCallEvent);
+    socket.on("missed_call_automation_failed", handleMissedCallEvent);
+
+    return () => {
+      socket.off("missed_call_new", handleMissedCallEvent);
+      socket.off("missed_call_automation_sent", handleMissedCallEvent);
+      socket.off("missed_call_automation_failed", handleMissedCallEvent);
+    };
+  }, [socket]);
+
+  useEffect(() => {
+    if (socketError) {
+      showToast(socketError, "error");
+    }
+  }, [socketError]);
+
+  const activeTemplate = templateOptions.find(
+    (tpl) =>
+      tpl.name === automationSettings.missedCallTemplateName &&
+      tpl.language === automationSettings.missedCallTemplateLanguage
+  ) || templateOptions.find((tpl) => tpl.name === automationSettings.missedCallTemplateName) || null;
+
+  const previewTemplateText = (() => {
+    const body = String(activeTemplate?.bodyText || "").trim();
+    if (!body) return "";
+
+    const mappings = Array.isArray(automationSettings.missedCallTemplateVariables)
+      ? automationSettings.missedCallTemplateVariables
+      : [];
+
+    const valuesByIndex = new Map(
+      mappings.map((item) => {
+        const source = String(item?.source || "callerName").trim();
+        const staticValue = String(item?.value || "").trim();
+        let resolved = "";
+        if (source === "callerPhone") resolved = String(selectedCall?.phone || "");
+        else if (source === "businessPhone") resolved = getLocalBusinessPhone();
+        else if (source === "callDate") resolved = selectedCall?.displayDate || "";
+        else if (source === "callTime") resolved = selectedCall?.time || "";
+        else if (source === "static") resolved = staticValue;
+        else resolved = String(selectedCall?.name || selectedCall?.phone || "");
+        return [Number(item?.index), resolved];
+      })
+    );
+
+    return body.replace(/\{\{(\d+)\}\}/g, (match, rawIndex) => {
+      const idx = Number(rawIndex);
+      return valuesByIndex.get(idx) || match;
+    });
+  })();
+
+  useEffect(() => {
+    const webhook = String(automationSettings.missedCallWebhook || "").trim();
+    if (!webhook) {
+      setWebhookHealth({ status: "warning", message: "Webhook URL is not configured yet." });
+      return;
+    }
+
+    try {
+      const parsed = new URL(webhook);
+      const isMissedCallWebhook = parsed.pathname.includes("/missedcalls/webhook");
+      if (!isMissedCallWebhook) {
+        setWebhookHealth({
+          status: "warning",
+          message: "Webhook looks valid, but it does not point to the missed call endpoint."
+        });
+        return;
+      }
+
+      setWebhookHealth({
+        status: "success",
+        message: "Webhook is ready for missed call automation."
+      });
+    } catch (_error) {
+      setWebhookHealth({
+        status: "error",
+        message: "Webhook URL is invalid."
+      });
+    }
+  }, [automationSettings.missedCallWebhook]);
+
+  const timezoneOptions = Array.from(
+    new Set([...commonTimezoneOptions, automationSettings.missedCallTimezone].filter(Boolean))
+  );
+  const languageOptions = Array.from(
+    new Set([
+      ...commonLanguageOptions,
+      ...templateOptions.map((tpl) => String(tpl.language || "").trim()).filter(Boolean),
+      automationSettings.missedCallTemplateLanguage
+    ])
+  );
+
+  useEffect(() => {
+    let alive = true;
+
+    const lookupContact = async () => {
+      const phone = String(selectedCall?.phone || "").trim();
+      if (!phone || viewMode !== "details") {
+        setContactLookup(null);
+        return;
+      }
+
+      setContactLookupLoading(true);
+      try {
+        const response = await apiClient.getContacts({ search: phone });
+        const contacts = Array.isArray(response?.data?.data) ? response.data.data : [];
+        const exactMatch = contacts.find((contact) => {
+          const candidatePhone = String(contact?.phone || "").replace(/\D/g, "");
+          const normalizedPhone = String(phone).replace(/\D/g, "");
+          return candidatePhone === normalizedPhone || candidatePhone.endsWith(normalizedPhone.slice(-10));
+        }) || contacts[0] || null;
+
+        if (!alive) return;
+        setContactLookup(exactMatch);
+      } catch (_error) {
+        if (alive) setContactLookup(null);
+      } finally {
+        if (alive) setContactLookupLoading(false);
+      }
+    };
+
+    lookupContact();
+
+    return () => {
+      alive = false;
+    };
+  }, [selectedCall?.phone, viewMode]);
 
   const stats = {
     total: allCalls.length,
@@ -911,12 +1201,32 @@ const MissedCalls = ({ page = "all" }) => {
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     .slice(0, 8);
 
+  const sortedCalls = [...filteredCalls].sort((a, b) => {
+    const aTime = new Date(`${a.date}T${a.time || "00:00"}`).getTime();
+    const bTime = new Date(`${b.date}T${b.time || "00:00"}`).getTime();
+
+    if (sortMode === "oldest") return aTime - bTime;
+    if (sortMode === "caller") return String(a.name || "").localeCompare(String(b.name || ""));
+    if (sortMode === "status") {
+      return String(a.status || "").localeCompare(String(b.status || "")) || (bTime - aTime);
+    }
+    return bTime - aTime;
+  });
+
+  const totalPages = Math.max(1, Math.ceil(sortedCalls.length / pageSize));
+  const safeCurrentPage = Math.min(currentPage, totalPages);
+  const pageStartIndex = (safeCurrentPage - 1) * pageSize;
+  const pageEndIndex = pageStartIndex + pageSize;
+  const visibleCalls = sortedCalls.slice(pageStartIndex, pageEndIndex);
+  const showRangeStart = sortedCalls.length ? pageStartIndex + 1 : 0;
+  const showRangeEnd = Math.min(pageEndIndex, sortedCalls.length);
+
   const isSplitPageMode = isCallsOnlyPage || isAutomationOnlyPage;
   const showSectionTabs = true;
   const showAutomationSection = isAutomationOnlyPage || activeSection === "automation";
   const showOverviewSection = (isOverviewOnlyPage || (!isAutomationOnlyPage && activeSection === "overview"));
-  const showCallsSection = !isOverviewOnlyPage && (isCallsOnlyPage || activeSection === "calls") && viewMode !== "details";
-  const showDetailsSection =
+  const showCallsSection = !isOverviewOnlyPage && (isCallsOnlyPage || activeSection === "calls" || viewMode === "details");
+  const showDetailsDrawer =
     !isAutomationOnlyPage &&
     !isOverviewOnlyPage &&
     (activeSection === "details" || viewMode === "details") &&
@@ -951,6 +1261,7 @@ const MissedCalls = ({ page = "all" }) => {
 
   return (
     <div className="missedcalls-page">
+      <AppToast toast={toast} />
       {/* Header */}
       <div className="page-header">
         <div className="header-content">
@@ -959,6 +1270,10 @@ const MissedCalls = ({ page = "all" }) => {
             Missed Calls
           </h2>
           <p>Track and manage all inbound and outbound calls</p>
+          <div className={`live-status-pill ${socketConnected ? "connected" : "disconnected"}`}>
+            <span className="live-status-dot" />
+            {socketConnected ? "Live updates on" : "Live updates offline"}
+          </div>
         </div>
         <div className="header-actions">
           <button
@@ -1198,12 +1513,16 @@ const MissedCalls = ({ page = "all" }) => {
 
               <label className="settings-field">
                 <span>Timezone</span>
-                <input
-                  type="text"
+                <select
                   value={automationSettings.missedCallTimezone}
                   onChange={(e) => handleSettingsChange("missedCallTimezone", e.target.value)}
-                  placeholder="Asia/Kolkata"
-                />
+                >
+                  {timezoneOptions.map((zone) => (
+                    <option key={zone} value={zone}>
+                      {zone}
+                    </option>
+                  ))}
+                </select>
               </label>
             </>
           ) : null}
@@ -1232,13 +1551,60 @@ const MissedCalls = ({ page = "all" }) => {
 
           <label className="settings-field">
             <span>Language</span>
-            <input
-              type="text"
+            <select
               value={automationSettings.missedCallTemplateLanguage}
               onChange={(e) => handleSettingsChange("missedCallTemplateLanguage", e.target.value)}
-              placeholder="en_US"
-            />
+            >
+              {languageOptions.map((language) => (
+                <option key={language} value={language}>
+                  {language}
+                </option>
+              ))}
+            </select>
           </label>
+        </div>
+
+        <div className="automation-insights-grid">
+          <div className="automation-preview-card">
+            <div className="automation-preview-head">
+              <h4>Template Preview</h4>
+              {activeTemplate ? (
+                <span className="automation-preview-meta">
+                  {activeTemplate.name} ({activeTemplate.language})
+                </span>
+              ) : (
+                <span className="automation-preview-meta muted">No template selected</span>
+              )}
+            </div>
+            <div className="automation-preview-body">
+              {previewTemplateText ? (
+                <pre>{previewTemplateText}</pre>
+              ) : (
+                <p className="automation-preview-empty">
+                  Choose a template to preview the message text and variable mapping.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="automation-health-card">
+            <div className="automation-health-head">
+              <h4>Webhook Health</h4>
+              <span className={`automation-health-pill ${webhookHealth.status}`}>
+                {webhookHealth.status === "success"
+                  ? "Ready"
+                  : webhookHealth.status === "warning"
+                    ? "Check"
+                    : webhookHealth.status === "error"
+                      ? "Invalid"
+                      : "Unknown"}
+              </span>
+            </div>
+            <p>{webhookHealth.message || "Checking webhook status..."}</p>
+            <div className="automation-health-url">
+              <code>{webhookUrl}</code>
+            </div>
+          </div>
         </div>
 
         {(automationSettings.missedCallTemplateVariables || []).length > 0 ? (
@@ -1316,9 +1682,14 @@ const MissedCalls = ({ page = "all" }) => {
             <h1>Missed Calls and Template Automation Overview</h1>
             <p className="dash-subtitle">Live performance snapshot across missed calls, queue states, and template delivery.</p>
           </div>
-          <button className="dash-refresh" onClick={fetchCalls}>
+          <div className="dash-hero-actions">
+            <div className={`dash-live-badge ${socketConnected ? "connected" : "disconnected"}`}>
+              {socketConnected ? "Realtime connected" : "Realtime disconnected"}
+            </div>
+            <button className="dash-refresh" onClick={fetchCalls}>
             <RefreshCcw size={16} /> Refresh
-          </button>
+            </button>
+          </div>
         </section>
 
         <section className="dash-kpi-grid">
@@ -1538,7 +1909,6 @@ const MissedCalls = ({ page = "all" }) => {
                   className={`filter-btn ${activeFilter === "all" ? "active" : ""}`}
                   onClick={() => {
                     setActiveFilter("all");
-                    setFilteredCalls(allCalls);
                   }}
                 >
                   All ({stats.total})
@@ -1599,6 +1969,44 @@ const MissedCalls = ({ page = "all" }) => {
                 </button>
               </div>
             </div>
+
+            <div className="filter-summary-row">
+              <span className="filter-summary-chip">
+                Showing {filteredCalls.length} of {allCalls.length}
+              </span>
+              <div className="list-controls-right">
+                <label className="list-control-field">
+                  <span>Sort</span>
+                  <select value={sortMode} onChange={(e) => setSortMode(e.target.value)}>
+                    <option value="newest">Newest first</option>
+                    <option value="oldest">Oldest first</option>
+                    <option value="caller">Caller A-Z</option>
+                    <option value="status">Status</option>
+                  </select>
+                </label>
+                <label className="list-control-field">
+                  <span>Per page</span>
+                  <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                    <option value={10}>10</option>
+                    <option value={20}>20</option>
+                    <option value={50}>50</option>
+                  </select>
+                </label>
+              </div>
+              {(searchQuery || dateRange.startDate || dateRange.endDate || activeFilter !== "all") ? (
+                <button
+                  type="button"
+                  className="filter-summary-clear"
+                  onClick={() => {
+                    setActiveFilter("all");
+                    setSearchQuery("");
+                    setDateRange({ startDate: "", endDate: "" });
+                  }}
+                >
+                  Clear all filters
+                </button>
+              ) : null}
+            </div>
           </div>
 
           {/* Calls List */}
@@ -1632,7 +2040,7 @@ const MissedCalls = ({ page = "all" }) => {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredCalls.map((call) => (
+                    {visibleCalls.map((call) => (
                       <tr key={call.id} className="call-row">
                         <td>
                           <div className="caller-cell">
@@ -1736,6 +2144,34 @@ const MissedCalls = ({ page = "all" }) => {
                     ))}
                   </tbody>
                 </table>
+                {sortedCalls.length > pageSize ? (
+                  <div className="pagination-bar">
+                    <div className="pagination-meta">
+                      Showing {showRangeStart}-{showRangeEnd} of {sortedCalls.length}
+                    </div>
+                    <div className="pagination-actions">
+                      <button
+                        type="button"
+                        className="pagination-btn"
+                        onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                        disabled={safeCurrentPage <= 1}
+                      >
+                        Previous
+                      </button>
+                      <span className="pagination-page">
+                        Page {safeCurrentPage} of {totalPages}
+                      </span>
+                      <button
+                        type="button"
+                        className="pagination-btn"
+                        onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                        disabled={safeCurrentPage >= totalPages}
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
               </div>
             )}
           </div>
@@ -1743,174 +2179,253 @@ const MissedCalls = ({ page = "all" }) => {
       )}
 
       {/* Call Details View */}
-      {showDetailsSection && selectedCall && (
-        <section className="missed-calls-section-card">
-        <div className="missed-calls-section-header">
-          <h3>Call Details</h3>
-          <p>Inspect complete call context, automation, and follow-up actions.</p>
-        </div>
-        <div className="details-container">
-          <div className="details-header">
-            <button className="back-btn" onClick={() => { setViewMode("list"); setActiveSection("calls"); }}>
-              <ArrowLeft size={20} />
-              Back to List
-            </button>
-            <h2>Call Details</h2>
-          </div>
-          
-          <div className="details-content">
-            <div className="details-card">
-              <div className="details-header-section">
-                <div className="caller-details">
-                  <div className="caller-avatar large">
-                    <User size={24} />
-                  </div>
-                  <div>
-                    <h2>{selectedCall.name}</h2>
-                    <p className="caller-phone-large">
-                      <Phone size={16} /> {selectedCall.phone}
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="status-section">
-                  <div className={`status-badge large ${selectedCall.status}`}>
-                    {selectedCall.status === "resolved" ? (
-                      <>
-                        <CheckCircle size={16} /> Resolved
-                      </>
-                    ) : (
-                      <>
-                        <Clock size={16} /> Missed
-                      </>
-                    )}
-                  </div>
-                  <div className={`priority-badge ${selectedCall.priority}`}>
-                    {selectedCall.priority} Priority
-                  </div>
-                  <div className={`calltype-badge ${selectedCall.callType}`}>
-                    {selectedCall.callType === "inbound" ? (
-                      <PhoneMissed size={14} />
-                    ) : (
-                      <PhoneOutgoing size={14} />
-                    )}
-                    {selectedCall.callType}
-                  </div>
-                </div>
+      {showDetailsDrawer && selectedCall && (
+        <div className="details-drawer-overlay" role="dialog" aria-modal="true">
+          <aside className="details-drawer">
+            <div className="details-drawer-header">
+              <div>
+                <p className="details-drawer-eyebrow">Call Details</p>
+                <h2>{selectedCall.name}</h2>
+                <p className="details-drawer-subtitle">{selectedCall.phone}</p>
               </div>
+              <div className="details-drawer-header-actions">
+                <button
+                  type="button"
+                  className="back-btn"
+                  onClick={() => { setViewMode("list"); setActiveSection("calls"); }}
+                >
+                  <ArrowLeft size={18} />
+                  Back to list
+                </button>
+                <button
+                  type="button"
+                  className="drawer-close-btn"
+                  onClick={() => {
+                    setViewMode("list");
+                    setActiveSection("calls");
+                    setSelectedCall(null);
+                  }}
+                  aria-label="Close call details"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
 
-              <div className="details-grid">
-                <div className="detail-section">
-                  <h3><Calendar size={18} /> Call Information</h3>
-                  <div className="detail-row">
-                    <span className="detail-label">Date & Time:</span>
-                    <span className="detail-value">{selectedCall.displayDate} at {selectedCall.time}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Duration:</span>
-                    <span className="detail-value">{selectedCall.duration}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Call Type:</span>
-                    <span className="detail-value capitalize">{selectedCall.callType}</span>
-                  </div>
-                </div>
-
-                <div className="detail-section">
-                  <h3><User size={18} /> Contact Details</h3>
-                  {selectedCall.email && (
-                    <div className="detail-row">
-                      <span className="detail-label"><Mail size={16} /> Email:</span>
-                      <span className="detail-value">{selectedCall.email}</span>
+            <div className="details-drawer-scroll">
+              <div className="details-card">
+                <div className="details-header-section">
+                  <div className="caller-details">
+                    <div className="caller-avatar large">
+                      <User size={24} />
                     </div>
-                  )}
-                  {selectedCall.location && (
-                    <div className="detail-row">
-                      <span className="detail-label"><MapPin size={16} /> Location:</span>
-                      <span className="detail-value">{selectedCall.location}</span>
+                    <div>
+                      <h2>{selectedCall.name}</h2>
+                      <p className="caller-phone-large">
+                        <Phone size={16} /> {selectedCall.phone}
+                      </p>
                     </div>
-                  )}
-                </div>
+                  </div>
 
-                <div className="detail-section full-width">
-                  <h3><FileText size={18} /> Notes</h3>
-                  <div className="notes-content">
-                    {selectedCall.notes || "No notes available"}
-                  </div>
-                </div>
-
-                <div className="detail-section full-width">
-                  <h3><Clock size={18} /> Automation</h3>
-                  <div className="detail-row">
-                    <span className="detail-label">Automation Status:</span>
-                    <span className="detail-value capitalize">{selectedCall.automationStatus || "pending"}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Template:</span>
-                    <span className="detail-value">{selectedCall.automationTemplate || "-"}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Language:</span>
-                    <span className="detail-value">{selectedCall.automationLanguage || "en_US"}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Delay:</span>
-                    <span className="detail-value">{selectedCall.automationDelayMinutes ?? 0} min</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Next Run:</span>
-                    <span className="detail-value">{formatDateTime(selectedCall.automationNextRunAt)}</span>
-                  </div>
-                  <div className="detail-row">
-                    <span className="detail-label">Attempts:</span>
-                    <span className="detail-value">{selectedCall.automationAttempts ?? 0}</span>
-                  </div>
-                  {selectedCall.automationLastError ? (
-                    <div className="detail-row">
-                      <span className="detail-label">Last Error:</span>
-                      <span className="detail-value">{selectedCall.automationLastError}</span>
+                  <div className="status-section">
+                    <div className={`status-badge large ${selectedCall.status}`}>
+                      {selectedCall.status === "resolved" ? (
+                        <>
+                          <CheckCircle size={16} /> Resolved
+                        </>
+                      ) : (
+                        <>
+                          <Clock size={16} /> Missed
+                        </>
+                      )}
                     </div>
-                  ) : null}
+                    <div className={`priority-badge ${selectedCall.priority}`}>
+                      {selectedCall.priority} Priority
+                    </div>
+                    <div className={`calltype-badge ${selectedCall.callType}`}>
+                      {selectedCall.callType === "inbound" ? (
+                        <PhoneMissed size={14} />
+                      ) : (
+                        <PhoneOutgoing size={14} />
+                      )}
+                      {selectedCall.callType}
+                    </div>
+                  </div>
                 </div>
 
-                <div className="detail-section full-width">
-                  <h3><MessageCircle size={18} /> Actions</h3>
-                  <div className="details-action-buttons">
-                    {selectedCall.status === "missed" && (
-                      <button
-                        className="details-action-btn primary"
-                        onClick={() => resolveCall(selectedCall.id)}
-                      >
-                        <CheckCircle size={16} /> Mark Resolved
-                      </button>
+                <div className="details-grid">
+                  <div className="detail-section">
+                    <h3><Calendar size={18} /> Call Information</h3>
+                    <div className="detail-row">
+                      <span className="detail-label">Date & Time:</span>
+                      <span className="detail-value">{selectedCall.displayDate} at {selectedCall.time}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Duration:</span>
+                      <span className="detail-value">{selectedCall.duration}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Call Type:</span>
+                      <span className="detail-value capitalize">{selectedCall.callType}</span>
+                    </div>
+                  </div>
+
+                  <div className="detail-section">
+                    <h3><User size={18} /> Contact Details</h3>
+                    {selectedCall.email && (
+                      <div className="detail-row">
+                        <span className="detail-label"><Mail size={16} /> Email:</span>
+                        <span className="detail-value">{selectedCall.email}</span>
+                      </div>
                     )}
-                    <button className="details-action-btn primary">
-                      <Phone size={16} /> Call Back
-                    </button>
-                    {(selectedCall.automationStatus === "failed" || selectedCall.automationStatus === "pending") && (
-                      <button
-                        className="details-action-btn secondary"
-                        onClick={() => runNow(selectedCall.id)}
-                      >
-                        <RefreshCcw size={16} /> Run Automation Now
-                      </button>
+                    {selectedCall.location && (
+                      <div className="detail-row">
+                        <span className="detail-label"><MapPin size={16} /> Location:</span>
+                        <span className="detail-value">{selectedCall.location}</span>
+                      </div>
                     )}
-                    <button className="details-action-btn secondary">
-                      <MessageCircle size={16} /> Send SMS
-                    </button>
-                    <button className="details-action-btn outline">
-                      <Mail size={16} /> Send Email
-                    </button>
-                    <button className="details-action-btn outline">
-                      <FileText size={16} /> Add Note
-                    </button>
+                  </div>
+
+                  <div className="detail-section full-width">
+                    <h3><FileText size={18} /> Notes</h3>
+                    <div className="notes-content">
+                      {selectedCall.notes || "No notes available"}
+                    </div>
+                  </div>
+
+                  <div className="detail-section full-width">
+                    <h3><Clock size={18} /> Automation</h3>
+                    <div className="detail-row">
+                      <span className="detail-label">Automation Status:</span>
+                      <span className="detail-value capitalize">{selectedCall.automationStatus || "pending"}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Template:</span>
+                      <span className="detail-value">{selectedCall.automationTemplate || "-"}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Language:</span>
+                      <span className="detail-value">{selectedCall.automationLanguage || "en_US"}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Delay:</span>
+                      <span className="detail-value">{selectedCall.automationDelayMinutes ?? 0} min</span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Next Run:</span>
+                      <span className="detail-value">{formatDateTime(selectedCall.automationNextRunAt)}</span>
+                    </div>
+                    <div className="detail-row">
+                      <span className="detail-label">Attempts:</span>
+                      <span className="detail-value">{selectedCall.automationAttempts ?? 0}</span>
+                    </div>
+                    {selectedCall.automationLastError ? (
+                      <div className="detail-row">
+                        <span className="detail-label">Last Error:</span>
+                        <span className="detail-value">{selectedCall.automationLastError}</span>
+                      </div>
+                    ) : null}
+                  </div>
+
+                  <div className="detail-section full-width">
+                    <h3><MessageCircle size={18} /> Follow-Up</h3>
+                    <div className="followup-meta">
+                      {contactLookupLoading ? (
+                        <span className="followup-chip neutral">Looking up contact...</span>
+                      ) : contactLookup?._id ? (
+                        <span className="followup-chip success">
+                          Linked contact found: {contactLookup.name || contactLookup.phone}
+                        </span>
+                      ) : (
+                        <span className="followup-chip warning">No linked contact yet</span>
+                      )}
+                    </div>
+                    <div className="followup-grid">
+                      <label className="followup-field full">
+                        <span>Internal note</span>
+                        <textarea
+                          value={noteDraft}
+                          onChange={(e) => setNoteDraft(e.target.value)}
+                          placeholder="Write context for the team, next step, or customer details..."
+                          rows={4}
+                        />
+                      </label>
+                      <div className="followup-inline-grid">
+                        <label className="followup-field">
+                          <span>Task title</span>
+                          <input
+                            type="text"
+                            value={taskTitleDraft}
+                            onChange={(e) => setTaskTitleDraft(e.target.value)}
+                            placeholder="Follow up within 24 hours"
+                          />
+                        </label>
+                        <label className="followup-field">
+                          <span>Due date</span>
+                          <input
+                            type="datetime-local"
+                            value={taskDueDraft}
+                            onChange={(e) => setTaskDueDraft(e.target.value)}
+                          />
+                        </label>
+                      </div>
+                      <div className="followup-actions">
+                        <button
+                          type="button"
+                          className="details-action-btn primary"
+                          onClick={handleSaveNote}
+                        >
+                          <FileText size={16} /> Save Note
+                        </button>
+                        <button
+                          type="button"
+                          className="details-action-btn secondary"
+                          onClick={handleCreateFollowUpTask}
+                        >
+                          <Calendar size={16} /> Create Task
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="detail-section full-width">
+                    <h3><MessageCircle size={18} /> Actions</h3>
+                    <div className="details-action-buttons">
+                      {selectedCall.status === "missed" && (
+                        <button
+                          className="details-action-btn primary"
+                          onClick={() => resolveCall(selectedCall.id)}
+                        >
+                          <CheckCircle size={16} /> Mark Resolved
+                        </button>
+                      )}
+                      <button className="details-action-btn primary" onClick={handleCallBack}>
+                        <Phone size={16} /> Call Back
+                      </button>
+                      {(selectedCall.automationStatus === "failed" || selectedCall.automationStatus === "pending") && (
+                        <button
+                          className="details-action-btn secondary"
+                          onClick={() => runNow(selectedCall.id)}
+                        >
+                          <RefreshCcw size={16} /> Run Automation Now
+                        </button>
+                      )}
+                      <button className="details-action-btn secondary" onClick={handleSendSms}>
+                        <MessageCircle size={16} /> Send SMS
+                      </button>
+                      <button className="details-action-btn outline" onClick={handleSendEmail}>
+                        <Mail size={16} /> Send Email
+                      </button>
+                      <button className="details-action-btn outline" onClick={() => setNoteDraft(String(selectedCall?.notes || ""))}>
+                        <FileText size={16} /> Add Note
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
             </div>
-          </div>
+          </aside>
         </div>
-        </section>
       )}
     </div>
   );

@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, Send, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X, FileText, Copy, ExternalLink } from 'lucide-react';
+import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, Send, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X, FileText, Copy, ExternalLink, MoreVertical } from 'lucide-react';
+import Papa from 'papaparse';
 import { apiClient } from '../services/whatsappapi';
 import WhatsAppOptInModal from '../components/WhatsAppOptInModal';
 import WhatsAppConsentAuditModal from '../components/WhatsAppConsentAuditModal';
@@ -17,6 +18,7 @@ import './Contacts.css';
 const CONTACTS_LOADING_TIMEOUT_MS = 8000;
 const CONTACTS_CACHE_TTL_MS = 10 * 60 * 1000;
 const CONTACTS_CACHE_NAMESPACE = 'contacts-page';
+const CONTACTS_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 const sanitizeContactForCache = (contact = {}) => ({
     _id: String(contact?._id || '').trim(),
@@ -96,6 +98,8 @@ const Contacts = () => {
     const [sortOption, setSortOption] = useState('name-asc');
     const [showImportModal, setShowImportModal] = useState(false);
     const [importFile, setImportFile] = useState(null);
+    const [importRows, setImportRows] = useState([]);
+    const [importHeaders, setImportHeaders] = useState([]);
     const [importPreview, setImportPreview] = useState([]);
     const [importStep, setImportStep] = useState('upload');
     const [importMapping, setImportMapping] = useState({});
@@ -110,6 +114,9 @@ const Contacts = () => {
     const [auditError, setAuditError] = useState('');
     const [auditData, setAuditData] = useState(null);
     const [notification, setNotification] = useState(null);
+    const [activeActionsMenuId, setActiveActionsMenuId] = useState(null);
+    const [currentPage, setCurrentPage] = useState(1);
+    const [pageSize, setPageSize] = useState(10);
     const fileInputRef = useRef(null);
     const currentUserId = resolveCacheUserId();
 
@@ -126,6 +133,72 @@ const Contacts = () => {
     }, [notification]);
 
     useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (showFilterDropdown && !event.target.closest('.filter-dropdown')) {
+                setShowFilterDropdown(false);
+            }
+            if (showSortDropdown && !event.target.closest('.sort-dropdown')) {
+                setShowSortDropdown(false);
+            }
+            if (!event.target.closest('.contact-actions-menu') && !event.target.closest('.contact-actions-trigger')) {
+                setActiveActionsMenuId(null);
+            }
+        };
+
+        document.addEventListener('click', handleClickOutside);
+        return () => {
+            document.removeEventListener('click', handleClickOutside);
+        };
+    }, [showFilterDropdown, showSortDropdown]);
+
+    useEffect(() => {
+        const handleKeyDown = (event) => {
+            if (event.key === 'Escape') {
+                setActiveActionsMenuId(null);
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, []);
+
+    const persistContactsCache = useCallback((nextContacts) => {
+        writeSidebarPageCache(
+            CONTACTS_CACHE_NAMESPACE,
+            { contacts: sanitizeContactsCache(nextContacts) },
+            {
+                currentUserId,
+                ttlMs: CONTACTS_CACHE_TTL_MS
+            }
+        );
+    }, [currentUserId]);
+
+    const loadContacts = useCallback(async ({ silent = false } = {}) => {
+        const releaseLoadingGuard = startLoadingTimeoutGuard(
+            () => {
+                if (!silent) setLoading(false);
+            },
+            CONTACTS_LOADING_TIMEOUT_MS
+        );
+        try {
+            if (!silent) setLoading(true);
+            const result = await apiClient.getContacts();
+            const contactsData = result.data?.data || result.data || [];
+            const nextContacts = Array.isArray(contactsData) ? contactsData : [];
+            setContacts(nextContacts);
+            persistContactsCache(nextContacts);
+        } catch (error) {
+            console.error('Failed to load contacts:', error);
+            if (!silent) {
+                setContacts([]);
+            }
+        } finally {
+            releaseLoadingGuard();
+            if (!silent) setLoading(false);
+        }
+    }, [persistContactsCache]);
+
+    useEffect(() => {
         const cachedContacts = readSidebarPageCache(CONTACTS_CACHE_NAMESPACE, {
             currentUserId,
             allowStale: true
@@ -139,59 +212,7 @@ const Contacts = () => {
         }
 
         loadContacts();
-    }, [currentUserId]);
-
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (showFilterDropdown && !event.target.closest('.filter-dropdown')) {
-                setShowFilterDropdown(false);
-            }
-            if (showSortDropdown && !event.target.closest('.sort-dropdown')) {
-                setShowSortDropdown(false);
-            }
-        };
-
-        document.addEventListener('click', handleClickOutside);
-        return () => {
-            document.removeEventListener('click', handleClickOutside);
-        };
-    }, [showFilterDropdown, showSortDropdown]);
-
-const persistContactsCache = useCallback((nextContacts) => {
-    writeSidebarPageCache(
-        CONTACTS_CACHE_NAMESPACE,
-        { contacts: sanitizeContactsCache(nextContacts) },
-        {
-            currentUserId,
-            ttlMs: CONTACTS_CACHE_TTL_MS
-        }
-    );
-}, [currentUserId]);
-
-    const loadContacts = useCallback(async ({ silent = false } = {}) => {
-    const releaseLoadingGuard = startLoadingTimeoutGuard(
-        () => {
-            if (!silent) setLoading(false);
-        },
-        CONTACTS_LOADING_TIMEOUT_MS
-    );
-    try {
-        if (!silent) setLoading(true);
-        const result = await apiClient.getContacts();
-        const contactsData = result.data?.data || result.data || [];
-        const nextContacts = Array.isArray(contactsData) ? contactsData : [];
-        setContacts(nextContacts);
-        persistContactsCache(nextContacts);
-    } catch (error) {
-        console.error('Failed to load contacts:', error);
-        if (!silent) {
-            setContacts([]);
-        }
-    } finally {
-        releaseLoadingGuard();
-        if (!silent) setLoading(false);
-    }
-}, [persistContactsCache]);
+    }, [currentUserId, loadContacts]);
 
     const copyPublicOptInLink = useCallback(async (contact) => {
         const link = buildPublicWhatsAppOptInDemoUrl(contact, {
@@ -252,18 +273,18 @@ const persistContactsCache = useCallback((nextContacts) => {
     };
 
     const handleEditContact = (contact) => {
-        const whatsappState = getWhatsAppConversationState(contact);
+        const optInStatus = getWhatsAppOptInStatus(contact);
         setEditingContact(contact);
         setNewContact({
             name: contact.name || '',
             phone: contact.phone || '',
+            email: contact.email || '',
             tags: Array.isArray(contact.tags) ? contact.tags.join(', ') : '',
-            status:
-                whatsappState.normalizedOptInStatus === 'opted_out'
-                    ? 'Opted-out'
-                    : whatsappState.normalizedOptInStatus === 'opted_in'
-                        ? 'Opted-in'
-                        : 'Unknown'
+            status: optInStatus === 'opted-out'
+                ? 'Opted-out'
+                : optInStatus === 'opted-in'
+                    ? 'Opted-in'
+                    : 'Unknown'
         });
         setShowEditModal(true);
     };
@@ -297,7 +318,7 @@ const persistContactsCache = useCallback((nextContacts) => {
         if (!editingContact) return;
         
         try {
-            const existingWhatsappState = getWhatsAppConversationState(editingContact);
+            const existingOptInStatus = getWhatsAppOptInStatus(editingContact);
             const nextWhatsappOptInStatus =
                 newContact.status === 'Opted-out'
                     ? 'opted_out'
@@ -307,7 +328,7 @@ const persistContactsCache = useCallback((nextContacts) => {
 
             if (
                 nextWhatsappOptInStatus === 'opted_in' &&
-                existingWhatsappState.normalizedOptInStatus !== 'opted_in'
+                existingOptInStatus !== 'opted-in'
             ) {
                 openWhatsAppOptInModal({
                     ...editingContact,
@@ -320,6 +341,7 @@ const persistContactsCache = useCallback((nextContacts) => {
             const contactData = {
                 name: newContact.name,
                 phone: newContact.phone,
+                email: newContact.email,
                 tags: newContact.tags
                     ? newContact.tags.split(',').map(tag => tag.trim()).filter(Boolean)
                     : [],
@@ -368,7 +390,7 @@ const persistContactsCache = useCallback((nextContacts) => {
 
     const handleSelectAll = (checked) => {
         if (checked) {
-            const allContactIds = displayedContacts.map(contact => contact._id);
+            const allContactIds = paginatedContacts.map(contact => contact._id);
             setSelectedContacts(new Set(allContactIds));
         } else {
             setSelectedContacts(new Set());
@@ -407,6 +429,22 @@ const persistContactsCache = useCallback((nextContacts) => {
         } catch (error) {
             showNotification('Failed to delete some contacts: ' + error.message, 'error');
         }
+    };
+
+    const handlePageChange = (nextPage) => {
+        setCurrentPage((current) => {
+            const safeTotalPages = Math.max(totalPages, 1);
+            const parsedPage = Number(nextPage);
+            const targetPage = Number.isFinite(parsedPage) ? parsedPage : current;
+            return Math.max(1, Math.min(targetPage, safeTotalPages));
+        });
+    };
+
+    const handlePageSizeChange = (nextSize) => {
+        const parsedSize = Number(nextSize);
+        if (!Number.isFinite(parsedSize) || parsedSize <= 0) return;
+        setPageSize(parsedSize);
+        setCurrentPage(1);
     };
 
     const handleMessage = (contact) => {
@@ -497,20 +535,22 @@ const persistContactsCache = useCallback((nextContacts) => {
     const formatLastActive = (timestamp) => {
         if (!timestamp) return 'Never';
         const date = new Date(timestamp);
+        if (Number.isNaN(date.getTime())) return 'Never';
         const now = new Date();
         const diffMs = now - date;
         const diffMins = Math.floor(diffMs / 60000);
         const diffHours = Math.floor(diffMs / 3600000);
         const diffDays = Math.floor(diffMs / 86400000);
 
-        if (diffMins < 60) return `${diffMins} mins ago`;
-        if (diffHours < 24) return `${diffHours} hours ago`;
-        return `${diffDays} days ago`;
+        if (diffMins < 60) return `${Math.max(diffMins, 0)} ${diffMins === 1 ? 'min' : 'mins'} ago`;
+        if (diffHours < 24) return `${Math.max(diffHours, 0)} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
+        return `${Math.max(diffDays, 0)} ${diffDays === 1 ? 'day' : 'days'} ago`;
     };
 
     const normalizeSourceType = (contact) => {
         const raw = (contact?.sourceType || contact?.source || '').toString().toLowerCase();
         if (raw === 'incoming_message' || raw === 'message' || raw === 'conversation') return 'incoming_message';
+        if (raw === 'incoming_call' || raw === 'call') return 'incoming_call';
         if (raw === 'imported' || raw === 'import') return 'imported';
         if (raw === 'public_opt_in' || raw === 'landing_page' || raw === 'qr_page' || raw === 'contacts_share') return 'public_opt_in';
         if (raw === 'meta_lead_ads' || raw === 'meta_lead') return 'meta_lead_ads';
@@ -518,11 +558,51 @@ const persistContactsCache = useCallback((nextContacts) => {
     };
 
     const sourceLabelMap = {
-        manual: 'User Created',
-        imported: 'CSV Import',
-        incoming_message: 'Message',
-        public_opt_in: 'Public Opt-In',
-        meta_lead_ads: 'Meta Lead Ad'
+        manual: 'Manual',
+        imported: 'CSV',
+        incoming_message: 'Msg',
+        incoming_call: 'Call',
+        public_opt_in: 'Landing Page',
+        meta_lead_ads: 'Lead Ad'
+    };
+
+    const getWhatsAppOptInStatus = (contact = {}) => {
+        const normalized = String(contact?.whatsappOptInStatus || '').trim().toLowerCase();
+        if (normalized === 'opted_in') return 'opted-in';
+        if (normalized === 'opted_out') return 'opted-out';
+        return contact?.isBlocked || contact?.whatsappOptOutAt ? 'opted-out' : 'unknown';
+    };
+
+    const compactOptInStatusLabel = (status) => {
+        const normalized = String(status || '').trim().toLowerCase();
+        if (normalized === 'opted-in') return 'Opted-in';
+        if (normalized === 'opted-out') return 'Opted-out';
+        return 'Unknown';
+    };
+
+    const compactMessagingStatusLabel = (label) => {
+        const normalized = String(label || '').trim();
+        if (normalized === 'Template Only') return 'Template Only';
+        if (normalized === '24h Open') return 'Open Window';
+        if (normalized === 'Opted Out') return 'Blocked';
+        return normalized || 'Template Only';
+    };
+
+    const formatConsentSourceLabel = (value) => {
+        const normalized = String(value || '').trim();
+        if (!normalized) return 'Unknown';
+        const lookup = {
+            manual: 'Manual',
+            csv_import: 'CSV Import',
+            import: 'CSV Import',
+            landing_page: 'Landing Page',
+            public_opt_in: 'Public Opt-in',
+            form_submission: 'Form Submission',
+            paper_form: 'Paper Form'
+        };
+        const mapped = lookup[normalized.toLowerCase()];
+        if (mapped) return mapped;
+        return normalized.replace(/[_-]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase());
     };
 
     // Import functions
@@ -530,33 +610,59 @@ const persistContactsCache = useCallback((nextContacts) => {
         const file = event.target.files[0];
         if (file) {
             setImportFile(file);
+            setImportRows([]);
+            setImportHeaders([]);
+            setImportPreview([]);
+            setImportMapping({});
             parseCSVFile(file);
         }
+    };
+
+    const toggleContactActionsMenu = (contactId) => {
+        setActiveActionsMenuId((currentId) => (currentId === contactId ? null : contactId));
+    };
+
+    const closeContactActionsMenu = () => {
+        setActiveActionsMenuId(null);
     };
 
     const parseCSVFile = (file) => {
         const reader = new FileReader();
         reader.onload = (e) => {
             const text = e.target.result;
-            const lines = text.split('\n').filter(line => line.trim());
-            
-            if (lines.length < 2) {
-                showNotification('CSV file must contain at least a header row and one data row', 'error');
-                return;
-            }
+            Papa.parse(text, {
+                header: true,
+                skipEmptyLines: 'greedy',
+                transformHeader: (header) => String(header || '').trim(),
+                complete: (results) => {
+                    const headers = Array.isArray(results?.meta?.fields)
+                        ? results.meta.fields.map((field) => String(field || '').trim()).filter(Boolean)
+                        : [];
+                    const rows = Array.isArray(results?.data)
+                        ? results.data.filter((row) =>
+                            row && typeof row === 'object' && Object.values(row).some((value) => String(value || '').trim())
+                        )
+                        : [];
 
-            const headers = lines[0].split(',').map(h => h.trim().replace(/"/g, ''));
-            const data = lines.slice(1).map((line, index) => {
-                const values = line.split(',').map(v => v.trim().replace(/"/g, ''));
-                const row = { lineNumber: index + 2 };
-                headers.forEach((header, i) => {
-                    row[header] = values[i] || '';
-                });
-                return row;
+                    if (headers.length < 2 || rows.length === 0) {
+                        showNotification('CSV file must contain a header row and at least one data row', 'error');
+                        return;
+                    }
+
+                    const normalizedRows = rows.map((row, index) => ({
+                        lineNumber: index + 2,
+                        ...row
+                    }));
+
+                    setImportHeaders(headers);
+                    setImportRows(normalizedRows);
+                    setImportPreview(normalizedRows.slice(0, 5));
+                    setImportStep('mapping');
+                },
+                error: () => {
+                    showNotification('Failed to parse CSV file. Please check the file format.', 'error');
+                }
             });
-
-            setImportPreview(data.slice(0, 5)); // Show first 5 rows for preview
-            setImportStep('mapping');
         };
         reader.readAsText(file);
     };
@@ -569,12 +675,13 @@ const persistContactsCache = useCallback((nextContacts) => {
     };
 
     const getAvailableFields = () => {
+        if (importHeaders.length > 0) return importHeaders;
         if (importPreview.length === 0) return [];
         return Object.keys(importPreview[0]).filter(key => key !== 'lineNumber');
     };
 
     const getMappedContacts = () => {
-        return importPreview.map(row => {
+        return importRows.map(row => {
             const contact = {};
             
             // Map fields based on user selection
@@ -582,14 +689,15 @@ const persistContactsCache = useCallback((nextContacts) => {
                 const sourceField = importMapping[field];
                 if (sourceField && row[sourceField] !== undefined) {
                     switch (field) {
-                        case 'name':
+                        case 'name': {
                             // Combine first and last name if available
                             const firstName = row[sourceField] || '';
                             const lastNameField = importMapping['lastName'];
                             const lastName = lastNameField ? (row[lastNameField] || '') : '';
                             contact[field] = [firstName, lastName].filter(Boolean).join(' ').trim();
                             break;
-                        case 'phone':
+                        }
+                        case 'phone': {
                             // Clean phone number
                             let phone = row[sourceField] || '';
                             phone = phone.replace(/[^0-9+]/g, '');
@@ -598,16 +706,36 @@ const persistContactsCache = useCallback((nextContacts) => {
                             }
                             contact[field] = phone;
                             break;
+                        }
                         case 'email':
                             contact[field] = row[sourceField] || '';
                             break;
-                        case 'tags':
+                        case 'tags': {
                             // Split tags by comma
                             const tags = row[sourceField] || '';
                             contact[field] = tags.split(',').map(tag => tag.trim()).filter(Boolean);
                             break;
+                        }
                         case 'status':
-                            contact[field] = row[sourceField] || 'Opted-in';
+                            contact[field] = row[sourceField] || 'Unknown';
+                            break;
+                        case 'consentText':
+                            contact[field] = row[sourceField] || '';
+                            break;
+                        case 'proofType':
+                            contact[field] = row[sourceField] || '';
+                            break;
+                        case 'proofId':
+                            contact[field] = row[sourceField] || '';
+                            break;
+                        case 'proofUrl':
+                            contact[field] = row[sourceField] || '';
+                            break;
+                        case 'scope':
+                            contact[field] = row[sourceField] || '';
+                            break;
+                        case 'capturedBy':
+                            contact[field] = row[sourceField] || '';
                             break;
                         case 'listName':
                             contact[field] = row[sourceField] || '';
@@ -636,12 +764,18 @@ const persistContactsCache = useCallback((nextContacts) => {
 
         try {
             setLoading(true);
-            const result = await apiClient.importContacts(mappedContacts);
-            
-            if (result.data.success) {
-                showNotification(`Successfully imported ${mappedContacts.length} contacts!`);
+        const result = await apiClient.importContacts(mappedContacts);
+        
+        if (result.data.success) {
+                const warnings = Array.isArray(result.data?.results?.warnings) ? result.data.results.warnings : [];
+                const warningSuffix = warnings.length
+                    ? ` ${warnings.length} row${warnings.length === 1 ? ' was' : 's were'} kept as Unknown because consent proof was missing.`
+                    : '';
+                showNotification(`Successfully imported ${mappedContacts.length} contacts!${warningSuffix}`);
                 setShowImportModal(false);
                 setImportFile(null);
+                setImportRows([]);
+                setImportHeaders([]);
                 setImportPreview([]);
                 setImportMapping({});
                 setImportStep('upload');
@@ -657,9 +791,9 @@ const persistContactsCache = useCallback((nextContacts) => {
     };
 
     const downloadSampleCSV = () => {
-        const csvContent = `First Name,Last Name,WhatsApp Number,Email,Status,List Name,Tags,custom_attribute_1,custom_attribute_2,custom_attribute_3
-John,Doe,+1234567890,john@example.com,Opted-in,Main List,"VIP, Lead",Custom1,Custom2,Custom3
-Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Support",Value1,Value2,Value3`;
+        const csvContent = `First Name,Last Name,WhatsApp Number,Email,Status,Consent Text,Proof Type,Proof ID,Consent Scope,List Name,Tags,custom_attribute_1,custom_attribute_2,custom_attribute_3
+John,Doe,+1234567890,john@example.com,Opted-in,"I agree to receive WhatsApp updates from Technovohub.","form_submission","FORM-1001",marketing,Main List,"VIP, Lead",Custom1,Custom2,Custom3
+Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp updates from Technovohub.","paper_form","PAPER-2002",marketing,Secondary List,"Regular, Support",Value1,Value2,Value3`;
         
         const blob = new Blob([csvContent], { type: 'text/csv' });
         const url = window.URL.createObjectURL(blob);
@@ -675,6 +809,8 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
     const resetImport = () => {
         setShowImportModal(false);
         setImportFile(null);
+        setImportRows([]);
+        setImportHeaders([]);
         setImportPreview([]);
         setImportMapping({});
         setImportStep('upload');
@@ -688,8 +824,9 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
         let allContacts = contacts.map(c => ({
             ...c,
             sourceType: normalizeSourceType(c),
-            lastActive: c.lastContact,
-            whatsappState: getWhatsAppConversationState(c)
+            lastActive: c.lastContactAt || c.lastContact || c.lastInboundMessageAt || c.updatedAt || c.createdAt,
+            whatsappState: getWhatsAppConversationState(c),
+            optInStatus: getWhatsAppOptInStatus(c)
         }));
         
         // Apply search filter
@@ -755,12 +892,37 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
         return allContacts;
     };
 
-    const displayedContacts = getAllContacts();
+    const filteredContacts = useMemo(() => getAllContacts(), [
+        contacts,
+        searchTerm,
+        lastActiveFilter,
+        sortOption
+    ]);
+
+    const totalPages = Math.max(1, Math.ceil(filteredContacts.length / pageSize));
+    const safeCurrentPage = Math.min(Math.max(currentPage, 1), totalPages);
+    const compactPagination = totalPages > 7;
+    const paginatedContacts = useMemo(() => {
+        const startIndex = (safeCurrentPage - 1) * pageSize;
+        return filteredContacts.slice(startIndex, startIndex + pageSize);
+    }, [filteredContacts, safeCurrentPage, pageSize]);
+
+    useEffect(() => {
+        setCurrentPage((current) => {
+            if (filteredContacts.length === 0) return 1;
+            return Math.min(Math.max(current, 1), Math.max(1, totalPages));
+        });
+    }, [filteredContacts.length, totalPages]);
+
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [searchTerm, lastActiveFilter, sortOption, pageSize]);
+
     return (
         <div className="contacts-page">
             <div className="page-header">
                 <div>
-                    <h2>Contacts ({displayedContacts.length})</h2>
+                    <h2>Contacts ({loading ? '...' : filteredContacts.length})</h2>
                     <p>Manage your customer database</p>
                 </div>
                 <div className="header-actions">
@@ -812,6 +974,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                     <input 
                         type="text" 
                         placeholder="Search contacts..." 
+                        aria-label="Search contacts"
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
                     />
@@ -821,11 +984,15 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                         className="icon-btn" 
                         onClick={() => setShowFilterDropdown(!showFilterDropdown)}
                         title="Filter by last active"
+                        aria-label="Filter by last active"
+                        aria-haspopup="menu"
+                        aria-expanded={showFilterDropdown}
+                        aria-controls="contacts-filter-menu"
                     >
                         <Filter size={18} />
                     </button>
                     {showFilterDropdown && (
-                        <div className="filter-menu">
+                        <div className="filter-menu" id="contacts-filter-menu">
                             <div className="filter-section">
                                 <h4>Last Active</h4>
                                 <div className="filter-options">
@@ -889,11 +1056,15 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                         className="icon-btn" 
                         onClick={() => setShowSortDropdown(!showSortDropdown)}
                         title="Sort contacts"
+                        aria-label="Sort contacts"
+                        aria-haspopup="menu"
+                        aria-expanded={showSortDropdown}
+                        aria-controls="contacts-sort-menu"
                     >
                         <ArrowUpDown size={18} />
                     </button>
                     {showSortDropdown && (
-                        <div className="sort-menu">
+                        <div className="sort-menu" id="contacts-sort-menu">
                             <div className="sort-section">
                                 <h4>Sort By</h4>
                                 <div className="sort-options">
@@ -956,34 +1127,40 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
             <div className="contacts-table-container">
                 {loading ? (
                     <div className="contacts-skeleton">
-                        {Array.from({ length: 6 }, (_, index) => (
+                        <div className="contacts-loading-copy">
+                            <div className="contacts-loading-title">Loading contacts</div>
+                            <div className="contacts-loading-subtitle">Pulling the latest database entries and consent status.</div>
+                        </div>
+                        {Array.from({ length: 5 }, (_, index) => (
                             <div key={`contacts-skeleton-${index}`} className="contacts-skeleton-row" />
                         ))}
                     </div>
-                ) : displayedContacts.length > 0 ? (
-                    <table className="contacts-table">
+                ) : filteredContacts.length > 0 ? (
+                    <>
+                    <table className="contacts-table contacts-desktop-table">
                         <thead>
                             <tr>
                                 {selectionMode && (
                                     <th>
                                         <input 
                                             type="checkbox" 
-                                            checked={displayedContacts.length > 0 && selectedContacts.size === displayedContacts.length}
+                                            checked={paginatedContacts.length > 0 && paginatedContacts.every((contact) => selectedContacts.has(contact._id))}
                                             onChange={(e) => handleSelectAll(e.target.checked)}
                                         />
                                     </th>
                                 )}
-                                <th>Name</th>
-                                <th>Phone Number</th>
-                                <th>Tags</th>
-                                <th>Status</th>
-                                <th>Source</th>
-                                <th>Last Active</th>
+                                <th className="name-col">Name</th>
+                                <th className="phone-col">Phone Number</th>
+                                <th className="tags-col">Tags</th>
+                                <th className="consent-col">Opt-in</th>
+                                <th className="origin-col">Origin</th>
+                                <th className="messaging-col">Send State</th>
+                                <th className="last-active-col">Last Active</th>
                                 {!selectionMode && <th className="actions-col">Actions</th>}
                             </tr>
                         </thead>
                         <tbody>
-                            {displayedContacts.map((contact, index) => (
+                            {paginatedContacts.map((contact, index) => (
                                 <tr key={contact._id || index}>
                                     {selectionMode && (
                                         <td>
@@ -994,14 +1171,16 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                             />
                                         </td>
                                     )}
-                                    <td>
+                                    <td className="name-col">
                                         <div className="contact-name-cell">
-                                            <span className="contact-name">{contact.name}</span>
+                                            <span className={`contact-name ${contact.name ? '' : 'contact-name--fallback'}`}>
+                                                {contact.name || 'Unnamed contact'}
+                                            </span>
                                             {contact.email && <span className="contact-email">{contact.email}</span>}
                                         </div>
                                     </td>
-                                    <td>{contact.phone}</td>
-                                    <td>
+                                    <td className="phone-col">{contact.phone}</td>
+                                    <td className="tags-col">
                                         {contact.tags && contact.tags.length > 0 ? (
                                             contact.tags.map((tag, tagIndex) => (
                                                 <span key={tagIndex} className="tag blue">{tag}</span>
@@ -1010,30 +1189,36 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                             <span className="tag gray">No tags</span>
                                         )}
                                     </td>
-                                    <td>
+                                    <td className="consent-col">
                                         <div className="whatsapp-contact-status">
-                                            <span className={`badge whatsapp-contact-badge whatsapp-contact-badge--${contact.whatsappState?.badgeTone || 'template-only'}`}>
-                                                {contact.whatsappState?.statusLabel || 'Template Only'}
+                                            <span className={`badge whatsapp-contact-badge whatsapp-contact-badge--${contact.optInStatus || 'unknown'}`}>
+                                                {compactOptInStatusLabel(contact.optInStatus)}
                                             </span>
                                             {contact.whatsappOptInSource ? (
                                                 <span className="whatsapp-contact-audit">
-                                                    {contact.whatsappOptInSource}
+                                                    Consent source: {formatConsentSourceLabel(contact.whatsappOptInSource)}
                                                 </span>
                                             ) : null}
                                         </div>
                                     </td>
-                                    <td>
+                                    <td className="origin-col">
                                         <span className={`source-badge ${contact.sourceType || 'manual'}`}>
                                             {sourceLabelMap[contact.sourceType || 'manual'] || 'Manual'}
                                         </span>
                                     </td>
-                                    <td>{formatLastActive(contact.lastActive)}</td>
+                                    <td className="messaging-col">
+                                        <span className={`badge whatsapp-contact-badge whatsapp-contact-badge--${contact.whatsappState?.badgeTone || 'template-only'}`}>
+                                            {compactMessagingStatusLabel(contact.whatsappState?.statusLabel)}
+                                        </span>
+                                    </td>
+                                    <td className="last-active-col">{formatLastActive(contact.lastActive)}</td>
                                     {!selectionMode && (
                                         <td className="actions-col">
                                             <div className="action-buttons">
                                                 <button
                                                     className="action-btn"
                                                     title="Message"
+                                                    aria-label={`Message ${contact.name || contact.phone || 'contact'}`}
                                                     onClick={() => handleMessage(contact)}
                                                 >
                                                     <MessageCircle size={16} />
@@ -1041,63 +1226,116 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                                 <button
                                                     className="action-btn action-btn--template"
                                                     title="Send Template"
+                                                    aria-label={`Send WhatsApp template to ${contact.name || contact.phone || 'contact'}`}
                                                     onClick={() => handleStartWhatsAppTemplate(contact)}
                                                     disabled={contact.whatsappState?.optedOut}
                                                 >
                                                     <Send size={16} />
                                                 </button>
-                                                <button
-                                                    className="action-btn"
-                                                    title="View Consent Audit"
-                                                    onClick={() => openConsentAuditModal(contact)}
-                                                >
-                                                    <FileText size={16} />
-                                                </button>
-                                                <button
-                                                    className="action-btn"
-                                                    title="Copy Public Opt-In Link"
-                                                    onClick={() => copyPublicOptInLink(contact)}
-                                                >
-                                                    <Copy size={16} />
-                                                </button>
-                                                <button
-                                                    className="action-btn"
-                                                    title="Open Public Opt-In Page"
-                                                    onClick={() => openPublicOptInLink(contact)}
-                                                >
-                                                    <ExternalLink size={16} />
-                                                </button>
-                                                {contact.whatsappState?.optedOut ? (
+                                                <div className="contact-actions-menu-wrap">
                                                     <button
-                                                        className="action-btn"
-                                                        title="Mark Opted In"
-                                                        onClick={() => openWhatsAppOptInModal(contact)}
+                                                        type="button"
+                                                        className="action-btn contact-actions-trigger"
+                                                        title="More actions"
+                                                        aria-label={`More actions for ${contact.name || contact.phone || 'contact'}`}
+                                                        onClick={() => toggleContactActionsMenu(contact._id || contact.phone || index)}
+                                                        aria-haspopup="menu"
+                                                        aria-expanded={activeActionsMenuId === (contact._id || contact.phone || index)}
                                                     >
-                                                        <CheckSquare size={16} />
+                                                        <MoreVertical size={16} />
                                                     </button>
-                                                ) : (
-                                                    <button
-                                                        className="action-btn"
-                                                        title="Mark Opted Out"
-                                                        onClick={() => handleMarkWhatsAppOptOut(contact)}
-                                                    >
-                                                        <X size={16} />
-                                                    </button>
-                                                )}
-                                                <button
-                                                    className="action-btn"
-                                                    title="Edit"
-                                                    onClick={() => handleEditContact(contact)}
-                                                >
-                                                    <Edit size={16} />
-                                                </button>
-                                                <button
-                                                    className="action-btn delete"
-                                                    title="Delete"
-                                                    onClick={() => handleDeleteContact(contact)}
-                                                >
-                                                    <Trash2 size={16} />
-                                                </button>
+                                                    {activeActionsMenuId === (contact._id || contact.phone || index) ? (
+                                                        <div className="contact-actions-menu" role="menu" aria-label="Contact actions">
+                                                            <button
+                                                                type="button"
+                                                                className="contact-actions-menu__item"
+                                                                onClick={() => {
+                                                                    closeContactActionsMenu();
+                                                                    openConsentAuditModal(contact);
+                                                                }}
+                                                                role="menuitem"
+                                                            >
+                                                                <FileText size={15} />
+                                                                <span>View Consent Audit</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="contact-actions-menu__item"
+                                                                onClick={() => {
+                                                                    closeContactActionsMenu();
+                                                                    copyPublicOptInLink(contact);
+                                                                }}
+                                                                role="menuitem"
+                                                            >
+                                                                <Copy size={15} />
+                                                                <span>Copy Public Opt-In Link</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="contact-actions-menu__item"
+                                                                onClick={() => {
+                                                                    closeContactActionsMenu();
+                                                                    openPublicOptInLink(contact);
+                                                                }}
+                                                                role="menuitem"
+                                                            >
+                                                                <ExternalLink size={15} />
+                                                                <span>Open Public Opt-In Page</span>
+                                                            </button>
+                                                            {contact.whatsappState?.optedOut ? (
+                                                                <button
+                                                                    type="button"
+                                                                    className="contact-actions-menu__item"
+                                                                    onClick={() => {
+                                                                        closeContactActionsMenu();
+                                                                        openWhatsAppOptInModal(contact);
+                                                                    }}
+                                                                    role="menuitem"
+                                                                >
+                                                                    <CheckSquare size={15} />
+                                                                    <span>Mark Opted In</span>
+                                                                </button>
+                                                            ) : (
+                                                                <button
+                                                                    type="button"
+                                                                    className="contact-actions-menu__item"
+                                                                    onClick={() => {
+                                                                        closeContactActionsMenu();
+                                                                        handleMarkWhatsAppOptOut(contact);
+                                                                    }}
+                                                                    role="menuitem"
+                                                                >
+                                                                    <X size={15} />
+                                                                    <span>Mark Opted Out</span>
+                                                                </button>
+                                                            )}
+                                                            <button
+                                                                type="button"
+                                                                className="contact-actions-menu__item"
+                                                                onClick={() => {
+                                                                    closeContactActionsMenu();
+                                                                    handleEditContact(contact);
+                                                                }}
+                                                                role="menuitem"
+                                                            >
+                                                                <Edit size={15} />
+                                                                <span>Edit Contact</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="contact-actions-menu__item contact-actions-menu__item--danger"
+                                                                onClick={() => {
+                                                                    closeContactActionsMenu();
+                                                                    handleDeleteContact(contact);
+                                                                }}
+                                                                role="menuitem"
+                                                            >
+                                                                <Trash2 size={15} />
+                                                                <span>Delete Contact</span>
+                                                            </button>
+                                                        </div>
+                                                    ) : null}
+                                                </div>
                                             </div>
                                         </td>
                                     )}
@@ -1105,15 +1343,291 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                             ))}
                         </tbody>
                     </table>
+                    <div className="contacts-mobile-cards">
+                        {paginatedContacts.map((contact, index) => (
+                            <div key={`mobile-${contact._id || index}`} className="contact-mobile-card">
+                                <div className="contact-mobile-card__top">
+                                    <div className="contact-mobile-card__identity">
+                                        <div className="contact-mobile-card__name-row">
+                                            {selectionMode && (
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedContacts.has(contact._id)}
+                                                    onChange={(e) => handleSelectContact(contact._id, e.target.checked)}
+                                                />
+                                            )}
+                                            <span className={`contact-name ${contact.name ? '' : 'contact-name--fallback'}`}>
+                                                {contact.name || 'Unnamed contact'}
+                                            </span>
+                                        </div>
+                                        <div className="contact-mobile-card__phone">{contact.phone}</div>
+                                        {contact.email && <div className="contact-mobile-card__email">{contact.email}</div>}
+                                    </div>
+                                    {!selectionMode && (
+                                        <div className="contact-mobile-card__actions">
+                                            <button
+                                                className="action-btn"
+                                                title="Message"
+                                                aria-label={`Message ${contact.name || contact.phone || 'contact'}`}
+                                                onClick={() => handleMessage(contact)}
+                                            >
+                                                <MessageCircle size={16} />
+                                            </button>
+                                            <button
+                                                className="action-btn action-btn--template"
+                                                title="Send Template"
+                                                aria-label={`Send WhatsApp template to ${contact.name || contact.phone || 'contact'}`}
+                                                onClick={() => handleStartWhatsAppTemplate(contact)}
+                                                disabled={contact.whatsappState?.optedOut}
+                                            >
+                                                <Send size={16} />
+                                            </button>
+                                            <div className="contact-actions-menu-wrap">
+                                                <button
+                                                    type="button"
+                                                    className="action-btn contact-actions-trigger"
+                                                    title="More actions"
+                                                    aria-label={`More actions for ${contact.name || contact.phone || 'contact'}`}
+                                                    onClick={() => toggleContactActionsMenu(contact._id || contact.phone || index)}
+                                                    aria-haspopup="menu"
+                                                    aria-expanded={activeActionsMenuId === (contact._id || contact.phone || index)}
+                                                >
+                                                    <MoreVertical size={16} />
+                                                </button>
+                                                {activeActionsMenuId === (contact._id || contact.phone || index) ? (
+                                                    <div className="contact-actions-menu contact-actions-menu--mobile" role="menu" aria-label="Contact actions">
+                                                        <button
+                                                            type="button"
+                                                            className="contact-actions-menu__item"
+                                                            onClick={() => {
+                                                                closeContactActionsMenu();
+                                                                openConsentAuditModal(contact);
+                                                            }}
+                                                            role="menuitem"
+                                                        >
+                                                            <FileText size={15} />
+                                                            <span>View Consent Audit</span>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="contact-actions-menu__item"
+                                                            onClick={() => {
+                                                                closeContactActionsMenu();
+                                                                copyPublicOptInLink(contact);
+                                                            }}
+                                                            role="menuitem"
+                                                        >
+                                                            <Copy size={15} />
+                                                            <span>Copy Public Opt-In Link</span>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="contact-actions-menu__item"
+                                                            onClick={() => {
+                                                                closeContactActionsMenu();
+                                                                openPublicOptInLink(contact);
+                                                            }}
+                                                            role="menuitem"
+                                                        >
+                                                            <ExternalLink size={15} />
+                                                            <span>Open Public Opt-In Page</span>
+                                                        </button>
+                                                        {contact.whatsappState?.optedOut ? (
+                                                            <button
+                                                                type="button"
+                                                                className="contact-actions-menu__item"
+                                                                onClick={() => {
+                                                                    closeContactActionsMenu();
+                                                                    openWhatsAppOptInModal(contact);
+                                                                }}
+                                                                role="menuitem"
+                                                            >
+                                                                <CheckSquare size={15} />
+                                                                <span>Mark Opted In</span>
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                type="button"
+                                                                className="contact-actions-menu__item"
+                                                                onClick={() => {
+                                                                    closeContactActionsMenu();
+                                                                    handleMarkWhatsAppOptOut(contact);
+                                                                }}
+                                                                role="menuitem"
+                                                            >
+                                                                <X size={15} />
+                                                                <span>Mark Opted Out</span>
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            type="button"
+                                                            className="contact-actions-menu__item"
+                                                            onClick={() => {
+                                                                closeContactActionsMenu();
+                                                                handleEditContact(contact);
+                                                            }}
+                                                            role="menuitem"
+                                                        >
+                                                            <Edit size={15} />
+                                                            <span>Edit Contact</span>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="contact-actions-menu__item contact-actions-menu__item--danger"
+                                                            onClick={() => {
+                                                                closeContactActionsMenu();
+                                                                handleDeleteContact(contact);
+                                                            }}
+                                                            role="menuitem"
+                                                        >
+                                                            <Trash2 size={15} />
+                                                            <span>Delete Contact</span>
+                                                        </button>
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                                <div className="contact-mobile-card__meta">
+                                    <div className="contact-mobile-card__meta-row">
+                                        <span className="contact-mobile-card__label">Opt-in</span>
+                                        <span className={`badge whatsapp-contact-badge whatsapp-contact-badge--${contact.optInStatus || 'unknown'}`}>
+                                            {compactOptInStatusLabel(contact.optInStatus)}
+                                        </span>
+                                    </div>
+                                    <div className="contact-mobile-card__meta-row">
+                                        <span className="contact-mobile-card__label">Origin</span>
+                                        <span className={`source-badge ${contact.sourceType || 'manual'}`}>
+                                            {sourceLabelMap[contact.sourceType || 'manual'] || 'Manual'}
+                                        </span>
+                                    </div>
+                                    <div className="contact-mobile-card__meta-row">
+                                        <span className="contact-mobile-card__label">Send State</span>
+                                        <span className={`badge whatsapp-contact-badge whatsapp-contact-badge--${contact.whatsappState?.badgeTone || 'template-only'}`}>
+                                            {compactMessagingStatusLabel(contact.whatsappState?.statusLabel)}
+                                        </span>
+                                    </div>
+                                    <div className="contact-mobile-card__meta-row">
+                                        <span className="contact-mobile-card__label">Last Active</span>
+                                        <span className="contact-mobile-card__value">{formatLastActive(contact.lastActive)}</span>
+                                    </div>
+                                    {contact.tags && contact.tags.length > 0 ? (
+                                        <div className="contact-mobile-card__tags">
+                                            {contact.tags.map((tag, tagIndex) => (
+                                                <span key={tagIndex} className="tag blue">{tag}</span>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="contact-mobile-card__tags">
+                                            <span className="tag gray">No tags</span>
+                                        </div>
+                                    )}
+                                    {contact.whatsappOptInSource ? (
+                                        <div className="contact-mobile-card__source-note">
+                                            Consent source: {formatConsentSourceLabel(contact.whatsappOptInSource)}
+                                        </div>
+                                    ) : null}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    {totalPages > 1 && (
+                        <div className="contacts-pagination">
+                            <div className="contacts-pagination__info">
+                                Showing{' '}
+                                <span className="contacts-pagination__range">
+                                    {(safeCurrentPage - 1) * pageSize + 1}
+                                    -
+                                    {Math.min(safeCurrentPage * pageSize, filteredContacts.length)}
+                                </span>{' '}
+                                of{' '}
+                                <span className="contacts-pagination__strong">
+                                    {filteredContacts.length}
+                                </span>
+                            </div>
+                            <div className="contacts-pagination__controls">
+                                <div className="contacts-page-size">
+                                    <label htmlFor="contacts-page-size">Contacts per page</label>
+                                    <select
+                                        id="contacts-page-size"
+                                        className="contacts-page-size__select"
+                                        value={pageSize}
+                                        onChange={(e) => handlePageSizeChange(e.target.value)}
+                                        aria-label="Contacts per page"
+                                    >
+                                        {CONTACTS_PAGE_SIZE_OPTIONS.map((option) => (
+                                            <option key={option} value={option}>
+                                                {option}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="contacts-pagination__btn"
+                                    onClick={() => handlePageChange(safeCurrentPage - 1)}
+                                    disabled={safeCurrentPage <= 1}
+                                >
+                                    Prev
+                                </button>
+                                {compactPagination ? (
+                                    <div className="contacts-pagination__compact">
+                                        <span className="contacts-pagination__compact-label">
+                                            Page <strong>{safeCurrentPage}</strong> of <strong>{totalPages}</strong>
+                                        </span>
+                                    </div>
+                                ) : (
+                                    <div className="contacts-pagination__pages">
+                                        {Array.from({ length: totalPages }, (_, index) => index + 1).map((pageNo) => (
+                                            <button
+                                                key={pageNo}
+                                                type="button"
+                                                className={`contacts-pagination__page ${pageNo === safeCurrentPage ? 'active' : ''}`}
+                                                onClick={() => handlePageChange(pageNo)}
+                                            >
+                                                {pageNo}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                                <button
+                                    type="button"
+                                    className="contacts-pagination__btn"
+                                    onClick={() => handlePageChange(safeCurrentPage + 1)}
+                                    disabled={safeCurrentPage >= totalPages}
+                                >
+                                    Next
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    </>
                 ) : (
                     <div className="no-contacts">
                         <div className="no-contacts-content">
-                            <UserPlus size={48} />
+                            <div className="no-contacts-icon">
+                                <UserPlus size={28} />
+                            </div>
                             <h3>No contacts found</h3>
                             <p>
-                                {searchTerm ? 'Try adjusting your search terms' : 'Start by adding your first contact'}
+                                {searchTerm || lastActiveFilter !== 'all'
+                                    ? 'Your search or filters are hiding every contact right now.'
+                                    : 'Start by adding your first contact to build your database.'}
                             </p>
-                            {!searchTerm && (
+                            {(searchTerm || lastActiveFilter !== 'all') && (
+                                <button
+                                    className="secondary-btn"
+                                    onClick={() => {
+                                        setSearchTerm('');
+                                        setLastActiveFilter('all');
+                                        setSortOption('name-asc');
+                                    }}
+                                >
+                                    Reset Filters
+                                </button>
+                            )}
+                            {!searchTerm && lastActiveFilter === 'all' && (
                                 <button className="primary-btn" onClick={() => setShowAddModal(true)}>
                                     <UserPlus size={18} />
                                     Add Your First Contact
@@ -1127,10 +1641,10 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
             {/* Add Contact Modal */}
             {showAddModal && (
                 <div className="modal-overlay">
-                    <div className="modal">
+                    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="add-contact-title">
                         <div className="modal-header">
-                            <h3>Add New Contact</h3>
-                            <button className="close-btn" onClick={() => setShowAddModal(false)}>×</button>
+                            <h3 id="add-contact-title">Add New Contact</h3>
+                            <button className="close-btn" type="button" aria-label="Close add contact dialog" onClick={() => setShowAddModal(false)}>{"\u00D7"}</button>
                         </div>
                         <div className="modal-body">
                             <div className="form-group">
@@ -1189,10 +1703,10 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
             {/* Edit Contact Modal */}
             {showEditModal && editingContact && (
                 <div className="modal-overlay">
-                    <div className="modal">
+                    <div className="modal" role="dialog" aria-modal="true" aria-labelledby="edit-contact-title">
                         <div className="modal-header">
-                            <h3>Edit Contact</h3>
-                            <button className="close-btn" onClick={handleCloseEditModal}>×</button>
+                            <h3 id="edit-contact-title">Edit Contact</h3>
+                            <button className="close-btn" type="button" aria-label="Close edit contact dialog" onClick={handleCloseEditModal}>{"\u00D7"}</button>
                         </div>
                         <div className="modal-body">
                             <div className="form-group">
@@ -1214,6 +1728,15 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                 />
                             </div>
                             <div className="form-group">
+                                <label>Email</label>
+                                <input
+                                    type="email"
+                                    value={newContact.email}
+                                    onChange={(e) => setNewContact({...newContact, email: e.target.value})}
+                                    placeholder="email@example.com"
+                                />
+                            </div>
+                            <div className="form-group">
                                 <label>Tags</label>
                                 <input
                                     type="text"
@@ -1223,18 +1746,13 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                 />
                             </div>
                             <div className="form-group">
-                                <label>Status</label>
+                                <label>Opt-in Status</label>
                                 <select
                                     value={newContact.status || 'Unknown'}
                                     onChange={(e) => handleEditContactStatusChange(e.target.value)}
                                 >
                                     <option value="Unknown">Unknown</option>
-                                    <option
-                                        value="Opted-in"
-                                        disabled={newContact.status !== 'Opted-in'}
-                                    >
-                                        Opted-in
-                                    </option>
+                                    <option value="Opted-in">Opted-in</option>
                                     <option value="Opted-out">Opted-out</option>
                                 </select>
                             </div>
@@ -1277,10 +1795,10 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
             {/* Import Contacts Modal */}
             {showImportModal && (
                 <div className="modal-overlay">
-                    <div className="modal import-modal">
+                    <div className="modal import-modal" role="dialog" aria-modal="true" aria-labelledby="import-contacts-title">
                         <div className="modal-header">
-                            <h3>Import Contacts</h3>
-                            <button className="close-btn" onClick={resetImport}>×</button>
+                            <h3 id="import-contacts-title">Import Contacts</h3>
+                            <button className="close-btn" type="button" aria-label="Close import contacts dialog" onClick={resetImport}>{"\u00D7"}</button>
                         </div>
                         <div className="modal-body">
                             {importStep === 'upload' && (
@@ -1306,11 +1824,18 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                             <li><strong>Last Name</strong> - Contact's last name</li>
                                             <li><strong>WhatsApp Number</strong> - Phone number with country code</li>
                                             <li><strong>Email</strong> - Email address (optional)</li>
-                                            <li><strong>Status</strong> - Opted-in, Opted-out, or Unknown</li>
+                                            <li><strong>Opt-in Status</strong> - Opted-in, Opted-out, or Unknown. Opted-in only saves when consent text and proof type are present.</li>
+                                            <li><strong>Consent Text</strong> - Required if the row is meant to be opted in</li>
+                                            <li><strong>Proof Type</strong> - Required if the row is meant to be opted in</li>
+                                            <li><strong>Proof ID</strong> - Optional proof reference</li>
+                                            <li><strong>Consent Scope</strong> - marketing, service, or both</li>
                                             <li><strong>List Name</strong> - Contact list name (optional)</li>
                                             <li><strong>Tags</strong> - Comma-separated tags (optional)</li>
                                             <li><strong>custom_attribute_1,2,3</strong> - Custom fields (optional)</li>
                                         </ul>
+                                        <p className="contacts-modal-note">
+                                            Tip: quoted values are supported, so tags like <strong>VIP, Lead</strong> will import correctly. Opt-in is only saved when consent text and proof type are present.
+                                        </p>
                                         <button 
                                             className="secondary-btn download-sample-btn" 
                                             onClick={downloadSampleCSV}
@@ -1399,11 +1924,101 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,Secondary List,"Regular, Suppor
                                                     </td>
                                                 </tr>
                                                 <tr>
-                                                    <td>Status</td>
+                                                    <td>Opt-in Status</td>
                                                     <td>
                                                         <select 
                                                             value={importMapping.status || ''}
                                                             onChange={(e) => handleMappingChange('status', e.target.value)}
+                                                            className="mapping-select"
+                                                        >
+                                                            <option value="">Select column...</option>
+                                                            {getAvailableFields().map(field => (
+                                                                <option key={field} value={field}>{field}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Consent Text</td>
+                                                    <td>
+                                                        <select 
+                                                            value={importMapping.consentText || ''}
+                                                            onChange={(e) => handleMappingChange('consentText', e.target.value)}
+                                                            className="mapping-select"
+                                                        >
+                                                            <option value="">Select column...</option>
+                                                            {getAvailableFields().map(field => (
+                                                                <option key={field} value={field}>{field}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Proof Type</td>
+                                                    <td>
+                                                        <select 
+                                                            value={importMapping.proofType || ''}
+                                                            onChange={(e) => handleMappingChange('proofType', e.target.value)}
+                                                            className="mapping-select"
+                                                        >
+                                                            <option value="">Select column...</option>
+                                                            {getAvailableFields().map(field => (
+                                                                <option key={field} value={field}>{field}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Proof ID</td>
+                                                    <td>
+                                                        <select 
+                                                            value={importMapping.proofId || ''}
+                                                            onChange={(e) => handleMappingChange('proofId', e.target.value)}
+                                                            className="mapping-select"
+                                                        >
+                                                            <option value="">Select column...</option>
+                                                            {getAvailableFields().map(field => (
+                                                                <option key={field} value={field}>{field}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Consent Scope</td>
+                                                    <td>
+                                                        <select 
+                                                            value={importMapping.scope || ''}
+                                                            onChange={(e) => handleMappingChange('scope', e.target.value)}
+                                                            className="mapping-select"
+                                                        >
+                                                            <option value="">Select column...</option>
+                                                            {getAvailableFields().map(field => (
+                                                                <option key={field} value={field}>{field}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Proof URL</td>
+                                                    <td>
+                                                        <select 
+                                                            value={importMapping.proofUrl || ''}
+                                                            onChange={(e) => handleMappingChange('proofUrl', e.target.value)}
+                                                            className="mapping-select"
+                                                        >
+                                                            <option value="">Select column...</option>
+                                                            {getAvailableFields().map(field => (
+                                                                <option key={field} value={field}>{field}</option>
+                                                            ))}
+                                                        </select>
+                                                    </td>
+                                                </tr>
+                                                <tr>
+                                                    <td>Captured By</td>
+                                                    <td>
+                                                        <select 
+                                                            value={importMapping.capturedBy || ''}
+                                                            onChange={(e) => handleMappingChange('capturedBy', e.target.value)}
                                                             className="mapping-select"
                                                         >
                                                             <option value="">Select column...</option>

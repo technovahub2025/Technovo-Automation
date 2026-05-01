@@ -1,5 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { X, Search, Filter, LineChart, Eye, Square, Trash2, FileText, ArrowUpDown } from 'lucide-react';
+import './BroadcastCampaignMeta.css';
+import './BroadcastPolicyChip.css';
+import './AudienceBadge.css';
 import './Modal.css';
 
 const AllCampaignsPopup = ({
@@ -72,6 +75,35 @@ const AllCampaignsPopup = ({
       minute: '2-digit',
       hour12: true
     });
+  };
+
+  const getAudienceMeta = (broadcast) => {
+    const audienceSource = broadcast?.audienceSource || {};
+    const audienceSnapshot = broadcast?.audienceSnapshot || {};
+    const audienceMode = String(audienceSource?.type || audienceSnapshot?.sourceType || '').trim().toLowerCase();
+    const audienceLabel = (() => {
+      const explicitLabel = String(audienceSource?.label || audienceSnapshot?.label || '').trim();
+      if (explicitLabel) return explicitLabel;
+      const segmentName = String(audienceSnapshot?.segmentName || audienceSource?.segmentName || '').trim();
+      if (segmentName) return `Saved segment: ${segmentName}`;
+      if (audienceMode === 'csv') return 'CSV upload';
+      if (audienceMode === 'saved_segment') return 'Saved segment';
+      if (audienceMode === 'contacts') return 'CRM contacts';
+      if (audienceMode === 'manual') return 'Manual audience';
+      return '';
+    })();
+    const audienceChipLabel = (() => {
+      if (audienceMode === 'csv') return 'CSV';
+      if (audienceMode === 'saved_segment') return 'Segment';
+      if (audienceMode === 'contacts') return 'Contacts';
+      if (audienceMode === 'manual') return 'Manual';
+      return 'Audience';
+    })();
+    return {
+      audienceMode,
+      audienceLabel,
+      audienceChipLabel
+    };
   };
 
   const statusCounts = broadcasts.reduce(
@@ -365,7 +397,22 @@ const AllCampaignsPopup = ({
               <tbody>
                 {sortedBroadcasts.map((broadcast) => (
                   <tr key={broadcast._id}>
-                    <td>{broadcast.name}</td>
+                    <td>
+                      {(() => {
+                        const audienceMeta = getAudienceMeta(broadcast);
+                        return (
+                          <div className="broadcast-campaign-meta">
+                            <span className="broadcast-campaign-meta__title">{broadcast.name}</span>
+                            {audienceMeta.audienceLabel ? (
+                              <span className={`audience-badge audience-badge--${audienceMeta.audienceMode || 'unknown'}`}>
+                                <span className="audience-badge__label">{audienceMeta.audienceChipLabel}</span>
+                                <span className="audience-badge__text">{audienceMeta.audienceLabel}</span>
+                              </span>
+                            ) : null}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td>
                       <div className="status-with-policy">
                         <span className={`badge ${getStatusClass(broadcast.status)}`}>{broadcast.status}</span>

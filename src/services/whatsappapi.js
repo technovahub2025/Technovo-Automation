@@ -161,6 +161,10 @@ export const apiClient = {
   getContactWhatsAppStatus: (id) => api.get(`/contacts/${id}/whatsapp-status`),
 
   getContactWhatsAppConsentAudit: (id) => api.get(`/contacts/${id}/whatsapp-consent-audit`),
+
+  getAudienceSegments: (params = {}) => api.get('/audience-segments', { params }),
+  createAudienceSegment: (data) => api.post('/audience-segments', data),
+  deleteAudienceSegment: (id) => api.delete(`/audience-segments/${id}`),
   
   /**
    * Delete contact
@@ -181,12 +185,12 @@ export const apiClient = {
    * Get all templates from Meta WhatsApp Business API
    * @param {Object} params - Query parameters (status, category, language)
    */
-  getTemplates: (params = {}) => api.get('/templates/meta', { params }),
+  getTemplates: (params = {}) => api.get('/templates/meta', { params, timeout: 30000 }),
   
   /**
    * Sync templates from Meta WhatsApp Business API
    */
-  syncTemplates: () => api.post('/templates/meta/sync'),
+  syncTemplates: () => api.post('/templates/meta/sync', undefined, { timeout: 30000 }),
   
   /**
    * Get single template by ID
@@ -371,6 +375,9 @@ export const apiService = {
   updateTemplate: apiClient.updateTemplate,
   deleteTemplate: apiClient.deleteTemplate,
   syncTemplates: apiClient.syncTemplates,
+  getAudienceSegments: apiClient.getAudienceSegments,
+  createAudienceSegment: apiClient.createAudienceSegment,
+  deleteAudienceSegment: apiClient.deleteAudienceSegment,
   uploadCSV: apiClient.uploadCSV,
   sendBulkMessages: apiClient.sendBulkMessages,
   getConversationContacts: apiClient.getConversationContacts,

@@ -1,12 +1,11 @@
 import React from 'react';
-import { ArrowLeft, X, FileText, MessageSquare, Send } from 'lucide-react';
+import { ArrowLeft, X, FileText } from 'lucide-react';
 import './Modal.css';
 
 const BroadcastTypeChoice = ({
   showBroadcastTypeChoice,
   onClose,
-  onChooseTemplate,
-  onChooseCustomMessage
+  onChooseTemplate
 }) => {
   if (!showBroadcastTypeChoice) return null;
 
@@ -50,16 +49,6 @@ const BroadcastTypeChoice = ({
               <div className="broadcast-type-content">
                 <h3>Template Message</h3>
                 <p>Send pre-approved WhatsApp templates for marketing, notifications, and more</p>
-              </div>
-            </div>
-
-            <div className="broadcast-type-card" onClick={onChooseCustomMessage}>
-              <div className="broadcast-type-icon">
-                <MessageSquare size={40} />
-              </div>
-              <div className="broadcast-type-content">
-                <h3>Custom Message</h3>
-                <p>Send personalized text messages to your contacts</p>
               </div>
             </div>
           </div>

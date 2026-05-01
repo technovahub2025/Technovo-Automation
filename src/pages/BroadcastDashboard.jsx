@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Send, CheckCircle, Eye, AlertCircle, Plus, TrendingUp } from 'lucide-react';
 import StatCard from '../components/StatCard';
 import RecentChats from '../components/RecentChats';

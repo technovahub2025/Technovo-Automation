@@ -1,0 +1,13 @@
+.broadcast-campaign-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 0;
+}
+
+.broadcast-campaign-meta__title {
+    display: block;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.2;
+}

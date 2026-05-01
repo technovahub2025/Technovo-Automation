@@ -33,6 +33,11 @@ export const BROADCAST_CAMPAIGN_EXPORT_HEADERS = [
   'Suppressed',
   'Deferred',
   'Retried',
+  'Audience Mode',
+  'Audience Source',
+  'Audience Type',
+  'Audience Segment',
+  'Audience Snapshot',
   'Quiet Hours Enabled',
   'Quiet Hours Window',
   'Quiet Hours Timezone',
@@ -59,6 +64,28 @@ export const mapBroadcastToCampaignExportRow = (broadcast = {}) => {
   const suppressed = toSafeNumber(reliability.suppressed);
   const deferred = toSafeNumber(reliability.deferred);
   const retried = toSafeNumber(reliability.retried);
+  const audienceSource = broadcast?.audienceSource || {};
+  const audienceSnapshot = broadcast?.audienceSnapshot || {};
+  const audienceMode = String(audienceSnapshot?.mode || audienceSource?.mode || '').trim();
+  const audienceLabel = String(audienceSource?.label || audienceSnapshot?.label || '').trim();
+  const audienceType = String(audienceSource?.type || audienceSnapshot?.sourceType || '').trim();
+  const audienceSegmentName = String(audienceSnapshot?.segmentName || audienceSource?.segmentName || '').trim();
+  const audienceSnapshotText = JSON.stringify(
+    {
+      mode: audienceMode,
+      label: audienceLabel,
+      sourceType: audienceType,
+      segmentId: String(audienceSnapshot?.segmentId || audienceSource?.segmentId || '').trim(),
+      segmentName: audienceSegmentName,
+      recipientCount: toSafeNumber(audienceSnapshot?.recipientCount || audienceSource?.recipientCount || recipients),
+      selectedContactCount: toSafeNumber(
+        audienceSnapshot?.selectedContactCount || audienceSource?.selectedContactCount || 0
+      ),
+      uploadedFileName: String(
+        audienceSnapshot?.uploadedFileName || audienceSource?.uploadedFileName || ''
+      ).trim()
+    }
+  );
 
   const deliveryPolicy = retrySummary?.deliveryPolicy || broadcast?.deliveryPolicy || {};
   const quietHours = deliveryPolicy?.quietHours || {};
@@ -90,6 +117,11 @@ export const mapBroadcastToCampaignExportRow = (broadcast = {}) => {
     suppressed,
     deferred,
     retried,
+    audienceMode,
+    audienceLabel,
+    audienceType,
+    audienceSegmentName,
+    audienceSnapshotText,
     quietHoursEnabled ? 'Yes' : 'No',
     quietHoursWindow,
     quietHours?.timezone || '',

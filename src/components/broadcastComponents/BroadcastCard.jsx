@@ -1,5 +1,8 @@
 import React, { memo } from 'react';
 import { LineChart, Trash } from 'lucide-react';
+import './BroadcastCampaignMeta.css';
+import './BroadcastPolicyChip.css';
+import './AudienceBadge.css';
 import './BroadcastCard.css';
 
 const BroadcastCard = ({
@@ -25,6 +28,29 @@ const BroadcastCard = ({
     if (percentage >= 40) return 'medium';
     return 'low';
   };
+
+  const audienceSource = broadcast?.audienceSource || {};
+  const audienceSnapshot = broadcast?.audienceSnapshot || {};
+  const audienceMode = String(audienceSource?.type || audienceSnapshot?.sourceType || '').trim().toLowerCase();
+  const audienceLabel = (() => {
+    const explicitLabel = String(audienceSource?.label || audienceSnapshot?.label || '').trim();
+    if (explicitLabel) return explicitLabel;
+    const segmentName = String(audienceSnapshot?.segmentName || audienceSource?.segmentName || '').trim();
+    if (segmentName) return `Saved segment: ${segmentName}`;
+    if (audienceMode === 'csv') return 'CSV upload';
+    if (audienceMode === 'saved_segment') return 'Saved segment';
+    if (audienceMode === 'contacts') return 'CRM contacts';
+    if (audienceMode === 'manual') return 'Manual audience';
+    return '';
+  })();
+  const audienceChipLabel = (() => {
+    if (audienceMode === 'csv') return 'CSV';
+    if (audienceMode === 'saved_segment') return 'Segment';
+    if (audienceMode === 'contacts') return 'Contacts';
+    if (audienceMode === 'manual') return 'Manual';
+    return 'Audience';
+  })();
+  const audienceChipClass = audienceMode || 'unknown';
 
   const getDisplayDateTime = (currentBroadcast) => {
     const dateValue =
@@ -184,7 +210,17 @@ const BroadcastCard = ({
         </td>
       )}
 
-      <td className="col-name">{broadcast.name}</td>
+      <td className="col-name">
+        <div className="broadcast-campaign-meta">
+          <span className="broadcast-campaign-meta__title">{broadcast.name}</span>
+          {audienceLabel ? (
+            <span className={`audience-badge audience-badge--${audienceChipClass}`}>
+              <span className="audience-badge__label">{audienceChipLabel}</span>
+              <span className="audience-badge__text">{audienceLabel}</span>
+            </span>
+          ) : null}
+        </div>
+      </td>
 
       <td className="col-time">{getDisplayDateTime(broadcast)}</td>
 
@@ -245,6 +281,10 @@ const areEqual = (prevProps, nextProps) => {
     prev._id === next._id &&
     prev.status === next.status &&
     prev.name === next.name &&
+    String(prev?.audienceSource?.label || prev?.audienceSnapshot?.label || '') ===
+      String(next?.audienceSource?.label || next?.audienceSnapshot?.label || '') &&
+    String(prev?.audienceSource?.type || prev?.audienceSnapshot?.sourceType || '') ===
+      String(next?.audienceSource?.type || next?.audienceSnapshot?.sourceType || '') &&
     prev.scheduledAt === next.scheduledAt &&
     prev.startedAt === next.startedAt &&
     prev.createdAt === next.createdAt &&

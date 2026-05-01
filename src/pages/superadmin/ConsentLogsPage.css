@@ -164,6 +164,15 @@
   align-items: center;
 }
 
+.consent-logs-job-row--selected {
+  background: #eff6ff;
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.consent-logs-job-row--selected:hover {
+  background: #dbeafe;
+}
+
 .consent-logs-job-status {
   font-size: 12px;
   font-weight: 600;
@@ -224,6 +233,15 @@
   align-items: center;
   background: #ffffff;
   border-top: 1px solid #f1f5f9;
+}
+
+.consent-logs-row--selected {
+  background: #eff6ff;
+  box-shadow: inset 3px 0 0 #2563eb;
+}
+
+.consent-logs-row--selected:hover {
+  background: #dbeafe;
 }
 
 .consent-logs-row--head {

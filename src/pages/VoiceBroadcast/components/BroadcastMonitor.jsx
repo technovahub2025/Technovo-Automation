@@ -1,29 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Activity, Phone, CheckCircle, XCircle, Clock, Users, TrendingUp, Wifi, WifiOff, PhoneOff } from 'lucide-react';
-import { io } from 'socket.io-client';
 import { broadcastAPI } from '../../../services/broadcastAPI';
+import webSocketService from '../../../services/websocketService';
 import CallsTable from './CallsTable';
 import StatsChart from './StatsChart';
 import './BroadcastMonitor.css';
-
-const resolveSocketUrl = () => {
-  const configuredSocket = import.meta.env.VITE_SOCKET_URL || '';
-  const configuredAdminApi = import.meta.env.VITE_API_ADMIN_URL || '';
-  const configuredApiBase = import.meta.env.VITE_API_BASE_URL || '';
-  const configuredApi = import.meta.env.VITE_API_URL || '';
-  return (
-    configuredSocket ||
-    configuredAdminApi ||
-    (configuredApiBase ? configuredApiBase.replace(/\/api\/?$/, '') : '') ||
-    (configuredApi ? configuredApi.replace(/\/api\/?$/, '') : window.location.origin)
-  );
-};
-
-const resolveSocketAuth = () => {
-  const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
-  const token = localStorage.getItem(tokenKey) || localStorage.getItem('authToken') || localStorage.getItem('token');
-  return token ? { token } : undefined;
-};
 
 const BroadcastMonitor = ({ broadcastId }) => {
   const [broadcast, setBroadcast] = useState(null);
@@ -32,37 +13,8 @@ const BroadcastMonitor = ({ broadcastId }) => {
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [connectionStatus, setConnectionStatus] = useState('connecting');
   const socketRef = useRef(null);
-  const audioRef = useRef(new Audio('/notification.mp3'));
 
-  useEffect(() => {
-    loadBroadcastData();
-    connectWebSocket();
-
-    return () => {
-      cleanupSocket();
-    };
-  }, [broadcastId]);
-
-  const cleanupSocket = () => {
-    if (socketRef.current) {
-      socketRef.current.emit('leave_broadcast', broadcastId);
-      socketRef.current.off('connect');
-      socketRef.current.off('broadcast_update');
-      socketRef.current.off('call_update');
-      socketRef.current.off('disconnect');
-      socketRef.current.off('connect_error');
-      socketRef.current.off('reconnect');
-      socketRef.current.off('reconnect_attempt');
-      socketRef.current.off('reconnect_error');
-      socketRef.current.io?.off('reconnect');
-      socketRef.current.io?.off('reconnect_attempt');
-      socketRef.current.io?.off('reconnect_error');
-      socketRef.current.disconnect();
-      socketRef.current = null;
-    }
-  };
-
-  const loadBroadcastData = async () => {
+  const loadBroadcastData = useCallback(async () => {
     try {
       setLoading(true);
 
@@ -79,104 +31,80 @@ const BroadcastMonitor = ({ broadcastId }) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [broadcastId]);
 
-  const connectWebSocket = () => {
-    if (socketRef.current?.connected) return;
+  const handleConnect = useCallback(() => {
+    setConnectionStatus('connected');
+  }, []);
 
-    const socket = io(resolveSocketUrl(), {
-      auth: resolveSocketAuth(),
-      transports: ['websocket', 'polling'],
-      withCredentials: String(import.meta.env.VITE_SOCKET_WITH_CREDENTIALS || import.meta.env.VITE_API_WITH_CREDENTIALS || 'false').toLowerCase() === 'true',
-      reconnection: true,
-      reconnectionAttempts: 5,
-      reconnectionDelay: 1000,
-      reconnectionDelayMax: 5000,
-      timeout: 20000
-    });
+  const handleDisconnect = useCallback(() => {
+    setConnectionStatus('reconnecting');
+  }, []);
 
-    socket.on('connect', () => {
-      console.log('WebSocket connected');
-      setConnectionStatus('connected');
-      socket.emit('join_broadcast', broadcastId);
-    });
+  const handleConnectError = useCallback((error) => {
+    console.error('WebSocket connection error:', error);
+    setConnectionStatus((prev) => (prev === 'connected' ? 'connected' : 'error'));
+  }, []);
 
-    socket.on('disconnect', (reason) => {
-      console.log('WebSocket disconnected:', reason);
-      if (reason === 'io client disconnect') return;
-      setConnectionStatus('reconnecting');
-    });
+  const handleBroadcastUpdate = useCallback((data = {}) => {
+    const payloadBroadcast = data?.broadcast || data?.data?.broadcast || null;
+    const targetId = String(payloadBroadcast?._id || payloadBroadcast?.id || data?.broadcastId || '').trim();
+    if (targetId && targetId !== String(broadcastId || '').trim()) {
+      return;
+    }
 
-    socket.on('connect_error', (error) => {
-      console.error('WebSocket connection error:', error);
-      if (String(error?.message || '').toLowerCase().includes('unauthorized')) {
-        // Keep UI stable when REST polling works but socket auth fails transiently.
-        setConnectionStatus((prev) => (prev === 'connected' ? prev : 'error'));
-        return;
-      }
-      // Ignore transient transport errors after a successful connection.
-      if (socket.connected) {
-        setConnectionStatus('connected');
-        return;
-      }
-      setConnectionStatus(prev => (prev === 'connected' ? 'connected' : 'error'));
-    });
+    console.log('Broadcast update:', data);
+    setConnectionStatus('connected');
 
-    socket.on('broadcast_update', (data) => {
-      console.log('Broadcast update:', data);
-      setConnectionStatus('connected');
-      setBroadcast(prev => ({
-        ...prev,
-        status: data.status,
-        stats: data.stats || prev.stats
+    if (payloadBroadcast) {
+      setBroadcast((prev) => ({
+        ...(prev || {}),
+        ...payloadBroadcast,
+        stats: payloadBroadcast.stats || prev?.stats || {}
       }));
-    });
+    } else {
+      loadBroadcastData();
+    }
+  }, [broadcastId, loadBroadcastData]);
 
-    socket.on('call_update', (data) => {
-      console.log('Call update:', data);
-      setConnectionStatus('connected');
+  const cleanupSocket = useCallback(() => {
+    if (socketRef.current) {
+      socketRef.current.off('connect', handleConnect);
+      socketRef.current.off('disconnect', handleDisconnect);
+      socketRef.current.off('connect_error', handleConnectError);
+      socketRef.current.off('broadcast_updated', handleBroadcastUpdate);
+      socketRef.current.off('broadcast_update', handleBroadcastUpdate);
+      socketRef.current.disconnect();
+      socketRef.current = null;
+    }
+  }, [handleBroadcastUpdate, handleConnect, handleConnectError, handleDisconnect]);
 
-      setCalls(prev => {
-        const index = prev.findIndex(c => c._id === data.callId || c.callSid === data.callSid);
-
-        if (index !== -1) {
-          const updated = [...prev];
-          updated[index] = {
-            ...updated[index],
-            status: data.status,
-            duration: data.duration || updated[index].duration,
-            attempts: data.attempts ?? updated[index].attempts,
-            callSid: data.callSid || updated[index].callSid
-          };
-          return updated;
-        } else {
-          // New call not in list - fetch full list
-          loadBroadcastData();
-          return prev;
-        }
-      });
-
-      // Play notification for completed calls
-      if (data.status === 'completed') {
-        audioRef.current.play().catch(() => { });
-      }
-    });
-
-    socket.io.on('reconnect_attempt', () => {
-      setConnectionStatus('reconnecting');
-    });
-
-    socket.io.on('reconnect', () => {
-      setConnectionStatus('connected');
-      socket.emit('join_broadcast', broadcastId);
-    });
-
-    socket.io.on('reconnect_error', () => {
-      setConnectionStatus(prev => (prev === 'connected' ? 'connected' : 'error'));
-    });
+  const connectWebSocket = useCallback(() => {
+    const socket = webSocketService.connect(String(broadcastId || 'broadcast-monitor'));
+    if (!socket) {
+      setConnectionStatus('error');
+      return;
+    }
 
     socketRef.current = socket;
-  };
+
+    socket.on('connect', handleConnect);
+    socket.on('disconnect', handleDisconnect);
+    socket.on('connect_error', handleConnectError);
+    socket.on('broadcast_updated', handleBroadcastUpdate);
+    socket.on('broadcast_update', handleBroadcastUpdate);
+
+    setConnectionStatus(webSocketService.isConnected() ? 'connected' : 'connecting');
+  }, [broadcastId, handleBroadcastUpdate, handleConnect, handleConnectError, handleDisconnect]);
+
+  useEffect(() => {
+    loadBroadcastData();
+    connectWebSocket();
+
+    return () => {
+      cleanupSocket();
+    };
+  }, [broadcastId, cleanupSocket, connectWebSocket, loadBroadcastData]);
 
   const handleCancelBroadcast = async () => {
     if (!window.confirm('Are you sure you want to cancel this broadcast?')) {

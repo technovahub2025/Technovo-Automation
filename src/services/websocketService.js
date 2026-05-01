@@ -85,6 +85,7 @@ class WebSocketService extends EventEmitter {
   constructor() {
     super();
     this.ws = null;
+    this.connected = false;
     this.reconnectTimer = null;
     this.manualClose = false;
     this.currentUserId = null;
@@ -181,6 +182,7 @@ class WebSocketService extends EventEmitter {
     if (timeoutId) clearTimeout(timeoutId);
     console.log('✅ WebSocket connected successfully');
     this.connecting = false;
+    this.connected = true;
     this.reconnectAttempts = 0;
     this.reconnectInterval = 2000; // Reset reconnect interval
     
@@ -192,6 +194,7 @@ class WebSocketService extends EventEmitter {
     
     // Emit connection event
     this.emit('connected', { ws: this.ws, userId: this.currentUserId });
+    this.emit('connect', { ws: this.ws, userId: this.currentUserId });
     
     // Resolve connection promise
     if (resolve) resolve(this.ws);
@@ -237,6 +240,7 @@ class WebSocketService extends EventEmitter {
     
     // Emit error event
     this.emit('error', { type: 'websocket_error', error });
+    this.emit('connect_error', error);
     
     // Reject connection promise if still connecting
     if (reject && wasConnecting) {
@@ -250,12 +254,18 @@ class WebSocketService extends EventEmitter {
   handleClose(event) {
     console.log(`🔌 WebSocket disconnected. Code: ${event.code}, Reason: ${event.reason}`);
     this.ws = null;
+    this.connected = false;
     this.stopHeartbeat();
     this.connecting = false;
     this.connectionPromise = null;
     
     // Emit disconnect event
     this.emit('disconnected', { 
+      code: event.code, 
+      reason: event.reason, 
+      wasClean: event.wasClean 
+    });
+    this.emit('disconnect', { 
       code: event.code, 
       reason: event.reason, 
       wasClean: event.wasClean 

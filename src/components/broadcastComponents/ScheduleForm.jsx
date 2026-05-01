@@ -14,17 +14,7 @@ import MessagePreview from './MessagePreview';
 import './ScheduleForm.css';
 import { downloadCsv } from '../../utils/csvExport';
 
-const META_RETRY_HISTORY_KEY = 'metaLeadBatchRetryHistory:v1';
 const BROADCAST_SCHEDULE_DRAFT_KEY = 'broadcast:schedule-form:draft:v1';
-const parseLeadIds = (input = '') =>
-  Array.from(
-    new Set(
-      String(input || '')
-        .split(/[\n,\s]+/)
-        .map((item) => item.trim())
-        .filter(Boolean)
-    )
-  );
 const parseSuppressionListEntries = (input = '') =>
   String(input || '')
     .split(/[\n,]+/)
@@ -47,14 +37,17 @@ const ScheduleForm = ({
   filteredTemplates,
   customMessage,
   onCustomMessageChange,
-  selectedLocalTemplate,
-  onLocalTemplateSelect,
-  templates,
   onFileUpload,
   uploadedFile,
   recipients,
   fileVariables,
   onClearUpload,
+  onOpenContactAudiencePicker,
+  onCloseContactAudiencePicker,
+  onClearSelectedAudience,
+  audienceSourceMode = 'contacts',
+  onAudienceSourceModeChange,
+  audienceSourceLabel = '',
   onAutoCleanRecipients,
   scheduledTime,
   onScheduledTimeChange,
@@ -65,10 +58,7 @@ const ScheduleForm = ({
   onBackToOverview,
   onResetForm,
   resetVersion = 0,
-  onMetaLeadBatchSync,
   onToast,
-  metaLeadBatchLoading = false,
-  metaLeadBatchResult = null,
   quietHoursEnabled = false,
   onQuietHoursEnabledChange = () => {},
   quietHoursStartHour = 22,
@@ -93,42 +83,10 @@ const ScheduleForm = ({
   const scheduleInputRef = React.useRef(null);
   const hasAppliedResetVersion = React.useRef(false);
   const [isDragOver, setIsDragOver] = React.useState(false);
-  const [metaLeadIdsText, setMetaLeadIdsText] = React.useState('');
-  const [metaSendTemplate, setMetaSendTemplate] = React.useState(false);
-  const [metaDryRun, setMetaDryRun] = React.useState(true);
-  const [metaRetryCount, setMetaRetryCount] = React.useState(0);
-  const [metaLastRetryAt, setMetaLastRetryAt] = React.useState(null);
-  const [metaLastRetryLeadCount, setMetaLastRetryLeadCount] = React.useState(0);
-  const [metaRetryHistory, setMetaRetryHistory] = React.useState([]);
   const [draftSavedAt, setDraftSavedAt] = React.useState(null);
   const [hasStoredDraft, setHasStoredDraft] = React.useState(false);
   const hasRestoredDraftRef = React.useRef(false);
   const lastDraftPayloadRef = React.useRef('');
-
-  React.useEffect(() => {
-    if (!canUseSessionStorage()) return;
-    try {
-      const raw = window.sessionStorage.getItem(META_RETRY_HISTORY_KEY);
-      if (!raw) return;
-      const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return;
-      const safe = parsed
-        .map((item) => ({
-          at: item?.at ? new Date(item.at) : null,
-          leadCount: Number(item?.leadCount || 0)
-        }))
-        .filter((item) => item.at instanceof Date && !Number.isNaN(item.at.getTime()));
-      setMetaRetryHistory(safe);
-      setMetaRetryCount(safe.length);
-      if (safe.length > 0) {
-        const latest = safe[0];
-        setMetaLastRetryAt(latest.at);
-        setMetaLastRetryLeadCount(latest.leadCount);
-      }
-    } catch {
-      // ignore invalid session cache
-    }
-  }, []);
 
   React.useEffect(() => {
     if (!hasAppliedResetVersion.current) {
@@ -136,20 +94,12 @@ const ScheduleForm = ({
       return;
     }
 
-    setMetaLeadIdsText('');
-    setMetaSendTemplate(false);
-    setMetaDryRun(true);
-    setMetaRetryCount(0);
-    setMetaLastRetryAt(null);
-    setMetaLastRetryLeadCount(0);
-    setMetaRetryHistory([]);
     setDraftSavedAt(null);
     setHasStoredDraft(false);
     hasRestoredDraftRef.current = false;
     lastDraftPayloadRef.current = '';
     if (!canUseSessionStorage()) return;
     try {
-      window.sessionStorage.removeItem(META_RETRY_HISTORY_KEY);
       window.sessionStorage.removeItem(BROADCAST_SCHEDULE_DRAFT_KEY);
     } catch {
       // ignore storage errors
@@ -166,7 +116,6 @@ const ScheduleForm = ({
       String(customMessage || '').trim().length > 0 ||
       String(scheduledTime || '').trim().length > 0 ||
       String(suppressionListRaw || '').trim().length > 0 ||
-      String(metaLeadIdsText || '').trim().length > 0 ||
       quietHoursEnabled ||
       (Array.isArray(recipients) && recipients.length > 0);
     if (hasExistingData) return;
@@ -223,15 +172,6 @@ const ScheduleForm = ({
       if (typeof parsed.suppressionListRaw === 'string') {
         onSuppressionListRawChange?.(parsed.suppressionListRaw);
       }
-      if (typeof parsed.metaLeadIdsText === 'string') {
-        setMetaLeadIdsText(parsed.metaLeadIdsText);
-      }
-      if (typeof parsed.metaSendTemplate === 'boolean') {
-        setMetaSendTemplate(parsed.metaSendTemplate);
-      }
-      if (typeof parsed.metaDryRun === 'boolean') {
-        setMetaDryRun(parsed.metaDryRun);
-      }
     } catch {
       // ignore invalid draft payload
     }
@@ -241,7 +181,6 @@ const ScheduleForm = ({
     customMessage,
     scheduledTime,
     suppressionListRaw,
-    metaLeadIdsText,
     quietHoursEnabled,
     recipients,
     onBroadcastNameChange,
@@ -276,10 +215,7 @@ const ScheduleForm = ({
     retryMaxAttempts,
     retryBackoffSeconds,
     respectOptOut: Boolean(respectOptOut),
-    suppressionListRaw: String(suppressionListRaw || ''),
-    metaLeadIdsText: String(metaLeadIdsText || ''),
-    metaSendTemplate: Boolean(metaSendTemplate),
-    metaDryRun: Boolean(metaDryRun)
+    suppressionListRaw: String(suppressionListRaw || '')
   }), [
     broadcastName,
     templateName,
@@ -295,10 +231,7 @@ const ScheduleForm = ({
     retryMaxAttempts,
     retryBackoffSeconds,
     respectOptOut,
-    suppressionListRaw,
-    metaLeadIdsText,
-    metaSendTemplate,
-    metaDryRun
+    suppressionListRaw
   ]);
 
   const hasFormProgress = React.useMemo(() => {
@@ -311,8 +244,7 @@ const ScheduleForm = ({
       String(scheduledTime || '').trim().length > 0 ||
       quietHoursEnabled ||
       String(suppressionListRaw || '').trim().length > 0;
-    const hasMetaLeadDraft = String(metaLeadIdsText || '').trim().length > 0;
-    return hasCampaignMeta || hasUploadOrRecipients || hasScheduleOrPolicy || hasMetaLeadDraft;
+    return hasCampaignMeta || hasUploadOrRecipients || hasScheduleOrPolicy;
   }, [
     broadcastName,
     templateName,
@@ -321,8 +253,7 @@ const ScheduleForm = ({
     recipients,
     scheduledTime,
     quietHoursEnabled,
-    suppressionListRaw,
-    metaLeadIdsText
+    suppressionListRaw
   ]);
 
   React.useEffect(() => {
@@ -359,15 +290,6 @@ const ScheduleForm = ({
     hasStoredDraft,
     draftSavedAt
   ]);
-
-  const persistRetryHistory = React.useCallback((history) => {
-    if (!canUseSessionStorage()) return;
-    try {
-      window.sessionStorage.setItem(META_RETRY_HISTORY_KEY, JSON.stringify(history));
-    } catch {
-      // ignore storage errors
-    }
-  }, []);
 
   const extractTemplateBody = (template) => {
     if (!template || typeof template !== 'object') return '';
@@ -453,6 +375,14 @@ const ScheduleForm = ({
   const triggerCsvPicker = () => {
     const input = document.getElementById('broadcast-csv-upload');
     if (input) input.click();
+  };
+
+  const triggerAudienceSelection = () => {
+    if (audienceSourceMode === 'contacts' && typeof onOpenContactAudiencePicker === 'function') {
+      onOpenContactAudiencePicker();
+      return;
+    }
+    triggerCsvPicker();
   };
 
   const handleCsvDragOver = (event) => {
@@ -645,175 +575,6 @@ const ScheduleForm = ({
     return text;
   };
 
-  const handleMetaBatchSubmit = () => {
-    if (typeof onMetaLeadBatchSync !== 'function') return;
-    const leadIds = parsedMetaLeadIds;
-    if (!leadIds.length) {
-      onToast?.('Please enter at least one Meta lead ID.', 'error');
-      return;
-    }
-    onMetaLeadBatchSync({
-      leadIdsText: leadIds.join('\n'),
-      enableTemplateSend: Boolean(metaSendTemplate),
-      dryRun: Boolean(metaDryRun)
-    });
-  };
-
-  const downloadMetaBatchFailureCsv = () => {
-    const exportGeneratedAt = new Date().toISOString();
-    const lastRetryAtIso = metaLastRetryAt instanceof Date ? metaLastRetryAt.toISOString() : '';
-    const syncResults = Array.isArray(metaLeadBatchResult?.syncResults)
-      ? metaLeadBatchResult.syncResults
-      : [];
-    const sendResults = Array.isArray(metaLeadBatchResult?.sendResults)
-      ? metaLeadBatchResult.sendResults
-      : [];
-
-    const syncFailures = syncResults
-      .filter((item) => !item?.success)
-      .map((item) => ({
-        type: 'sync',
-        leadId: String(item?.leadId || ''),
-        phone: String(item?.phone || ''),
-        error: String(item?.error || ''),
-        messageId: String(item?.messageId || item?.response?.messages?.[0]?.id || ''),
-        status: String(item?.status || ''),
-      }));
-
-    const sendFailures = sendResults
-      .filter((item) => !item?.success)
-      .map((item) => ({
-        type: 'send',
-        leadId: String(item?.leadId || ''),
-        phone: String(item?.phone || ''),
-        error: String(item?.error || ''),
-        messageId: String(item?.messageId || item?.response?.messages?.[0]?.id || ''),
-        status: String(item?.status || ''),
-      }));
-
-    const failures = [...syncFailures, ...sendFailures];
-    if (!failures.length) {
-      onToast?.('No failed rows available for export.', 'info');
-      return;
-    }
-
-    const headers = ['type', 'leadId', 'phone', 'status', 'messageId', 'error', 'retryCount', 'lastRetryAt', 'exportGeneratedAt'];
-    const rows = failures.map((row) => [
-      row.type,
-      row.leadId,
-      row.phone,
-      row.status,
-      row.messageId,
-      row.error,
-      metaRetryCount,
-      lastRetryAtIso,
-      exportGeneratedAt
-    ]);
-
-    downloadCsv({
-      filename: `meta_lead_batch_failures_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`,
-      headers,
-      rows,
-      exportType: 'meta_lead_batch_failures'
-    });
-  };
-
-  const downloadMetaBatchFullCsv = () => {
-    const exportGeneratedAt = new Date().toISOString();
-    const lastRetryAtIso = metaLastRetryAt instanceof Date ? metaLastRetryAt.toISOString() : '';
-    const syncResults = Array.isArray(metaLeadBatchResult?.syncResults)
-      ? metaLeadBatchResult.syncResults
-      : [];
-    const sendResults = Array.isArray(metaLeadBatchResult?.sendResults)
-      ? metaLeadBatchResult.sendResults
-      : [];
-
-    const syncRows = syncResults.map((item) => ({
-      stage: 'sync',
-      status: item?.success ? 'success' : 'failed',
-      leadId: String(item?.leadId || ''),
-      phone: String(item?.phone || ''),
-      contactId: String(item?.contactId || ''),
-      messageId: String(item?.messageId || item?.response?.messages?.[0]?.id || ''),
-      error: String(item?.error || '')
-    }));
-
-    const sendRows = sendResults.map((item) => ({
-      stage: 'send',
-      status: item?.success ? 'success' : 'failed',
-      leadId: String(item?.leadId || ''),
-      phone: String(item?.phone || ''),
-      contactId: String(item?.contactId || ''),
-      messageId: String(item?.messageId || item?.response?.messages?.[0]?.id || ''),
-      error: String(item?.error || '')
-    }));
-
-    const rowsData = [...syncRows, ...sendRows];
-    if (!rowsData.length) {
-      onToast?.('No batch rows available for export.', 'info');
-      return;
-    }
-
-    const headers = ['stage', 'status', 'leadId', 'phone', 'contactId', 'messageId', 'error', 'retryCount', 'lastRetryAt', 'exportGeneratedAt'];
-    const rows = rowsData.map((row) => [
-      row.stage,
-      row.status,
-      row.leadId,
-      row.phone,
-      row.contactId,
-      row.messageId,
-      row.error,
-      metaRetryCount,
-      lastRetryAtIso,
-      exportGeneratedAt
-    ]);
-
-    downloadCsv({
-      filename: `meta_lead_batch_full_report_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`,
-      headers,
-      rows,
-      exportType: 'meta_lead_batch_full_report'
-    });
-  };
-
-  const retryFailedMetaSends = () => {
-    if (typeof onMetaLeadBatchSync !== 'function') return;
-
-    const failedLeadIds = Array.from(
-      new Set(
-        (Array.isArray(metaLeadBatchResult?.sendResults) ? metaLeadBatchResult.sendResults : [])
-          .filter((item) => item && item.success === false)
-          .map((item) => String(item?.leadId || '').trim())
-          .filter(Boolean)
-      )
-    );
-
-    if (!failedLeadIds.length) {
-      onToast?.('No failed send rows with lead IDs found for retry.', 'info');
-      return;
-    }
-
-    setMetaLeadIdsText(failedLeadIds.join('\n'));
-    setMetaSendTemplate(true);
-    setMetaDryRun(false);
-    setMetaRetryCount((prev) => prev + 1);
-    const retryAt = new Date();
-    setMetaLastRetryAt(retryAt);
-    setMetaLastRetryLeadCount(failedLeadIds.length);
-    setMetaRetryHistory((prev) => {
-      const next = [{ at: retryAt.toISOString(), leadCount: failedLeadIds.length }, ...prev].slice(0, 5);
-      persistRetryHistory(next);
-      return next.map((item) => ({ at: new Date(item.at), leadCount: item.leadCount }));
-    });
-
-    onMetaLeadBatchSync({
-      leadIdsText: failedLeadIds.join('\n'),
-      enableTemplateSend: true,
-      dryRun: false
-    });
-  };
-
-  const parsedMetaLeadIds = parseLeadIds(metaLeadIdsText);
   const suppressionListMeta = React.useMemo(() => {
     const entries = parseSuppressionListEntries(suppressionListRaw);
     const uniqueEntries = Array.from(new Set(entries));
@@ -823,10 +584,6 @@ const ScheduleForm = ({
       invalidEntries
     };
   }, [suppressionListRaw]);
-  const hasMetaLeadIds = React.useMemo(
-    () => parsedMetaLeadIds.length > 0,
-    [parsedMetaLeadIds]
-  );
   const hasRecipientIssues = recipientQualitySummary.hasIssues;
   const policyValidation = React.useMemo(() => {
     if (!quietHoursEnabled && !retryPolicyEnabled) {
@@ -957,6 +714,7 @@ const ScheduleForm = ({
 
   const handleBackToOverviewClick = () => {
     if (!hasFormProgress) {
+      onCloseContactAudiencePicker?.();
       onBackToOverview?.();
       return;
     }
@@ -964,6 +722,7 @@ const ScheduleForm = ({
     const message = 'You have unsaved campaign changes. Leave this page and go back to overview?';
     const shouldLeave = typeof window === 'undefined' ? true : window.confirm(message);
     if (!shouldLeave) return;
+    onCloseContactAudiencePicker?.();
     onBackToOverview?.();
   };
 
@@ -1064,19 +823,6 @@ const ScheduleForm = ({
     onSendBroadcast?.();
   };
 
-  const clearMetaRetryHistory = () => {
-    setMetaRetryCount(0);
-    setMetaLastRetryAt(null);
-    setMetaLastRetryLeadCount(0);
-    setMetaRetryHistory([]);
-    if (!canUseSessionStorage()) return;
-    try {
-      window.sessionStorage.removeItem(META_RETRY_HISTORY_KEY);
-    } catch {
-      // ignore storage errors
-    }
-  };
-
   return (
     <div className="schedule-form-container">
       <div className="campaign-config-wrapper">
@@ -1156,57 +902,12 @@ const ScheduleForm = ({
               </div>
             </>
           ) : (
-            <>
-              <div className="form-group">
-                <label>
-                  <FileText size={16} /> Custom Message
-                </label>
-
-                <div className="whatsapp-message-input">
-                  <textarea
-                    placeholder="Type your message here..."
-                    value={customMessage}
-                    onChange={onCustomMessageChange}
-                    rows={4}
-                    className="message-textarea"
-                    maxLength={1000}
-                  />
-
-                  <div className="message-input-footer">
-                    <span className="char-count">{customMessage.length}/1000</span>
-                    <div className="message-actions">
-                      <span className="action-icon">:)</span>
-                      <span className="action-icon">[+]</span>
-                    </div>
-                  </div>
-                </div>
-
-                <small>
-                  Use {'{var1}'}, {'{var2}'} or {'{{1}}'}, {'{{2}}'} for variables from CSV.
-                </small>
-              </div>
-
-              <div className="form-group">
-                <label>Or use saved local template:</label>
-                <div className="template-selector">
-                  <select
-                    value={selectedLocalTemplate}
-                    onChange={(e) => onLocalTemplateSelect(e.target.value)}
-                    className="template-dropdown"
-                  >
-                    <option value="">Select message template...</option>
-                    {templates.map((template) => (
-                      <option key={template._id || template.name} value={template.name}>
-                        {template.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <small>These are custom message templates</small>
-              </div>
-            </>
+            /* Template-only broadcast flow:
+               the custom message composer is intentionally hidden now. */
+            <></>
           )}
 
+          {/*
           <div className="form-group meta-lead-sync-block">
             <label>
               <Users size={16} /> Meta Lead Batch Sync (Optional)
@@ -1309,11 +1010,34 @@ const ScheduleForm = ({
               </button>
             ) : null}
           </div>
+          */}
 
           <div className="form-group">
-            <label>
-              <Upload size={16} /> Upload Recipients CSV
-            </label>
+            <label>Recipients *</label>
+
+            <div className="audience-source-toggle">
+              <button
+                type="button"
+                className={`audience-source-toggle__btn${audienceSourceMode === 'contacts' ? ' is-active' : ''}`}
+                onClick={() => typeof onAudienceSourceModeChange === 'function' && onAudienceSourceModeChange('contacts')}
+              >
+                <Users size={16} />
+                Contacts first
+              </button>
+              <button
+                type="button"
+                className={`audience-source-toggle__btn${audienceSourceMode === 'csv' ? ' is-active' : ''}`}
+                onClick={() => typeof onAudienceSourceModeChange === 'function' && onAudienceSourceModeChange('csv')}
+              >
+                <Upload size={16} />
+                CSV first
+              </button>
+            </div>
+            <p className="audience-source-helper">
+              {audienceSourceMode === 'contacts'
+                ? 'Audience source: CRM contacts'
+                : 'Audience source: CSV upload'}
+            </p>
 
             <div className="voice-style-upload-wrapper">
               <input
@@ -1327,17 +1051,43 @@ const ScheduleForm = ({
 
               {recipients.length === 0 ? (
                 <>
+                  {typeof onOpenContactAudiencePicker === 'function' ? (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                      <button
+                        type="button"
+                        className="contacts-clean-btn"
+                        onClick={onOpenContactAudiencePicker}
+                      >
+                        <Users size={16} />
+                        Select from Contacts
+                      </button>
+                      {typeof onClearSelectedAudience === 'function' ? (
+                        <button
+                          type="button"
+                          className="contacts-clean-btn"
+                          onClick={onClearSelectedAudience}
+                        >
+                          Clear Selected Contacts
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+
                   <div
                     className={`voice-upload-dropzone ${isDragOver ? 'drag-over' : ''}`}
-                    onClick={triggerCsvPicker}
+                    onClick={triggerAudienceSelection}
                     onDragOver={handleCsvDragOver}
                     onDragLeave={handleCsvDragLeave}
                     onDrop={handleCsvDrop}
                   >
                     <Upload size={48} />
-                    <h3>Upload CSV File</h3>
-                    <p>Click to select or drag and drop</p>
-                    <small>CSV must include "phone" or "mobile" column</small>
+                    <h3>{audienceSourceMode === 'contacts' ? 'Select contacts from CRM' : 'Upload CSV contacts'}</h3>
+                    <p>{audienceSourceMode === 'contacts' ? 'Click here to open your contacts and build the audience from CRM.' : 'Click here to upload a CSV list. CRM contacts remain available.'}</p>
+                    <small>
+                      {audienceSourceMode === 'contacts'
+                        ? 'Use CRM contacts now. CSV remains available as fallback.'
+                        : 'CSV must include "phone" or "mobile" column when used'}
+                    </small>
                   </div>
 
                   <button
@@ -1354,7 +1104,9 @@ const ScheduleForm = ({
                   <div className="contacts-preview-header">
                     <div className="contacts-preview-info">
                       <Users size={20} />
-                      <span>{recipients.length} contacts uploaded</span>
+                      <span>
+                        {audienceSourceLabel ? `${recipients.length} contacts selected` : `${recipients.length} recipients loaded`}
+                      </span>
                     </div>
                     <button
                       type="button"
@@ -1365,6 +1117,33 @@ const ScheduleForm = ({
                       ×
                     </button>
                   </div>
+
+                  {typeof onOpenContactAudiencePicker === 'function' ? (
+                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                      <button
+                        type="button"
+                        className="contacts-clean-btn"
+                        onClick={onOpenContactAudiencePicker}
+                      >
+                        Select from Contacts
+                      </button>
+                      {typeof onClearSelectedAudience === 'function' ? (
+                        <button
+                          type="button"
+                          className="contacts-clean-btn"
+                          onClick={onClearSelectedAudience}
+                        >
+                          Clear Selected Contacts
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  {audienceSourceLabel ? (
+                    <p className="contacts-more-row" style={{ marginTop: 0 }}>
+                      Audience source: {audienceSourceLabel}
+                    </p>
+                  ) : null}
 
                   <div className={`recipient-quality-summary ${recipientQualitySummary.hasIssues ? 'has-issues' : 'is-clean'}`}>
                     {recipientQualitySummary.hasIssues ? (

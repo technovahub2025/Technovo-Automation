@@ -29,7 +29,6 @@ const MainLayout = () => {
       '/broadcast',
       '/broadcast/new',
       '/broadcast/new/template',
-      '/broadcast/new/message',
       '/templates',
       '/contacts',
       '/crm/pipeline',

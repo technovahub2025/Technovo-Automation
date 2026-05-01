@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Upload, Calendar, Send, Clock, ArrowLeft, RefreshCw, Trash2 } from 'lucide-react';
+import { X, Upload, Calendar, Send, Clock, ArrowLeft, RefreshCw, Trash2, Users } from 'lucide-react';
 import MessagePreview from './MessagePreview';
 import './Modal.css';
 
@@ -11,12 +11,15 @@ const NewBroadcastPopup = ({
   templateName,
   onTemplateNameChange,
   officialTemplates,
-  customMessage,
-  onCustomMessageChange,
   uploadedFile,
   recipients,
   onFileUpload,
   onClearUpload,
+  onOpenContactAudiencePicker,
+  onClearSelectedAudience,
+  audienceSourceMode = 'contacts',
+  onAudienceSourceModeChange,
+  audienceSourceLabel = '',
   scheduledTime,
   onScheduledTimeChange,
   isSending,
@@ -46,6 +49,19 @@ const NewBroadcastPopup = ({
   suppressionListRaw,
   onSuppressionListRawChange
 }) => {
+  const triggerCsvPicker = () => {
+    const input = document.getElementById('csv-file-popup');
+    if (input) input.click();
+  };
+
+  const triggerAudienceSelection = () => {
+    if (audienceSourceMode === 'contacts' && typeof onOpenContactAudiencePicker === 'function') {
+      onOpenContactAudiencePicker();
+      return;
+    }
+    triggerCsvPicker();
+  };
+
   if (!showNewBroadcastPopup) return null;
 
   return (
@@ -105,37 +121,112 @@ const NewBroadcastPopup = ({
             </div>
           )}
 
-          {messageType === 'text' && (
-            <div className="form-group">
-              <label>Message *</label>
-              <textarea
-                value={customMessage}
-                onChange={onCustomMessageChange}
-                placeholder="Enter your message"
-                className="form-textarea"
-                rows="4"
-              />
-            </div>
-          )}
-
           <div className="form-group">
             <label>Recipients *</label>
-            <div className="file-upload-area">
-              <input
-                type="file"
-                accept=".csv"
-                onChange={onFileUpload}
-                id="csv-file-popup"
-                style={{ display: 'none' }}
-              />
-              <label htmlFor="csv-file-popup" className="file-upload-label">
-                <Upload size={20} />
-                <span>
-                  {uploadedFile ? uploadedFile.name : 'Upload CSV file with phone numbers'}
-                </span>
-              </label>
+            <div className="audience-source-toggle">
+              <button
+                type="button"
+                className={`audience-source-toggle__btn${audienceSourceMode === 'contacts' ? ' is-active' : ''}`}
+                onClick={() => typeof onAudienceSourceModeChange === 'function' && onAudienceSourceModeChange('contacts')}
+              >
+                <Users size={16} />
+                Contacts first
+              </button>
+              <button
+                type="button"
+                className={`audience-source-toggle__btn${audienceSourceMode === 'csv' ? ' is-active' : ''}`}
+                onClick={() => typeof onAudienceSourceModeChange === 'function' && onAudienceSourceModeChange('csv')}
+              >
+                <Upload size={16} />
+                CSV first
+              </button>
             </div>
-            
+            <p className="audience-source-helper">
+              {audienceSourceMode === 'contacts'
+                ? 'Audience source: CRM contacts'
+                : 'Audience source: CSV upload'}
+            </p>
+
+            <div style={{ display: 'grid', gap: 12 }}>
+              {audienceSourceMode === 'contacts' ? (
+                <>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="replace-upload-btn"
+                      onClick={triggerAudienceSelection}
+                    >
+                      <Users size={16} />
+                      Select from Contacts
+                    </button>
+                    {typeof onClearSelectedAudience === 'function' ? (
+                      <button
+                        type="button"
+                        className="clear-upload-btn"
+                        onClick={onClearSelectedAudience}
+                      >
+                        Clear Selected Contacts
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="file-upload-area" onClick={triggerAudienceSelection} style={{ cursor: 'pointer' }}>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={onFileUpload}
+                      id="csv-file-popup"
+                      style={{ display: 'none' }}
+                    />
+                    <label htmlFor="csv-file-popup" className="file-upload-label" style={{ pointerEvents: 'none' }}>
+                      <Upload size={20} />
+                      <span>
+                        {uploadedFile ? uploadedFile.name : 'Select contacts from CRM'}
+                      </span>
+                    </label>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="replace-upload-btn"
+                      onClick={triggerAudienceSelection}
+                    >
+                      <Users size={16} />
+                      Select from Contacts
+                    </button>
+                    {typeof onClearSelectedAudience === 'function' ? (
+                      <button
+                        type="button"
+                        className="clear-upload-btn"
+                        onClick={onClearSelectedAudience}
+                      >
+                        Clear Selected Contacts
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="file-upload-area" onClick={triggerCsvPicker} style={{ cursor: 'pointer' }}>
+                    <input
+                      type="file"
+                      accept=".csv"
+                      onChange={onFileUpload}
+                      id="csv-file-popup"
+                      style={{ display: 'none' }}
+                    />
+                    <label htmlFor="csv-file-popup" className="file-upload-label" style={{ pointerEvents: 'none' }}>
+                      <Upload size={20} />
+                      <span>
+                        {uploadedFile ? uploadedFile.name : 'Upload CSV contacts'}
+                      </span>
+                    </label>
+                  </div>
+                </>
+              )}
+            </div>
+
             {uploadedFile && (
               <div className="file-action-buttons">
                 <button 
@@ -162,12 +253,18 @@ const NewBroadcastPopup = ({
                 </button>
               </div>
             )}
-            
+
             {recipients.length > 0 && (
               <p className="recipients-count">
-                {recipients.length} recipients loaded
+                {audienceSourceLabel ? `${recipients.length} contacts selected` : `${recipients.length} recipients loaded`}
               </p>
             )}
+
+            {audienceSourceLabel ? (
+              <p className="recipients-count">
+                Audience source: {audienceSourceLabel}
+              </p>
+            ) : null}
           </div>
 
           <div className="form-group policy-section">

@@ -99,6 +99,38 @@ missedcall.css
   font-size: 14px;
 }
 
+.live-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  width: fit-content;
+}
+
+.live-status-pill.connected {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.live-status-pill.disconnected {
+  background: #fef2f2;
+  color: #991b1b;
+  border: 1px solid #fecaca;
+}
+
+.live-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
 .header-actions {
   display: flex;
   gap: 10px;
@@ -232,6 +264,127 @@ missedcall.css
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
+}
+
+.automation-insights-grid {
+  margin-top: 16px;
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 12px;
+}
+
+.automation-preview-card,
+.automation-health-card {
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  background: #ffffff;
+  padding: 14px;
+}
+
+.automation-preview-head,
+.automation-health-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.automation-preview-head h4,
+.automation-health-head h4 {
+  margin: 0;
+  color: #111827;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.automation-preview-meta {
+  font-size: 12px;
+  color: #475569;
+  font-weight: 600;
+}
+
+.automation-preview-meta.muted {
+  color: #94a3b8;
+}
+
+.automation-preview-body {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+  padding: 12px;
+  min-height: 120px;
+}
+
+.automation-preview-body pre {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #111827;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.automation-preview-empty {
+  margin: 0;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.automation-health-card p {
+  margin: 0 0 10px;
+  color: #475569;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.automation-health-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid transparent;
+}
+
+.automation-health-pill.success {
+  background: #ecfdf5;
+  color: #065f46;
+  border-color: #a7f3d0;
+}
+
+.automation-health-pill.warning {
+  background: #fffbeb;
+  color: #92400e;
+  border-color: #fde68a;
+}
+
+.automation-health-pill.error {
+  background: #fef2f2;
+  color: #991b1b;
+  border-color: #fecaca;
+}
+
+.automation-health-pill.unknown {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border-color: #bfdbfe;
+}
+
+.automation-health-url {
+  border: 1px solid #e5e7eb;
+  border-radius: 10px;
+  background: #f9fafb;
+  padding: 10px 12px;
+}
+
+.automation-health-url code {
+  display: block;
+  font-size: 12px;
+  color: #0f172a;
+  word-break: break-all;
 }
 
 .settings-variable-mapping {
@@ -702,6 +855,77 @@ missedcall.css
   flex-wrap: wrap;
 }
 
+.filter-summary-row {
+  margin-top: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.filter-summary-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.filter-summary-clear {
+  border: none;
+  background: transparent;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 0;
+  cursor: pointer;
+}
+
+.filter-summary-clear:hover {
+  text-decoration: underline;
+}
+
+.list-controls-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.list-control-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  color: #475569;
+  font-weight: 600;
+}
+
+.list-control-field span {
+  padding-left: 2px;
+}
+
+.list-control-field select {
+  height: 34px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 0 10px;
+  background: #fff;
+  color: #111827;
+  font-size: 13px;
+}
+
+.list-control-field select:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
 .filter-group {
   display: flex;
   align-items: center;
@@ -976,7 +1200,132 @@ missedcall.css
   border-color: #6ee7b7;
 }
 
+.pagination-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-top: 1px solid #e5e7eb;
+  background: #f9fafb;
+}
+
+.pagination-meta {
+  font-size: 13px;
+  color: #475569;
+  font-weight: 600;
+}
+
+.pagination-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pagination-btn {
+  border: 1px solid #d1d5db;
+  background: #fff;
+  color: #374151;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.pagination-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.pagination-page {
+  font-size: 13px;
+  color: #475569;
+  font-weight: 600;
+}
+
 /* Details View */
+.details-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  background: rgba(15, 23, 42, 0.42);
+  display: flex;
+  justify-content: flex-end;
+  padding: 16px;
+}
+
+.details-drawer {
+  width: min(720px, 100%);
+  height: 100%;
+  background: #ffffff;
+  border-radius: 18px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.details-drawer-header {
+  padding: 20px 20px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  background: #f9fafb;
+}
+
+.details-drawer-eyebrow {
+  margin: 0 0 6px;
+  color: #6b7280;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.details-drawer-header h2 {
+  margin: 0;
+  color: #111827;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.details-drawer-subtitle {
+  margin: 4px 0 0;
+  color: #6b7280;
+  font-size: 14px;
+}
+
+.details-drawer-header-actions {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.drawer-close-btn {
+  width: 36px;
+  height: 36px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background: #fff;
+  color: #374151;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.details-drawer-scroll {
+  overflow: auto;
+  padding: 20px;
+  flex: 1;
+}
+
 .details-container {
   background: #ffffff;
   border-radius: 12px;
@@ -1267,6 +1616,89 @@ missedcall.css
   border-color: #9ca3af;
 }
 
+.followup-meta {
+  margin-bottom: 12px;
+}
+
+.followup-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.followup-chip.success {
+  background: #ecfdf5;
+  color: #065f46;
+  border: 1px solid #a7f3d0;
+}
+
+.followup-chip.warning {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+}
+
+.followup-chip.neutral {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.followup-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.followup-inline-grid {
+  display: grid;
+  grid-template-columns: 1.5fr 1fr;
+  gap: 12px;
+}
+
+.followup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.followup-field span {
+  font-size: 13px;
+  font-weight: 600;
+  color: #475569;
+}
+
+.followup-field textarea,
+.followup-field input {
+  width: 100%;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  color: #111827;
+  background: #fff;
+}
+
+.followup-field textarea:focus,
+.followup-field input:focus {
+  outline: none;
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.followup-field.full {
+  grid-column: 1 / -1;
+}
+
+.followup-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 /* Loading & Empty States */
 .loading-container, .empty-state {
   display: flex;
@@ -1329,6 +1761,15 @@ missedcall.css
     display: block;
     overflow-x: auto;
   }
+
+  .calls-table th:nth-child(7),
+  .calls-table td:nth-child(7),
+  .calls-table th:nth-child(8),
+  .calls-table td:nth-child(8),
+  .calls-table th:nth-child(9),
+  .calls-table td:nth-child(9) {
+    display: none;
+  }
   
   .stats-container {
     grid-template-columns: repeat(3, 1fr);
@@ -1358,6 +1799,10 @@ missedcall.css
     align-items: stretch;
   }
 
+  .automation-insights-grid {
+    grid-template-columns: 1fr;
+  }
+
   .stats-container {
     grid-template-columns: repeat(2, 1fr);
   }
@@ -1365,6 +1810,20 @@ missedcall.css
   .page-header {
     flex-direction: column;
     align-items: flex-start;
+  }
+
+  .dash-hero {
+    flex-direction: column;
+  }
+
+  .dash-hero-actions {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  .dash-refresh {
+    width: 100%;
+    justify-content: center;
   }
   
   .header-actions {
@@ -1427,6 +1886,19 @@ missedcall.css
     min-width: 150px;
     justify-content: center;
   }
+
+  .filter-summary-row {
+    align-items: flex-start;
+  }
+
+  .list-controls-right {
+    width: 100%;
+  }
+
+  .list-control-field {
+    flex: 1;
+    min-width: 140px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -1475,6 +1947,41 @@ missedcall.css
     width: 100%;
     justify-content: center;
   }
+
+  .followup-inline-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .details-drawer-overlay {
+    padding: 0;
+  }
+
+  .details-drawer {
+    width: 100%;
+    height: 100%;
+    border-radius: 0;
+  }
+
+  .details-drawer-header {
+    padding: 16px;
+    flex-direction: column;
+  }
+
+  .details-drawer-header-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .calls-table th:nth-child(4),
+  .calls-table td:nth-child(4),
+  .calls-table th:nth-child(7),
+  .calls-table td:nth-child(7),
+  .calls-table th:nth-child(8),
+  .calls-table td:nth-child(8),
+  .calls-table th:nth-child(9),
+  .calls-table td:nth-child(9) {
+    display: none;
+  }
 }
 
 /* Missed Calls Overview - Dashboard Style */
@@ -1498,6 +2005,37 @@ missedcall.css
     linear-gradient(130deg, var(--bg-1), var(--bg-2));
   color: var(--ink-1);
   font-family: 'Sora', 'Manrope', 'Segoe UI', sans-serif;
+}
+
+.dash-hero-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
+.dash-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  border: 1px solid var(--stroke);
+  background: rgba(255, 255, 255, 0.82);
+}
+
+.dash-live-badge.connected {
+  color: #065f46;
+  background: rgba(236, 253, 245, 0.92);
+  border-color: #a7f3d0;
+}
+
+.dash-live-badge.disconnected {
+  color: #991b1b;
+  background: rgba(254, 242, 242, 0.92);
+  border-color: #fecaca;
 }
 
 .dash-hero {

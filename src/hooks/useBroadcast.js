@@ -72,6 +72,34 @@ const sanitizeBroadcastForCache = (broadcast = {}) => ({
     Number.isFinite(Number(broadcast?.recipientCount)) && Number(broadcast.recipientCount) >= 0
       ? Number(broadcast.recipientCount)
       : 0,
+  audienceSource:
+    broadcast?.audienceSource && typeof broadcast.audienceSource === 'object'
+      ? {
+          mode: String(broadcast.audienceSource.mode || '').trim(),
+          label: String(broadcast.audienceSource.label || '').trim(),
+          type: String(broadcast.audienceSource.type || '').trim(),
+          segmentId: String(broadcast.audienceSource.segmentId || '').trim(),
+          segmentName: String(broadcast.audienceSource.segmentName || '').trim(),
+          sourceName: String(broadcast.audienceSource.sourceName || '').trim(),
+          uploadedFileName: String(broadcast.audienceSource.uploadedFileName || '').trim(),
+          recipientCount: Number(broadcast.audienceSource.recipientCount || 0) || 0,
+          selectedContactCount: Number(broadcast.audienceSource.selectedContactCount || 0) || 0,
+          hasContactIds: Boolean(broadcast.audienceSource.hasContactIds)
+        }
+      : {},
+  audienceSnapshot:
+    broadcast?.audienceSnapshot && typeof broadcast.audienceSnapshot === 'object'
+      ? {
+          mode: String(broadcast.audienceSnapshot.mode || '').trim(),
+          label: String(broadcast.audienceSnapshot.label || '').trim(),
+          sourceType: String(broadcast.audienceSnapshot.sourceType || '').trim(),
+          segmentId: String(broadcast.audienceSnapshot.segmentId || '').trim(),
+          segmentName: String(broadcast.audienceSnapshot.segmentName || '').trim(),
+          uploadedFileName: String(broadcast.audienceSnapshot.uploadedFileName || '').trim(),
+          recipientCount: Number(broadcast.audienceSnapshot.recipientCount || 0) || 0,
+          selectedContactCount: Number(broadcast.audienceSnapshot.selectedContactCount || 0) || 0
+        }
+      : {},
   stats:
     broadcast?.stats && typeof broadcast.stats === 'object'
       ? {
@@ -405,7 +433,9 @@ export const useBroadcast = () => {
       allowStale: true
     });
 
-    if (cachedBroadcastPage?.data) {
+    const bootstrapTimer = window.setTimeout(() => {
+      if (!cachedBroadcastPage?.data || isCancelled) return;
+
       broadcastPageCacheRef.current = cachedBroadcastPage.data;
 
       if (Array.isArray(cachedBroadcastPage.data.broadcasts)) {
@@ -423,10 +453,9 @@ export const useBroadcast = () => {
           setLastUpdated(parsedLastUpdated);
         }
       }
-    }
-
-    loadTemplates();
-    loadBroadcasts();
+      loadTemplates();
+      loadBroadcasts();
+    }, 0);
 
     // Setup WebSocket for real-time updates
     const setupWebSocket = async () => {
@@ -475,6 +504,7 @@ export const useBroadcast = () => {
     // Cleanup on unmount
     return () => {
       isCancelled = true;
+      window.clearTimeout(bootstrapTimer);
       if (cleanupEvents) cleanupEvents();
       webSocketService.off('broadcast_stats_updated', handleBroadcastStatsUpdate);
       webSocketService.off('message_status', handleMessageStatusUpdate);

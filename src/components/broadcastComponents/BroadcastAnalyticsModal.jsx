@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { X, TrendingUp, Users, MessageCircle, CheckCircle, Eye, AlertCircle } from 'lucide-react';
+import './AudienceBadge.css';
 import './BroadcastAnalyticsModal.css';
 import { apiClient } from '../../services/whatsappapi';
 
@@ -22,6 +23,28 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
   const compliancePolicy = retrySummary.compliancePolicy || {};
   const quietHours = deliveryPolicy.quietHours || {};
   const failureCodeBreakdown = reliabilityAnalytics.failureCodeBreakdown || {};
+  const audienceSource = mergedBroadcast.audienceSource || {};
+  const audienceSnapshot = mergedBroadcast.audienceSnapshot || {};
+  const audienceMode = String(audienceSource?.type || audienceSnapshot?.sourceType || '').trim().toLowerCase();
+  const audienceLabel = (() => {
+    const explicitLabel = String(audienceSource?.label || audienceSnapshot?.label || '').trim();
+    if (explicitLabel) return explicitLabel;
+    const segmentName = String(audienceSnapshot?.segmentName || audienceSource?.segmentName || '').trim();
+    if (segmentName) return `Saved segment: ${segmentName}`;
+    if (audienceMode === 'csv') return 'CSV upload';
+    if (audienceMode === 'saved_segment') return 'Saved segment';
+    if (audienceMode === 'contacts') return 'CRM contacts';
+    if (audienceMode === 'manual') return 'Manual audience';
+    return '';
+  })();
+  const audienceChipLabel = (() => {
+    if (audienceMode === 'csv') return 'CSV';
+    if (audienceMode === 'saved_segment') return 'Segment';
+    if (audienceMode === 'contacts') return 'Contacts';
+    if (audienceMode === 'manual') return 'Manual';
+    return 'Audience';
+  })();
+  const audienceChipClass = audienceMode || 'unknown';
   const failureCodeRows = Object.entries(failureCodeBreakdown)
     .map(([code, count]) => ({ code, count: Number(count || 0) }))
     .filter((item) => item.count > 0)
@@ -287,6 +310,15 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
         <div className="campaign-info">
           <h3>{broadcast.name}</h3>
           <p>Status: <span className={`badge ${broadcast.status}`}>{broadcast.status}</span></p>
+          {audienceLabel ? (
+            <p className="audience-source-line">
+              Audience source:{' '}
+              <span className={`audience-badge audience-badge--${audienceChipClass}`}>
+                <span className="audience-badge__label">{audienceChipLabel}</span>
+                <span className="audience-badge__text">{audienceLabel}</span>
+              </span>
+            </p>
+          ) : null}
           <p>Total Recipients: {totalRecipients}</p>
           <p>Retry Candidates: {Number(retrySummary.retryCandidates || 0)}</p>
           <p>Suppressed: {Number(reliabilityAnalytics.suppressed || 0)}</p>
@@ -436,6 +468,16 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
                   <span>Template:</span>
                   <span>{broadcast.templateName || 'Custom Message'}</span>
                 </div>
+                <div className="detail-row">
+                  <span>Audience Source:</span>
+                  <span>{audienceLabel || 'Unknown'}</span>
+                </div>
+                {String(audienceSnapshot?.segmentName || '').trim() ? (
+                  <div className="detail-row">
+                    <span>Segment:</span>
+                    <span>{audienceSnapshot.segmentName}</span>
+                  </div>
+                ) : null}
                 <div className="detail-row">
                   <span>Created:</span>
                   <span>{new Date(broadcast.createdAt).toLocaleString()}</span>

@@ -27,6 +27,7 @@ import CampaignResultsModal from '../components/broadcastComponents/CampaignResu
 import BroadcastResultsPopup from '../components/broadcastComponents/BroadcastResultsPopup';
 import BroadcastAnalyticsModal from '../components/broadcastComponents/BroadcastAnalyticsModal';
 import BroadcastAudienceValidationModal from '../components/broadcastComponents/BroadcastAudienceValidationModal';
+import ContactAudiencePickerModal from '../components/broadcastComponents/ContactAudiencePickerModal';
 import OutboundDialer from '../components/outbound/OutboundDialer';
 import { stripAppRouteBase } from '../utils/appRouteBase';
 
@@ -50,7 +51,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     activeTab, setActiveTab,
     messageType, setMessageType,
     officialTemplates,
-    templates,
     templateName, setTemplateName,
     language, setLanguage,
 
@@ -109,8 +109,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
     fileVariables, setFileVariables,
 
-    selectedLocalTemplate, setSelectedLocalTemplate,
-
     broadcastName, setBroadcastName,
 
 
@@ -156,10 +154,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
   useEffect(() => {
     if (!composerMode) return;
-    if (composerType === 'custom') {
-      setMessageType('text');
-      return;
-    }
     if (composerType === 'template') {
       setMessageType('template');
     }
@@ -170,6 +164,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       setActiveTab('overview');
       setShowBroadcastTypeChoice(false);
       setShowNewBroadcastPopup(false);
+      setShowContactAudiencePicker(false);
     }
   }, [currentPath, setActiveTab, setShowBroadcastTypeChoice, setShowNewBroadcastPopup]);
 
@@ -189,6 +184,12 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const [metaLeadBatchResult, setMetaLeadBatchResult] = useState(null);
   const [broadcastMode, setBroadcastMode] = useState('whatsapp');
   const [outboundPhaseTab, setOutboundPhaseTab] = useState('quick');
+  const [showContactAudiencePicker, setShowContactAudiencePicker] = useState(false);
+  const [audienceSourceMode, setAudienceSourceMode] = useState('contacts');
+  const [selectedAudienceMeta, setSelectedAudienceMeta] = useState({
+    segmentId: '',
+    segmentName: ''
+  });
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
   const [quietHoursStartHour, setQuietHoursStartHour] = useState(22);
   const [quietHoursEndHour, setQuietHoursEndHour] = useState(9);
@@ -508,60 +509,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
 
-  const handleLocalTemplateSelect = (templateName) => {
-
-    setSelectedLocalTemplate(templateName);
-
-
-
-    if (templateName) {
-
-      const selectedTemplate = templates.find(t => t.name === templateName);
-
-      if (selectedTemplate) {
-
-        let contentString = '';
-
-        if (typeof selectedTemplate.content === 'string') {
-
-          contentString = selectedTemplate.content;
-
-        } else if (selectedTemplate.content && selectedTemplate.content.body) {
-
-          contentString = selectedTemplate.content.body;
-
-        } else if (selectedTemplate.components) {
-
-          const bodyComponent = selectedTemplate.components.find(comp => comp.type === 'BODY');
-
-          if (bodyComponent && bodyComponent.text) {
-
-            contentString = bodyComponent.text;
-
-          }
-
-        }
-
-
-
-        setCustomMessage(contentString);
-
-        extractTemplateVariables(contentString);
-
-      }
-
-    } else {
-
-      setCustomMessage('');
-
-      setTemplateVariables([]);
-
-    }
-
-  };
-
-
-
   const handleTemplateNameChange = (e) => {
 
     const selectedTemplateName = e.target.value;
@@ -830,6 +777,152 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     };
   };
 
+  const normalizeContactToRecipient = (contact = {}) => {
+    const raw = contact?.data && typeof contact.data === 'object' ? contact.data : contact;
+    const contactId = String(
+      contact?._id ||
+      contact?.id ||
+      contact?.contactId ||
+      raw?._id ||
+      raw?.id ||
+      raw?.contactId ||
+      contact?.phone ||
+      contact?.mobile ||
+      contact?.phoneNumber ||
+      contact?.whatsappNumber ||
+      raw?.phone ||
+      raw?.mobile ||
+      raw?.phoneNumber ||
+      raw?.whatsappNumber ||
+      ''
+    ).trim();
+    const phone = String(
+      contact?.phone ||
+      contact?.mobile ||
+      contact?.phoneNumber ||
+      contact?.whatsappNumber ||
+      raw?.phone ||
+      raw?.mobile ||
+      raw?.phoneNumber ||
+      raw?.whatsappNumber ||
+      ''
+    ).trim();
+    const name =
+      String(contact?.name || raw?.name || contact?.displayName || raw?.contactName || phone || '')
+        .trim();
+
+    return {
+      phone,
+      name,
+      contactId: contactId || undefined,
+      sourceType: String(raw?.sourceType || contact?.sourceType || 'manual').trim() || 'manual',
+      variables: [],
+      data: raw && typeof raw === 'object' ? raw : { phone, name },
+      fullData: raw && typeof raw === 'object' ? raw : { phone, name }
+    };
+  };
+
+  const hasContactsAudience = Array.isArray(recipients) && recipients.some((recipient) =>
+    Boolean(String(recipient?.contactId || recipient?.data?._id || recipient?.fullData?._id || '').trim())
+  );
+
+  const audienceSourceLabel = uploadedFile
+    ? `CSV upload: ${uploadedFile.name}`
+    : String(selectedAudienceMeta?.segmentName || '').trim()
+      ? `Saved segment: ${selectedAudienceMeta.segmentName}`
+    : hasContactsAudience
+      ? 'Selected CRM contacts'
+      : Array.isArray(recipients) && recipients.length > 0
+        ? 'Manual audience list'
+        : '';
+
+  const buildAudiencePayload = () => {
+    const recipientCount = Array.isArray(recipients) ? recipients.length : 0;
+    const selectedContactCount = Array.isArray(recipients)
+      ? recipients.filter((recipient) =>
+          Boolean(String(recipient?.contactId || recipient?.data?._id || recipient?.fullData?._id || '').trim())
+        ).length
+      : 0;
+    const hasContactsSelection = selectedContactCount > 0;
+    const segmentId = String(selectedAudienceMeta?.segmentId || '').trim();
+    const segmentName = String(selectedAudienceMeta?.segmentName || '').trim();
+    const sourceType = uploadedFile
+      ? 'csv'
+      : segmentId
+        ? 'saved_segment'
+      : hasContactsSelection
+        ? 'contacts'
+        : recipientCount > 0
+          ? 'manual'
+          : 'unknown';
+
+    return {
+      audienceSource: {
+        mode: audienceSourceMode,
+        label: audienceSourceLabel,
+        type: sourceType,
+        segmentId,
+        sourceName:
+          uploadedFile?.name ||
+          (segmentName ? `segment:${segmentName}` : hasContactsSelection ? 'crm_contacts' : 'manual_list'),
+        uploadedFileName: uploadedFile?.name || '',
+        recipientCount,
+        selectedContactCount,
+        hasContactIds: hasContactsSelection
+      },
+      audienceSnapshot: {
+        mode: audienceSourceMode,
+        label: audienceSourceLabel,
+        sourceType,
+        segmentId,
+        segmentName,
+        uploadedFileName: uploadedFile?.name || '',
+        recipientCount,
+        selectedContactCount,
+        contactIds: Array.isArray(recipients)
+          ? recipients
+              .map((recipient) => String(recipient?.contactId || recipient?.data?._id || recipient?.fullData?._id || '').trim())
+              .filter(Boolean)
+          : [],
+        selectedPhoneCount: Array.isArray(recipients)
+          ? recipients.filter((recipient) => String(recipient?.phone || '').trim()).length
+          : 0
+      }
+    };
+  };
+
+  const openContactAudiencePicker = () => {
+    setShowContactAudiencePicker(true);
+  };
+
+  const closeContactAudiencePicker = () => {
+    setShowContactAudiencePicker(false);
+  };
+
+  const applyContactAudienceSelection = (selectedContacts = [], segmentMeta = {}) => {
+    const normalized = Array.isArray(selectedContacts)
+      ? selectedContacts
+          .map((contact) => normalizeContactToRecipient(contact))
+          .filter((recipient) => recipient.phone)
+      : [];
+
+    setRecipients(normalized);
+    setUploadedFile(null);
+    setFileVariables([]);
+    setSelectedAudienceMeta({
+      segmentId: String(segmentMeta?.segmentId || '').trim(),
+      segmentName: String(segmentMeta?.segmentName || '').trim()
+    });
+    setShowContactAudiencePicker(false);
+  };
+
+  const clearSelectedAudience = () => {
+    setRecipients([]);
+    setUploadedFile(null);
+    setFileVariables([]);
+    setSelectedAudienceMeta({ segmentId: '', segmentName: '' });
+  };
+
   const handleAutoCleanRecipients = () => {
     if (!Array.isArray(recipients) || recipients.length === 0) {
       alert('No recipients available to clean.');
@@ -904,7 +997,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     if (!broadcastName || !recipients.length) {
 
       console.log('❌ Validation failed - missing broadcastName or recipients');
-      alert('Please provide a campaign name and upload recipients');
+      alert('Please provide a campaign name and add recipients');
 
       return;
 
@@ -1017,6 +1110,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         messageType,
 
         recipients: audienceValidation.validation?.eligibleRecipients || recipientPreparation.eligibleRecipients,
+
+        ...buildAudiencePayload(),
 
         ...(messageType === 'template' ? {
 
@@ -1133,7 +1228,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
     if (!recipients.length) {
 
-      alert('Please upload a CSV file with recipients');
+      alert('Please add recipients from CSV or Contacts');
 
       return;
 
@@ -1433,18 +1528,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
 
-  const handleChooseCustomMessage = () => {
-
-    setMessageType('text');
-
-    setShowBroadcastTypeChoice(false);
-
-    navigate('/broadcast/new/message');
-
-  };
-
-
-
   const getCurrentTime = () => {
 
     const now = new Date();
@@ -1490,8 +1573,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     setRecipients([]);
     setFileVariables([]);
     setTemplateVariables([]);
-    setSelectedLocalTemplate('');
     setMessageType('template');
+    setSelectedAudienceMeta({ segmentId: '', segmentName: '' });
     setQuietHoursEnabled(false);
     setQuietHoursStartHour(22);
     setQuietHoursEndHour(9);
@@ -1512,7 +1595,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   }) => {
     const templateCategory = validationResult?.templateCategory || '';
 
-    return {
+      return {
       ...(mode === 'send'
         ? {
             broadcast_name: broadcastName.trim(),
@@ -1524,6 +1607,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
             messageType,
             recipients: validationResult?.validation?.eligibleRecipients || recipientsPayload
           }),
+      ...buildAudiencePayload(),
       ...(messageType === 'template'
         ? {
             templateName,
@@ -1711,18 +1795,16 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           onTemplateFilterChange={(value) => setTemplateFilter(value)}
           officialTemplates={officialTemplates}
           filteredTemplates={filteredTemplates}
-          customMessage={customMessage}
-          onCustomMessageChange={(e) => {
-            if (e.target.value.length <= 1000) setCustomMessage(e.target.value);
-          }}
-          selectedLocalTemplate={selectedLocalTemplate}
-          onLocalTemplateSelect={handleLocalTemplateSelect}
-          templates={templates}
           onFileUpload={handleFileUpload}
           uploadedFile={uploadedFile}
           recipients={recipients}
           fileVariables={fileVariables}
           onClearUpload={handleClearUpload}
+          onOpenContactAudiencePicker={openContactAudiencePicker}
+          onClearSelectedAudience={clearSelectedAudience}
+          audienceSourceMode={audienceSourceMode}
+          onAudienceSourceModeChange={setAudienceSourceMode}
+          audienceSourceLabel={audienceSourceLabel}
           onAutoCleanRecipients={handleAutoCleanRecipients}
           scheduledTime={scheduledTime}
           onScheduledTimeChange={(e) => setScheduledTime(e.target.value)}
@@ -1755,6 +1837,12 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           onRespectOptOutChange={setRespectOptOut}
           suppressionListRaw={suppressionListRaw}
           onSuppressionListRawChange={setSuppressionListRaw}
+        />
+        <ContactAudiencePickerModal
+          open={showContactAudiencePicker}
+          onClose={closeContactAudiencePicker}
+          onConfirm={applyContactAudienceSelection}
+          initialSelectedContacts={recipients}
         />
       </div>
     );
@@ -1859,7 +1947,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         activeTab={activeTab}
 
-        onShowBroadcastTypeChoice={() => navigate('/broadcast/new')}
+        onShowBroadcastTypeChoice={() => navigate('/broadcast/new/template')}
 
       />
 
@@ -2029,18 +2117,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
           customMessage={customMessage}
 
-          onCustomMessageChange={(e) => {
-
-            if (e.target.value.length <= 1000) setCustomMessage(e.target.value);
-
-          }}
-
-          selectedLocalTemplate={selectedLocalTemplate}
-
-          onLocalTemplateSelect={handleLocalTemplateSelect}
-
-          templates={templates}
-
           onFileUpload={handleFileUpload}
 
           uploadedFile={uploadedFile}
@@ -2050,6 +2126,11 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           fileVariables={fileVariables}
 
           onClearUpload={handleClearUpload}
+          onOpenContactAudiencePicker={openContactAudiencePicker}
+          onClearSelectedAudience={clearSelectedAudience}
+          audienceSourceMode={audienceSourceMode}
+          onAudienceSourceModeChange={setAudienceSourceMode}
+          audienceSourceLabel={audienceSourceLabel}
           onAutoCleanRecipients={handleAutoCleanRecipients}
 
           scheduledTime={scheduledTime}
@@ -2143,8 +2224,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         onChooseTemplate={handleChooseTemplate}
 
-        onChooseCustomMessage={handleChooseCustomMessage}
-
       />
 
 
@@ -2165,10 +2244,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         officialTemplates={officialTemplates}
 
-        customMessage={customMessage}
-
-        onCustomMessageChange={(e) => setCustomMessage(e.target.value)}
-
         uploadedFile={uploadedFile}
 
         recipients={recipients}
@@ -2176,6 +2251,12 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         onFileUpload={handleFileUpload}
 
         onClearUpload={handleClearUpload}
+        onOpenContactAudiencePicker={openContactAudiencePicker}
+        onCloseContactAudiencePicker={closeContactAudiencePicker}
+        onClearSelectedAudience={clearSelectedAudience}
+        audienceSourceMode={audienceSourceMode}
+        onAudienceSourceModeChange={setAudienceSourceMode}
+        audienceSourceLabel={audienceSourceLabel}
 
         scheduledTime={scheduledTime}
 
@@ -2191,6 +2272,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         onBackToChoice={() => {
 
+          setShowContactAudiencePicker(false);
           setShowNewBroadcastPopup(false);
 
           setShowBroadcastTypeChoice(true);
