@@ -77,6 +77,14 @@
 }
 
 .last-updated .refresh-icon:hover {
+}
+
+.last-updated .refresh-icon svg {
+    transition: transform 0.3s ease;
+    transform-origin: center;
+}
+
+.last-updated .refresh-icon:hover svg {
     transform: rotate(180deg);
 }
 

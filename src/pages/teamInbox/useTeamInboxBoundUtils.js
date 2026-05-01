@@ -25,10 +25,10 @@ import {
   getCrmActivityDescription
 } from './teamInboxUtils';
 
-export const useTeamInboxBoundUtils = (contactNameMap) =>
+export const useTeamInboxBoundUtils = (contactNameMap, stageOptions = leadStageOptions) =>
   useMemo(
     () => ({
-      leadStageOptions,
+      leadStageOptions: Array.isArray(stageOptions) && stageOptions.length ? stageOptions : leadStageOptions,
       getUnreadCount,
       normalizeConversation,
       normalizePhone,
@@ -51,9 +51,10 @@ export const useTeamInboxBoundUtils = (contactNameMap) =>
       getContactIdFromConversation,
       getContactTagsRaw,
       deriveLeadStatus,
-      getLeadStageValue: (conversation) => getLeadStageValue(conversation, leadStageOptions),
+      getLeadStageValue: (conversation) =>
+        getLeadStageValue(conversation, Array.isArray(stageOptions) && stageOptions.length ? stageOptions : leadStageOptions),
       getCrmActivityLabel,
       getCrmActivityDescription
     }),
-    [contactNameMap]
+    [contactNameMap, stageOptions]
   );

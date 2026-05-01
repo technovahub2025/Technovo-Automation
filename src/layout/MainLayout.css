@@ -40,6 +40,12 @@
     min-width: 0; /* Allow proper shrinking */
 }
 
+.page-content--crm-pipeline {
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+}
+
 .plan-expired-banner {
     display: flex;
     align-items: center;

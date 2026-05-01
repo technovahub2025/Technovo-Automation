@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import axios from "axios";
 import { normalizeApiBaseUrl, resolveApiBaseUrl } from "../services/apiBaseUrl";
 import {
   canUseLocalDevOptInFallback,
@@ -119,10 +120,9 @@ function PublicWhatsAppOptInDemo() {
         headers["x-opt-in-public-key"] = normalizedPublicKey;
       }
 
-      const response = await fetch(endpointUrl, {
-        method: "POST",
-        headers,
-        body: JSON.stringify({
+      const response = await axios.post(
+        endpointUrl,
+        {
           publicKey: sendPublicKey ? normalizedPublicKey : undefined,
           userId: form.userId,
           companyId: form.companyId || undefined,
@@ -138,18 +138,11 @@ function PublicWhatsAppOptInDemo() {
           metadata: {
             demoPage: true
           }
-        })
-      });
-
-      const payload = await response.json();
-      if (!response.ok || payload?.success === false) {
-        if (response.status === 401) {
-          throw new Error(
-            allowLocalDevFallback
-              ? "Invalid public opt-in key. Localhost fallback was not accepted. Restart the backend after env changes and verify WHATSAPP_OPTIN_PUBLIC_KEY."
-              : "Invalid public opt-in key. Verify WHATSAPP_OPTIN_PUBLIC_KEY in backend and this page."
-          );
-        }
+        },
+        { headers }
+      );
+      const payload = response.data;
+      if (payload?.success === false) {
         throw new Error(payload?.error || "Failed to save WhatsApp opt-in.");
       }
 
@@ -167,7 +160,20 @@ function PublicWhatsAppOptInDemo() {
         proofId: ""
       }));
     } catch (submitError) {
-      setError(submitError.message || "Failed to save WhatsApp opt-in.");
+      const status = Number(submitError?.response?.status || 0);
+      if (status === 401) {
+        setError(
+          allowLocalDevFallback
+            ? "Invalid public opt-in key. Localhost fallback was not accepted. Restart the backend after env changes and verify WHATSAPP_OPTIN_PUBLIC_KEY."
+            : "Invalid public opt-in key. Verify WHATSAPP_OPTIN_PUBLIC_KEY in backend and this page."
+        );
+      } else {
+        setError(
+          submitError?.response?.data?.error ||
+            submitError.message ||
+            "Failed to save WhatsApp opt-in."
+        );
+      }
     } finally {
       setSubmitting(false);
     }

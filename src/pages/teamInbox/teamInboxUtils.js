@@ -5,6 +5,7 @@ import {
   isRealName,
   normalizePhone
 } from './teamInboxIdentityUtils.js';
+import { DEFAULT_PIPELINE_STAGE_OPTIONS, getPipelineStageLabel } from '../../utils/crmPipelineStages';
 
 export { normalizePhone, getPhoneLookupKeys, isRealName, getMappedContactName };
 
@@ -118,15 +119,10 @@ export const toSafeNonNegativeNumber = (value, fallback = 0) => {
 export const getConversationIdValue = (conversation) =>
   String(conversation?._id || conversation?.id || '').trim();
 
-export const leadStageOptions = [
-  { value: 'new', label: 'New' },
-  { value: 'contacted', label: 'Contacted' },
-  { value: 'nurturing', label: 'Nurturing' },
-  { value: 'qualified', label: 'Qualified' },
-  { value: 'proposal', label: 'Proposal' },
-  { value: 'won', label: 'Won' },
-  { value: 'lost', label: 'Lost' }
-];
+export const leadStageOptions = DEFAULT_PIPELINE_STAGE_OPTIONS.map((stage) => ({
+  value: stage.key,
+  label: String(stage.label || '').replace(' Lead', '') || getPipelineStageLabel(stage.key)
+}));
 
 export const toDateTimeLocalInputValue = (value) => {
   if (!value) return '';

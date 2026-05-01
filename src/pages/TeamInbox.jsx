@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import './TeamInbox.css';
 import { googleCalendarService } from '../services/googleCalendarService';
 import { apiClient } from '../services/whatsappapi';
+import { crmService } from '../services/crmService';
 import { AuthContext } from './authcontext'
 import TemplateSendModal from './teamInbox/TemplateSendModal';
 import ContactInfoPanel from './teamInbox/ContactInfoPanel';
@@ -22,6 +23,7 @@ import { useConversationSelectionEffects } from './teamInbox/useConversationSele
 import { useTeamInboxContactEffects } from './teamInbox/useTeamInboxContactEffects';
 import { useTeamInboxViewEffects } from './teamInbox/useTeamInboxViewEffects';
 import { useTeamInboxBoundUtils } from './teamInbox/useTeamInboxBoundUtils';
+import useCrmRealtimeRefresh from '../hooks/useCrmRealtimeRefresh';
 import {
   readTeamInboxBootstrapCache,
   writeTeamInboxBootstrapCache,
@@ -36,8 +38,6 @@ import {
 import { getWhatsAppOutreachTargetFromLocationState } from '../utils/whatsappOutreachNavigation';
 import { getWhatsAppConversationState } from '../utils/whatsappContactState';
 import {
-  addCrmContactSyncListener,
-  isCrmContactSyncForContact,
   publishCrmContactSync
 } from '../utils/crmSyncEvents';
 import {
@@ -122,6 +122,7 @@ const TeamInbox = () => {
   const [crmTaskDueDraft, setCrmTaskDueDraft] = useState('');
   const [crmTaskPriorityDraft, setCrmTaskPriorityDraft] = useState('medium');
   const [crmTaskCreating, setCrmTaskCreating] = useState(false);
+  const [leadStageOptions, setLeadStageOptions] = useState([]);
   const [meetTokenDraft, setMeetTokenDraft] = useState('');
   const [meetTitleDraft, setMeetTitleDraft] = useState('');
   const [meetStartDraft, setMeetStartDraft] = useState('');
@@ -185,7 +186,6 @@ const TeamInbox = () => {
   const messageLoadPromiseMapRef = useRef(new Map());
   const restoredBootstrapCacheUserRef = useRef('');
   const consumedTemplateOpenNonceRef = useRef('');
-  const lastPanelCrmSyncAtRef = useRef(0);
   const commonEmojis = [
     '\u{1F44D}',
     '\u2764\uFE0F',
@@ -206,7 +206,6 @@ const TeamInbox = () => {
   const requestedConversationFilter = String(searchParams.get('filter') || 'all').trim().toLowerCase();
   const activeConversationId = String(selectedConversation?._id || '').trim();
   const {
-    leadStageOptions,
     getUnreadCount,
     normalizeConversation,
     normalizePhone,
@@ -229,12 +228,32 @@ const TeamInbox = () => {
     getLeadStageValue,
     getCrmActivityLabel,
     getCrmActivityDescription
-  } = useTeamInboxBoundUtils(contactNameMap);
+  } = useTeamInboxBoundUtils(contactNameMap, leadStageOptions);
 
   useEffect(() => {
     setConversationDrafts(readTeamInboxDrafts(currentUserId));
     draftRestoreConversationIdRef.current = '';
   }, [currentUserId, normalizeConversation]);
+
+  useEffect(() => {
+    let cancelled = false;
+    crmService.getPipelineStages().then((result) => {
+      if (cancelled) return;
+      if (result?.success === false) return;
+
+      const nextStages = Array.isArray(result?.data?.stages) && result.data.stages.length
+        ? result.data.stages.map((stage, index) => ({
+            value: String(stage?.key || '').trim().toLowerCase(),
+            label: String(stage?.label || '').trim() || String(stage?.key || '').trim() || `Stage ${index + 1}`
+          }))
+        : [];
+      setLeadStageOptions(nextStages);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     writeTeamInboxDrafts(currentUserId, conversationDrafts);
@@ -672,6 +691,20 @@ const TeamInbox = () => {
     getTemplateLanguageCode,
     extractTemplateVariableCount
   });
+  const selectedContactCrmId = String(getContactIdFromConversation(selectedConversation) || '').trim();
+
+  useCrmRealtimeRefresh({
+    currentUserId,
+    contactId: selectedContactCrmId,
+    enabled: Boolean(showContactInfo && selectedContactCrmId),
+    onRefresh: () => {
+      const resolvedContactId = String(selectedContactCrmId || '').trim();
+      if (!resolvedContactId) return;
+      loadCrmActivitiesForContact({ contactId: resolvedContactId, silent: true });
+      loadCrmDocumentsForContact({ contactId: resolvedContactId, silent: true });
+    }
+  });
+
   const handleConnectGoogleForMeet = async () => {
     try {
       setMeetConnecting(true);
@@ -709,31 +742,6 @@ const TeamInbox = () => {
     setContactInfoMessage,
     setContactInfoMessageTone
   });
-
-  useEffect(() => {
-    const unsubscribe = addCrmContactSyncListener((payload) => {
-      if (!showContactInfo) return;
-      const selectedContactId = getContactIdFromConversation(selectedConversation);
-      if (!isCrmContactSyncForContact(payload, selectedContactId)) return;
-
-      const now = Date.now();
-      if (now - lastPanelCrmSyncAtRef.current < 900) return;
-      lastPanelCrmSyncAtRef.current = now;
-
-      const resolvedContactId = String(selectedContactId || '').trim();
-      if (!resolvedContactId) return;
-      loadCrmActivitiesForContact({ contactId: resolvedContactId, silent: true });
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [
-    getContactIdFromConversation,
-    loadCrmActivitiesForContact,
-    selectedConversation,
-    showContactInfo
-  ]);
 
   useEffect(() => {
     selectedConversationRef.current = selectedConversation;

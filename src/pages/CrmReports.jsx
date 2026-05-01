@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   BadgeDollarSign,
@@ -11,8 +11,9 @@ import {
 import { crmService } from "../services/crmService";
 import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
-import { addCrmContactSyncListener } from "../utils/crmSyncEvents";
+import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
 import CrmFilterBar from "../components/crm/CrmFilterBar";
+import { getPipelineStageLabel, normalizePipelineStageOption, DEFAULT_PIPELINE_STAGE_OPTIONS } from "../utils/crmPipelineStages";
 import "./CrmWorkspace.css";
 
 const CRM_REPORTS_LOADING_TIMEOUT_MS = 8000;
@@ -58,7 +59,7 @@ const CrmReports = () => {
   const [ownerFilter, setOwnerFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [lostReasonQuery, setLostReasonQuery] = useState("");
-  const lastExternalSyncAtRef = useRef(0);
+  const [pipelineStages, setPipelineStages] = useState(DEFAULT_PIPELINE_STAGE_OPTIONS);
   const requestedSourceType = String(searchParams.get("sourceType") || "all").trim().toLowerCase();
   const requestedOwner = String(searchParams.get("ownerId") || "all").trim();
   const requestedStatus = String(searchParams.get("status") || "all").trim().toLowerCase();
@@ -84,6 +85,13 @@ const CrmReports = () => {
       }
 
       setReport(result?.data || {});
+      const stagesResult = await crmService.getPipelineStages();
+      if (stagesResult?.success !== false) {
+        const nextStages = Array.isArray(stagesResult?.data?.stages) && stagesResult.data.stages.length
+          ? stagesResult.data.stages.map(normalizePipelineStageOption)
+          : DEFAULT_PIPELINE_STAGE_OPTIONS;
+        setPipelineStages(nextStages);
+      }
     } catch (loadError) {
       setError(loadError?.message || "Failed to load CRM reports");
     } finally {
@@ -93,26 +101,29 @@ const CrmReports = () => {
     }
   }, []);
 
-  useEffect(() => {
-    loadReport();
+  const handleRealtimeRefresh = useCallback(() => {
+    loadReport({ silent: true });
   }, [loadReport]);
 
-  useEffect(() => {
-    const unsubscribe = addCrmContactSyncListener(() => {
-      const now = Date.now();
-      if (now - lastExternalSyncAtRef.current < 900) return;
-      lastExternalSyncAtRef.current = now;
-      loadReport({ silent: true });
-    });
+  useCrmRealtimeRefresh({
+    onRefresh: handleRealtimeRefresh
+  });
 
-    return () => {
-      unsubscribe();
-    };
+  useEffect(() => {
+    loadReport();
   }, [loadReport]);
 
   const sourceRows = useMemo(() => report?.sources?.topSources || [], [report]);
   const sourceTypeRows = useMemo(() => report?.sources?.bySourceType || [], [report]);
   const stageRows = useMemo(() => report?.pipeline?.byStage || [], [report]);
+  const stageLabelMap = useMemo(
+    () =>
+      pipelineStages.reduce((accumulator, stage) => {
+        accumulator[String(stage.key || "").trim().toLowerCase()] = stage.label;
+        return accumulator;
+      }, {}),
+    [pipelineStages]
+  );
   const statusRows = useMemo(() => report?.pipeline?.byStatus || [], [report]);
   const dealStageRows = useMemo(() => report?.pipeline?.deals?.byStage || [], [report]);
   const ownerRows = useMemo(() => report?.owners?.leaderboard || [], [report]);
@@ -467,7 +478,7 @@ const CrmReports = () => {
                 <h4>By Stage</h4>
                 {stageRows.map((row) => (
                   <div key={row.stage} className="crm-report-list-row">
-                    <span>{toLabel(row.stage)}</span>
+                    <span>{stageLabelMap[String(row.stage || "").trim().toLowerCase()] || getPipelineStageLabel(row.stage, pipelineStages)}</span>
                     <strong>{row.count}</strong>
                   </div>
                 ))}

@@ -33,20 +33,19 @@ import {
 } from "../../pages/teamInbox/teamInboxUtils";
 import { googleCalendarService } from "../../services/googleCalendarService";
 import {
-  addCrmContactSyncListener,
-  isCrmContactSyncForContact,
   publishCrmContactSync
 } from "../../utils/crmSyncEvents";
+import useCrmRealtimeRefresh from "../../hooks/useCrmRealtimeRefresh";
+import {
+  DEFAULT_PIPELINE_STAGE_OPTIONS,
+  normalizePipelineStageOption
+} from "../../utils/crmPipelineStages";
 
-const STAGE_OPTIONS = [
-  { key: "new", label: "New" },
-  { key: "contacted", label: "Contacted" },
-  { key: "nurturing", label: "Nurturing" },
-  { key: "qualified", label: "Qualified" },
-  { key: "proposal", label: "Proposal" },
-  { key: "won", label: "Won" },
-  { key: "lost", label: "Lost" }
-];
+const getDefaultStageOptions = () =>
+  DEFAULT_PIPELINE_STAGE_OPTIONS.map((stage) => ({
+    key: stage.key,
+    label: String(stage.label || "").replace(" Lead", "") || "New"
+  }));
 
 const TEMPERATURE_OPTIONS = [
   { key: "cold", label: "Cold" },
@@ -178,7 +177,6 @@ const CrmContactDrawer = ({
   onStartWhatsApp
 }) => {
   const fileInputRef = useRef(null);
-  const lastExternalSyncAtRef = useRef(0);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
@@ -192,6 +190,7 @@ const CrmContactDrawer = ({
   const [savingProfile, setSavingProfile] = useState(false);
   const [savingOwner, setSavingOwner] = useState(false);
   const [stageUpdating, setStageUpdating] = useState(false);
+  const [leadStageOptions, setLeadStageOptions] = useState(getDefaultStageOptions());
   const [taskSubmitting, setTaskSubmitting] = useState(false);
   const [dealSubmitting, setDealSubmitting] = useState(false);
   const [meetingSubmitting, setMeetingSubmitting] = useState(false);
@@ -280,20 +279,35 @@ const CrmContactDrawer = ({
   }, [loadDetail, normalizedContactId, open]);
 
   useEffect(() => {
-    if (!open || !normalizedContactId) return undefined;
+    if (!open) return undefined;
 
-    const unsubscribe = addCrmContactSyncListener((payload) => {
-      if (!isCrmContactSyncForContact(payload, normalizedContactId)) return;
-      const now = Date.now();
-      if (now - lastExternalSyncAtRef.current < 900) return;
-      lastExternalSyncAtRef.current = now;
-      loadDetail({ silent: true });
+    let cancelled = false;
+    crmService.getPipelineStages().then((result) => {
+      if (cancelled) return;
+      if (result?.success === false) return;
+
+      const nextStages = Array.isArray(result?.data?.stages) && result.data.stages.length
+        ? result.data.stages.map((stage, index) =>
+            normalizePipelineStageOption(stage, index)
+          ).map((stage) => ({
+            key: stage.key,
+            label: String(stage.label || "").replace(" Lead", "") || "New"
+          }))
+        : getDefaultStageOptions();
+      setLeadStageOptions(nextStages);
     });
 
     return () => {
-      unsubscribe();
+      cancelled = true;
     };
-  }, [loadDetail, normalizedContactId, open]);
+  }, [open]);
+
+  useCrmRealtimeRefresh({
+    currentUserId,
+    contactId: normalizedContactId,
+    enabled: open && Boolean(normalizedContactId),
+    onRefresh: () => loadDetail({ silent: true })
+  });
 
   useEffect(() => {
     if (!open) return;
@@ -928,7 +942,7 @@ const CrmContactDrawer = ({
                       onChange={(event) => handleStageChange(event.target.value)}
                       disabled={stageUpdating}
                     >
-                      {STAGE_OPTIONS.map((option) => (
+                      {leadStageOptions.map((option) => (
                         <option key={option.key} value={option.key}>
                           {option.label}
                         </option>

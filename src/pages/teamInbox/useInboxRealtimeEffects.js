@@ -418,6 +418,13 @@ export const useInboxRealtimeEffects = ({
       );
     };
 
+    const handleCrmChanged = () => {
+      bootstrapInboxData({
+        silentConversations: true,
+        silentContacts: true
+      });
+    };
+
     webSocketService.connect(currentUserId);
     webSocketService.on('connected', handleConnect);
     webSocketService.on('disconnected', handleDisconnect);
@@ -429,6 +436,7 @@ export const useInboxRealtimeEffects = ({
     webSocketService.on('message_status', handleMessageStatus);
     webSocketService.on('lead_score_updated', handleLeadScoreUpdated);
     webSocketService.on('leadScoreUpdated', handleLeadScoreUpdated);
+    webSocketService.on('crm_changed', handleCrmChanged);
 
     return () => {
       webSocketService.off('connected', handleConnect);
@@ -441,10 +449,12 @@ export const useInboxRealtimeEffects = ({
       webSocketService.off('message_status', handleMessageStatus);
       webSocketService.off('lead_score_updated', handleLeadScoreUpdated);
       webSocketService.off('leadScoreUpdated', handleLeadScoreUpdated);
+      webSocketService.off('crm_changed', handleCrmChanged);
     };
   }, [
     currentUserId,
     notificationMode,
+    hasBootstrapCache,
     setWsConnected,
     setConversations,
     setMessages,

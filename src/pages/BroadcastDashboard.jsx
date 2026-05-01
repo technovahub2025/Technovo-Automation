@@ -4,6 +4,7 @@ import StatCard from '../components/StatCard';
 import RecentChats from '../components/RecentChats';
 import MessageAnalytics from '../components/MessageAnalytics';
 import { whatsappService } from '../services/whatsappService';
+import webSocketService from '../services/websocketService';
 import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
 import {
     readSidebarPageCache,
@@ -31,6 +32,7 @@ const BroadcastDashboard = () => {
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
     const [showDetailedAnalytics, setShowDetailedAnalytics] = useState(false);
+    const refreshTimerRef = useRef(null);
     const currentUserId = resolveCacheUserId();
 
     const persistDashboardCache = useCallback((nextAnalytics) => {
@@ -103,6 +105,36 @@ const BroadcastDashboard = () => {
     const refreshData = async () => {
         await loadDashboardData({ silent: true });
     };
+
+    useEffect(() => {
+        const scheduleRefresh = () => {
+            if (refreshTimerRef.current) {
+                window.clearTimeout(refreshTimerRef.current);
+            }
+            refreshTimerRef.current = window.setTimeout(() => {
+                loadDashboardData({ silent: true });
+            }, 150);
+        };
+
+        const socket = webSocketService.connect(currentUserId || 'broadcast-dashboard');
+        if (!socket) return undefined;
+
+        const handleRealtimeUpdate = () => scheduleRefresh();
+        webSocketService.on('broadcast_created', handleRealtimeUpdate);
+        webSocketService.on('broadcast_updated', handleRealtimeUpdate);
+        webSocketService.on('broadcast_deleted', handleRealtimeUpdate);
+        webSocketService.on('broadcast_stats_updated', handleRealtimeUpdate);
+
+        return () => {
+            webSocketService.off('broadcast_created', handleRealtimeUpdate);
+            webSocketService.off('broadcast_updated', handleRealtimeUpdate);
+            webSocketService.off('broadcast_deleted', handleRealtimeUpdate);
+            webSocketService.off('broadcast_stats_updated', handleRealtimeUpdate);
+            if (refreshTimerRef.current) {
+                window.clearTimeout(refreshTimerRef.current);
+            }
+        };
+    }, [currentUserId, loadDashboardData]);
 
     const getMessageSentCount = () => {
         return analytics.messagesSent || 0;

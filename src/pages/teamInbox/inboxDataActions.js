@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { whatsappService } from '../../services/whatsappService';
 import { startLoadingTimeoutGuard } from '../../utils/loadingGuard';
 import {
@@ -312,12 +313,15 @@ export const createInboxDataActions = ({
       return true;
     }
 
-    const response = await fetch(normalizedUrl);
-    if (!response.ok) {
+    const response = await axios.get(normalizedUrl, {
+      responseType: 'blob',
+      validateStatus: () => true
+    });
+    if (response.status < 200 || response.status >= 300) {
       throw new Error(`Download failed with status ${response.status}`);
     }
 
-    const attachmentBlob = await response.blob();
+    const attachmentBlob = response.data;
     const objectUrl = window.URL.createObjectURL(attachmentBlob);
     try {
       triggerBrowserDownload(objectUrl, fileName);

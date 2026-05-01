@@ -1,3 +1,5 @@
+import axios from "axios";
+
 const [, , rawTargetUrl] = process.argv;
 
 const targetUrl = rawTargetUrl || process.env.DEPLOY_CHECK_URL || "https://technovahub.in/nexion/";
@@ -24,17 +26,19 @@ const readLocalBuild = async () => {
 };
 
 const fetchLiveHtml = async (url) => {
-  const response = await fetch(url, {
+  const response = await axios.get(url, {
     headers: {
       "cache-control": "no-cache"
-    }
+    },
+    responseType: "text",
+    validateStatus: () => true
   });
 
-  if (!response.ok) {
-    throw new Error(`Request failed with ${response.status} ${response.statusText}`);
+  if (response.status < 200 || response.status >= 300) {
+    throw new Error(`Request failed with ${response.status} ${response.statusText || ""}`.trim());
   }
 
-  return response.text();
+  return response.data;
 };
 
 const main = async () => {
