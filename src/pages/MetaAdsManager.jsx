@@ -647,6 +647,7 @@ const MetaAdsManager = () => {
           {!loading && activeSection === "dashboard" ? <div className="meta-grid meta-grid-stats">
             <article className="meta-card meta-stat-card"><span>Total Campaigns</span><strong>{overview?.summary?.totalCampaigns || 0}</strong></article>
             <article className="meta-card meta-stat-card"><span>Live Campaigns</span><strong>{overview?.summary?.activeCampaigns || 0}</strong></article>
+            <article className="meta-card meta-stat-card"><span>Available Balance</span><strong>{formatCurrency(wallet.balance || 0)}</strong></article>
             <article className="meta-card meta-stat-card"><span>Total Spend</span><strong>{formatCurrency(overview?.summary?.totalSpend || 0)}</strong></article>
             <article className="meta-card meta-stat-card"><span>Total Leads</span><strong>{overview?.summary?.totalLeads || 0}</strong></article>
           </div> : null}

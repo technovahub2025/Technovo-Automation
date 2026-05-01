@@ -156,6 +156,8 @@ const CampaignManagement = () => {
     const [metaSetupReady, setMetaSetupReady] = useState(true);
     const [metaSetupLoading, setMetaSetupLoading] = useState(true);
     const [metaSetupMessage, setMetaSetupMessage] = useState('');
+    const [metaWalletBalance, setMetaWalletBalance] = useState(0);
+    const [campaignFlash, setCampaignFlash] = useState('');
     const dateRangeLabels = {
         today: 'Today',
         yesterday: 'Yesterday',
@@ -407,14 +409,17 @@ const CampaignManagement = () => {
             const response = await api.get('/api/meta-ads/overview', {
                 headers: getAuthHeaders()
             });
+            const walletBalance = Number(response?.data?.wallet?.balance || 0);
             const setup = response?.data?.setup || {};
             const isReady = Boolean(setup.connected && setup.adAccountId && setup.pageId);
             setMetaSetupReady(isReady);
+            setMetaWalletBalance(walletBalance);
             setMetaSetupMessage(
                 setup.setupError || 'Connect Meta, select an ad account and Facebook page to continue.'
             );
         } catch (loadError) {
             setMetaSetupReady(false);
+            setMetaWalletBalance(0);
             setMetaSetupMessage(
                 loadError?.response?.data?.error ||
                 loadError?.response?.data?.message ||
@@ -460,13 +465,40 @@ const CampaignManagement = () => {
         try {
             setLoading(true);
             const payload = buildCampaignPayload(campaignData);
-            const headers = {
-                ...getAuthHeaders(),
-                ...(payload instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {})
-            };
-            await api.post('/api/campaigns', payload, { headers });
+            let response;
+            if (payload instanceof FormData) {
+                response = await axios.post(`${API_BASE_URL}/api/campaigns`, payload, {
+                    headers: getAuthHeaders()
+                });
+            } else {
+                response = await api.post('/api/campaigns', payload, {
+                    headers: {
+                        ...getAuthHeaders(),
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
             await fetchCampaigns();
+            const createdCampaign = response?.data?.data || null;
+            const normalizedCreated = normalizeCampaign(createdCampaign || {
+                ...campaignData,
+                id: createdCampaign?._id || createdCampaign?.id || `temp-${Date.now()}`,
+                _id: createdCampaign?._id || createdCampaign?.id || undefined,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
+                source: 'local'
+            });
+            setCampaigns((prev) => [
+                normalizedCreated,
+                ...prev.filter((item) => String(item.id) !== String(normalizedCreated.id))
+            ]);
+            setCurrentPage(1);
+            setCampaignFlash(response?.data?.message || 'Your ad has been created successfully.');
             setShowCreateModal(false);
+            window.clearTimeout(window.__campaignFlashTimer);
+            window.__campaignFlashTimer = window.setTimeout(() => {
+                setCampaignFlash('');
+            }, 4500);
         } catch (err) {
             console.error('Create failed', err?.response?.data || err.message);
             const responseData = err?.response?.data || {};
@@ -508,11 +540,18 @@ const CampaignManagement = () => {
                 }
                 : campaignData;
             const payload = buildCampaignPayload(publishSafeData);
-            const headers = {
-                ...getAuthHeaders(),
-                ...(payload instanceof FormData ? { 'Content-Type': 'multipart/form-data' } : {})
-            };
-            await api.put(`/api/campaigns/${selectedCampaign.id}`, payload, { headers });
+            if (payload instanceof FormData) {
+                await axios.put(`${API_BASE_URL}/api/campaigns/${selectedCampaign.id}`, payload, {
+                    headers: getAuthHeaders()
+                });
+            } else {
+                await api.put(`/api/campaigns/${selectedCampaign.id}`, payload, {
+                    headers: {
+                        ...getAuthHeaders(),
+                        'Content-Type': 'application/json'
+                    }
+                });
+            }
             await fetchCampaigns();
         } catch (err) {
             console.error('Update failed', err?.response?.data || err.message);
@@ -797,6 +836,13 @@ const CampaignManagement = () => {
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                 />
                             </div>
+                            <div className="cm-wallet-pill" title="Connected Meta ad balance">
+                                <span className="material-symbols-outlined cm-wallet-pill__icon">account_balance_wallet</span>
+                                <div className="cm-wallet-pill__copy">
+                                    <span>Meta balance</span>
+                                    <strong>{formatCurrency(metaWalletBalance)}</strong>
+                                </div>
+                            </div>
                         </div>
                         <div className="cm-toolbar-actions">
                             <label className="cm-filter-chip">
@@ -862,6 +908,13 @@ const CampaignManagement = () => {
                             </button>
                         </div>
                     </div>
+
+                    {campaignFlash ? (
+                        <div className="cm-flash cm-flash-success" role="status" aria-live="polite">
+                            <span className="material-symbols-outlined">check_circle</span>
+                            <span>{campaignFlash}</span>
+                        </div>
+                    ) : null}
 
                     <div className="cm-kpi-grid">
                         <div className="cm-kpi-card">
@@ -1182,6 +1235,7 @@ const CampaignManagement = () => {
                 <CampaignModal
                     onClose={() => setShowCreateModal(false)}
                     onSave={handleCreateCampaign}
+                    submitting={loading}
                     mode="create"
                 />
             )}
@@ -1195,6 +1249,7 @@ const CampaignManagement = () => {
                         setSelectedCampaign(null);
                     }}
                     onSave={handleEditCampaign}
+                    submitting={loading}
                     mode="edit"
                 />
             )}
@@ -1219,9 +1274,9 @@ const CampaignManagement = () => {
 };
 
 // Campaign Modal Component
-const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
+const CampaignModal = ({ campaign, onClose, onSave, mode, submitting = false }) => {
     const [formData, setFormData] = useState({
-        name: campaign?.name || '',
+        name: campaign?.name || (mode === 'create' ? 'Untitled Campaign' : ''),
         platform: campaign?.platform || 'both',
         objective: campaign?.objective || 'awareness',
         dailyBudget: campaign?.dailyBudget || 50,
@@ -1269,7 +1324,14 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
             }
             return;
         }
-        onSave(formData);
+        onSave({
+            ...formData,
+            name: String(formData.name || '').trim() || (mode === 'create' ? 'Untitled Campaign' : ''),
+            startDate: formData.startDate || getTodayDateValue(),
+            platform: formData.platform || 'both',
+            objective: formData.objective || 'awareness',
+            status: formData.status || 'draft'
+        });
     };
 
     const handleNextTab = () => {
@@ -1715,9 +1777,11 @@ const CampaignModal = ({ campaign, onClose, onSave, mode }) => {
                             </button>
                         ) : null}
                         {isLastTab ? (
-                            <button type="submit" className="btn btn-primary campaign-create-submit">
+                            <button type="submit" className="btn btn-primary campaign-create-submit" disabled={submitting}>
                                 <Save size={16} />
-                                {mode === 'create' ? 'Create Campaign' : 'Save Changes'}
+                                {submitting
+                                    ? (mode === 'create' ? 'Creating...' : 'Saving...')
+                                    : (mode === 'create' ? 'Create Campaign' : 'Save Changes')}
                             </button>
                         ) : (
                             <button type="button" className="btn btn-primary campaign-create-submit" onClick={handleNextTab}>
