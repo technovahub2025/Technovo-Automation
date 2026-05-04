@@ -570,6 +570,15 @@ const Contacts = () => {
         const normalized = String(contact?.whatsappOptInStatus || '').trim().toLowerCase();
         if (normalized === 'opted_in') return 'opted-in';
         if (normalized === 'opted_out') return 'opted-out';
+        const hasConsentEvidence = Boolean(
+            String(contact?.whatsappOptInAt || '').trim() ||
+            String(contact?.whatsappOptInTextSnapshot || '').trim() ||
+            String(contact?.whatsappOptInProofType || '').trim() ||
+            String(contact?.whatsappOptInProofId || '').trim() ||
+            String(contact?.whatsappOptInProofUrl || '').trim() ||
+            String(contact?.whatsappOptInPageUrl || '').trim()
+        );
+        if (hasConsentEvidence) return 'opted-in';
         return contact?.isBlocked || contact?.whatsappOptOutAt ? 'opted-out' : 'unknown';
     };
 

@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Search, X, Filter, Plus, Minus } from 'lucide-react';
 import { apiClient } from '../../services/whatsappapi';
 import './Modal.css';
+import './ContactAudiencePickerModal.css';
 
 const CONTACT_PAGE_LIMIT = 50;
 
@@ -52,9 +53,6 @@ const ContactAudiencePickerModal = ({
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [segmentName, setSegmentName] = useState('');
-  const [savedSegments, setSavedSegments] = useState([]);
-  const [selectedSegmentId, setSelectedSegmentId] = useState('');
   const [selectAllLoading, setSelectAllLoading] = useState(false);
   const [matchedContactsCount, setMatchedContactsCount] = useState(0);
   const querySignature = useMemo(
@@ -85,12 +83,6 @@ const ContactAudiencePickerModal = ({
     fullData: contact
   });
 
-  const loadSegments = async () => {
-    const response = await apiClient.getAudienceSegments();
-    const payload = response?.data?.data ?? response?.data ?? [];
-    return Array.isArray(payload) ? payload : [];
-  };
-
   const buildContactQueryParams = useCallback((includePagination = true) => {
     const params = {
       marketingEligible: marketingEligibleOnly ? 'true' : 'false'
@@ -112,44 +104,21 @@ const ContactAudiencePickerModal = ({
   useEffect(() => {
     if (!open) return;
 
-    let cancelled = false;
-
-    const reset = async () => {
-      setContacts([]);
-      setSelectedContacts(
-        (Array.isArray(initialSelectedContacts) ? initialSelectedContacts : [])
-          .map((contact) => normalizeContactToRecipient(contact))
-          .filter((contact) => contact.phone)
-      );
-      setSearchTerm('');
-      setTagFilter('');
-      setOptInFilter('all');
-      setSourceTypeFilter('all');
-      setMarketingEligibleOnly(true);
-      setPage(1);
-      setHasMore(true);
-      setError('');
-      setSegmentName('');
-      setSelectedSegmentId('');
-      setMatchedContactsCount(0);
-
-      try {
-        const segments = await loadSegments();
-        if (!cancelled) {
-          setSavedSegments(segments);
-        }
-      } catch {
-        if (!cancelled) {
-          setSavedSegments([]);
-        }
-      }
-    };
-
-    reset();
-
-    return () => {
-      cancelled = true;
-    };
+    setContacts([]);
+    setSelectedContacts(
+      (Array.isArray(initialSelectedContacts) ? initialSelectedContacts : [])
+        .map((contact) => normalizeContactToRecipient(contact))
+        .filter((contact) => contact.phone)
+    );
+    setSearchTerm('');
+    setTagFilter('');
+    setOptInFilter('all');
+    setSourceTypeFilter('all');
+    setMarketingEligibleOnly(true);
+    setPage(1);
+    setHasMore(true);
+    setError('');
+    setMatchedContactsCount(0);
   }, [open, initialSelectedContacts]);
 
   useEffect(() => {
@@ -251,89 +220,9 @@ const ContactAudiencePickerModal = ({
 
   const clearSelection = () => setSelectedContacts([]);
 
-  const handleSaveSegment = async () => {
-    const trimmedName = normalizeText(segmentName);
-    if (!trimmedName) {
-      setError('Enter a segment name before saving.');
-      return;
-    }
-    if (!selectedContacts.length) {
-      setError('Select at least one contact to save the segment.');
-      return;
-    }
-
-    try {
-      const payload = {
-        name: trimmedName,
-        ...(selectedSegmentId ? { id: selectedSegmentId } : {}),
-        filters: {
-          searchTerm: normalizeText(searchTerm),
-          tagFilter: normalizeText(tagFilter),
-          optInFilter,
-          sourceTypeFilter,
-          marketingEligibleOnly
-        },
-        contacts: selectedContacts.map((contact) => ({
-          _id: String(contact?._id || contact?.id || '').trim(),
-          phone: normalizeText(contact?.phone),
-          name: normalizeText(contact?.name || contact?.displayName || contact?.contactName),
-          sourceType: normalizeText(contact?.sourceType || 'manual'),
-          whatsappOptInStatus: normalizeText(contact?.whatsappOptInStatus || 'unknown')
-        }))
-      };
-
-      const response = await apiClient.createAudienceSegment(payload);
-      const saved = response?.data?.data || null;
-      const segments = await loadSegments();
-      setSavedSegments(segments);
-      setError('');
-      const resolvedId = String(saved?.id || saved?._id || '').trim();
-      if (resolvedId) {
-        setSelectedSegmentId(resolvedId);
-      }
-    } catch (saveError) {
-      setError(saveError?.response?.data?.error || saveError?.message || 'Failed to save audience segment.');
-    }
-  };
-
-  const loadSegment = (segmentId) => {
-    const segment = (Array.isArray(savedSegments) ? savedSegments : []).find(
-      (item) => String(item?.id || item?._id || '') === String(segmentId || '')
-    );
-    if (!segment) return;
-
-    const resolvedContacts = Array.isArray(segment.contacts)
-      ? segment.contacts.map((contact) => normalizeContactToRecipient(contact)).filter((contact) => contact.phone)
-      : [];
-
-    setSelectedContacts(resolvedContacts);
-    setSelectedSegmentId(String(segment.id || segment._id || '').trim());
-    setSegmentName(segment.name || '');
-    setSearchTerm(segment.filters?.searchTerm || '');
-    setTagFilter(segment.filters?.tagFilter || '');
-    setOptInFilter(segment.filters?.optInFilter || 'all');
-    setSourceTypeFilter(segment.filters?.sourceTypeFilter || 'all');
-    setMarketingEligibleOnly(Boolean(segment.filters?.marketingEligibleOnly));
-  };
-
-  const handleDeleteSegment = async () => {
-    if (!selectedSegmentId) return;
-    try {
-      await apiClient.deleteAudienceSegment(selectedSegmentId);
-      const segments = await loadSegments();
-      setSavedSegments(segments);
-      setSelectedSegmentId('');
-    } catch (deleteError) {
-      setError(deleteError?.response?.data?.error || deleteError?.message || 'Failed to delete audience segment.');
-    }
-  };
-
   const handleConfirm = () => {
     if (typeof onConfirm === 'function') {
-      onConfirm(selectedContacts, {
-        segmentId: String(selectedSegmentId || '').trim(),
-        segmentName: String(segmentName || '').trim()
-      });
+      onConfirm(selectedContacts, {});
     }
     if (typeof onClose === 'function') {
       onClose();
@@ -357,50 +246,6 @@ const ContactAudiencePickerModal = ({
 
         <div className="broadcast-validation-banner broadcast-validation-banner--success" style={{ marginBottom: 16 }}>
           Pick recipients from your CRM contacts. Marketing-eligible contacts are filtered server-side.
-        </div>
-
-        <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', marginBottom: 16 }}>
-          <label className="template-send-field">
-            <span>Segment name</span>
-            <input
-              type="text"
-              value={segmentName}
-              onChange={(event) => setSegmentName(event.target.value)}
-              placeholder="Save this audience as..."
-            />
-          </label>
-
-          <label className="template-send-field">
-            <span>Saved segments</span>
-            <select value={selectedSegmentId} onChange={(event) => loadSegment(event.target.value)}>
-              <option value="">Select a saved segment</option>
-              {savedSegments.map((segment) => (
-                <option key={segment.id || segment._id} value={String(segment.id || segment._id)}>
-                  {segment.name} ({Array.isArray(segment.contacts) ? segment.contacts.length : 0})
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
-          <button
-            type="button"
-            className="secondary-btn"
-            onClick={handleSaveSegment}
-            disabled={!selectedContacts.length}
-          >
-            Save Audience Segment
-          </button>
-          {selectedSegmentId ? (
-            <button
-              type="button"
-              className="secondary-btn"
-              onClick={handleDeleteSegment}
-            >
-              Delete Saved Segment
-            </button>
-          ) : null}
         </div>
 
         <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', marginBottom: 16 }}>
@@ -469,20 +314,20 @@ const ContactAudiencePickerModal = ({
           </div>
         ) : null}
 
-        <div className="contacts-audience-summary-row">
-          <div className="broadcast-validation-stat contacts-audience-stat">
+        <div className="contact-audience-summary-row">
+          <div className="broadcast-validation-stat contact-audience-stat">
             <span>Loaded</span>
             <strong>{contacts.length}</strong>
           </div>
-          <div className="broadcast-validation-stat contacts-audience-stat">
+          <div className="broadcast-validation-stat contact-audience-stat">
             <span>Matched</span>
             <strong>{matchedContactsCount}</strong>
           </div>
-          <div className="broadcast-validation-stat contacts-audience-stat">
+          <div className="broadcast-validation-stat contact-audience-stat">
             <span>Selected</span>
             <strong>{selectedContacts.length}</strong>
           </div>
-          <div className="contacts-audience-actions">
+          <div className="contact-audience-actions">
             <button
               type="button"
               className="secondary-btn"
@@ -499,7 +344,7 @@ const ContactAudiencePickerModal = ({
           </div>
         </div>
 
-        <p className="broadcast-validation-more contacts-audience-hint">
+        <p className="broadcast-validation-more contact-audience-hint">
           {matchedContactsCount > 0
             ? `Select All Matching will add up to ${matchedContactsCount} contacts from the current filters.`
             : 'Use filters above to narrow the audience before selecting contacts.'}

@@ -14,10 +14,23 @@ const normalizeOptInScope = (value = '') => {
   return 'unknown';
 };
 
+const hasOptInEvidence = (contact = {}) =>
+  Boolean(
+    toTrimmedString(contact?.whatsappOptInAt) ||
+      toTrimmedString(contact?.whatsappOptInTextSnapshot) ||
+      toTrimmedString(contact?.whatsappOptInProofType) ||
+      toTrimmedString(contact?.whatsappOptInProofId) ||
+      toTrimmedString(contact?.whatsappOptInProofUrl) ||
+      toTrimmedString(contact?.whatsappOptInPageUrl) ||
+      toTrimmedString(contact?.whatsappOptInCapturedBy) ||
+      toTrimmedString(contact?.whatsappOptInMetadata)
+  );
+
 export const normalizeWhatsappOptInStatus = (contact = {}) => {
   const normalized = toTrimmedString(contact?.whatsappOptInStatus).toLowerCase();
   if (normalized === 'opted_in') return 'opted_in';
   if (normalized === 'opted_out') return 'opted_out';
+  if (hasOptInEvidence(contact)) return 'opted_in';
   return contact?.isBlocked ? 'opted_out' : 'unknown';
 };
 

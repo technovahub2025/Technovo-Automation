@@ -9,6 +9,7 @@ import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
 import {
     readSidebarPageCache,
     resolveCacheUserId,
+    clearSidebarPageCache,
     writeSidebarPageCache
 } from '../utils/sidebarPageCache';
 import './Dashboard.css';
@@ -24,6 +25,228 @@ const sanitizeDashboardAnalytics = (analytics = {}) => {
         return JSON.parse(JSON.stringify(analytics));
     } catch {
         return {};
+    }
+};
+
+const createEmptyAnalytics = () => ({
+    totalConversations: 0,
+    activeConversations: 0,
+    messagesSent: 0,
+    messagesDelivered: 0,
+    messagesRead: 0,
+    messagesFailed: 0,
+    messagesReceived: 0,
+    avgResponseTime: 'N/A',
+    responseRate: 0,
+    customerSatisfaction: 0,
+    sentGrowth: '0',
+    deliveredGrowth: '0',
+    readRateGrowth: '0',
+    failedGrowth: '0',
+    dailyTrends: [],
+    hourlyActivity: [],
+    messageTypes: [],
+    performanceMetrics: {
+        avgDeliveryTime: 'N/A',
+        avgReadTime: 'N/A',
+        peakHour: 'N/A',
+        bestDay: 'N/A',
+        deliveryRate: '0.0%',
+        readRate: '0.0%'
+    }
+});
+
+const isMeaningfulAnalytics = (analytics = {}) => {
+    const sent = Number(analytics?.messagesSent || 0);
+    const delivered = Number(analytics?.messagesDelivered || 0);
+    const read = Number(analytics?.messagesRead || 0);
+    const failed = Number(analytics?.messagesFailed || 0);
+    return sent > 0 || delivered > 0 || read > 0 || failed > 0;
+};
+
+const buildFallbackAnalytics = async () => {
+    try {
+        const conversations = await whatsappService.getConversations();
+        if (!Array.isArray(conversations) || conversations.length === 0) {
+            return createEmptyAnalytics();
+        }
+
+        const conversationIds = conversations
+            .map((conversation) => conversation?._id)
+            .filter(Boolean)
+            .slice(0, 200);
+
+        if (conversationIds.length === 0) {
+            return {
+                ...createEmptyAnalytics(),
+                totalConversations: conversations.length,
+                activeConversations: conversations.filter((conversation) => conversation?.status === 'active').length
+            };
+        }
+
+        const messageLists = await Promise.all(
+            conversationIds.map((conversationId) => whatsappService.getMessages(conversationId))
+        );
+        const allMessages = messageLists.flat().filter(Boolean);
+        const outboundMessages = allMessages.filter((message) => {
+            const status = String(message?.status || '').toLowerCase();
+            return message?.sender === 'agent' || ['sent', 'delivered', 'read', 'failed'].includes(status);
+        });
+        const inboundMessages = allMessages.filter((message) => {
+            const status = String(message?.status || '').toLowerCase();
+            return message?.sender === 'contact' || status === 'received';
+        });
+
+        const now = new Date();
+        const startOfWindow = new Date();
+        startOfWindow.setDate(startOfWindow.getDate() - 6);
+        startOfWindow.setHours(0, 0, 0, 0);
+
+        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        const dailyMap = new Map();
+        const dailyConversationSets = new Map();
+        for (let i = 6; i >= 0; i -= 1) {
+            const day = new Date(now);
+            day.setHours(0, 0, 0, 0);
+            day.setDate(day.getDate() - i);
+            const key = day.toISOString().slice(0, 10);
+            dailyMap.set(key, { date: dayNames[day.getDay()], sent: 0, delivered: 0, read: 0, conversations: 0 });
+            dailyConversationSets.set(key, new Set());
+        }
+
+        outboundMessages.forEach((message) => {
+            const timestamp = new Date(message?.timestamp || message?.createdAt || 0);
+            if (Number.isNaN(timestamp.getTime()) || timestamp < startOfWindow) return;
+            const key = timestamp.toISOString().slice(0, 10);
+            const bucket = dailyMap.get(key);
+            if (!bucket) return;
+
+            bucket.sent += 1;
+            const status = String(message?.status || '').toLowerCase();
+            if (status === 'delivered' || status === 'read') {
+                bucket.delivered += 1;
+            }
+            if (status === 'read') {
+                bucket.read += 1;
+            }
+            if (message?.conversationId) {
+                dailyConversationSets.get(key)?.add(String(message.conversationId));
+            }
+        });
+
+        const dailyTrends = Array.from(dailyMap.entries()).map(([key, value]) => ({
+            ...value,
+            conversations: dailyConversationSets.get(key)?.size || 0
+        }));
+
+        const hourlyMap = new Map();
+        const hourlyConversationSets = new Map();
+        for (let i = 11; i >= 0; i -= 1) {
+            const hour = new Date(now);
+            hour.setMinutes(0, 0, 0);
+            hour.setHours(hour.getHours() - i);
+            const key = hour.toISOString().slice(0, 13);
+            hourlyMap.set(key, { hour: hour.toLocaleTimeString('en-US', { hour: 'numeric', hour12: true }), messages: 0, conversations: 0 });
+            hourlyConversationSets.set(key, new Set());
+        }
+
+        outboundMessages.forEach((message) => {
+            const timestamp = new Date(message?.timestamp || message?.createdAt || 0);
+            if (Number.isNaN(timestamp.getTime())) return;
+            timestamp.setMinutes(0, 0, 0);
+            const key = timestamp.toISOString().slice(0, 13);
+            const bucket = hourlyMap.get(key);
+            if (!bucket) return;
+
+            bucket.messages += 1;
+            if (message?.conversationId) {
+                hourlyConversationSets.get(key)?.add(String(message.conversationId));
+            }
+        });
+
+        const hourlyActivity = Array.from(hourlyMap.entries()).map(([key, value]) => ({
+            ...value,
+            conversations: hourlyConversationSets.get(key)?.size || 0
+        }));
+
+        const messageTypeCounts = {
+            text: 0,
+            image: 0,
+            video: 0,
+            audio: 0,
+            document: 0
+        };
+        outboundMessages.forEach((message) => {
+            const mediaType = String(message?.mediaType || 'text').toLowerCase();
+            if (Object.prototype.hasOwnProperty.call(messageTypeCounts, mediaType)) {
+                messageTypeCounts[mediaType] += 1;
+            } else {
+                messageTypeCounts.text += 1;
+            }
+        });
+
+        const messagesSent = outboundMessages.length;
+        const messagesDelivered = outboundMessages.filter((message) => {
+            const status = String(message?.status || '').toLowerCase();
+            return status === 'delivered' || status === 'read';
+        }).length;
+        const messagesRead = outboundMessages.filter((message) => String(message?.status || '').toLowerCase() === 'read').length;
+        const messagesFailed = outboundMessages.filter((message) => String(message?.status || '').toLowerCase() === 'failed').length;
+        const messagesReceived = inboundMessages.filter((message) => {
+            const timestamp = new Date(message?.timestamp || message?.createdAt || 0);
+            return !Number.isNaN(timestamp.getTime()) && timestamp >= startOfWindow;
+        }).length;
+
+        const deliveryRate = messagesSent > 0 ? `${((messagesDelivered / messagesSent) * 100).toFixed(1)}%` : '0.0%';
+        const readRate = messagesSent > 0 ? `${((messagesRead / messagesSent) * 100).toFixed(1)}%` : '0.0%';
+        const peakHour = hourlyActivity.reduce(
+            (max, item) => (item.messages > max.messages ? item : max),
+            { hour: 'N/A', messages: 0 }
+        ).hour;
+        const bestDay = dailyTrends.reduce(
+            (max, item) => (item.sent > max.sent ? item : max),
+            { date: 'N/A', sent: 0 }
+        ).date;
+
+        return {
+            totalConversations: conversations.length,
+            activeConversations: conversations.filter((conversation) => conversation?.status === 'active').length,
+            messagesSent,
+            messagesDelivered,
+            messagesRead,
+            messagesFailed,
+            messagesReceived,
+            avgResponseTime: 'N/A',
+            responseRate: messagesSent > 0 ? Math.round((messagesRead / messagesSent) * 100) : 0,
+            customerSatisfaction: 0,
+            sentGrowth: '0',
+            deliveredGrowth: '0',
+            readRateGrowth: '0',
+            failedGrowth: '0',
+            dailyTrends,
+            hourlyActivity,
+            messageTypes: [
+                { name: 'Text Messages', value: messageTypeCounts.text, color: '#3b82f6' },
+                { name: 'Image Messages', value: messageTypeCounts.image, color: '#2563eb' },
+                { name: 'Video Messages', value: messageTypeCounts.video, color: '#f59e0b' },
+                {
+                    name: 'Document/Audio',
+                    value: messageTypeCounts.document + messageTypeCounts.audio,
+                    color: '#8b5cf6'
+                }
+            ],
+            performanceMetrics: {
+                avgDeliveryTime: 'N/A',
+                avgReadTime: 'N/A',
+                peakHour,
+                bestDay,
+                deliveryRate,
+                readRate
+            }
+        };
+    } catch (error) {
+        console.error('Failed to build fallback dashboard analytics:', error);
+        return createEmptyAnalytics();
     }
 };
 
@@ -59,7 +282,13 @@ const BroadcastDashboard = () => {
             else setLoading(true);
 
             const analyticsData = await whatsappService.getAnalytics();
-            const nextAnalytics = analyticsData || {};
+            let nextAnalytics = analyticsData || {};
+            if (!isMeaningfulAnalytics(nextAnalytics)) {
+                const fallbackAnalytics = await buildFallbackAnalytics();
+                if (isMeaningfulAnalytics(fallbackAnalytics)) {
+                    nextAnalytics = fallbackAnalytics;
+                }
+            }
             setAnalytics(nextAnalytics);
             persistDashboardCache(nextAnalytics);
         } catch (error) {
@@ -77,11 +306,16 @@ const BroadcastDashboard = () => {
             allowStale: true
         });
 
-        if (cachedDashboard?.data?.analytics) {
-            setAnalytics(cachedDashboard.data.analytics);
+        const cachedAnalytics = cachedDashboard?.data?.analytics;
+        if (isMeaningfulAnalytics(cachedAnalytics)) {
+            setAnalytics(cachedAnalytics);
             setLoading(false);
             loadDashboardData({ silent: true });
             return;
+        }
+
+        if (cachedDashboard?.key) {
+            clearSidebarPageCache(BROADCAST_DASHBOARD_CACHE_NAMESPACE, { currentUserId });
         }
 
         loadDashboardData();

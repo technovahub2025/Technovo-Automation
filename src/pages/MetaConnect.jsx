@@ -11,7 +11,12 @@ import {
 } from "lucide-react";
 import metaAdsApi from "../services/metaAdsApi";
 import { setMetaApiRuntimeBaseUrl } from "../services/metaAdsApi";
+import { resolveApiBaseUrl } from "../services/apiBaseUrl";
 import { toAppPath } from "../utils/appRouteBase";
+import {
+  buildPublicOptInLandingUrl,
+  buildPublicOptInSuccessRedirectUrl
+} from "../utils/publicOptInRoutes";
 import {
   DEFAULT_PUBLIC_OPTIN_KEY,
   isLocalHostUrl,
@@ -59,16 +64,13 @@ const extractErrorMessage = (error, fallback) =>
 const META_LEAD_MAPPING_STORAGE_KEY = "meta_lead_consent_mapping_v1";
 const OPTIN_LINK_STORAGE_KEY = "meta_optin_link_builder_v1";
 
-const buildOptInSuccessRedirectUrl = () => {
-  if (typeof window === "undefined") return "";
-  return `${window.location.origin}${toAppPath("/whatsapp-opt-in/success")}`;
-};
-
 const buildDefaultOptInLandingUrl = () => {
   if (typeof window === "undefined") return "";
-  const url = new URL(`${window.location.origin}${toAppPath("/whatsapp-opt-in")}`);
-  url.searchParams.set("successRedirect", buildOptInSuccessRedirectUrl());
-  return url.toString();
+  return buildPublicOptInLandingUrl(
+    window.location.origin,
+    toAppPath("/whatsapp-opt-in"),
+    { backendUrl: resolveApiBaseUrl() }
+  );
 };
 
 const getChecklistStatusIcon = (status) => {
@@ -669,16 +671,12 @@ const MetaConnect = () => {
   const optInLink = useMemo(() => {
     const baseUrl = String(optInBuilder.baseUrl || "").trim();
     if (!baseUrl) return "";
-    let url;
-    try {
-      url = /^https?:\/\//i.test(baseUrl)
-        ? new URL(baseUrl)
-        : new URL(`${window.location.origin}${baseUrl.startsWith("/") ? "" : "/"}${baseUrl}`);
-    } catch {
-      return "";
-    }
-
-    const params = url.searchParams;
+    const url = buildPublicOptInLandingUrl(window.location.origin, baseUrl, {
+      backendUrl: resolveApiBaseUrl()
+    });
+    if (!url) return "";
+    const parsedUrl = new URL(url);
+    const params = parsedUrl.searchParams;
     syncPublicKeySearchParam(params, optInBuilder.publicKey);
     if (optInBuilder.userId) params.set("userId", optInBuilder.userId);
     if (optInBuilder.companyId) params.set("companyId", optInBuilder.companyId);
@@ -686,10 +684,13 @@ const MetaConnect = () => {
     if (optInBuilder.source) params.set("source", optInBuilder.source);
     if (optInBuilder.scope) params.set("scope", optInBuilder.scope);
     if (!params.get("successRedirect")) {
-      params.set("successRedirect", buildOptInSuccessRedirectUrl());
+      params.set(
+        "successRedirect",
+        buildPublicOptInSuccessRedirectUrl(window.location.origin)
+      );
     }
 
-    return url.toString();
+    return parsedUrl.toString();
   }, [optInBuilder]);
 
   const handleCopyOptInLink = async () => {

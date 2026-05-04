@@ -5,6 +5,7 @@ import {
   shouldIncludePublicKeyInUrl
 } from './publicOptIn.js';
 import { getAppRouteBase } from './appRouteBase.js';
+import { buildPublicOptInDemoUrl } from './publicOptInRoutes.js';
 
 const resolveContactId = (contact = {}) =>
   String(
@@ -78,7 +79,6 @@ export const buildPublicWhatsAppOptInDemoUrl = (contact = {}, options = {}) => {
   if (typeof window === 'undefined') return '';
 
   const user = getStoredUserContext();
-  const query = new URLSearchParams();
   const name = toTrimmedString(contact?.name || options?.name);
   const phone = toTrimmedString(contact?.phone || contact?.contactPhone || options?.phone);
   const email = toTrimmedString(contact?.email || options?.email);
@@ -92,20 +92,18 @@ export const buildPublicWhatsAppOptInDemoUrl = (contact = {}, options = {}) => {
     options?.publicKey,
     DEFAULT_PUBLIC_OPTIN_KEY
   );
-
-  if (backendUrl) query.set('backendUrl', backendUrl);
-  if (shouldIncludePublicKeyInUrl(publicKey)) query.set('publicKey', publicKey);
-  if (userId) query.set('userId', userId);
-  if (companyId) query.set('companyId', companyId);
-  if (name) query.set('name', name);
-  if (phone) query.set('phone', phone);
-  if (email) query.set('email', email);
-  if (source) query.set('source', source);
-  if (scope) query.set('scope', scope);
-  if (proofId) query.set('proofId', proofId);
-
   const basePath = getBasePath();
-  const path = `${window.location.origin}${basePath}/whatsapp-opt-in-demo`;
-  const queryString = query.toString();
-  return queryString ? `${path}?${queryString}` : path;
+  return buildPublicOptInDemoUrl(window.location.origin, {
+    basePath,
+    backendUrl,
+    publicKey: shouldIncludePublicKeyInUrl(publicKey) ? publicKey : '',
+    userId,
+    companyId,
+    name,
+    phone,
+    email,
+    source,
+    scope,
+    proofId
+  });
 };
