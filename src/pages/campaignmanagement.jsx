@@ -46,6 +46,29 @@ const getTodayDateValue = () => {
     const offsetMs = now.getTimezoneOffset() * 60000;
     return new Date(now.getTime() - offsetMs).toISOString().slice(0, 10);
 };
+
+const normalizeCampaignObjective = (value) => {
+    const raw = String(value || '').trim().toLowerCase();
+    const compact = raw.replace(/[^a-z0-9]+/g, '_');
+
+    if (!compact) return 'awareness';
+    if (['awareness', 'reach', 'impressions', 'outcome_awareness'].includes(compact)) return 'awareness';
+    if (['traffic', 'link_clicks', 'landing_page_views', 'outcome_traffic'].includes(compact)) return 'traffic';
+    if (['engagement', 'post_engagement', 'outcome_engagement'].includes(compact)) return 'engagement';
+    if (['leads', 'quality_lead', 'conversations', 'outcome_leads'].includes(compact)) return 'leads';
+    if (['sales', 'value', 'offsite_conversions', 'outcome_sales'].includes(compact)) return 'sales';
+    if (['catalog', 'catalog_sales', 'outcome_catalog_sales'].includes(compact)) return 'catalog';
+
+    // Common Meta UI labels that need to map into the backend contract.
+    if (compact.includes('awareness')) return 'awareness';
+    if (compact.includes('traffic') || compact.includes('click')) return 'traffic';
+    if (compact.includes('engagement')) return 'engagement';
+    if (compact.includes('lead')) return 'leads';
+    if (compact.includes('sale') || compact.includes('conversion')) return 'sales';
+
+    return 'awareness';
+};
+
 const api = axios.create({
     baseURL: API_BASE_URL,
     headers: { 'Content-Type': 'application/json' }
@@ -258,7 +281,7 @@ const CampaignManagement = () => {
         const payload = {
             name: String(data?.name || '').trim(),
             platform: String(data?.platform || 'both'),
-            objective: String(data?.objective || 'awareness'),
+            objective: normalizeCampaignObjective(data?.objective || 'awareness'),
             status: String(data?.status || 'draft'),
             mediaType: normalizedMediaType,
             primaryText: String(data?.primaryText || '').trim(),
@@ -272,7 +295,7 @@ const CampaignManagement = () => {
                 ...(data?.audience && typeof data.audience === 'object' ? data.audience : {}),
                 name: String(data?.name || '').trim(),
                 platform: String(data?.platform || 'both'),
-                objective: String(data?.objective || 'awareness'),
+            objective: normalizeCampaignObjective(data?.objective || 'awareness'),
                 targeting: String(data?.targeting || '').trim(),
                 ageMin: toNumberOrNull(data?.ageMin) ?? 18,
                 ageMax: toNumberOrNull(data?.ageMax) ?? 65,
@@ -500,7 +523,11 @@ const CampaignManagement = () => {
                 setCampaignFlash('');
             }, 4500);
         } catch (err) {
-            console.error('Create failed', err?.response?.data || err.message);
+            console.error('Create failed', {
+                status: err?.response?.status,
+                data: err?.response?.data || null,
+                message: err?.message
+            });
             const responseData = err?.response?.data || {};
             const detailMessage = responseData?.details?.error?.error_user_msg;
             const stageMessage = responseData?.metaStage ? `${responseData.metaStage}: ` : '';

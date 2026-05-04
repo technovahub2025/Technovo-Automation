@@ -26,6 +26,13 @@ export const detectAppRouteBase = (pathname) => {
 };
 
 export const getAppRouteBase = (pathname) => {
+  if (
+    typeof window !== "undefined" &&
+    /(^|\.)technovahub\.in$/i.test(window.location.hostname || "")
+  ) {
+    return "/nexion";
+  }
+
   const configuredBase = normalizeAppRouteBase(import.meta.env.VITE_APP_BASENAME);
   return configuredBase !== "/" ? configuredBase : detectAppRouteBase(pathname);
 };

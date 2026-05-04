@@ -8,6 +8,7 @@ import {
   shouldIncludePublicKeyInUrl,
   syncPublicKeySearchParam
 } from "../utils/publicOptIn";
+import { toAppPath } from "../utils/appRouteBase";
 import "./PublicWhatsAppOptInLanding.css";
 
 const DEFAULT_CONSENT_TEXT =
@@ -63,13 +64,7 @@ function PublicWhatsAppOptInLanding() {
   const successRedirectUrl = useMemo(() => {
     if (typeof window === "undefined") return "/whatsapp-opt-in/success";
     const params = new URLSearchParams(window.location.search);
-    const explicitRedirect = params.get("successRedirect");
-    if (explicitRedirect) return explicitRedirect;
-
-    const productionBase = window.location.hostname.endsWith("technovahub.in")
-      ? "/nexion"
-      : "";
-    return `${productionBase}/whatsapp-opt-in/success`;
+    return params.get("successRedirect") || toAppPath("/whatsapp-opt-in/success");
   }, []);
 
   const endpointUrl = useMemo(() => {
