@@ -59,9 +59,16 @@ const extractErrorMessage = (error, fallback) =>
 const META_LEAD_MAPPING_STORAGE_KEY = "meta_lead_consent_mapping_v1";
 const OPTIN_LINK_STORAGE_KEY = "meta_optin_link_builder_v1";
 
+const buildOptInSuccessRedirectUrl = () => {
+  if (typeof window === "undefined") return "";
+  return `${window.location.origin}${toAppPath("/whatsapp-opt-in/success")}`;
+};
+
 const buildDefaultOptInLandingUrl = () => {
   if (typeof window === "undefined") return "";
-  return `${window.location.origin}${toAppPath("/whatsapp-opt-in")}`;
+  const url = new URL(`${window.location.origin}${toAppPath("/whatsapp-opt-in")}`);
+  url.searchParams.set("successRedirect", buildOptInSuccessRedirectUrl());
+  return url.toString();
 };
 
 const getChecklistStatusIcon = (status) => {
@@ -662,19 +669,27 @@ const MetaConnect = () => {
   const optInLink = useMemo(() => {
     const baseUrl = String(optInBuilder.baseUrl || "").trim();
     if (!baseUrl) return "";
-    let url = baseUrl;
-    if (!/^https?:\/\//i.test(url)) {
-      url = `https://${url}`;
+    let url;
+    try {
+      url = /^https?:\/\//i.test(baseUrl)
+        ? new URL(baseUrl)
+        : new URL(`${window.location.origin}${baseUrl.startsWith("/") ? "" : "/"}${baseUrl}`);
+    } catch {
+      return "";
     }
-    const params = new URLSearchParams();
+
+    const params = url.searchParams;
     syncPublicKeySearchParam(params, optInBuilder.publicKey);
     if (optInBuilder.userId) params.set("userId", optInBuilder.userId);
     if (optInBuilder.companyId) params.set("companyId", optInBuilder.companyId);
     if (optInBuilder.companyName) params.set("companyName", optInBuilder.companyName);
     if (optInBuilder.source) params.set("source", optInBuilder.source);
     if (optInBuilder.scope) params.set("scope", optInBuilder.scope);
-    const query = params.toString();
-    return query ? `${url}?${query}` : url;
+    if (!params.get("successRedirect")) {
+      params.set("successRedirect", buildOptInSuccessRedirectUrl());
+    }
+
+    return url.toString();
   }, [optInBuilder]);
 
   const handleCopyOptInLink = async () => {
