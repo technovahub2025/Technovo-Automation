@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Phone, Users, Clock, Headphones, ArrowLeft } from 'lucide-react';
 import './InboundCalls.css';
 import QueueMonitor from '../QueueMonitor';
@@ -42,31 +42,6 @@ const getQueueEntries = (value) => {
     });
 };
 
-const normalizeQueuePayload = (incoming) => {
-  const payload = incoming?.queueStatus || incoming || {};
-  if (!payload || typeof payload !== 'object') return {};
-
-  const normalized = {};
-  Object.entries(payload).forEach(([name, value]) => {
-    if (Array.isArray(value)) {
-      normalized[name] = getQueueEntries(value);
-      return;
-    }
-
-    if (value && Array.isArray(value.calls)) {
-      normalized[name] = getQueueEntries(value.calls);
-    }
-  });
-
-  return normalized;
-};
-
-const mergeQueuePayload = (previous, incoming) => {
-  const nextPayload = normalizeQueuePayload(incoming);
-  if (!Object.keys(nextPayload).length) return previous;
-  return { ...previous, ...nextPayload };
-};
-
 const formatDuration = (seconds) => {
   const total = Number.isFinite(Number(seconds)) ? Math.max(0, Math.floor(Number(seconds))) : 0;
   const mins = Math.floor(total / 60);
@@ -97,72 +72,10 @@ const formatRelativeTime = (dateValue) => {
 
 const InboundCalls = () => {
   const [activeTab, setActiveTab] = useState('overview');
-  const [realTimeData, setRealTimeData] = useState({
-    activeCalls: 0,
-    queueStatus: {},
-    totalCalls: 0,
-    avgWaitTime: 0
-  });
   const [period] = useState('today');
 
-  const { analytics, queueStatus, loading, error, refreshInbound } = useInbound();
-  const { socket, connected, error: socketError } = useSocket();
-
-  const handleCallsUpdate = useCallback((data) => {
-    const activeCalls = Array.isArray(data?.calls)
-      ? data.calls.filter((call) => ACTIVE_CALL_STATUSES.has(call?.status)).length
-      : 0;
-
-    setRealTimeData((prev) => ({
-      ...prev,
-      activeCalls
-    }));
-  }, []);
-
-  const handleStatsUpdate = useCallback((data) => {
-    setRealTimeData((prev) => ({
-      ...prev,
-      ...data
-    }));
-  }, []);
-
-  const handleQueueUpdate = useCallback((data) => {
-    setRealTimeData((prev) => ({
-      ...prev,
-      queueStatus: mergeQueuePayload(prev.queueStatus, data)
-    }));
-  }, []);
-
-  const handleHealthUpdate = useCallback(() => {}, []);
-
-  useEffect(() => {
-    refreshInbound(period);
-  }, [period, refreshInbound]);
-
-  useEffect(() => {
-    if (!socket || !connected) return undefined;
-
-    socket.on('calls_update', handleCallsUpdate);
-    socket.on('stats_update', handleStatsUpdate);
-    socket.on('health_update', handleHealthUpdate);
-    socket.on('queue_update', handleQueueUpdate);
-
-    return () => {
-      socket.off('calls_update', handleCallsUpdate);
-      socket.off('stats_update', handleStatsUpdate);
-      socket.off('health_update', handleHealthUpdate);
-      socket.off('queue_update', handleQueueUpdate);
-    };
-  }, [socket, connected, handleCallsUpdate, handleStatsUpdate, handleHealthUpdate, handleQueueUpdate]);
-
-  useEffect(() => {
-    if (!queueStatus) return;
-
-    setRealTimeData((prev) => ({
-      ...prev,
-      queueStatus: mergeQueuePayload(prev.queueStatus, queueStatus)
-    }));
-  }, [queueStatus]);
+  const { analytics, queueStatus, routingRules, loading, error } = useInbound(period);
+  const { connected, error: socketError } = useSocket();
 
   const activeCallsFromAnalytics = useMemo(() => {
     const recentCalls = Array.isArray(analytics?.recentCalls) ? analytics.recentCalls : [];
@@ -170,7 +83,7 @@ const InboundCalls = () => {
   }, [analytics]);
 
   const queueOverview = useMemo(() => {
-    const items = Object.entries(realTimeData.queueStatus || {}).map(([queueName, queue]) => {
+    const items = Object.entries(queueStatus || {}).map(([queueName, queue]) => {
       const queueArray = getQueueEntries(queue);
       return {
         queueName,
@@ -205,12 +118,12 @@ const InboundCalls = () => {
       busiestQueue,
       avgWaitTime
     };
-  }, [realTimeData.queueStatus]);
+  }, [queueStatus]);
 
   const totalCalls = analytics?.summary?.totalCalls || 0;
   const averageDuration = analytics?.summary?.avgDuration || 0;
   const successRate = analytics?.summary?.answerRate || analytics?.summary?.successRate || 0;
-  const activeCalls = realTimeData.activeCalls || activeCallsFromAnalytics;
+  const activeCalls = analytics?.summary?.activeCalls || activeCallsFromAnalytics;
   const queueAvgWait = Number.isFinite(Number(analytics?.queue?.avgWaitTime)) && Number(analytics?.queue?.avgWaitTime) > 0
     ? Number(analytics.queue.avgWaitTime)
     : queueOverview.avgWaitTime;
@@ -220,7 +133,7 @@ const InboundCalls = () => {
     return [...rows]
       .sort((a, b) => (toTimestamp(b?.createdAt) || 0) - (toTimestamp(a?.createdAt) || 0))
       .slice(0, RECENT_CALLS_LIMIT);
-  }, [analytics?.recentCalls]);
+  }, [analytics]);
 
   const handleBack = () => {
     window.history.back();
@@ -283,7 +196,7 @@ const InboundCalls = () => {
               </div>
             )}
 
-            {queueOverview.items.map(({ queueName, queueArray, count }) => (
+            {queueOverview.items.map(({ queueName, count }) => (
               <div key={queueName} className="queue-item">
                 <div className="queue-info">
                   <h4>{formatQueueName(queueName)}</h4>
@@ -340,11 +253,11 @@ const InboundCalls = () => {
       case 'overview':
         return renderOverview();
       case 'queues':
-        return <QueueMonitor socket={socket} />;
+        return <QueueMonitor queues={queueStatus} analyticsQueueStats={analytics?.queue} loading={loading} />;
       case 'ivr':
         return <IVRConfig />;
       case 'routing':
-        return <RoutingRules />;
+        return <RoutingRules initialRules={routingRules} />;
       case 'leads':
         return <LeadsPage />;
       default:

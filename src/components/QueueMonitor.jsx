@@ -1,6 +1,5 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Users, Clock, Phone, AlertCircle } from 'lucide-react';
-import apiService from '../services/api';
 import './QueueMonitor.css';
 
 const toTimestamp = (value) => {
@@ -16,14 +15,15 @@ const getWaitSeconds = (queuedAt) => {
 };
 
 const normalizeQueueData = (raw) => {
-  if (!raw || typeof raw !== 'object') return {};
+  const source = raw?.queueStatus || raw?.queues || raw || {};
+  if (!source || typeof source !== 'object') return {};
 
-  if (raw.name && Array.isArray(raw.calls)) {
-    return normalizeQueueData({ [raw.name]: raw.calls });
+  if (source.name && Array.isArray(source.calls)) {
+    return normalizeQueueData({ [source.name]: source.calls });
   }
 
   const normalized = {};
-  Object.entries(raw).forEach(([queueName, queueValue]) => {
+  Object.entries(source).forEach(([queueName, queueValue]) => {
     const calls = Array.isArray(queueValue)
       ? queueValue
       : queueValue && Array.isArray(queueValue.calls)
@@ -57,24 +57,8 @@ const normalizeQueueData = (raw) => {
   return normalized;
 };
 
-const mergeQueueData = (previous, incoming) => {
-  const next = { ...previous };
-
-  Object.entries(incoming).forEach(([queueName, queue]) => {
-    const queueArray = Array.isArray(queue) ? queue : [];
-    if (queueArray.length === 0) {
-      delete next[queueName];
-      return;
-    }
-
-    next[queueName] = queueArray;
-  });
-
-  return next;
-};
-
 const normalizeAnalyticsQueue = (payload) => {
-  const source = payload?.data?.queue || payload?.queue || {};
+  const source = payload?.data?.queue || payload?.queue || payload || {};
 
   return {
     avgWaitTime: Number.isFinite(Number(source?.avgWaitTime)) ? Number(source.avgWaitTime) : null,
@@ -90,7 +74,7 @@ const formatQueueName = (queueName) =>
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
-const QueueMonitor = ({ socket }) => {
+const QueueMonitor = ({ queues: inboundQueues = {}, analyticsQueueStats: inboundAnalyticsQueueStats = {}, loading = false }) => {
   const [queues, setQueues] = useState({});
   const [selectedQueue, setSelectedQueue] = useState(null);
   const [analyticsQueueStats, setAnalyticsQueueStats] = useState({
@@ -98,111 +82,14 @@ const QueueMonitor = ({ socket }) => {
     maxWaitTime: null,
     abandonRate: null
   });
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
-
-  const fetchQueueData = useCallback(async ({ silent = false } = {}) => {
-    if (!silent) {
-      setLoading(true);
-    }
-
-    try {
-      setError('');
-
-      const [queueResponse, analyticsResponse] = await Promise.allSettled([
-        apiService.getQueueStatus(),
-        apiService.getInboundAnalytics('today')
-      ]);
-
-      if (queueResponse.status === 'fulfilled') {
-        setQueues(normalizeQueueData(queueResponse.value?.data));
-      } else {
-        const queueError = queueResponse.reason?.response?.data?.error || queueResponse.reason?.message || 'Failed to load queue data';
-        setError((prev) => (prev ? `${prev}; ${queueError}` : queueError));
-      }
-
-      if (analyticsResponse.status === 'fulfilled') {
-        setAnalyticsQueueStats(normalizeAnalyticsQueue(analyticsResponse.value?.data));
-      }
-    } catch (fetchError) {
-      setError(fetchError?.response?.data?.error || fetchError?.message || 'Failed to load queue data');
-    } finally {
-      if (!silent) {
-        setLoading(false);
-      }
-    }
-  }, []);
-
-
-  const handleQueueUpdate = useCallback((data) => {
-    const normalized = normalizeQueueData(data?.queueStatus || data);
-
-    if (!Object.keys(normalized).length) {
-      fetchQueueData({ silent: true });
-      return;
-    }
-
-    setQueues((prev) => mergeQueueData(prev, normalized));
-  }, [fetchQueueData]);
-
-  const handleCallerJoined = useCallback((data) => {
-    if (!data?.queueName) return;
-
-    const normalizedCaller = {
-      callSid: data?.caller?.callSid || data?.callSid || `${data.queueName}-${Date.now()}`,
-      phoneNumber: data?.caller?.phoneNumber || data?.caller?.from || data?.caller?.callerNumber || '-',
-      queuedAt: data?.caller?.queuedAt || data?.caller?.createdAt || new Date().toISOString(),
-      position: Number.isFinite(Number(data?.position)) ? Number(data.position) : null,
-      ...(data?.caller || {})
-    };
-
-    setQueues((prev) => {
-      const currentQueue = Array.isArray(prev[data.queueName]) ? prev[data.queueName] : [];
-      const dedupedQueue = currentQueue.filter((entry) => entry.callSid !== normalizedCaller.callSid);
-      const nextQueue = normalizeQueueData({ [data.queueName]: [...dedupedQueue, normalizedCaller] })[data.queueName] || [];
-
-      return {
-        ...prev,
-        [data.queueName]: nextQueue
-      };
-    });
-  }, []);
-
-  const handleCallerLeft = useCallback((data) => {
-    if (!data?.queueName || !data?.callSid) return;
-
-    setQueues((prev) => {
-      const nextQueue = (prev[data.queueName] || []).filter((caller) => caller.callSid !== data.callSid);
-      if (!nextQueue.length) {
-        const next = { ...prev };
-        delete next[data.queueName];
-        return next;
-      }
-
-      return {
-        ...prev,
-        [data.queueName]: nextQueue
-      };
-    });
-  }, []);
 
   useEffect(() => {
-    fetchQueueData({ silent: false });
-  }, [fetchQueueData]);
+    setQueues(normalizeQueueData(inboundQueues));
+  }, [inboundQueues]);
 
   useEffect(() => {
-    if (!socket) return undefined;
-
-    socket.on('queue_update', handleQueueUpdate);
-    socket.on('caller_joined_queue', handleCallerJoined);
-    socket.on('caller_left_queue', handleCallerLeft);
-
-    return () => {
-      socket.off('queue_update', handleQueueUpdate);
-      socket.off('caller_joined_queue', handleCallerJoined);
-      socket.off('caller_left_queue', handleCallerLeft);
-    };
-  }, [socket, handleQueueUpdate, handleCallerJoined, handleCallerLeft]);
+    setAnalyticsQueueStats(normalizeAnalyticsQueue(inboundAnalyticsQueueStats));
+  }, [inboundAnalyticsQueueStats]);
 
   useEffect(() => {
     if (selectedQueue && !Object.prototype.hasOwnProperty.call(queues, selectedQueue)) {
@@ -288,15 +175,6 @@ const QueueMonitor = ({ socket }) => {
         </div>
       </div>
 
-
-      {error && (
-        <div className="empty-state" style={{ marginBottom: 16 }}>
-          <AlertCircle size={32} />
-          <h3>Queue data issue</h3>
-          <p>{error}</p>
-        </div>
-      )}
-
       <div className="queue-grid">
         {Object.entries(queues).map(([queueName, queue]) => {
           const queueArray = Array.isArray(queue) ? queue : [];
@@ -376,4 +254,3 @@ const QueueMonitor = ({ socket }) => {
 };
 
 export default QueueMonitor;
-

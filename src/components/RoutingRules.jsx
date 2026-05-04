@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Plus, Pencil, Trash2, Save, X, ArrowUp, ArrowDown, PlayCircle, AlertCircle, Route } from 'lucide-react';
 import apiService from '../services/api';
+import socketService from '../services/socketService';
 import useIVRMenus from '../hooks/useIVRMenus';
 import './RoutingRules.css';
 
@@ -14,6 +15,22 @@ const inferIvrPromptFromAction = (action = '') => {
   if (!text.startsWith('ivr:')) return '';
   return text.slice(4).trim();
 };
+
+const emitWithAck = (socket, eventName, payload = {}) =>
+  new Promise((resolve, reject) => {
+    if (!socket) {
+      reject(new Error('Socket is not connected'));
+      return;
+    }
+
+    socket.emit(eventName, payload, (response = {}) => {
+      if (response?.success === false) {
+        reject(new Error(response.error || `${eventName} failed`));
+        return;
+      }
+      resolve(response);
+    });
+  });
 
 const buildRuleDraft = (rule, ivrMenus = []) => {
   const inferredPromptKey = rule?.ivrPromptKey || inferIvrPromptFromAction(rule?.action);
@@ -33,7 +50,7 @@ const buildRuleDraft = (rule, ivrMenus = []) => {
   };
 };
 
-const RoutingRules = () => {
+const RoutingRules = ({ initialRules = [] }) => {
   const {
     ivrMenus,
     loading: ivrLoading,
@@ -54,11 +71,20 @@ const RoutingRules = () => {
   );
   const hasActiveIvrMenus = activeIvrMenus.length > 0;
 
-  const fetchRoutingRules = async () => {
-    const response = await apiService.getRoutingRules();
-    const nextRules = normalizeRules(response.data).sort((a, b) => (a.priority || 0) - (b.priority || 0));
-    setRules(nextRules);
-  };
+  const applyRules = useCallback((nextRules = []) => {
+    setRules(normalizeRules(nextRules).sort((a, b) => (a.priority || 0) - (b.priority || 0)));
+  }, []);
+
+  const fetchRoutingRules = useCallback(async () => {
+    const socket = socketService.connect();
+    try {
+      const response = await emitWithAck(socket, 'routing_rules:list');
+      applyRules(response.routingRules || []);
+    } catch {
+      const response = await apiService.getRoutingRules();
+      applyRules(response.data);
+    }
+  }, [applyRules]);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -75,7 +101,40 @@ const RoutingRules = () => {
     };
 
     bootstrap();
-  }, []);
+  }, [fetchRoutingRules]);
+
+  useEffect(() => {
+    if (Array.isArray(initialRules) && initialRules.length > 0) {
+      applyRules(initialRules);
+      setLoading(false);
+    }
+  }, [applyRules, initialRules]);
+
+  useEffect(() => {
+    const socket = socketService.connect();
+    if (!socket) return undefined;
+
+    const handleRulesUpdate = (payload = {}) => {
+      if (Array.isArray(payload.routingRules)) {
+        applyRules(payload.routingRules);
+        setLoading(false);
+      }
+    };
+
+    socket.on('routing_rules:changed', handleRulesUpdate);
+    socket.on('inbound:routing_rules:update', handleRulesUpdate);
+    socket.on('connect', fetchRoutingRules);
+
+    if (socket.connected || socketService.isConnected()) {
+      fetchRoutingRules();
+    }
+
+    return () => {
+      socket.off('routing_rules:changed', handleRulesUpdate);
+      socket.off('inbound:routing_rules:update', handleRulesUpdate);
+      socket.off('connect', fetchRoutingRules);
+    };
+  }, [applyRules, fetchRoutingRules]);
 
   const handleAddRule = () => {
     const firstMenu = activeIvrMenus[0];
@@ -167,10 +226,10 @@ const RoutingRules = () => {
         enabled: Boolean(editingRule.enabled)
       };
 
-      await apiService.updateRoutingRule(payload);
+      const socket = socketService.connect();
+      await emitWithAck(socket, 'routing_rules:create_or_update', payload);
       setEditingRule(null);
       setIsAddingRule(false);
-      await fetchRoutingRules();
     } catch (err) {
       console.error('Failed to save rule:', err);
       setError(err.response?.data?.error || err.message || 'Failed to save rule');
@@ -186,8 +245,8 @@ const RoutingRules = () => {
 
     setError('');
     try {
-      await apiService.deleteRoutingRule(ruleId);
-      setRules((prev) => prev.filter((rule) => rule.id !== ruleId));
+      const socket = socketService.connect();
+      await emitWithAck(socket, 'routing_rules:delete', { ruleId });
     } catch (err) {
       console.error('Failed to delete rule:', err);
       setError(err.response?.data?.error || err.message || 'Failed to delete rule');
@@ -197,13 +256,8 @@ const RoutingRules = () => {
   const handleToggleRule = async (ruleId) => {
     setError('');
     try {
-      const response = await apiService.toggleRoutingRule(ruleId);
-      const updatedRule = response.data?.data;
-      if (updatedRule) {
-        setRules((prev) => prev.map((rule) => (rule.id === ruleId ? updatedRule : rule)));
-        return;
-      }
-      await fetchRoutingRules();
+      const socket = socketService.connect();
+      await emitWithAck(socket, 'routing_rules:toggle', { ruleId });
     } catch (err) {
       console.error('Failed to toggle rule:', err);
       setError(err.response?.data?.error || err.message || 'Failed to toggle rule');
@@ -224,7 +278,8 @@ const RoutingRules = () => {
       const targetIndex = direction === 'up' ? ruleIndex - 1 : ruleIndex + 1;
       [nextRules[ruleIndex], nextRules[targetIndex]] = [nextRules[targetIndex], nextRules[ruleIndex]];
       const prioritized = nextRules.map((rule, index) => ({ ...rule, priority: index + 1 }));
-      await Promise.all(prioritized.map((rule) => apiService.updateRoutingRule(rule)));
+      const socket = socketService.connect();
+      await Promise.all(prioritized.map((rule) => emitWithAck(socket, 'routing_rules:create_or_update', rule)));
       setRules(prioritized);
     } catch (err) {
       console.error('Failed to move rule:', err);

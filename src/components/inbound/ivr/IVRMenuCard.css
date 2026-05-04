@@ -890,30 +890,56 @@
 
 .menu-card-title {
   min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+}
+
+.menu-title-icon {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #2563eb;
 }
 
 .title-text {
   display: flex;
   align-items: center;
   gap: 10px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  min-width: 0;
+  line-height: 1;
 }
 
 .menu-card-title h3 {
   font-size: 21px;
   font-weight: 700;
-  line-height: 1.25;
+  line-height: 1.2;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-indicator {
-  min-width: unset;
+  min-width: 58px;
   width: auto;
   max-width: none;
   height: 26px;
-  padding: 4px 10px;
+  padding: 0 10px;
   border-radius: 999px;
   font-size: 11px;
   letter-spacing: 0.35px;
+  line-height: 1;
+  align-self: center;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .menu-actions {
@@ -972,11 +998,28 @@
 }
 
 .workflow-info span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   background: #ffffff;
   border: 1px solid #dde6f2;
   border-radius: 999px;
   padding: 5px 9px;
   font-size: 13px;
+  min-height: 30px;
+}
+
+.summary-title {
+  display: inline-flex !important;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.workflow-info span svg,
+.flow-metrics-grid span svg,
+.summary-title svg {
+  flex: 0 0 auto;
 }
 
 .flow-health-summary {
@@ -994,12 +1037,28 @@
 .flow-metrics-grid span {
   border-radius: 8px;
   font-size: 13px;
+  min-height: 34px;
 }
 
 @media (max-width: 768px) {
   .menu-card {
     padding: 12px;
     border-radius: 14px;
+  }
+
+  .menu-card-title {
+    flex-direction: row;
+    align-items: center;
+  }
+
+  .title-text {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .menu-title-icon {
+    width: 30px;
+    height: 30px;
   }
 
   .menu-card-title h3 {
