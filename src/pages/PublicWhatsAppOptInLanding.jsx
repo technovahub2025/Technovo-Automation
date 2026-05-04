@@ -63,7 +63,13 @@ function PublicWhatsAppOptInLanding() {
   const successRedirectUrl = useMemo(() => {
     if (typeof window === "undefined") return "/whatsapp-opt-in/success";
     const params = new URLSearchParams(window.location.search);
-    return params.get("successRedirect") || "/whatsapp-opt-in/success";
+    const explicitRedirect = params.get("successRedirect");
+    if (explicitRedirect) return explicitRedirect;
+
+    const productionBase = window.location.hostname.endsWith("technovahub.in")
+      ? "/nexion"
+      : "";
+    return `${productionBase}/whatsapp-opt-in/success`;
   }, []);
 
   const endpointUrl = useMemo(() => {
