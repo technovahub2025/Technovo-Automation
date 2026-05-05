@@ -66,7 +66,9 @@ const WhatsAppTemplateCreator = () => {
     String(value || '')
       .toLowerCase()
       .replace(/\s+/g, '_')
-      .replace(/[^a-z0-9_]/g, '');
+      .replace(/[^a-z0-9_]/g, '')
+      .replace(/_+/g, '_')
+      .replace(/^_+|_+$/g, '');
 
   const handleInputChange = (field, value) => {
     const normalizedValue = field === 'name' ? normalizeTemplateName(value) : value;
@@ -298,8 +300,8 @@ const WhatsAppTemplateCreator = () => {
 
     if (!templateData.name.trim()) {
       errors.name = 'Template name is required.';
-    } else if (!/^[a-z0-9_]+$/.test(templateData.name)) {
-      errors.name = 'Use lowercase letters, numbers and underscore only.';
+    } else if (!/^[a-z0-9](?:[a-z0-9_]*[a-z0-9])?$/.test(templateData.name)) {
+      errors.name = 'Use lowercase letters, numbers, and underscores only, and do not start or end with underscore.';
     }
     if (!templateData.category) {
       errors.category = 'Category is required.';

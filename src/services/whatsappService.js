@@ -1037,7 +1037,8 @@ export const whatsappService = {
           error?.response?.data?.error ||
           error?.response?.data?.message ||
           error?.message ||
-          "Failed to create template"
+          "Failed to create template",
+        details: error?.response?.data || null
       };
     }
   },
