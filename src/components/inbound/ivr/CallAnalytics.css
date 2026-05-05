@@ -1,8 +1,12 @@
 .call-analytics {
   min-height: 100vh;
-  padding: 24px;
+  padding: 0;
   background: #f8fafc;
   color: #0f172a;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .analytics-header,
@@ -298,6 +302,7 @@
 .calls-table-section {
   border-radius: 8px;
   padding: 18px;
+  min-width: 0;
 }
 
 .chart-card.trading-chart,
@@ -381,6 +386,7 @@
 .calls-table-container {
   max-height: 520px;
   overflow: auto;
+  -webkit-overflow-scrolling: touch;
   scrollbar-color: #cbd5e1 #f8fafc;
   scrollbar-width: thin;
 }
@@ -515,7 +521,7 @@
 
 @media (max-width: 720px) {
   .call-analytics {
-    padding: 16px;
+    padding: 0;
   }
 
   .analytics-header,
@@ -541,5 +547,45 @@
   .search-input,
   .btn {
     width: 100%;
+  }
+
+  .chart-card,
+  .analytics-section,
+  .calls-table-section,
+  .filters-panel {
+    padding: 14px;
+  }
+
+  .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 480px) {
+  .analytics-header h2 {
+    font-size: 21px;
+    line-height: 1.2;
+  }
+
+  .summary-card {
+    min-height: 92px;
+    padding: 14px;
+  }
+
+  .summary-content h3,
+  .channel-panel strong {
+    font-size: 21px;
+  }
+
+  .chart-card,
+  .analytics-section,
+  .calls-table-section,
+  .filters-panel {
+    padding: 12px;
+  }
+
+  .calls-table {
+    min-width: 780px;
   }
 }

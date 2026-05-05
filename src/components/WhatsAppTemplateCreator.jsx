@@ -1,10 +1,30 @@
 import React, { useState, useRef, useMemo } from 'react';
-import { Upload, X, Plus, Send, CheckCircle, AlertCircle, Clock } from 'lucide-react';
+import { Upload, X, Plus, Send, CheckCircle, Clock, ChevronDown } from 'lucide-react';
 import { whatsappService } from '../services/whatsappService';
 import whatsappLogo from '../assets/WhatsApp.svg.webp';
 import './WhatsAppTemplateCreator.css';
 
 const WhatsAppTemplateCreator = () => {
+  const getReadableErrorMessage = (value, fallback = 'Unknown error') => {
+    if (!value) return fallback;
+    if (typeof value === 'string') return value;
+    if (typeof value === 'object') {
+      return (
+        value.error?.message ||
+        value.error ||
+        value.message ||
+        value.error_user_msg ||
+        fallback
+      );
+    }
+    return String(value);
+  };
+
+  const buildFriendlySubmitErrorMessage = (actualError) => {
+    const reason = getReadableErrorMessage(actualError, 'The template could not be submitted.');
+    return `Template submission failed.\n\nReason: ${reason}\n\nThis may happen because of wrong input, a server issue, or a Meta WhatsApp approval/API issue. Kindly reach out to customer service if you need help.`;
+  };
+
   const [templateData, setTemplateData] = useState({
     name: '',
     category: 'marketing',
@@ -25,7 +45,12 @@ const WhatsAppTemplateCreator = () => {
   const [imagePreview, setImagePreview] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitStatus, setSubmitStatus] = useState(null);
-  const [submitError, setSubmitError] = useState('');
+  const [openGuideSections, setOpenGuideSections] = useState({
+    rules: false,
+    dosDonts: false,
+    quickFacts: false,
+    checklist: false
+  });
   const [variableType, setVariableType] = useState('number');
   const [variableExamples, setVariableExamples] = useState({});
 
@@ -61,6 +86,50 @@ const WhatsAppTemplateCreator = () => {
     { value: 'url', label: 'Call to Action' },
     { value: 'phone_number', label: 'Phone Number' }
   ];
+
+  const guideRules = [
+    ['Name', 'Lowercase a-z, numbers 0-9, underscores _ only'],
+    ['Body', 'Max 1,024 chars (550 for Marketing)'],
+    ['Header', 'Max 60 chars; 1 variable max'],
+    ['Footer', 'Max 60 chars, no variables, no emojis'],
+    ['Variables', 'Sequential {{1}}, {{2}}... with 15+ words around each'],
+    ['Emojis', 'Max 10 total, body only'],
+    ['Buttons', '3 Quick Reply OR 2 CTA (1 Phone + 1 URL)'],
+    ['URLs', 'Valid HTTPS matching Business Manager domain'],
+    ['Categories', 'Authentication / Utility / Marketing (be honest)']
+  ];
+
+  const guideDosDonts = [
+    ['Pick correct category (Marketing is not Utility)', 'Submit marketing content as Utility'],
+    ['Use sequential {{1}}, {{2}}, {{3}}', 'Skip numbers, like {{1}}, {{3}}'],
+    ['Surround variables with 15+ words', 'Put {{1}} alone on a line'],
+    ['Use valid HTTPS URLs matching your domain', 'Use shortened or masked URLs'],
+    ['Keep footer static text only', 'Put variables or emojis in footer'],
+    ['Use max 10 emojis in body only', 'Use emojis in header, footer, or CTA buttons'],
+    ['Use 3 Quick Reply OR 2 CTA buttons', 'Mix Quick Reply and CTA together'],
+    ['Keep text compact with max 2 empty lines', 'Use more than 2 consecutive line breaks']
+  ];
+
+  const guideChecklist = [
+    'Correct category selected',
+    'Template name: lowercase + underscores',
+    'Variables: {{1}}, {{2}}, {{3}} (no skipping)',
+    'Each variable has 15+ words around it',
+    'Body under 1,024 chars (550 for Marketing)',
+    'Footer: under 60 chars, no variables, no emojis',
+    'Max 10 emojis total (body only)',
+    'Buttons: 3 Quick Reply OR 2 CTA (1 Phone + 1 URL)',
+    'All URLs valid HTTPS + match domain',
+    'No payment/Aadhaar/passport requests',
+    'Max 2 empty lines'
+  ];
+
+  const toggleGuideSection = (section) => {
+    setOpenGuideSections((current) => ({
+      ...current,
+      [section]: !current[section]
+    }));
+  };
 
   const normalizeTemplateName = (value) =>
     String(value || '')
@@ -373,14 +442,15 @@ const WhatsAppTemplateCreator = () => {
   const handleSubmit = async () => {
     const errors = validateTemplateRules();
     if (Object.keys(errors).length > 0) {
+      const validationMessage = Object.values(errors)[0];
       setSubmitStatus('error');
-      setSubmitError(Object.values(errors)[0]);
+      console.error('Template validation failed:', validationMessage);
+      window.alert(buildFriendlySubmitErrorMessage(validationMessage));
       return;
     }
 
     setIsSubmitting(true);
     setSubmitStatus(null);
-    setSubmitError('');
 
     try {
       // Convert to Meta API format for consistency
@@ -486,19 +556,25 @@ const WhatsAppTemplateCreator = () => {
           setSubmitStatus(null);
         }, 3000);
       } else {
+        const backendMessage =
+          response?.error ||
+          response?.message ||
+          response?.details?.error?.message ||
+          response?.details?.message ||
+          'The server rejected the template submission.';
         setSubmitStatus('error');
-        const backendMessage = response.error || response.message || 'Failed to submit template';
-        setSubmitError(backendMessage);
+        console.error('Template submission failed:', response);
+        window.alert(buildFriendlySubmitErrorMessage(backendMessage));
       }
     } catch (error) {
-      console.error('Failed to submit template:', error);
-      setSubmitStatus('error');
       const errorMessage =
         error?.response?.data?.error ||
         error?.response?.data?.message ||
         error?.message ||
-        'Failed to submit template. Please try again.';
-      setSubmitError(errorMessage);
+        'The template could not be submitted.';
+      console.error('Failed to submit template:', error);
+      setSubmitStatus('error');
+      window.alert(buildFriendlySubmitErrorMessage(errorMessage));
     } finally {
       setIsSubmitting(false);
     }
@@ -604,6 +680,145 @@ const WhatsAppTemplateCreator = () => {
       </div>
     );
   };
+
+  const renderTemplateGuide = () => (
+    <div className="template-guide-card">
+      <div className="template-guide-label">
+        <strong>WhatsApp Template Guide</strong>
+      </div>
+
+      <div className="template-guide-accordion">
+        <section className="template-guide-section">
+          <button
+            type="button"
+            className="template-guide-toggle"
+            onClick={() => toggleGuideSection('rules')}
+            aria-expanded={openGuideSections.rules}
+          >
+            <span>Rules, checklist, and approval tips</span>
+            <ChevronDown
+              size={18}
+              className={`template-guide-chevron${openGuideSections.rules ? ' open' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+          {openGuideSections.rules && (
+            <div className="template-guide-content">
+              <div className="template-guide-table-wrap">
+                <table className="template-guide-table">
+                  <thead>
+                    <tr>
+                      <th>Section</th>
+                      <th>Rule</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {guideRules.map(([section, rule]) => (
+                      <tr key={section}>
+                        <td>{section}</td>
+                        <td>{rule}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="template-guide-section">
+          <button
+            type="button"
+            className="template-guide-toggle"
+            onClick={() => toggleGuideSection('dosDonts')}
+            aria-expanded={openGuideSections.dosDonts}
+          >
+            <span>Do's / Don'ts</span>
+            <ChevronDown
+              size={18}
+              className={`template-guide-chevron${openGuideSections.dosDonts ? ' open' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+          {openGuideSections.dosDonts && (
+            <div className="template-guide-content">
+              <div className="template-guide-table-wrap">
+                <table className="template-guide-table">
+                  <thead>
+                    <tr>
+                      <th>Do</th>
+                      <th>Don't</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {guideDosDonts.map(([doText, dontText]) => (
+                      <tr key={doText}>
+                        <td>{doText}</td>
+                        <td>{dontText}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="template-guide-section">
+          <button
+            type="button"
+            className="template-guide-toggle"
+            onClick={() => toggleGuideSection('quickFacts')}
+            aria-expanded={openGuideSections.quickFacts}
+          >
+            <span>Quick Facts</span>
+            <ChevronDown
+              size={18}
+              className={`template-guide-chevron${openGuideSections.quickFacts ? ' open' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+          {openGuideSections.quickFacts && (
+            <div className="template-guide-content">
+              <div className="template-guide-facts">
+                <div><span>Approval Time</span><strong>15 min - 24-72 hrs</strong></div>
+                <div><span>Success Rate</span><strong>99% when rules are followed</strong></div>
+                <div><span>Top Rejection</span><strong>Wrong category</strong></div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="template-guide-section">
+          <button
+            type="button"
+            className="template-guide-toggle"
+            onClick={() => toggleGuideSection('checklist')}
+            aria-expanded={openGuideSections.checklist}
+          >
+            <span>Pre-Submit Checklist</span>
+            <ChevronDown
+              size={18}
+              className={`template-guide-chevron${openGuideSections.checklist ? ' open' : ''}`}
+              aria-hidden="true"
+            />
+          </button>
+          {openGuideSections.checklist && (
+            <div className="template-guide-content">
+              <ul className="template-guide-checklist">
+                {guideChecklist.map((item) => (
+                  <li key={item}>
+                    <span aria-hidden="true">☐</span>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
+      </div>
+    </div>
+  );
 
   return (
     <div className="template-creator">
@@ -927,12 +1142,6 @@ const WhatsAppTemplateCreator = () => {
                 </div>
               )}
               
-              {submitStatus === 'error' && (
-                <div className="status-message error">
-                  <AlertCircle size={20} />
-                  {submitError || 'Failed to submit template. Please try again.'}
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -940,6 +1149,7 @@ const WhatsAppTemplateCreator = () => {
         {/* Preview Section */}
         <div className="creator-preview">
           {renderPreview()}
+          {renderTemplateGuide()}
         </div>
       </div>
     </div>

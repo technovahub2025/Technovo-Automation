@@ -393,13 +393,16 @@
   .inbound-calls .overview-grid {
     grid-template-columns: 1fr;
   }
-}.inbound-calls /* Inbound page fixes: responsive layout + scoped UI elements */
+}
+
+/* Inbound page fixes: responsive layout + scoped UI elements */
 .inbound-calls,
 .inbound-calls * {
   box-sizing: border-box;
 }
 
 .inbound-calls {
+  padding: 0;
   width: 100%;
   max-width: 100%;
   overflow-x: hidden;
@@ -471,7 +474,7 @@
 
 @media (max-width: 768px) {
   .inbound-calls {
-    padding: 16px;
+    padding: 0;
   }
 
   .inbound-calls .inbound-header-new h1 {
@@ -507,7 +510,7 @@
 
 @media (max-width: 560px) {
   .inbound-calls {
-    padding: 12px;
+    padding: 0;
   }
 
   .inbound-calls .inbound-tabs-new {
@@ -532,5 +535,37 @@
 
   .inbound-calls .call-duration {
     text-align: left;
+  }
+}
+
+@media (max-width: 480px) {
+  .inbound-calls .inbound-header-new {
+    margin-bottom: 20px;
+  }
+
+  .inbound-calls .inbound-header-new h1 {
+    font-size: 21px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .inbound-calls .header-subtitle {
+    font-size: 14px;
+  }
+
+  .inbound-calls .inbound-tabs-new {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 2px;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .inbound-calls .tab-link {
+    flex: 0 0 auto;
+  }
+
+  .inbound-calls .queue-overview,
+  .inbound-calls .recent-calls {
+    padding: 12px;
   }
 }

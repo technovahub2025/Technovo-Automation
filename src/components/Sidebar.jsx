@@ -196,6 +196,17 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         featureFlags.templates ||
         featureFlags.contacts
     );
+    const canUseCrm = isSuperAdmin || Boolean(
+        featureFlags.crmHome ||
+        featureFlags.crmPipeline ||
+        featureFlags.crmTasks ||
+        featureFlags.crmDeals ||
+        featureFlags.crmMeetings ||
+        featureFlags.crmReports ||
+        featureFlags.crmOps ||
+        featureFlags.crmLeadScoringSettings ||
+        featureFlags.crmTaskCalendar
+    );
     const canUseVoiceAutomation = isSuperAdmin || Boolean(
         featureFlags.voiceCampaign ||
         featureFlags.inboundAutomation ||
@@ -204,7 +215,11 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
     );
     const canUseMissedCalls = isSuperAdmin || Boolean(featureFlags.missedCall);
     const canUseEmailAutomation = isSuperAdmin || Boolean(featureFlags.workflowAutomation || featureFlags.analytics);
-    const canUseAdvancedCrm = isSuperAdmin || canUseBroadcast;
+    const canUseCrmAutomation = isSuperAdmin || Boolean(
+        featureFlags.crmOps ||
+        featureFlags.crmLeadScoringSettings ||
+        featureFlags.crmTaskCalendar
+    );
 
     useEffect(() => {
         if (!isLoggedIn && openMenu) {
@@ -611,7 +626,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
     };
 
     const loadHubBadges = useCallback(async () => {
-        if (!isLoggedIn || !canUseBroadcast) {
+        if (!isLoggedIn || (!canUseBroadcast && !canUseCrm)) {
             setHubBadges({
                 conversationsUnread: 0,
                 overdueTasks: 0,
@@ -623,10 +638,10 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
 
         try {
             const [conversations, taskSummary, dealMetrics, ownerDashboard] = await Promise.all([
-                whatsappService.getConversations({ limit: 200 }),
-                crmService.getTaskSummary(),
-                crmService.getDealMetrics(),
-                crmService.getOwnerDashboard()
+                canUseBroadcast ? whatsappService.getConversations({ limit: 200 }) : Promise.resolve([]),
+                canUseCrm ? crmService.getTaskSummary() : Promise.resolve(null),
+                canUseCrm ? crmService.getDealMetrics() : Promise.resolve(null),
+                canUseCrm ? crmService.getOwnerDashboard() : Promise.resolve(null)
             ]);
 
             const unreadCount = Array.isArray(conversations)
@@ -652,7 +667,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         } catch (_error) {
             // Keep existing badge values on transient failures.
         }
-    }, [canUseBroadcast, isLoggedIn]);
+    }, [canUseBroadcast, canUseCrm, isLoggedIn]);
 
     useEffect(() => {
         loadHubBadges();
@@ -917,17 +932,21 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         </div>
                     )}
 
-                    {isLoggedIn && canUseBroadcast && (
+                    {isLoggedIn && canUseCrm && (
                         <div
                             className={`icon-item ${isCrmRouteActive ? 'active' : ''} ${openMenu === 'crm' ? 'expanded' : ''}`}
                             onMouseEnter={(e) => {
                                 if (!isMobile) {
                                     cancelDesktopFlyoutClose();
                                     openDesktopFlyout('crm', e);
-                                    prefetchRoute('/crm/home');
-                                    prefetchRoute('/crm/pipeline');
-                                    prefetchRoute('/crm/tasks-calendar');
-                                    prefetchRoute('/crm/ops');
+                                    if (isSuperAdmin || featureFlags.crmHome) prefetchRoute('/crm/home');
+                                    if (isSuperAdmin || featureFlags.crmPipeline) prefetchRoute('/crm/pipeline');
+                                    if (isSuperAdmin || featureFlags.crmTasks) prefetchRoute('/crm/tasks');
+                                    if (isSuperAdmin || featureFlags.crmDeals) prefetchRoute('/crm/deals');
+                                    if (isSuperAdmin || featureFlags.crmMeetings) prefetchRoute('/crm/meetings');
+                                    if (isSuperAdmin || featureFlags.crmReports) prefetchRoute('/crm/reports');
+                                    if (isSuperAdmin || featureFlags.crmOps) prefetchRoute('/crm/ops');
+                                    if (isSuperAdmin || featureFlags.crmTaskCalendar) prefetchRoute('/crm/tasks-calendar');
                                 }
                             }}
                             onClick={(e) => handleHubMenuToggle('crm', e)}
@@ -1248,68 +1267,80 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 )}
                             </div>
                             <nav className="panel-menu">
-                                <NavLink
-                                    to="/crm/home"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onMouseEnter={() => prefetchRoute('/crm/home')}
-                                    onFocus={() => prefetchRoute('/crm/home')}
-                                    onClick={closeMobileMenusAfterNavigate}
-                                >
-                                    <LayoutDashboard size={20} />
-                                    <span>CRM Home</span>
-                                </NavLink>
-                                <NavLink
-                                    to="/crm/pipeline"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onMouseEnter={() => prefetchRoute('/crm/pipeline')}
-                                    onFocus={() => prefetchRoute('/crm/pipeline')}
-                                    onClick={closeMobileMenusAfterNavigate}
-                                >
-                                    <Users size={20} />
-                                    <span>Pipeline</span>
-                                </NavLink>
-                                <NavLink
-                                    to="/crm/tasks"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onMouseEnter={() => prefetchRoute('/crm/tasks')}
-                                    onFocus={() => prefetchRoute('/crm/tasks')}
-                                    onClick={closeMobileMenusAfterNavigate}
-                                >
-                                    <FileText size={20} />
-                                    <span>Tasks</span>
-                                </NavLink>
-                                <NavLink
-                                    to="/crm/deals"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onMouseEnter={() => prefetchRoute('/crm/deals')}
-                                    onFocus={() => prefetchRoute('/crm/deals')}
-                                    onClick={closeMobileMenusAfterNavigate}
-                                >
-                                    <BadgeDollarSign size={20} />
-                                    <span>Deals</span>
-                                </NavLink>
-                                <NavLink
-                                    to="/crm/meetings"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onMouseEnter={() => prefetchRoute('/crm/meetings')}
-                                    onFocus={() => prefetchRoute('/crm/meetings')}
-                                    onClick={closeMobileMenusAfterNavigate}
-                                >
-                                    <CalendarDays size={20} />
-                                    <span>Meetings</span>
-                                </NavLink>
-                                <NavLink
-                                    to="/crm/reports"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onMouseEnter={() => prefetchRoute('/crm/reports')}
-                                    onFocus={() => prefetchRoute('/crm/reports')}
-                                    onClick={closeMobileMenusAfterNavigate}
-                                >
-                                    <BarChart3 size={20} />
-                                    <span>Reports</span>
-                                </NavLink>
-                                <div className="panel-submenu-heading">Automation</div>
-                                {canUseAdvancedCrm && (
+                                {(isSuperAdmin || featureFlags.crmHome) && (
+                                    <NavLink
+                                        to="/crm/home"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onMouseEnter={() => prefetchRoute('/crm/home')}
+                                        onFocus={() => prefetchRoute('/crm/home')}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <LayoutDashboard size={20} />
+                                        <span>CRM Home</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.crmPipeline) && (
+                                    <NavLink
+                                        to="/crm/pipeline"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onMouseEnter={() => prefetchRoute('/crm/pipeline')}
+                                        onFocus={() => prefetchRoute('/crm/pipeline')}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <Users size={20} />
+                                        <span>Pipeline</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.crmTasks) && (
+                                    <NavLink
+                                        to="/crm/tasks"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onMouseEnter={() => prefetchRoute('/crm/tasks')}
+                                        onFocus={() => prefetchRoute('/crm/tasks')}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <FileText size={20} />
+                                        <span>Tasks</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.crmDeals) && (
+                                    <NavLink
+                                        to="/crm/deals"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onMouseEnter={() => prefetchRoute('/crm/deals')}
+                                        onFocus={() => prefetchRoute('/crm/deals')}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <BadgeDollarSign size={20} />
+                                        <span>Deals</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.crmMeetings) && (
+                                    <NavLink
+                                        to="/crm/meetings"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onMouseEnter={() => prefetchRoute('/crm/meetings')}
+                                        onFocus={() => prefetchRoute('/crm/meetings')}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <CalendarDays size={20} />
+                                        <span>Meetings</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || featureFlags.crmReports) && (
+                                    <NavLink
+                                        to="/crm/reports"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onMouseEnter={() => prefetchRoute('/crm/reports')}
+                                        onFocus={() => prefetchRoute('/crm/reports')}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <BarChart3 size={20} />
+                                        <span>Reports</span>
+                                    </NavLink>
+                                )}
+                                {canUseCrmAutomation && <div className="panel-submenu-heading">Automation</div>}
+                                {(isSuperAdmin || featureFlags.crmOps) && (
                                     <NavLink
                                         to="/crm/ops"
                                         className={({ isActive }) => `panel-item panel-item-submenu ${isActive ? 'active' : ''}`}
@@ -1331,24 +1362,28 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     <MessageSquare size={20} />
                                     <span>WhatsApp Workflow</span>
                                 </NavLink> */}
-                                <button
-                                    type="button"
-                                    className={`panel-item panel-item-button panel-item-submenu ${isLeadScoringSettingsActive ? 'active' : ''}`}
-                                    onClick={openLeadScoringModal}
-                                >
-                                    <BarChart3 size={20} />
-                                    <span>Lead Scoring Settings</span>
-                                </button>
-                                <NavLink
-                                    to="/crm/tasks-calendar"
-                                    className={({ isActive }) => `panel-item panel-item-submenu ${isActive ? 'active' : ''}`}
-                                    onMouseEnter={() => prefetchRoute('/crm/tasks-calendar')}
-                                    onFocus={() => prefetchRoute('/crm/tasks-calendar')}
-                                    onClick={closeMobileMenusAfterNavigate}
-                                >
-                                    <CalendarDays size={20} />
-                                    <span>Task Calendar</span>
-                                </NavLink>
+                                {(isSuperAdmin || featureFlags.crmLeadScoringSettings) && (
+                                    <button
+                                        type="button"
+                                        className={`panel-item panel-item-button panel-item-submenu ${isLeadScoringSettingsActive ? 'active' : ''}`}
+                                        onClick={openLeadScoringModal}
+                                    >
+                                        <BarChart3 size={20} />
+                                        <span>Lead Scoring Settings</span>
+                                    </button>
+                                )}
+                                {(isSuperAdmin || featureFlags.crmTaskCalendar) && (
+                                    <NavLink
+                                        to="/crm/tasks-calendar"
+                                        className={({ isActive }) => `panel-item panel-item-submenu ${isActive ? 'active' : ''}`}
+                                        onMouseEnter={() => prefetchRoute('/crm/tasks-calendar')}
+                                        onFocus={() => prefetchRoute('/crm/tasks-calendar')}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <CalendarDays size={20} />
+                                        <span>Task Calendar</span>
+                                    </NavLink>
+                                )}
                             </nav>
                         </>
                     )}

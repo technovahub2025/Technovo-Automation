@@ -348,6 +348,11 @@
 
   .monitor-actions {
     justify-content: flex-start;
+    width: 100%;
+  }
+
+  .header-badges {
+    flex-wrap: wrap;
   }
 
   .progress-meta {
@@ -368,5 +373,14 @@
   .monitor-actions .btn {
     width: 100%;
     justify-content: center;
+  }
+
+  .monitor-title-row {
+    align-items: flex-start;
+  }
+
+  .connection-status,
+  .status-badge {
+    max-width: 100%;
   }
 }

@@ -27,6 +27,18 @@ const FEATURE_LABEL_ALIASES = {
 
 const normalizeFeatureLabel = (label) => FEATURE_LABEL_ALIASES[String(label || "").trim()] || String(label || "").trim();
 
+const CRM_FEATURES = [
+  "CRM Home",
+  "Pipeline",
+  "Tasks",
+  "Deals",
+  "Meetings",
+  "Reports",
+  "Follow-up Ops",
+  "Lead Scoring Settings",
+  "Task Calendar"
+];
+
 const FEATURE_GROUPS = [
   {
     id: "metaAds",
@@ -38,6 +50,12 @@ const FEATURE_GROUPS = [
     id: "bulkMessage",
     label: "Bulk Message",
     features: ["Broadcast Dashboard", "Team Inbox", "Broadcast", "Templates", "Contacts"],
+    defaultExpanded: false
+  },
+  {
+    id: "crm",
+    label: "CRM",
+    features: CRM_FEATURES,
     defaultExpanded: false
   },
   {
@@ -55,7 +73,7 @@ const FEATURE_GROUPS = [
 ];
 
 const DEFAULT_PLAN_FEATURES = {
-  basic: ["Broadcast Dashboard", "Team Inbox", "Broadcast", "Templates", "Contacts", "Voice Broadcast", "Missed Call"],
+  basic: ["Broadcast Dashboard", "Team Inbox", "Broadcast", "Templates", "Contacts", ...CRM_FEATURES, "Voice Broadcast", "Missed Call"],
   growth: [
     "Ads Manager",
     "Insights",
@@ -65,6 +83,7 @@ const DEFAULT_PLAN_FEATURES = {
     "Broadcast",
     "Templates",
     "Contacts",
+    ...CRM_FEATURES,
     "Voice Broadcast",
     "Inbound Calls / IVR",
     "Call Analytics",
@@ -80,6 +99,7 @@ const DEFAULT_PLAN_FEATURES = {
     "Broadcast",
     "Templates",
     "Contacts",
+    ...CRM_FEATURES,
     "Voice Broadcast",
     "Inbound Calls / IVR",
     "Outbound Voice",

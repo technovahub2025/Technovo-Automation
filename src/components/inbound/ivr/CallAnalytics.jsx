@@ -44,6 +44,22 @@ const CHANNELS = [
 ];
 
 const STATUS_COLORS = ['#10b981', '#ef4444', '#f59e0b', '#2563eb', '#7c3aed', '#06b6d4', '#64748b'];
+const TREND_LEGEND_PAYLOAD = [
+  { value: 'Total', dataKey: 'total', type: 'line', color: '#2563eb' },
+  { value: 'Completed', dataKey: 'completed', type: 'square', color: '#10b981' },
+  { value: 'Failed', dataKey: 'failed', type: 'square', color: '#ef4444' },
+  { value: 'Success %', dataKey: 'successRate', type: 'line', color: '#f59e0b' }
+];
+const CHANNEL_LEGEND_PAYLOAD = [
+  { value: 'Total', dataKey: 'total', type: 'square', color: '#2563eb' },
+  { value: 'Active', dataKey: 'active', type: 'square', color: '#f59e0b' },
+  { value: 'Failed', dataKey: 'failed', type: 'square', color: '#ef4444' }
+];
+const DAILY_LEGEND_PAYLOAD = [
+  { value: 'Voice Broadcast', dataKey: 'voiceBroadcast', type: 'line', color: '#7c3aed' },
+  { value: 'Inbound/IVR', dataKey: 'inboundIvr', type: 'line', color: '#2563eb' },
+  { value: 'Outbound', dataKey: 'outbound', type: 'line', color: '#10b981' }
+];
 const ANALYTICS_FALLBACK_MS = Number(import.meta.env.VITE_ANALYTICS_SOCKET_TIMEOUT_MS || 7000);
 const MAX_TREND_POINTS = 240;
 const MAX_RECENT_ROWS = 500;
@@ -157,6 +173,9 @@ const CallAnalytics = () => {
   const [exporting, setExporting] = useState(false);
   const [error, setError] = useState('');
   const [lastUpdated, setLastUpdated] = useState(null);
+  const [activeTrendSeries, setActiveTrendSeries] = useState(null);
+  const [activeChannelSeries, setActiveChannelSeries] = useState(null);
+  const [activeDailySeries, setActiveDailySeries] = useState(null);
   const socketRef = useRef(null);
   const requestKeyRef = useRef('');
   const fulfilledKeyRef = useRef('');
@@ -337,6 +356,24 @@ const CallAnalytics = () => {
   const hasTrendData = trendData.some((row) => row.total > 0);
   const hasDailyData = dailyData.some((row) => row.total > 0);
   const hasChannelData = channelData.some((row) => row.total > 0);
+  const shouldShowTrendSeries = useCallback((dataKey) => !activeTrendSeries || activeTrendSeries === dataKey, [activeTrendSeries]);
+  const shouldShowChannelSeries = useCallback((dataKey) => !activeChannelSeries || activeChannelSeries === dataKey, [activeChannelSeries]);
+  const shouldShowDailySeries = useCallback((dataKey) => !activeDailySeries || activeDailySeries === dataKey, [activeDailySeries]);
+  const handleTrendLegendClick = useCallback((entry = {}) => {
+    const dataKey = entry.dataKey || entry.payload?.dataKey;
+    if (!dataKey) return;
+    setActiveTrendSeries((current) => (current === dataKey ? null : dataKey));
+  }, []);
+  const handleChannelLegendClick = useCallback((entry = {}) => {
+    const dataKey = entry.dataKey || entry.payload?.dataKey;
+    if (!dataKey) return;
+    setActiveChannelSeries((current) => (current === dataKey ? null : dataKey));
+  }, []);
+  const handleDailyLegendClick = useCallback((entry = {}) => {
+    const dataKey = entry.dataKey || entry.payload?.dataKey;
+    if (!dataKey) return;
+    setActiveDailySeries((current) => (current === dataKey ? null : dataKey));
+  }, []);
 
   const exportAnalytics = () => {
     try {
@@ -567,11 +604,19 @@ const CallAnalytics = () => {
                 <YAxis yAxisId="left" tick={{ fontSize: 12 }} allowDecimals={false} stroke="#64748b" />
                 <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} domain={[0, 100]} stroke="#64748b" />
                 <Tooltip />
-                <Legend />
-                <Area yAxisId="left" type="monotone" dataKey="total" name="Total" stroke="#2563eb" fill="url(#callVolumeGradient)" strokeWidth={2} />
-                <Bar yAxisId="left" dataKey="completed" name="Completed" fill="#10b981" radius={[4, 4, 0, 0]} />
-                <Bar yAxisId="left" dataKey="failed" name="Failed" fill="#ef4444" radius={[4, 4, 0, 0]} />
-                <Line yAxisId="right" type="monotone" dataKey="successRate" name="Success %" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                <Legend payload={TREND_LEGEND_PAYLOAD} onClick={handleTrendLegendClick} />
+                {shouldShowTrendSeries('total') && (
+                  <Area yAxisId="left" type="monotone" dataKey="total" name="Total" stroke="#2563eb" fill="url(#callVolumeGradient)" strokeWidth={2} />
+                )}
+                {shouldShowTrendSeries('completed') && (
+                  <Bar yAxisId="left" dataKey="completed" name="Completed" fill="#10b981" radius={[4, 4, 0, 0]} />
+                )}
+                {shouldShowTrendSeries('failed') && (
+                  <Bar yAxisId="left" dataKey="failed" name="Failed" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                )}
+                {shouldShowTrendSeries('successRate') && (
+                  <Line yAxisId="right" type="monotone" dataKey="successRate" name="Success %" stroke="#f59e0b" strokeWidth={2} dot={false} />
+                )}
               </ComposedChart>
             </ResponsiveContainer>
           ) : <EmptyChart text="No realtime trend data for this filter." />}
@@ -588,10 +633,16 @@ const CallAnalytics = () => {
                 <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="#64748b" />
                 <YAxis tick={{ fontSize: 12 }} allowDecimals={false} stroke="#64748b" />
                 <Tooltip />
-                <Legend />
-                <Bar dataKey="total" name="Total" fill="#2563eb" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="active" name="Active" fill="#f59e0b" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="failed" name="Failed" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                <Legend payload={CHANNEL_LEGEND_PAYLOAD} onClick={handleChannelLegendClick} />
+                {shouldShowChannelSeries('total') && (
+                  <Bar dataKey="total" name="Total" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                )}
+                {shouldShowChannelSeries('active') && (
+                  <Bar dataKey="active" name="Active" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                )}
+                {shouldShowChannelSeries('failed') && (
+                  <Bar dataKey="failed" name="Failed" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                )}
               </BarChart>
             </ResponsiveContainer>
           ) : <EmptyChart text="No channel data for this filter." />}
@@ -625,10 +676,16 @@ const CallAnalytics = () => {
                 <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#64748b" />
                 <YAxis tick={{ fontSize: 12 }} allowDecimals={false} stroke="#64748b" />
                 <Tooltip />
-                <Legend />
-                <Area type="monotone" dataKey="voiceBroadcast" name="Voice Broadcast" stackId="1" stroke="#7c3aed" fill="#7c3aed" fillOpacity={0.35} />
-                <Area type="monotone" dataKey="inboundIvr" name="Inbound/IVR" stackId="1" stroke="#2563eb" fill="#2563eb" fillOpacity={0.35} />
-                <Area type="monotone" dataKey="outbound" name="Outbound" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.35} />
+                <Legend payload={DAILY_LEGEND_PAYLOAD} onClick={handleDailyLegendClick} />
+                {shouldShowDailySeries('voiceBroadcast') && (
+                  <Area type="monotone" dataKey="voiceBroadcast" name="Voice Broadcast" stackId="1" stroke="#7c3aed" fill="#7c3aed" fillOpacity={0.35} />
+                )}
+                {shouldShowDailySeries('inboundIvr') && (
+                  <Area type="monotone" dataKey="inboundIvr" name="Inbound/IVR" stackId="1" stroke="#2563eb" fill="#2563eb" fillOpacity={0.35} />
+                )}
+                {shouldShowDailySeries('outbound') && (
+                  <Area type="monotone" dataKey="outbound" name="Outbound" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.35} />
+                )}
               </AreaChart>
             </ResponsiveContainer>
           </section>

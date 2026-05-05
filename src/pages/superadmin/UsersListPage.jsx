@@ -20,6 +20,18 @@ import socketService from "../../services/socketService";
 import "../admin.css";
 import "../../styles/theme.css";
 
+const CRM_FEATURES = [
+  "CRM Home",
+  "Pipeline",
+  "Tasks",
+  "Deals",
+  "Meetings",
+  "Reports",
+  "Follow-up Ops",
+  "Lead Scoring Settings",
+  "Task Calendar"
+];
+
 const FEATURE_GROUPS = [
   {
     label: "Meta Ads",
@@ -28,6 +40,10 @@ const FEATURE_GROUPS = [
   {
     label: "Bulk Message",
     features: ["Broadcast Dashboard", "Team Inbox", "Broadcast", "Templates", "Contacts"]
+  },
+  {
+    label: "CRM",
+    features: CRM_FEATURES
   },
   {
     label: "Voice",
@@ -109,6 +125,7 @@ const UsersListPage = () => {
     "Meta Ads": false,
     "Bulk Message": false,
     Voice: false,
+    CRM: false,
     Other: false
   });
 

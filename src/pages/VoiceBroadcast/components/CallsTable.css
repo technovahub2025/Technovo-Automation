@@ -37,6 +37,7 @@
 
 .calls-table-wrapper {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   max-height: min(58vh, 640px);
   border-radius: 8px;
   border: 1px solid #e2e8f0;
@@ -318,12 +319,34 @@
     flex-direction: column;
   }
 
+  .calls-page-size,
+  .calls-page-size select {
+    width: 100%;
+  }
+
   .calls-table {
     font-size: 12px;
+    min-width: 880px;
   }
 
   .calls-table th,
   .calls-table-wrapper .calls-table td {
     padding: 10px 12px;
+  }
+
+  .calls-pagination {
+    justify-content: space-between;
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .calls-pagination {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .calls-pagination-btn {
+    width: 100%;
   }
 }

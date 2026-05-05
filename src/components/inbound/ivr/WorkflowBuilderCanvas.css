@@ -439,10 +439,38 @@
 @media (max-width: 900px) {
   .workflow-builder {
     grid-template-columns: 1fr;
+    height: min(720px, calc(100vh - 180px));
+    min-height: 520px;
   }
 
   .node-palette {
+    max-height: 220px;
     border-right: none;
     border-bottom: 1px solid #e2e8f0;
+  }
+}
+
+@media (max-width: 520px) {
+  .workflow-builder {
+    min-height: 480px;
+    border-radius: 10px;
+  }
+
+  .node-palette {
+    padding: 12px;
+  }
+
+  .palette-item {
+    padding: 10px 12px;
+  }
+
+  .canvas-controls {
+    right: 10px;
+    top: 10px;
+  }
+
+  .mini-map,
+  .validation-banner {
+    display: none;
   }
 }

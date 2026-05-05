@@ -17,6 +17,10 @@
   background-color: transparent;
   min-height: auto;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 /* Header Styles */
@@ -261,6 +265,8 @@
   gap: 32px;
   border-bottom: 1px solid #e2e8f0;
   margin-bottom: 32px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .ivr-menu-tab .tab-item {
@@ -273,6 +279,8 @@
   cursor: pointer;
   position: relative;
   transition: color 0.2s;
+  flex: 0 0 auto;
+  white-space: nowrap;
 }
 
 .ivr-menu-tab .tab-item:hover {
@@ -555,7 +563,7 @@
 
 .ivr-menu-tab .menus-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
   gap: 16px;
   align-items: start;
 }
@@ -823,6 +831,21 @@
 }
 
 @media (max-width: 768px) {
+  .ivr-menu-tab .header-main h1 {
+    font-size: 23px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .ivr-menu-tab .nav-tabs {
+    gap: 18px;
+    margin-bottom: 22px;
+  }
+
+  .ivr-menu-tab .tab-item {
+    font-size: 14px;
+  }
+
   .ivr-menu-tab .ivr-search-box {
     flex: 1 1 auto;
     width: 100%;
@@ -867,5 +890,6 @@
   .ivr-menu-tab .tab-switcher {
     width: 100%;
     justify-content: center;
+    overflow-x: auto;
   }
 }

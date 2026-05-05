@@ -1,9 +1,13 @@
 
 /* Main Container */
 .outbound-call {
-  padding: 24px;
+  padding: 0;
   background: #f8fafc;
   min-height: 100vh;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 /* Header - Matching Inbound Calls Style */
@@ -233,9 +237,10 @@
   padding: 40px;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
   width: 100%;
+  min-width: 0;
   position: relative;
   animation: fadeIn 0.6s ease-out;
-  margin: 0 24px 24px 24px;
+  margin: 0 0 24px 0;
 }
 
 .card-content {
@@ -1292,6 +1297,7 @@
 
 .history-table-advanced {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .history-table-header-advanced,
@@ -1321,6 +1327,7 @@
 
 .scheduled-monitor-table {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .scheduled-monitor-table-header,
@@ -1509,6 +1516,7 @@
   border: 1px solid #e2e8f0;
   border-radius: 12px;
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   margin-bottom: 20px;
   background: #fff;
 }
@@ -1677,6 +1685,23 @@
     padding: 0;
   }
 
+  .outbound-header {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+
+  .outbound-header-content h1 {
+    font-size: 24px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+
+  .outbound-header-content p {
+    font-size: 14px;
+  }
+
   .outbound-tabs {
     margin: 0 0 16px 0;
   }
@@ -1706,7 +1731,8 @@
 
   .call-card {
     padding: 24px 16px;
-    margin: 0 16px 16px 16px;
+    margin: 0 0 16px 0;
+    border-radius: 14px;
   }
 
   .section-header {
@@ -1756,7 +1782,6 @@
 
   .table-header,
   .table-row {
-    grid-template-columns: 1.5fr 1fr 1fr;
     font-size: 13px;
   }
 
@@ -1777,11 +1802,33 @@
     grid-template-columns: 1fr 1fr;
   }
 
-  .table-header span:nth-child(4),
-  .table-header span:nth-child(5),
-  .table-row span:nth-child(4),
-  .table-row span:nth-child(5) {
-    display: none;
+  .history-table-header-advanced,
+  .history-table-row-advanced {
+    grid-template-columns: 34px 1.35fr 0.6fr 0.95fr 0.75fr 0.75fr 1.1fr 0.7fr;
+    min-width: 920px;
+  }
+
+  .scheduled-monitor-table-header,
+  .scheduled-monitor-table-row {
+    min-width: 1180px;
+  }
+
+  .history-filter-bar,
+  .filter-panel,
+  .history-filter-panel,
+  .scheduled-filter-panel {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .filter-panel .history-filter-field select,
+  .history-filter-field input,
+  .history-filter-field select,
+  .filter-toggle-btn,
+  .filter-action-btn {
+    max-width: none;
+    width: 100%;
   }
 
   .scheduled-item {
@@ -1839,7 +1886,7 @@
 
   .call-card {
     padding: 20px 12px;
-    margin: 0 12px 12px 12px;
+    margin: 0 0 12px 0;
   }
 
   .page-title h1 {
@@ -1919,6 +1966,20 @@
 
   .status-icon {
     margin: 0 auto 12px auto;
+  }
+
+  .live-call-content,
+  .live-call-info {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .live-call-controls {
+    justify-content: stretch;
+  }
+
+  .call-control-btn {
+    flex: 1 1 0;
   }
 }
 

@@ -369,7 +369,16 @@
     width: 100%;
   }
   
-  .form-row {
+  .node-config-panel .form-row {
     grid-template-columns: 1fr;
+  }
+
+  .node-config-panel .panel-footer {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .node-config-panel .node-config-action {
+    width: 100%;
   }
 }

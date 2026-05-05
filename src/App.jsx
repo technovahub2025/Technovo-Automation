@@ -84,7 +84,14 @@ function App() {
         <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}> 
           <Route index element={renderLazyRoute(<Dashboard />, "Loading dashboard...")} />
           <Route path="crm" element={<Navigate to="/crm/home" replace />} />
-          <Route path="crm/home" element={renderLazyRoute(<CrmHome />, "Loading CRM home...")} />
+          <Route
+            path="crm/home"
+            element={
+              <ProtectedRoute requiredFeature="crmHome">
+                {renderLazyRoute(<CrmHome />, "Loading CRM home...")}
+              </ProtectedRoute>
+            }
+          />
           <Route path="conversations" element={<Navigate to="/inbox" replace />} />
           <Route path="campaigns" element={<Navigate to="/broadcast-dashboard" replace />} />
           <Route path="automation" element={<Navigate to="/crm/ops" replace />} />
@@ -108,13 +115,62 @@ function App() {
           <Route path="templates" element={renderLazyRoute(<Templates />, "Loading templates...")} />
           <Route path="templates/create" element={renderLazyRoute(<CreateTemplate />, "Loading template editor...")} />
           <Route path="contacts" element={renderLazyRoute(<Contacts />, "Loading contacts...")} />
-          <Route path="crm/pipeline" element={renderLazyRoute(<CrmPipeline />, "Loading CRM pipeline...")} />
-          <Route path="crm/tasks" element={renderLazyRoute(<CrmTasks />, "Loading CRM tasks...")} />
-          <Route path="crm/tasks-calendar" element={renderLazyRoute(<CrmTaskCalendar />, "Loading task calendar...")} />
-          <Route path="crm/deals" element={renderLazyRoute(<CrmDeals />, "Loading CRM deals...")} />
-          <Route path="crm/meetings" element={renderLazyRoute(<CrmMeetings />, "Loading CRM meetings...")} />
-          <Route path="crm/ops" element={renderLazyRoute(<CrmOps />, "Loading CRM ops...")} />
-          <Route path="crm/reports" element={renderLazyRoute(<CrmReports />, "Loading CRM reports...")} />
+          <Route
+            path="crm/pipeline"
+            element={
+              <ProtectedRoute requiredFeature="crmPipeline">
+                {renderLazyRoute(<CrmPipeline />, "Loading CRM pipeline...")}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="crm/tasks"
+            element={
+              <ProtectedRoute requiredFeature="crmTasks">
+                {renderLazyRoute(<CrmTasks />, "Loading CRM tasks...")}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="crm/tasks-calendar"
+            element={
+              <ProtectedRoute requiredFeature="crmTaskCalendar">
+                {renderLazyRoute(<CrmTaskCalendar />, "Loading task calendar...")}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="crm/deals"
+            element={
+              <ProtectedRoute requiredFeature="crmDeals">
+                {renderLazyRoute(<CrmDeals />, "Loading CRM deals...")}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="crm/meetings"
+            element={
+              <ProtectedRoute requiredFeature="crmMeetings">
+                {renderLazyRoute(<CrmMeetings />, "Loading CRM meetings...")}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="crm/ops"
+            element={
+              <ProtectedRoute requiredFeature="crmOps">
+                {renderLazyRoute(<CrmOps />, "Loading CRM ops...")}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="crm/reports"
+            element={
+              <ProtectedRoute requiredFeature="crmReports">
+                {renderLazyRoute(<CrmReports />, "Loading CRM reports...")}
+              </ProtectedRoute>
+            }
+          />
           <Route path="campaignmanagement" element={renderLazyRoute(<CampaignManagement />, "Loading campaign manager...")} />
           <Route
             path="whatsapp-workflow"

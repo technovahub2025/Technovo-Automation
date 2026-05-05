@@ -502,6 +502,161 @@
   padding: 12px;
 }
 
+.template-guide-card {
+  margin-top: 16px;
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+}
+
+.template-guide-label {
+  padding: 14px 16px;
+  border-bottom: 1px solid #e5e7eb;
+  color: #1f2937;
+}
+
+.template-guide-label strong {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.template-guide-accordion {
+  display: grid;
+}
+
+.template-guide-toggle {
+  width: 100%;
+  border: none;
+  background: #ffffff;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  cursor: pointer;
+  text-align: left;
+  color: #1f2937;
+}
+
+.template-guide-toggle:hover {
+  background: #f8fafc;
+}
+
+.template-guide-toggle span {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.template-guide-chevron {
+  flex: 0 0 auto;
+  color: #6b7280;
+  transition: transform 0.2s ease;
+}
+
+.template-guide-chevron.open {
+  transform: rotate(180deg);
+}
+
+.template-guide-content {
+  border-top: 1px solid #e5e7eb;
+  padding: 12px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.template-guide-section {
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.template-guide-section:last-child {
+  border-bottom: none;
+}
+
+.template-guide-table-wrap {
+  overflow-x: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.template-guide-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.template-guide-table th,
+.template-guide-table td {
+  padding: 7px 8px;
+  border-bottom: 1px solid #edf0f3;
+  vertical-align: top;
+}
+
+.template-guide-table th {
+  background: #f8fafc;
+  color: #374151;
+  font-weight: 700;
+  text-align: left;
+}
+
+.template-guide-table td:first-child {
+  width: 34%;
+  font-weight: 600;
+  color: #374151;
+}
+
+.template-guide-table tr:last-child td {
+  border-bottom: none;
+}
+
+.template-guide-facts {
+  display: grid;
+  gap: 8px;
+}
+
+.template-guide-facts div {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #f8fafc;
+}
+
+.template-guide-facts span {
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.template-guide-facts strong {
+  font-size: 12px;
+  color: #1f2937;
+}
+
+.template-guide-checklist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 7px;
+  font-size: 12px;
+  color: #374151;
+}
+
+.template-guide-checklist li {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.template-guide-checklist span {
+  color: #128c7e;
+  font-weight: 700;
+}
+
 .template-phone-mockup {
   border: 1px solid #dbe1e8;
   border-radius: 10px;
