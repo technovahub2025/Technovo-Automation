@@ -1,18 +1,16 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, CalendarClock, RefreshCw, Search, ListChecks, Clock3 } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, CalendarClock, Clock3, ListChecks, Pause, Play, RefreshCw, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import apiService from '../../services/api';
+import socketService from '../../services/socketService';
+import { formatDateTime, normalizeHistoryItem, normalizeScheduledItem } from '../../utils/outboundNormalizers';
 import './OutboundSchedules.css';
-
-const formatDateTime = (value) => {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString();
-};
 
 const OutboundSchedules = ({ embedded = false }) => {
   const navigate = useNavigate();
+  const scheduleRequestSeqRef = useRef(0);
+  const historyRequestSeqRef = useRef(0);
+  const socketRefreshTimerRef = useRef(null);
 
   const [scheduleFilters, setScheduleFilters] = useState({
     search: '',
@@ -24,8 +22,9 @@ const OutboundSchedules = ({ embedded = false }) => {
   const [historyFilters, setHistoryFilters] = useState({
     page: 1,
     limit: 10,
-    status: 'all',
-    phoneNumber: '',
+      status: 'all',
+      type: 'all',
+      phoneNumber: '',
     startDate: '',
     endDate: ''
   });
@@ -39,21 +38,27 @@ const OutboundSchedules = ({ embedded = false }) => {
   const [error, setError] = useState('');
 
   const loadSchedules = useCallback(async () => {
+    const requestSeq = scheduleRequestSeqRef.current + 1;
+    scheduleRequestSeqRef.current = requestSeq;
     try {
       setLoadingSchedules(true);
       setError('');
       const response = await apiService.getOutboundLocalSchedules(scheduleFilters);
+      if (requestSeq !== scheduleRequestSeqRef.current) return;
       const payload = response?.data || {};
-      setSchedules(payload?.data || []);
+      setSchedules((payload?.data || []).map(normalizeScheduledItem));
       setSchedulePagination(payload?.pagination || { page: 1, totalPages: 1, total: 0, limit: 10 });
     } catch (err) {
+      if (requestSeq !== scheduleRequestSeqRef.current) return;
       setError(err?.response?.data?.message || err?.message || 'Failed to load schedules');
     } finally {
-      setLoadingSchedules(false);
+      if (requestSeq === scheduleRequestSeqRef.current) setLoadingSchedules(false);
     }
   }, [scheduleFilters]);
 
   const loadHistory = useCallback(async () => {
+    const requestSeq = historyRequestSeqRef.current + 1;
+    historyRequestSeqRef.current = requestSeq;
     try {
       setLoadingHistory(true);
       setError('');
@@ -62,18 +67,21 @@ const OutboundSchedules = ({ embedded = false }) => {
         direction: 'outbound-local'
       };
       if (params.status === 'all') delete params.status;
+      if (params.type === 'all') delete params.type;
       if (!params.phoneNumber) delete params.phoneNumber;
       if (!params.startDate) delete params.startDate;
       if (!params.endDate) delete params.endDate;
 
       const response = await apiService.getCallHistory(params);
+      if (requestSeq !== historyRequestSeqRef.current) return;
       const payload = response?.data || {};
-      setHistory(payload?.data || []);
+      setHistory((payload?.data || []).map(normalizeHistoryItem));
       setHistoryPagination(payload?.pagination || { page: 1, totalPages: 1, total: 0, limit: 10 });
     } catch (err) {
+      if (requestSeq !== historyRequestSeqRef.current) return;
       setError(err?.response?.data?.error?.message || err?.response?.data?.error || err?.message || 'Failed to load call history');
     } finally {
-      setLoadingHistory(false);
+      if (requestSeq === historyRequestSeqRef.current) setLoadingHistory(false);
     }
   }, [historyFilters]);
 
@@ -85,12 +93,41 @@ const OutboundSchedules = ({ embedded = false }) => {
     loadHistory();
   }, [loadHistory]);
 
+  useEffect(() => {
+    const socket = socketService.connect();
+    if (!socket) return undefined;
+
+    const queueRefresh = () => {
+      if (socketRefreshTimerRef.current) return;
+      socketRefreshTimerRef.current = window.setTimeout(() => {
+        socketRefreshTimerRef.current = null;
+        loadSchedules();
+        loadHistory();
+      }, 250);
+    };
+
+    socket.on('campaign_update', queueRefresh);
+    socket.on('outbound_call_update', queueRefresh);
+    socket.on('call_status_update', queueRefresh);
+
+    return () => {
+      socket.off('campaign_update', queueRefresh);
+      socket.off('outbound_call_update', queueRefresh);
+      socket.off('call_status_update', queueRefresh);
+      if (socketRefreshTimerRef.current) {
+        window.clearTimeout(socketRefreshTimerRef.current);
+        socketRefreshTimerRef.current = null;
+      }
+    };
+  }, [loadHistory, loadSchedules]);
+
   const onPauseResume = async (schedule) => {
     try {
       const action = schedule?.status === 'active' ? 'pause' : 'resume';
+      const scheduleId = schedule?.id || schedule?._id;
       await (action === 'pause'
-        ? apiService.outboundLocalPauseSchedule(schedule._id)
-        : apiService.outboundLocalResumeSchedule(schedule._id));
+        ? apiService.outboundLocalPauseSchedule(scheduleId)
+        : apiService.outboundLocalResumeSchedule(scheduleId));
       await loadSchedules();
     } catch (err) {
       setError(err?.response?.data?.message || err?.message || 'Failed to update schedule state');
@@ -112,7 +149,7 @@ const OutboundSchedules = ({ embedded = false }) => {
   return (
     <div className={`outbound-schedules-page ${embedded ? 'embedded' : ''}`}>
       {!embedded && (
-        <button className="btn-link schedules-back" onClick={() => navigate('/voice-automation/outbound')}>
+        <button className="btn-link schedules-back" onClick={() => navigate('/voice-automation/outbound')} aria-label="Back to outbound" title="Back to outbound">
           <ArrowLeft size={18} />
           Back to Outbound
         </button>
@@ -130,9 +167,8 @@ const OutboundSchedules = ({ embedded = false }) => {
       <section className="schedules-card">
         <div className="schedules-card-head">
           <h2><ListChecks size={18} /> Scheduled Campaigns</h2>
-          <button className="ghost-btn" type="button" onClick={loadSchedules} disabled={loadingSchedules}>
+          <button className="ghost-btn icon-only" type="button" onClick={loadSchedules} disabled={loadingSchedules} aria-label="Refresh schedules" title="Refresh schedules">
             <RefreshCw size={16} />
-            {loadingSchedules ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
 
@@ -196,7 +232,7 @@ const OutboundSchedules = ({ embedded = false }) => {
                 </tr>
               )}
               {schedules.map((item) => (
-                <tr key={item._id}>
+                <tr key={item.id || item._id}>
                   <td>
                     <strong>{item.campaignName}</strong>
                     <div className="muted">{item.campaignId}</div>
@@ -206,8 +242,8 @@ const OutboundSchedules = ({ embedded = false }) => {
                   <td><code>{item.cronExpression}</code></td>
                   <td>{formatDateTime(item.updatedAt)}</td>
                   <td>
-                    <button className="small-btn" type="button" onClick={() => onPauseResume(item)}>
-                      {item.status === 'active' ? 'Pause' : 'Resume'}
+                    <button className="small-btn icon-only" type="button" onClick={() => onPauseResume(item)} aria-label={item.status === 'active' ? 'Pause schedule' : 'Resume schedule'} title={item.status === 'active' ? 'Pause schedule' : 'Resume schedule'}>
+                      {item.status === 'active' ? <Pause size={14} /> : <Play size={14} />}
                     </button>
                   </td>
                 </tr>
@@ -223,6 +259,8 @@ const OutboundSchedules = ({ embedded = false }) => {
               type="button"
               disabled={schedulePagination.page <= 1 || loadingSchedules}
               onClick={() => setScheduleFilters((prev) => ({ ...prev, page: prev.page - 1 }))}
+              aria-label="Previous schedules page"
+              title="Previous schedules page"
             >
               Prev
             </button>
@@ -231,6 +269,8 @@ const OutboundSchedules = ({ embedded = false }) => {
               type="button"
               disabled={schedulePagination.page >= schedulePagination.totalPages || loadingSchedules}
               onClick={() => setScheduleFilters((prev) => ({ ...prev, page: prev.page + 1 }))}
+              aria-label="Next schedules page"
+              title="Next schedules page"
             >
               Next
             </button>
@@ -241,9 +281,8 @@ const OutboundSchedules = ({ embedded = false }) => {
       <section className="schedules-card">
         <div className="schedules-card-head">
           <h2><Clock3 size={18} /> Outbound Voice Call History</h2>
-          <button className="ghost-btn" type="button" onClick={loadHistory} disabled={loadingHistory}>
+          <button className="ghost-btn icon-only" type="button" onClick={loadHistory} disabled={loadingHistory} aria-label="Refresh history" title="Refresh history">
             <RefreshCw size={16} />
-            {loadingHistory ? 'Refreshing...' : 'Refresh'}
           </button>
         </div>
 
@@ -260,6 +299,14 @@ const OutboundSchedules = ({ embedded = false }) => {
               <option value="busy">Busy</option>
               <option value="no-answer">No Answer</option>
               <option value="cancelled">Cancelled</option>
+            </select>
+          </label>
+          <label className="filter-field">
+            <span>Type</span>
+            <select value={historyFilters.type} onChange={(e) => setHistoryFilters((prev) => ({ ...prev, type: e.target.value, page: 1 }))}>
+              <option value="all">All</option>
+              <option value="single">Single</option>
+              <option value="bulk">Bulk</option>
             </select>
           </label>
           <label className="filter-field">
@@ -301,6 +348,7 @@ const OutboundSchedules = ({ embedded = false }) => {
             <thead>
               <tr>
                 <th>Call SID</th>
+                <th>Type</th>
                 <th>Phone</th>
                 <th>Status</th>
                 <th>Duration</th>
@@ -310,12 +358,13 @@ const OutboundSchedules = ({ embedded = false }) => {
             <tbody>
               {history.length === 0 && (
                 <tr>
-                  <td colSpan="5" className="empty-row">No call history found.</td>
+                  <td colSpan="6" className="empty-row">No call history found.</td>
                 </tr>
               )}
               {history.map((item) => (
                 <tr key={item._id || item.callSid}>
                   <td>{item.callSid || '-'}</td>
+                  <td>{item.type === 'bulk' ? 'Bulk' : 'Single'}</td>
                   <td>{item.phoneNumber || '-'}</td>
                   <td><span className={`status-pill ${item.status}`}>{item.status || '-'}</span></td>
                   <td>{Number(item.duration || 0)}s</td>
@@ -333,6 +382,8 @@ const OutboundSchedules = ({ embedded = false }) => {
               type="button"
               disabled={historyPagination.page <= 1 || loadingHistory}
               onClick={() => setHistoryFilters((prev) => ({ ...prev, page: prev.page - 1 }))}
+              aria-label="Previous history page"
+              title="Previous history page"
             >
               Prev
             </button>
@@ -341,6 +392,8 @@ const OutboundSchedules = ({ embedded = false }) => {
               type="button"
               disabled={historyPagination.page >= historyPagination.totalPages || loadingHistory}
               onClick={() => setHistoryFilters((prev) => ({ ...prev, page: prev.page + 1 }))}
+              aria-label="Next history page"
+              title="Next history page"
             >
               Next
             </button>

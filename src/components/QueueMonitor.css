@@ -3,7 +3,7 @@
   margin-top: 0;
 }
 
-.queue-header {
+.queue-monitor .queue-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -13,20 +13,20 @@
   border-bottom: 1px solid #e2e8f0;
 }
 
-.queue-header h2 {
+.queue-monitor .queue-header h2 {
   font-size: 24px;
   font-weight: 600;
   color: #1e293b;
 }
 
-.queue-stats {
+.queue-monitor .queue-stats {
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 24px;
 }
 
-.stat-item {
+.queue-monitor .stat-item {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -35,7 +35,7 @@
   white-space: nowrap;
 }
 
-.queue-grid {
+.queue-monitor .queue-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
   gap: 20px;
@@ -43,12 +43,12 @@
 }
 
 @media (max-width: 1024px) {
-  .queue-grid {
+  .queue-monitor .queue-grid {
     grid-template-columns: 1fr;
   }
 }
 
-.queue-card {
+.queue-monitor .queue-card {
   background: white;
   border: 1px solid #e2e8f0;
   border-radius: 12px;
@@ -57,21 +57,21 @@
   min-width: 0;
 }
 
-.queue-card:hover {
+.queue-monitor .queue-card:hover {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
 }
 
-.queue-card.selected {
+.queue-monitor .queue-card.selected {
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-.queue-card-header {
+.queue-monitor .queue-card-header {
   padding: 20px;
   cursor: pointer;
 }
 
-.queue-title {
+.queue-monitor .queue-title {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -79,7 +79,7 @@
   margin-bottom: 12px;
 }
 
-.queue-title h3 {
+.queue-monitor .queue-title h3 {
   font-size: 18px;
   font-weight: 600;
   color: #1e293b;
@@ -88,7 +88,7 @@
   overflow-wrap: anywhere;
 }
 
-.queue-badge {
+.queue-monitor .queue-badge {
   padding: 4px 8px;
   border-radius: 12px;
   font-size: 12px;
@@ -97,13 +97,13 @@
   flex-shrink: 0;
 }
 
-.queue-metrics {
+.queue-monitor .queue-metrics {
   display: flex;
   flex-wrap: wrap;
   gap: 16px;
 }
 
-.metric {
+.queue-monitor .metric {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -111,12 +111,12 @@
   color: #64748b;
 }
 
-.queue-details {
+.queue-monitor .queue-details {
   border-top: 1px solid #e2e8f0;
   padding: 20px;
 }
 
-.queue-callers {
+.queue-monitor .queue-callers {
   max-height: 300px;
   overflow-y: auto;
   margin-bottom: 16px;
@@ -125,20 +125,20 @@
   scrollbar-color: #cbd5e1 transparent;
 }
 
-.queue-callers::-webkit-scrollbar {
+.queue-monitor .queue-callers::-webkit-scrollbar {
   width: 6px;
 }
 
-.queue-callers::-webkit-scrollbar-track {
+.queue-monitor .queue-callers::-webkit-scrollbar-track {
   background: transparent;
 }
 
-.queue-callers::-webkit-scrollbar-thumb {
+.queue-monitor .queue-callers::-webkit-scrollbar-thumb {
   background: #cbd5e1;
   border-radius: 999px;
 }
 
-.empty-queue {
+.queue-monitor .empty-queue {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -147,12 +147,12 @@
   color: #64748b;
 }
 
-.empty-queue svg {
+.queue-monitor .empty-queue svg {
   margin-bottom: 12px;
   opacity: 0.5;
 }
 
-.caller-item {
+.queue-monitor .caller-item {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -163,18 +163,18 @@
   transition: all 0.2s;
 }
 
-.caller-item:hover {
+.queue-monitor .caller-item:hover {
   background: #f8fafc;
 }
 
-.caller-info {
+.queue-monitor .caller-info {
   display: flex;
   align-items: center;
   gap: 12px;
   min-width: 0;
 }
 
-.caller-position {
+.queue-monitor .caller-position {
   width: 32px;
   height: 32px;
   border-radius: 50%;
@@ -187,31 +187,31 @@
   font-weight: 600;
 }
 
-.caller-details {
+.queue-monitor .caller-details {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
 
-.caller-phone {
+.queue-monitor .caller-phone {
   font-size: 14px;
   font-weight: 500;
   color: #1e293b;
   overflow-wrap: anywhere;
 }
 
-.caller-wait {
+.queue-monitor .caller-wait {
   font-size: 12px;
   color: #64748b;
 }
 
-.caller-actions {
+.queue-monitor .caller-actions {
   display: flex;
   gap: 8px;
 }
 
-.btn-icon {
+.queue-monitor .btn-icon {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -224,18 +224,18 @@
   transition: all 0.2s;
 }
 
-.btn-icon:hover {
+.queue-monitor .btn-icon:hover {
   background: #f8fafc;
   border-color: #3b82f6;
   color: #3b82f6;
 }
 
-.queue-actions {
+.queue-monitor .queue-actions {
   display: flex;
   gap: 12px;
 }
 
-.btn {
+.queue-monitor .btn {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -248,26 +248,26 @@
   transition: all 0.2s;
 }
 
-.btn-primary {
+.queue-monitor .btn-primary {
   background: #3b82f6;
   color: white;
 }
 
-.btn-primary:hover {
+.queue-monitor .btn-primary:hover {
   background: #2563eb;
 }
 
-.btn-secondary {
+.queue-monitor .btn-secondary {
   background: #f1f5f9;
   color: #475569;
   border: 1px solid #e2e8f0;
 }
 
-.btn-secondary:hover {
+.queue-monitor .btn-secondary:hover {
   background: #e2e8f0;
 }
 
-.empty-state {
+.queue-monitor .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -276,18 +276,18 @@
   color: #64748b;
 }
 
-.empty-state svg {
+.queue-monitor .empty-state svg {
   margin-bottom: 16px;
   opacity: 0.5;
 }
 
-.empty-state h3 {
+.queue-monitor .empty-state h3 {
   font-size: 18px;
   font-weight: 600;
   margin-bottom: 8px;
 }
 
-.empty-state p {
+.queue-monitor .empty-state p {
   font-size: 14px;
   margin-bottom: 20px;
 }
@@ -297,35 +297,35 @@
     padding: 0;
   }
 
-  .queue-header {
+  .queue-monitor .queue-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 16px;
   }
 
-  .queue-stats {
+  .queue-monitor .queue-stats {
     flex-direction: column;
     gap: 8px;
     width: 100%;
   }
 
-  .queue-grid {
+  .queue-monitor .queue-grid {
     grid-template-columns: 1fr;
     gap: 16px;
   }
 
-  .caller-item {
+  .queue-monitor .caller-item {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
 
-  .caller-actions {
+  .queue-monitor .caller-actions {
     align-self: stretch;
     justify-content: flex-end;
   }
 
-  .queue-actions {
+  .queue-monitor .queue-actions {
     flex-direction: column;
     width: 100%;
   }

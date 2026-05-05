@@ -1,11 +1,14 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   BadgeCheck,
+  CalendarClock,
   ChevronDown,
   CirclePlus,
   FileText,
   PencilLine,
   PhoneCall,
+  RotateCcw,
+  Save,
   SlidersHorizontal,
   Trash,
   Upload,
@@ -45,12 +48,12 @@ const DEFAULT_CALL_SETTINGS = {
 };
 
 const OutboundDialer = ({
-  showBulkUpload = false,
+  initialMode = 'single',
   callSettings = DEFAULT_CALL_SETTINGS,
   onCallSettingsChange = () => {},
   onMonitorUpdate = () => {}
 }) => {
-  const [mode, setMode] = useState('single');
+  const [mode, setMode] = useState(initialMode === 'bulk' ? 'bulk' : 'single');
   const [provider, setProvider] = useState('exotel');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [fromNumber, setFromNumber] = useState('');
@@ -433,30 +436,36 @@ const OutboundDialer = ({
   return (
     <div className="outbound-dialer-wrap">
       <div className="outbound-card">
-        <div className="outbound-section-head">
+        <div className="outbound-dialer-section-head">
           <h3>Quick Calls</h3>
           <p>Run a single call or switch to bulk campaign mode without leaving this workspace.</p>
         </div>
 
-        <div className={`composer-mode-switch ${mode === 'bulk' ? 'is-bulk' : 'is-single'}`}>
-          <span className="composer-mode-pill" aria-hidden="true" />
+        <div className={`outbound-mode-switch ${mode === 'bulk' ? 'is-bulk' : 'is-single'}`}>
+          <span className="outbound-mode-pill" aria-hidden="true" />
           <button
             type="button"
-            className={`composer-mode-btn ${mode === 'single' ? 'active' : ''}`}
+            className={`outbound-mode-btn ${mode === 'single' ? 'active' : ''}`}
             onClick={() => setMode('single')}
+            aria-label="Single Call"
+            title="Single Call"
           >
-            Single Call
+            <PhoneCall size={16} />
+            <span>Single Call</span>
           </button>
           <button
             type="button"
-            className={`composer-mode-btn ${mode === 'bulk' ? 'active' : ''}`}
+            className={`outbound-mode-btn ${mode === 'bulk' ? 'active' : ''}`}
             onClick={() => setMode('bulk')}
+            aria-label="Bulk Campaign"
+            title="Bulk Campaign"
           >
-            Bulk Campaign
+            <Upload size={16} />
+            <span>Bulk Campaign</span>
           </button>
         </div>
 
-        <div className={`quick-call-banner ${mode === 'bulk' ? 'bulk' : ''}`}>
+        <div className={`outbound-quick-call-banner ${mode === 'bulk' ? 'bulk' : ''}`}>
           <strong>{mode === 'bulk' ? 'Campaign launch' : 'Instant outbound call'}</strong>
           <p>
             {mode === 'bulk'
@@ -703,18 +712,22 @@ const OutboundDialer = ({
                   <div className="template-actions">
                     <button
                       type="button"
-                      className="secondary-btn"
+                      className="secondary-btn icon-command-btn"
                       onClick={handleCloseTemplateComposer}
+                      aria-label="Cancel template changes"
+                      title="Cancel template changes"
                     >
-                      Cancel
+                      <X size={16} />
                     </button>
                     <button
                       type="button"
-                      className="primary-btn"
+                      className="primary-btn icon-command-btn"
                       onClick={handleSaveTemplate}
                       disabled={templateSaving}
+                      aria-label={templateSaving ? 'Saving template' : isEditingTemplate ? 'Update template' : 'Save template'}
+                      title={templateSaving ? 'Saving template' : isEditingTemplate ? 'Update template' : 'Save template'}
                     >
-                      {templateSaving ? 'Saving...' : isEditingTemplate ? 'Update Template' : 'Save Template'}
+                      <Save size={16} />
                     </button>
                   </div>
                 </div>
@@ -866,17 +879,27 @@ const OutboundDialer = ({
             </details>
 
             <div className="outbound-actions-row">
-              <button type="button" className="primary-btn" onClick={handleQuickCall} disabled={quickCallLoading}>
-                <PhoneCall size={16} />
-                {quickCallLoading ? 'Calling...' : singleScheduleType === 'once' ? 'Schedule Call' : 'Place Call'}
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={handleQuickCall}
+                disabled={quickCallLoading}
+                aria-label={quickCallLoading ? 'Calling' : singleScheduleType === 'once' ? 'Schedule Call' : 'Place Call'}
+                title={quickCallLoading ? 'Calling' : singleScheduleType === 'once' ? 'Schedule Call' : 'Place Call'}
+              >
+                {singleScheduleType === 'once' ? <CalendarClock size={16} /> : <PhoneCall size={16} />}
+                <span>{quickCallLoading ? 'Calling...' : singleScheduleType === 'once' ? 'Schedule Call' : 'Place Call'}</span>
               </button>
               <button
                 type="button"
                 className="secondary-btn reset-btn"
                 onClick={handleResetSingleForm}
                 disabled={quickCallLoading}
+                aria-label="Reset single call form"
+                title="Reset single call form"
               >
-                Reset
+                <RotateCcw size={16} />
+                <span>Reset</span>
               </button>
             </div>
           </>
@@ -1189,17 +1212,27 @@ const OutboundDialer = ({
             </details>
 
             <div className="outbound-actions-row">
-              <button type="button" className="primary-btn" onClick={handleBulkCampaign} disabled={bulkLoading}>
-                <Upload size={16} />
-                {bulkLoading ? 'Launching...' : bulkScheduleType === 'immediate' ? 'Launch Campaign' : 'Save Campaign'}
+              <button
+                type="button"
+                className="primary-btn"
+                onClick={handleBulkCampaign}
+                disabled={bulkLoading}
+                aria-label={bulkLoading ? 'Launching campaign' : bulkScheduleType === 'immediate' ? 'Launch Campaign' : 'Save Campaign'}
+                title={bulkLoading ? 'Launching campaign' : bulkScheduleType === 'immediate' ? 'Launch Campaign' : 'Save Campaign'}
+              >
+                {bulkScheduleType === 'immediate' ? <Upload size={16} /> : <CalendarClock size={16} />}
+                <span>{bulkLoading ? 'Launching...' : bulkScheduleType === 'immediate' ? 'Launch Campaign' : 'Save Campaign'}</span>
               </button>
               <button
                 type="button"
                 className="secondary-btn reset-btn"
                 onClick={handleResetBulkForm}
                 disabled={bulkLoading}
+                aria-label="Reset bulk campaign form"
+                title="Reset bulk campaign form"
               >
-                Reset
+                <RotateCcw size={16} />
+                <span>Reset</span>
               </button>
             </div>
           </>

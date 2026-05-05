@@ -73,8 +73,7 @@ const CallMonitor = () => {
         fetchActiveCalls();
         const intervalId = setInterval(fetchActiveCalls, 5000);
 
-        // Listen for workflow call events
-        socket.on('workflow_call_started', (data = {}) => {
+        const handleWorkflowCallStarted = (data = {}) => {
             upsertLiveCall({
                 callSid: data.callSid,
                 phoneNumber: data.phoneNumber,
@@ -82,18 +81,18 @@ const CallMonitor = () => {
                 source: data.workflowId ? 'ivr' : 'inbound',
                 startTime: data.timestamp
             });
-        });
+        };
 
-        socket.on('workflow_call_node', (data = {}) => {
+        const handleWorkflowCallNode = (data = {}) => {
             upsertLiveCall({
                 callSid: data.callSid,
                 status: 'in-progress',
                 source: data.workflowId ? 'ivr' : 'inbound',
                 startTime: data.timestamp
             });
-        });
+        };
 
-        socket.on('workflow_call_completed', (data = {}) => {
+        const handleWorkflowCallCompleted = (data = {}) => {
             removeLiveCall({
                 callSid: data.callSid,
                 status: 'completed'
@@ -103,8 +102,9 @@ const CallMonitor = () => {
                 completedCalls: prev.completedCalls + 1,
                 totalCalls: prev.totalCalls + 1
             }));
-        });
-        socket.on('outbound_call_update', (data = {}) => {
+        };
+
+        const handleOutboundCallUpdate = (data = {}) => {
             const payload = {
                 callSid: data.callSid,
                 callId: data.callId,
@@ -119,8 +119,9 @@ const CallMonitor = () => {
                 upsertLiveCall(payload);
             }
             fetchActiveCalls();
-        });
-        socket.on('call_status_update', (data = {}) => {
+        };
+
+        const handleCallStatusUpdate = (data = {}) => {
             const executionDirection = String(data?.execution?.direction || '').toLowerCase();
             const executionRouting = String(data?.execution?.routing || '').toLowerCase();
             const inferredSource = executionDirection === 'outbound'
@@ -142,26 +143,34 @@ const CallMonitor = () => {
                 upsertLiveCall(payload);
             }
             fetchActiveCalls();
-        });
+        };
 
-        socket.on('workflow_stats_update', (data) => {
+        const handleWorkflowStatsUpdate = (data) => {
             setWorkflowStats(prev => ({ ...prev, ...data }));
-        });
+        };
 
-        socket.on('ivr_workflow_update', (data) => {
+        const handleIvrWorkflowUpdate = (data) => {
             // Handle generic updates if needed
             console.log('IVR Workflow update:', data);
-        });
+        };
+
+        socket.on('workflow_call_started', handleWorkflowCallStarted);
+        socket.on('workflow_call_node', handleWorkflowCallNode);
+        socket.on('workflow_call_completed', handleWorkflowCallCompleted);
+        socket.on('outbound_call_update', handleOutboundCallUpdate);
+        socket.on('call_status_update', handleCallStatusUpdate);
+        socket.on('workflow_stats_update', handleWorkflowStatsUpdate);
+        socket.on('ivr_workflow_update', handleIvrWorkflowUpdate);
 
         return () => {
             clearInterval(intervalId);
-            socket.off('workflow_call_started');
-            socket.off('workflow_call_node');
-            socket.off('workflow_call_completed');
-            socket.off('outbound_call_update');
-            socket.off('call_status_update');
-            socket.off('workflow_stats_update');
-            socket.off('ivr_workflow_update');
+            socket.off('workflow_call_started', handleWorkflowCallStarted);
+            socket.off('workflow_call_node', handleWorkflowCallNode);
+            socket.off('workflow_call_completed', handleWorkflowCallCompleted);
+            socket.off('outbound_call_update', handleOutboundCallUpdate);
+            socket.off('call_status_update', handleCallStatusUpdate);
+            socket.off('workflow_stats_update', handleWorkflowStatsUpdate);
+            socket.off('ivr_workflow_update', handleIvrWorkflowUpdate);
         };
     }, [socket, fetchActiveCalls, upsertLiveCall, removeLiveCall]);
 

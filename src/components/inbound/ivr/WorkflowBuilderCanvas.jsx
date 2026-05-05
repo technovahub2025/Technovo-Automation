@@ -272,10 +272,42 @@ const WorkflowBuilderCanvas = ({
       console.error('❌ TTS Failed:', data);
     };
 
+    const handleRemoteEdgeConnected = (data = {}) => {
+      if (String(data.workflowId || '') !== String(workflowIdToUse) || data.connectedBy === socket?.id || !data.edge?.id) return;
+      const currentWorkflow = lastWorkflowRef.current || { nodes: [], edges: [] };
+      if ((currentWorkflow.edges || []).some((edge) => edge.id === data.edge.id || edgeSignatureMatches(edge, data.edge))) return;
+      applyWorkflowUpdate({
+        ...currentWorkflow,
+        edges: [...(currentWorkflow.edges || []), data.edge]
+      }, { recordHistory: false });
+    };
+
+    const handleRemoteEdgeDeleted = (data = {}) => {
+      if (String(data.workflowId || '') !== String(workflowIdToUse) || data.deletedBy === socket?.id || !data.edgeId) return;
+      const currentWorkflow = lastWorkflowRef.current || { nodes: [], edges: [] };
+      applyWorkflowUpdate({
+        ...currentWorkflow,
+        edges: (currentWorkflow.edges || []).filter((edge) => edge.id !== data.edgeId)
+      }, { recordHistory: false });
+    };
+
+    const handleRemoteEdgeChanged = (data = {}) => {
+      if (String(data.workflowId || '') !== String(workflowIdToUse) || data.updatedBy === socket?.id || !data.edge?.id) return;
+      const currentWorkflow = lastWorkflowRef.current || { nodes: [], edges: [] };
+      applyWorkflowUpdate({
+        ...currentWorkflow,
+        edges: (currentWorkflow.edges || []).map((edge) => edge.id === data.edge.id ? data.edge : edge)
+      }, { recordHistory: false });
+    };
+
     if (socket) {
       socket.on(`workflow-${workflowIdToUse}-progress`, handleProgress);
       socket.on(`workflow-${workflowIdToUse}-completed`, handleCompleted);
       socket.on(`workflow-${workflowIdToUse}-failed`, handleFailed);
+      socket.on('workflow_edge_connected', handleRemoteEdgeConnected);
+      socket.on('workflow_edge_deleted', handleRemoteEdgeDeleted);
+      socket.on('workflow_edge_reattached', handleRemoteEdgeChanged);
+      socket.on('workflow_edge_updated', handleRemoteEdgeChanged);
     }
 
     return () => {
@@ -283,9 +315,13 @@ const WorkflowBuilderCanvas = ({
         socket.off(`workflow-${workflowIdToUse}-progress`, handleProgress);
         socket.off(`workflow-${workflowIdToUse}-completed`, handleCompleted);
         socket.off(`workflow-${workflowIdToUse}-failed`, handleFailed);
+        socket.off('workflow_edge_connected', handleRemoteEdgeConnected);
+        socket.off('workflow_edge_deleted', handleRemoteEdgeDeleted);
+        socket.off('workflow_edge_reattached', handleRemoteEdgeChanged);
+        socket.off('workflow_edge_updated', handleRemoteEdgeChanged);
       }
     };
-  }, [workflowId, workflow?._id, workflow?.id, onChange]);
+  }, [workflowId, workflow?._id, workflow?.id, onChange, applyWorkflowUpdate]);
 
   const handleUndo = useCallback(() => {
     setHistory(prev => {

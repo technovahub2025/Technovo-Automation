@@ -10,7 +10,7 @@ const DEFAULT_SAMPLE_ROWS = [
 ];
 
 const defaultNormalizePhoneNumber = (phone) => {
-  let cleaned = String(phone || '').replace(/[\s\-\(\)]/g, '');
+  let cleaned = String(phone || '').replace(/[\s\-()]/g, '');
 
   if (!cleaned.startsWith('+')) {
     if (cleaned.length === 10) {
@@ -103,7 +103,7 @@ const ContactUploader = ({
           setUploading(false);
         }
       },
-      error: (err) => {
+      error: () => {
         setParseError('Failed to parse CSV file');
         setUploading(false);
       }

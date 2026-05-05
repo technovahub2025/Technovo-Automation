@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
-import { Upload, FileText, Mic, Send, X, AlertCircle, CheckCircle, Settings } from 'lucide-react';
-import Papa from 'papaparse';
+import { FileText, Send, AlertCircle, CheckCircle, Settings } from 'lucide-react';
 import { broadcastAPI } from '../../../services/broadcastAPI';
 import MessageTemplateEditor from './MessageTemplateEditor';
 import ContactUploader from './ContactUploader';
@@ -18,6 +17,8 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
     },
     contacts: [],
     maxConcurrent: 50,
+    batchSize: 25,
+    dispatchIntervalMs: 1000,
     maxRetries: 2,
     compliance: {
       disclaimerText: 'This is an automated call from',
@@ -29,7 +30,6 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
   const [validationErrors, setValidationErrors] = useState({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState(null);
-  const [previewMode, setPreviewMode] = useState(false);
 
   const handleInputChange = (field, value) => {
     setFormData(prev => ({
@@ -76,6 +76,18 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
 
     if (formData.contacts.length > 10000) {
       errors.contacts = 'Maximum 10,000 contacts per broadcast';
+    }
+
+    if (formData.maxConcurrent < 1 || formData.maxConcurrent > 100) {
+      errors.maxConcurrent = 'Concurrent calls must be between 1 and 100';
+    }
+
+    if (formData.batchSize < 1 || formData.batchSize > formData.maxConcurrent) {
+      errors.batchSize = 'Batch size must be at least 1 and no more than max concurrent calls';
+    }
+
+    if (formData.dispatchIntervalMs < 250 || formData.dispatchIntervalMs > 10000) {
+      errors.dispatchIntervalMs = 'Dispatch interval must be between 250ms and 10000ms';
     }
 
     // Validate template variables
@@ -147,6 +159,8 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
       },
       contacts: [],
       maxConcurrent: 50,
+      batchSize: 25,
+      dispatchIntervalMs: 1000,
       maxRetries: 2,
       compliance: {
         disclaimerText: 'This is an automated call from',
@@ -161,168 +175,222 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
   return (
     <div className="broadcast-form">
       <form onSubmit={handleSubmit}>
-        {/* Campaign Name */}
-        <div className="form-section">
-          <label className="form-label">
-            <FileText size={18} />
-            Campaign Name
-          </label>
-          <input
-            type="text"
-            className="form-input"
-            placeholder="Diwali Offer 2024"
-            value={formData.name}
-            onChange={(e) => handleInputChange('name', e.target.value)}
-            disabled={isSubmitting}
-          />
-          {validationErrors.name && (
-            <span className="error-text">{validationErrors.name}</span>
-          )}
-        </div>
-
-        {/* Message Template */}
-        <MessageTemplateEditor
-          value={formData.messageTemplate}
-          onChange={(value) => handleInputChange('messageTemplate', value)}
-          error={validationErrors.messageTemplate}
-          disabled={isSubmitting}
-          contacts={formData.contacts}
-          language={formData.voice.language}
-        />
-
-        {/* Voice Selection */}
-        <VoiceSelector
-          selected={formData.voice}
-          onChange={handleVoiceChange}
-          disabled={isSubmitting}
-        />
-
-        {/* Contact Upload */}
-        <ContactUploader
-          contacts={formData.contacts}
-          onContactsUploaded={handleContactsUploaded}
-          error={validationErrors.contacts}
-          disabled={isSubmitting}
-        />
-
-        {/* Advanced Settings */}
-        <div className="form-section collapsible">
-          <details>
-            <summary>
-              <Settings size={18} />
-              Advanced Settings
-            </summary>
-
-            <div className="settings-grid">
-              <div className="setting-item">
-                <label>Max Concurrent Calls</label>
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={formData.maxConcurrent}
-                  onChange={(e) => handleInputChange('maxConcurrent', parseInt(e.target.value))}
-                  disabled={isSubmitting}
-                />
-                <small>Maximum simultaneous calls (1-100)</small>
-              </div>
-
-              <div className="setting-item">
-                <label>Max Retries</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="5"
-                  value={formData.maxRetries}
-                  onChange={(e) => handleInputChange('maxRetries', parseInt(e.target.value))}
-                  disabled={isSubmitting}
-                />
-                <small>Retry failed calls (0-5)</small>
-              </div>
-
-              <div className="setting-item">
-                <label>Compliance Disclaimer</label>
-                <input
-                  type="text"
-                  value={formData.compliance.disclaimerText}
-                  onChange={(e) => handleInputChange('compliance', {
-                    ...formData.compliance,
-                    disclaimerText: e.target.value
-                  })}
-                  disabled={isSubmitting}
-                />
-                <small>Played before main message</small>
-              </div>
-
-              <div className="setting-item checkbox">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={formData.compliance.dndRespect}
-                    onChange={(e) => handleInputChange('compliance', {
-                      ...formData.compliance,
-                      dndRespect: e.target.checked
-                    })}
-                    disabled={isSubmitting}
-                  />
-                  Respect DND Registry
-                </label>
-              </div>
-
-              <div className="setting-item checkbox">
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={formData.compliance.optOutEnabled}
-                    onChange={(e) => handleInputChange('compliance', {
-                      ...formData.compliance,
-                      optOutEnabled: e.target.checked
-                    })}
-                    disabled={isSubmitting}
-                  />
-                  Enable Opt-Out (Press 9)
-                </label>
-              </div>
-            </div>
-          </details>
-        </div>
-
-        {/* Submit Result */}
-        {submitResult && (
-          <div className={`submit-result ${submitResult.success ? 'success' : 'error'}`}>
-            {submitResult.success ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
-            <span>{submitResult.message}</span>
-          </div>
-        )}
-
-        {/* Action Buttons */}
-        <div className="form-actions">
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={resetForm}
-            disabled={isSubmitting}
-          >
-            Reset
-          </button>
-
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={isSubmitting || formData.contacts.length === 0}
-          >
-            {isSubmitting ? (
-              <>
-                <div className="spinner-small" />
-                Starting...
-              </>
-            ) : (
-              <>
-                <Send size={18} />
-                Start Broadcast ({formData.contacts.length} contacts)
-              </>
+        <div className="broadcast-form-primary">
+          <div className="form-section broadcast-field-card">
+            <label className="form-label">
+              <FileText size={18} />
+              Campaign Name
+            </label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Diwali Offer 2024"
+              value={formData.name}
+              onChange={(e) => handleInputChange('name', e.target.value)}
+              disabled={isSubmitting}
+            />
+            {validationErrors.name && (
+              <span className="error-text">{validationErrors.name}</span>
             )}
-          </button>
+          </div>
+
+          <div className="broadcast-field-card">
+            <MessageTemplateEditor
+              value={formData.messageTemplate}
+              onChange={(value) => handleInputChange('messageTemplate', value)}
+              error={validationErrors.messageTemplate}
+              disabled={isSubmitting}
+              contacts={formData.contacts}
+              language={formData.voice.language}
+            />
+          </div>
+        </div>
+
+        <div className="broadcast-form-side">
+          <div className="broadcast-side-panel">
+            <VoiceSelector
+              selected={formData.voice}
+              onChange={handleVoiceChange}
+              disabled={isSubmitting}
+            />
+          </div>
+
+          <div className="broadcast-side-panel">
+            <ContactUploader
+              contacts={formData.contacts}
+              onContactsUploaded={handleContactsUploaded}
+              error={validationErrors.contacts}
+              disabled={isSubmitting}
+            />
+          </div>
+
+          <div className="broadcast-side-panel broadcast-settings-panel">
+            <div className="form-section collapsible">
+              <details>
+                <summary>
+                  <span className="settings-summary-title">
+                    <Settings size={18} />
+                    Advanced Settings
+                  </span>
+                  <span className="settings-summary-meta">
+                    {formData.maxConcurrent} concurrent / {formData.batchSize} batch
+                  </span>
+                </summary>
+
+                <div className="settings-grid">
+                  <div className="setting-item">
+                    <label>Max Concurrent Calls</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="100"
+                      value={formData.maxConcurrent}
+                      onChange={(e) => {
+                        const maxConcurrent = parseInt(e.target.value, 10) || 1;
+                        handleInputChange('maxConcurrent', maxConcurrent);
+                        if (formData.batchSize > maxConcurrent) {
+                          handleInputChange('batchSize', maxConcurrent);
+                        }
+                      }}
+                      disabled={isSubmitting}
+                    />
+                    <small>Maximum simultaneous calls (1-100)</small>
+                    {validationErrors.maxConcurrent && (
+                      <small className="error-text">{validationErrors.maxConcurrent}</small>
+                    )}
+                  </div>
+
+                  <div className="setting-item">
+                    <label>Batch Size</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max={formData.maxConcurrent}
+                      value={formData.batchSize}
+                      onChange={(e) => handleInputChange('batchSize', parseInt(e.target.value, 10) || 1)}
+                      disabled={isSubmitting}
+                    />
+                    <small>Calls claimed per dispatch batch</small>
+                    {validationErrors.batchSize && (
+                      <small className="error-text">{validationErrors.batchSize}</small>
+                    )}
+                  </div>
+
+                  <div className="setting-item">
+                    <label>Dispatch Interval</label>
+                    <input
+                      type="number"
+                      min="250"
+                      max="10000"
+                      step="250"
+                      value={formData.dispatchIntervalMs}
+                      onChange={(e) => handleInputChange('dispatchIntervalMs', parseInt(e.target.value, 10) || 1000)}
+                      disabled={isSubmitting}
+                    />
+                    <small>Delay between batches in milliseconds</small>
+                    {validationErrors.dispatchIntervalMs && (
+                      <small className="error-text">{validationErrors.dispatchIntervalMs}</small>
+                    )}
+                  </div>
+
+                  <div className="setting-item">
+                    <label>Max Retries</label>
+                    <input
+                      type="number"
+                      min="0"
+                      max="5"
+                      value={formData.maxRetries}
+                      onChange={(e) => handleInputChange('maxRetries', parseInt(e.target.value, 10) || 0)}
+                      disabled={isSubmitting}
+                    />
+                    <small>Retry failed calls (0-5)</small>
+                  </div>
+
+                  <div className="setting-item full">
+                    <label>Compliance Disclaimer</label>
+                    <input
+                      type="text"
+                      value={formData.compliance.disclaimerText}
+                      onChange={(e) => handleInputChange('compliance', {
+                        ...formData.compliance,
+                        disclaimerText: e.target.value
+                      })}
+                      disabled={isSubmitting}
+                    />
+                    <small>Played before main message</small>
+                  </div>
+
+                  <div className="setting-item checkbox">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={formData.compliance.dndRespect}
+                        onChange={(e) => handleInputChange('compliance', {
+                          ...formData.compliance,
+                          dndRespect: e.target.checked
+                        })}
+                        disabled={isSubmitting}
+                      />
+                      Respect DND Registry
+                    </label>
+                  </div>
+
+                  <div className="setting-item checkbox">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={formData.compliance.optOutEnabled}
+                        onChange={(e) => handleInputChange('compliance', {
+                          ...formData.compliance,
+                          optOutEnabled: e.target.checked
+                        })}
+                        disabled={isSubmitting}
+                      />
+                      Enable Opt-Out (Press 9)
+                    </label>
+                  </div>
+                </div>
+              </details>
+            </div>
+          </div>
+        </div>
+
+        <div className="broadcast-form-footer">
+          {submitResult && (
+            <div className={`submit-result ${submitResult.success ? 'success' : 'error'}`}>
+              {submitResult.success ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
+              <span>{submitResult.message}</span>
+            </div>
+          )}
+
+          <div className="form-actions">
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={resetForm}
+              disabled={isSubmitting}
+            >
+              Reset
+            </button>
+
+            <button
+              type="submit"
+              className="btn btn-primary"
+              disabled={isSubmitting || formData.contacts.length === 0}
+            >
+              {isSubmitting ? (
+                <>
+                  <div className="spinner-small" />
+                  Starting...
+                </>
+              ) : (
+                <>
+                  <Send size={18} />
+                  Start Broadcast ({formData.contacts.length} contacts)
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </form>
     </div>

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Phone, Users, Clock, Headphones, ArrowLeft } from 'lucide-react';
+import { Phone, Users, Clock, Headphones } from 'lucide-react';
 import './InboundCalls.css';
 import QueueMonitor from '../QueueMonitor';
 import IVRConfig from './ivr/IVRMenuConfig';
@@ -134,10 +134,6 @@ const InboundCalls = () => {
       .sort((a, b) => (toTimestamp(b?.createdAt) || 0) - (toTimestamp(a?.createdAt) || 0))
       .slice(0, RECENT_CALLS_LIMIT);
   }, [analytics]);
-
-  const handleBack = () => {
-    window.history.back();
-  };
 
   const renderOverview = () => (
     <div className="inbound-overview">
@@ -276,13 +272,6 @@ const InboundCalls = () => {
 
   return (
     <div className="inbound-calls">
-      <div className="breadcrumb-nav">
-        <button onClick={handleBack} className="back-link-btn">
-          <ArrowLeft size={16} />
-          Back to Dashboard
-        </button>
-      </div>
-
       <div className="inbound-header-new">
         <div className="header-info">
           <h1>Inbound Call Management</h1>

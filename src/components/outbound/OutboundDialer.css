@@ -11,7 +11,7 @@
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
 }
 
-.outbound-dialer-wrap .composer-mode-switch {
+.outbound-dialer-wrap .outbound-mode-switch {
   position: relative;
   display: inline-flex;
   gap: 8px;
@@ -23,7 +23,7 @@
   isolation: isolate;
 }
 
-.outbound-dialer-wrap .composer-mode-pill {
+.outbound-dialer-wrap .outbound-mode-pill {
   position: absolute;
   top: 6px;
   left: 6px;
@@ -36,11 +36,11 @@
   z-index: 0;
 }
 
-.outbound-dialer-wrap .composer-mode-switch.is-bulk .composer-mode-pill {
+.outbound-dialer-wrap .outbound-mode-switch.is-bulk .outbound-mode-pill {
   transform: translateX(calc(100% + 8px));
 }
 
-.outbound-dialer-wrap .composer-mode-btn {
+.outbound-dialer-wrap .outbound-mode-btn {
   position: relative;
   z-index: 1;
   min-width: 140px;
@@ -55,11 +55,20 @@
   transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
 }
 
-.outbound-dialer-wrap .composer-mode-btn.active {
+.outbound-dialer-wrap .outbound-mode-btn svg {
+  display: inline-block;
+  vertical-align: middle;
+}
+
+.outbound-dialer-wrap .outbound-mode-btn span {
+  margin-left: 8px;
+}
+
+.outbound-dialer-wrap .outbound-mode-btn.active {
   color: #1d4ed8;
 }
 
-.outbound-dialer-wrap .quick-call-banner {
+.outbound-dialer-wrap .outbound-quick-call-banner {
   margin-top: 16px;
   padding: 14px 16px;
   border-radius: 14px;
@@ -67,24 +76,24 @@
   border: 1px solid #bfdbfe;
 }
 
-.outbound-dialer-wrap .quick-call-banner.bulk {
+.outbound-dialer-wrap .outbound-quick-call-banner.bulk {
   background: linear-gradient(135deg, #f8fafc 0%, #ecfeff 100%);
   border-color: #bae6fd;
 }
 
-.outbound-dialer-wrap .quick-call-banner strong {
+.outbound-dialer-wrap .outbound-quick-call-banner strong {
   display: block;
   color: #0f172a;
   font-size: 14px;
 }
 
-.outbound-dialer-wrap .quick-call-banner p {
+.outbound-dialer-wrap .outbound-quick-call-banner p {
   margin: 4px 0 0;
   color: #475569;
   font-size: 13px;
 }
 
-.outbound-dialer-wrap .outbound-section-head h3 {
+.outbound-dialer-wrap .outbound-dialer-section-head h3 {
   margin: 0;
   font-size: 24px;
   line-height: 1.2;
@@ -92,7 +101,7 @@
   letter-spacing: -0.01em;
 }
 
-.outbound-dialer-wrap .outbound-section-head p {
+.outbound-dialer-wrap .outbound-dialer-section-head p {
   margin: 6px 0 0;
   color: #64748b;
   font-size: 14px;
@@ -277,6 +286,19 @@
   width: auto;
   min-width: 160px;
   flex: 0 0 auto;
+}
+
+.outbound-dialer-wrap .outbound-actions-row .icon-command-btn,
+.outbound-dialer-wrap .template-actions .icon-command-btn {
+  width: 42px;
+  min-width: 42px;
+  height: 42px;
+  padding: 0;
+  flex: 0 0 auto;
+}
+
+.outbound-dialer-wrap .icon-command-btn svg {
+  display: block;
 }
 
 .outbound-dialer-wrap .outbound-actions-row .reset-btn {
@@ -890,17 +912,17 @@
     border-radius: 12px;
   }
 
-  .outbound-dialer-wrap .composer-mode-switch {
+  .outbound-dialer-wrap .outbound-mode-switch {
     width: 100%;
     display: grid;
     grid-template-columns: 1fr 1fr;
   }
 
-  .outbound-dialer-wrap .composer-mode-btn {
+  .outbound-dialer-wrap .outbound-mode-btn {
     min-width: 0;
   }
 
-  .outbound-dialer-wrap .outbound-section-head h3 {
+  .outbound-dialer-wrap .outbound-dialer-section-head h3 {
     font-size: 22px;
   }
 

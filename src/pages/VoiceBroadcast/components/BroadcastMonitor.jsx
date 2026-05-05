@@ -1,150 +1,382 @@
-import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Activity, Phone, CheckCircle, XCircle, Clock, Users, TrendingUp, Wifi, WifiOff, PhoneOff } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import { Phone, CheckCircle, XCircle, Clock, Users, TrendingUp, Wifi, WifiOff, PhoneOff, Radio } from 'lucide-react';
 import { broadcastAPI } from '../../../services/broadcastAPI';
-import webSocketService from '../../../services/websocketService';
+import socketService from '../../../services/socketService';
 import CallsTable from './CallsTable';
-import StatsChart from './StatsChart';
 import './BroadcastMonitor.css';
 
-const BroadcastMonitor = ({ broadcastId }) => {
+const DEFAULT_STATS = {
+  total: 0,
+  queued: 0,
+  calling: 0,
+  answered: 0,
+  completed: 0,
+  failed: 0,
+  opted_out: 0
+};
+
+const STATUS_FILTERS = [
+  { key: 'all', label: 'All Calls', stat: 'total' },
+  { key: 'completed', label: 'Completed', stat: 'completed' },
+  { key: 'failed', label: 'Failed', stat: 'failed' },
+  { key: 'calling', label: 'In Progress', stat: 'calling' },
+  { key: 'queued', label: 'Queued', stat: 'queued' },
+  { key: 'opted_out', label: 'Opted Out', stat: 'opted_out' }
+];
+
+const FINAL_BROADCAST_STATUSES = new Set(['completed', 'failed', 'cancelled']);
+
+const getCallId = (call = {}) => String(call._id || call.callId || '').trim();
+
+const BroadcastMonitor = ({ broadcastId, onBroadcastUpdated }) => {
   const [broadcast, setBroadcast] = useState(null);
   const [calls, setCalls] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [statusLoading, setStatusLoading] = useState(true);
+  const [callsLoading, setCallsLoading] = useState(true);
+  const [statusError, setStatusError] = useState(null);
+  const [callsError, setCallsError] = useState(null);
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [connectionStatus, setConnectionStatus] = useState('connecting');
+  const [callPagination, setCallPagination] = useState({
+    page: 1,
+    limit: 50,
+    total: 0,
+    pages: 1
+  });
+
   const socketRef = useRef(null);
+  const statusRequestRef = useRef(0);
+  const callsRequestRef = useRef(0);
+  const updateBufferRef = useRef(new Map());
+  const flushTimerRef = useRef(null);
+  const reconcileTimerRef = useRef(null);
+  const queryRef = useRef({ selectedStatus, callPagination });
 
-  const loadBroadcastData = useCallback(async () => {
+  const stats = useMemo(() => ({
+    ...DEFAULT_STATS,
+    ...(broadcast?.stats || {})
+  }), [broadcast?.stats]);
+
+  const progress = useMemo(() => {
+    if (!stats.total) return 0;
+    return Math.min(100, Math.max(0, ((stats.completed + stats.failed + stats.opted_out) / stats.total) * 100));
+  }, [stats.completed, stats.failed, stats.opted_out, stats.total]);
+
+  const successRate = useMemo(() => {
+    const resolved = stats.completed + stats.failed;
+    return resolved > 0 ? Math.round((stats.completed / resolved) * 100) : 0;
+  }, [stats.completed, stats.failed]);
+
+  const remaining = useMemo(() => (
+    Math.max(0, stats.total - stats.completed - stats.failed - stats.opted_out)
+  ), [stats.completed, stats.failed, stats.opted_out, stats.total]);
+
+  const statCards = useMemo(() => [
+    { key: 'total', label: 'Total Contacts', value: stats.total, icon: Users },
+    { key: 'calling', label: 'Calling', value: stats.calling, icon: Phone },
+    { key: 'completed', label: 'Completed', value: stats.completed, icon: CheckCircle },
+    { key: 'failed', label: 'Failed', value: stats.failed, icon: XCircle },
+    { key: 'queued', label: 'Queued', value: stats.queued, icon: Clock },
+    { key: 'rate', label: 'Success Rate', value: `${successRate}%`, icon: TrendingUp },
+    { key: 'opted-out', label: 'Opted Out', value: stats.opted_out, icon: PhoneOff }
+  ], [stats, successRate]);
+
+  const normalizeCall = useCallback((call = {}) => {
+    const callId = getCallId(call);
+    return {
+      ...call,
+      _id: callId,
+      contact: call.contact || {
+        phone: call.phone || '',
+        name: call.name || 'Unknown'
+      }
+    };
+  }, []);
+
+  const shouldShowCall = useCallback((call = {}, status = selectedStatus) => (
+    status === 'all' || call.status === status
+  ), [selectedStatus]);
+
+  const getStatusColor = useCallback((status) => {
+    const colors = {
+      queued: '#64748b',
+      claiming: '#64748b',
+      calling: '#2563eb',
+      ringing: '#2563eb',
+      in_progress: '#2563eb',
+      answered: '#2563eb',
+      completed: '#059669',
+      failed: '#dc2626',
+      busy: '#dc2626',
+      no_answer: '#dc2626',
+      cancelled: '#dc2626',
+      opted_out: '#d97706'
+    };
+    return colors[status] || '#64748b';
+  }, []);
+
+  const fetchBroadcastStatus = useCallback(async ({ silent = false } = {}) => {
+    const requestId = statusRequestRef.current + 1;
+    statusRequestRef.current = requestId;
+
     try {
-      setLoading(true);
-
-      const [broadcastData, callsData] = await Promise.all([
-        broadcastAPI.getBroadcastStatus(broadcastId),
-        broadcastAPI.getBroadcastCalls(broadcastId)
-      ]);
-
-      setBroadcast(broadcastData.data.broadcast);
-      setCalls(callsData.data.calls);
+      if (!silent) setStatusLoading(true);
+      setStatusError(null);
+      const response = await broadcastAPI.getBroadcastStatus(broadcastId);
+      if (requestId !== statusRequestRef.current) return;
+      setBroadcast(response.data.broadcast);
       setConnectionStatus((prev) => (prev === 'connected' ? prev : 'connected'));
     } catch (error) {
-      console.error('Failed to load broadcast data:', error);
+      if (requestId !== statusRequestRef.current) return;
+      setStatusError(error.response?.data?.error || 'Failed to load broadcast status');
+      console.error('Failed to load broadcast status:', error);
     } finally {
-      setLoading(false);
+      if (requestId === statusRequestRef.current && !silent) setStatusLoading(false);
     }
   }, [broadcastId]);
 
-  const handleConnect = useCallback(() => {
-    setConnectionStatus('connected');
-  }, []);
+  const fetchBroadcastCalls = useCallback(async ({ silent = false } = {}) => {
+    const requestId = callsRequestRef.current + 1;
+    callsRequestRef.current = requestId;
 
-  const handleDisconnect = useCallback(() => {
-    setConnectionStatus('reconnecting');
-  }, []);
+    const params = {
+      page: queryRef.current.callPagination.page,
+      limit: queryRef.current.callPagination.limit
+    };
+    if (queryRef.current.selectedStatus !== 'all') {
+      params.status = queryRef.current.selectedStatus;
+    }
 
-  const handleConnectError = useCallback((error) => {
-    console.error('WebSocket connection error:', error);
-    setConnectionStatus((prev) => (prev === 'connected' ? 'connected' : 'error'));
-  }, []);
+    try {
+      if (!silent) setCallsLoading(true);
+      setCallsError(null);
+      const response = await broadcastAPI.getBroadcastCalls(broadcastId, params);
+      if (requestId !== callsRequestRef.current) return;
+      setCalls((response.data.calls || []).map(normalizeCall));
+      setCallPagination((prev) => ({
+        ...prev,
+        ...(response.data.pagination || {})
+      }));
+    } catch (error) {
+      if (requestId !== callsRequestRef.current) return;
+      setCallsError(error.response?.data?.error || 'Failed to load broadcast calls');
+      console.error('Failed to load broadcast calls:', error);
+    } finally {
+      if (requestId === callsRequestRef.current && !silent) setCallsLoading(false);
+    }
+  }, [broadcastId, normalizeCall]);
 
-  const handleBroadcastUpdate = useCallback((data = {}) => {
+  const scheduleReconcileFetch = useCallback((delayMs = 700) => {
+    if (reconcileTimerRef.current) {
+      clearTimeout(reconcileTimerRef.current);
+    }
+
+    reconcileTimerRef.current = setTimeout(() => {
+      fetchBroadcastStatus({ silent: true });
+      fetchBroadcastCalls({ silent: true });
+      onBroadcastUpdated?.();
+    }, delayMs);
+  }, [fetchBroadcastCalls, fetchBroadcastStatus, onBroadcastUpdated]);
+
+  const flushBufferedUpdates = useCallback(() => {
+    flushTimerRef.current = null;
+    const buffered = Array.from(updateBufferRef.current.values()).map(normalizeCall);
+    updateBufferRef.current.clear();
+    if (buffered.length === 0) return;
+
+    const { selectedStatus: activeStatus, callPagination: activePagination } = queryRef.current;
+
+    setCalls((prev) => {
+      const byId = new Map(prev.map((call) => [getCallId(call), call]));
+
+      buffered.forEach((incoming) => {
+        const callId = getCallId(incoming);
+        if (!callId) return;
+
+        if (!shouldShowCall(incoming, activeStatus)) {
+          byId.delete(callId);
+          return;
+        }
+
+        const existing = byId.get(callId);
+        if (existing) {
+          byId.set(callId, {
+            ...existing,
+            ...incoming,
+            contact: {
+              ...(existing.contact || {}),
+              ...(incoming.contact || {})
+            }
+          });
+          return;
+        }
+
+        if (activePagination.page === 1) {
+          byId.set(callId, incoming);
+        }
+      });
+
+      return Array.from(byId.values())
+        .sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0))
+        .slice(0, activePagination.limit);
+    });
+  }, [normalizeCall, shouldShowCall]);
+
+  const queueCallUpdates = useCallback((updates = []) => {
+    updates.forEach((call) => {
+      const normalized = normalizeCall(call);
+      const callId = getCallId(normalized);
+      if (callId) updateBufferRef.current.set(callId, normalized);
+    });
+
+    if (flushTimerRef.current) return;
+    const schedule = window.requestAnimationFrame || ((callback) => window.setTimeout(callback, 50));
+    flushTimerRef.current = schedule(flushBufferedUpdates);
+  }, [flushBufferedUpdates, normalizeCall]);
+
+  const applyBroadcastPatch = useCallback((data = {}) => {
     const payloadBroadcast = data?.broadcast || data?.data?.broadcast || null;
     const targetId = String(payloadBroadcast?._id || payloadBroadcast?.id || data?.broadcastId || '').trim();
-    if (targetId && targetId !== String(broadcastId || '').trim()) {
-      return;
-    }
+    if (targetId && targetId !== String(broadcastId || '').trim()) return;
 
-    console.log('Broadcast update:', data);
     setConnectionStatus('connected');
+    setBroadcast((prev) => ({
+      ...(prev || {}),
+      ...(payloadBroadcast || {}),
+      status: payloadBroadcast?.status || data.status || prev?.status,
+      stats: payloadBroadcast?.stats || data.stats || prev?.stats || DEFAULT_STATS
+    }));
+  }, [broadcastId]);
 
-    if (payloadBroadcast) {
-      setBroadcast((prev) => ({
-        ...(prev || {}),
-        ...payloadBroadcast,
-        stats: payloadBroadcast.stats || prev?.stats || {}
-      }));
-    } else {
-      loadBroadcastData();
-    }
-  }, [broadcastId, loadBroadcastData]);
+  useEffect(() => {
+    queryRef.current = {
+      selectedStatus,
+      callPagination: {
+        page: callPagination.page,
+        limit: callPagination.limit,
+        total: callPagination.total,
+        pages: callPagination.pages
+      }
+    };
+  }, [callPagination.limit, callPagination.page, callPagination.pages, callPagination.total, selectedStatus]);
 
-  const cleanupSocket = useCallback(() => {
-    if (socketRef.current) {
-      socketRef.current.off('connect', handleConnect);
-      socketRef.current.off('disconnect', handleDisconnect);
-      socketRef.current.off('connect_error', handleConnectError);
-      socketRef.current.off('broadcast_updated', handleBroadcastUpdate);
-      socketRef.current.off('broadcast_update', handleBroadcastUpdate);
-      socketRef.current.disconnect();
-      socketRef.current = null;
-    }
-  }, [handleBroadcastUpdate, handleConnect, handleConnectError, handleDisconnect]);
+  useEffect(() => {
+    setBroadcast(null);
+    setCalls([]);
+    setSelectedStatus('all');
+    setCallPagination({ page: 1, limit: 50, total: 0, pages: 1 });
+    fetchBroadcastStatus();
+  }, [broadcastId, fetchBroadcastStatus]);
 
-  const connectWebSocket = useCallback(() => {
-    const socket = webSocketService.connect(String(broadcastId || 'broadcast-monitor'));
-    if (!socket) {
+  useEffect(() => {
+    fetchBroadcastCalls();
+  }, [broadcastId, selectedStatus, callPagination.page, callPagination.limit, fetchBroadcastCalls]);
+
+  useEffect(() => {
+    const socket = socketService.connect();
+    if (!socket || typeof socket.on !== 'function') {
       setConnectionStatus('error');
-      return;
+      return undefined;
     }
 
     socketRef.current = socket;
+
+    const handleConnect = () => {
+      setConnectionStatus('connected');
+      socket.emit('join_broadcast', broadcastId);
+      scheduleReconcileFetch(250);
+    };
+    const handleDisconnect = () => setConnectionStatus('reconnecting');
+    const handleConnectError = (error) => {
+      console.error('WebSocket connection error:', error);
+      setConnectionStatus((prev) => (prev === 'connected' ? 'connected' : 'error'));
+    };
+    const handleBroadcastUpdate = (data = {}) => {
+      applyBroadcastPatch(data);
+      const payloadBroadcast = data?.broadcast || data?.data?.broadcast || null;
+      const status = payloadBroadcast?.status || data.status;
+      if (FINAL_BROADCAST_STATUSES.has(status)) {
+        scheduleReconcileFetch(350);
+      }
+    };
+    const handleCallUpdate = (data = {}) => {
+      const targetId = String(data?.broadcastId || '').trim();
+      if (targetId && targetId !== String(broadcastId || '').trim()) return;
+      setConnectionStatus('connected');
+      queueCallUpdates([data]);
+    };
+    const handleBatchUpdate = (data = {}) => {
+      const targetId = String(data?.broadcastId || '').trim();
+      if (targetId && targetId !== String(broadcastId || '').trim()) return;
+      setConnectionStatus('connected');
+      queueCallUpdates(data.calls || []);
+    };
+    const handleCallsCreated = (data = {}) => {
+      const targetId = String(data?.broadcastId || '').trim();
+      if (targetId && targetId !== String(broadcastId || '').trim()) return;
+      scheduleReconcileFetch(350);
+    };
 
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('connect_error', handleConnectError);
     socket.on('broadcast_updated', handleBroadcastUpdate);
     socket.on('broadcast_update', handleBroadcastUpdate);
-
-    setConnectionStatus(webSocketService.isConnected() ? 'connected' : 'connecting');
-  }, [broadcastId, handleBroadcastUpdate, handleConnect, handleConnectError, handleDisconnect]);
-
-  useEffect(() => {
-    loadBroadcastData();
-    connectWebSocket();
+    socket.on('call_update', handleCallUpdate);
+    socket.on('batch_update', handleBatchUpdate);
+    socket.on('calls_created', handleCallsCreated);
+    socket.emit('join_broadcast', broadcastId);
+    setConnectionStatus(socket.connected ? 'connected' : 'connecting');
 
     return () => {
-      cleanupSocket();
+      if (typeof socket.emit === 'function') socket.emit('leave_broadcast', broadcastId);
+      socket.off('connect', handleConnect);
+      socket.off('disconnect', handleDisconnect);
+      socket.off('connect_error', handleConnectError);
+      socket.off('broadcast_updated', handleBroadcastUpdate);
+      socket.off('broadcast_update', handleBroadcastUpdate);
+      socket.off('call_update', handleCallUpdate);
+      socket.off('batch_update', handleBatchUpdate);
+      socket.off('calls_created', handleCallsCreated);
+      socketRef.current = null;
     };
-  }, [broadcastId, cleanupSocket, connectWebSocket, loadBroadcastData]);
+  }, [applyBroadcastPatch, broadcastId, queueCallUpdates, scheduleReconcileFetch]);
+
+  useEffect(() => () => {
+    if (flushTimerRef.current) {
+      const cancel = window.cancelAnimationFrame || window.clearTimeout;
+      cancel(flushTimerRef.current);
+    }
+    if (reconcileTimerRef.current) clearTimeout(reconcileTimerRef.current);
+  }, []);
 
   const handleCancelBroadcast = async () => {
-    if (!window.confirm('Are you sure you want to cancel this broadcast?')) {
-      return;
-    }
+    if (!window.confirm('Are you sure you want to cancel this broadcast?')) return;
 
     try {
       await broadcastAPI.cancelBroadcast(broadcastId);
-      loadBroadcastData();
+      await fetchBroadcastStatus({ silent: true });
+      scheduleReconcileFetch(100);
     } catch (error) {
       console.error('Failed to cancel broadcast:', error);
       alert('Failed to cancel broadcast');
     }
   };
 
-  const getStatusColor = (status) => {
-    const colors = {
-      queued: '#94a3b8',
-      calling: '#3b82f6',
-      answered: '#2563eb',
-      completed: '#22c55e',
-      failed: '#ef4444',
-      opted_out: '#f59e0b'
-    };
-    return colors[status] || '#64748b';
+  const handleStatusChange = (status) => {
+    setSelectedStatus(status);
+    setCallPagination((prev) => ({ ...prev, page: 1 }));
   };
 
-  const calculateProgress = () => {
-    if (!broadcast || !broadcast.stats) return 0;
-    const { total, completed, failed } = broadcast.stats;
-    if (!total || total === 0) return 0;
-    return ((completed + failed) / total) * 100;
+  const handlePageChange = (page) => {
+    setCallPagination((prev) => ({ ...prev, page }));
   };
 
-  const getFilteredCalls = () => {
-    if (selectedStatus === 'all') return calls;
-    return calls.filter(call => call.status === selectedStatus);
+  const handleLimitChange = (limit) => {
+    setCallPagination((prev) => ({ ...prev, page: 1, limit }));
   };
 
-  if (loading) {
+  if (statusLoading && !broadcast) {
     return (
       <div className="monitor-loading">
         <div className="spinner-large" />
@@ -153,10 +385,19 @@ const BroadcastMonitor = ({ broadcastId }) => {
     );
   }
 
+  if (statusError && !broadcast) {
+    return (
+      <div className="monitor-error">
+        <XCircle size={42} />
+        <h3>{statusError}</h3>
+      </div>
+    );
+  }
+
   if (!broadcast) {
     return (
       <div className="monitor-error">
-        <XCircle size={48} />
+        <XCircle size={42} />
         <h3>Broadcast not found</h3>
       </div>
     );
@@ -164,183 +405,84 @@ const BroadcastMonitor = ({ broadcastId }) => {
 
   return (
     <div className="broadcast-monitor">
-      {/* Header */}
       <div className="monitor-header">
         <div className="header-info">
-          <h2>{broadcast.name}</h2>
+          <div className="monitor-title-row">
+            <Radio size={22} aria-hidden="true" />
+            <h2>{broadcast.name}</h2>
+          </div>
           <div className="header-badges">
             <span className={`status-badge status-${broadcast.status}`}>
-              {broadcast.status.replace('_', ' ')}
+              {String(broadcast.status || '').replace('_', ' ')}
             </span>
-            {/* Connection Status Indicator */}
             <div className={`connection-status ${connectionStatus}`}>
-              {connectionStatus === 'connected' ? (
-                <>
-                  <Wifi size={16} />
-                  <span>Connected</span>
-                </>
-              ) : connectionStatus === 'reconnecting' || connectionStatus === 'connecting' ? (
-                <>
-                  <Wifi size={16} />
-                  <span>Connecting...</span>
-                </>
-              ) : connectionStatus === 'error' ? (
-                <>
-                  <WifiOff size={16} />
-                  <span>Connection Error</span>
-                </>
-              ) : (
-                <>
-                  <WifiOff size={16} />
-                  <span>Disconnected</span>
-                </>
-              )}
+              {connectionStatus === 'connected' ? <Wifi size={15} /> : <WifiOff size={15} />}
+              <span>
+                {connectionStatus === 'connected'
+                  ? 'Connected'
+                  : connectionStatus === 'reconnecting' || connectionStatus === 'connecting'
+                    ? 'Connecting'
+                    : 'Connection Error'}
+              </span>
             </div>
           </div>
         </div>
 
-        {broadcast.status === 'in_progress' && (
-          <button
-            className="btn btn-danger"
-            onClick={handleCancelBroadcast}
-          >
-            Cancel Broadcast
-          </button>
-        )}
+        <div className="monitor-actions">
+          {broadcast.status === 'in_progress' && (
+            <button type="button" className="btn btn-danger" onClick={handleCancelBroadcast}>
+              Cancel Broadcast
+            </button>
+          )}
+        </div>
       </div>
 
-      {/* Progress Bar */}
       <div className="progress-section">
-        <div className="progress-bar">
-          <div
-            className="progress-fill"
-            style={{ width: `${calculateProgress()}%` }}
-          />
+        <div className="progress-meta">
+          <span>{Math.round(progress)}% complete</span>
+          <span>{stats.completed} completed - {stats.failed} failed - {remaining} remaining</span>
         </div>
-        <span className="progress-text">
-          {Math.round(calculateProgress())}% Complete
-        </span>
+        <div className="progress-bar" aria-label="Broadcast progress">
+          <div className="progress-fill" style={{ width: `${progress}%` }} />
+        </div>
       </div>
 
-      {/* Stats Grid */}
       <div className="stats-grid-voice">
-        <div className="stat-card stat-card-total">
-          <div className="stat-icon-broadcast icon-total">
-            <Users size={24} />
+        {statCards.map((card) => (
+          <div className={`stat-card stat-card-${card.key}`} key={card.key}>
+            <div className={`stat-icon-broadcast icon-${card.key}`}>
+              {React.createElement(card.icon, { size: 22 })}
+            </div>
+            <div className="stat-content">
+              <span className="stat-value">{card.value}</span>
+              <span className="stat-label">{card.label}</span>
+            </div>
           </div>
-          <div className="stat-content">
-            <span className="stat-value">{broadcast.stats.total}</span>
-            <span className="stat-label">Total Contacts</span>
-          </div>
-        </div>
-
-        <div className="stat-card stat-card-calling">
-          <div className="stat-icon-broadcast icon-calling">
-            <Phone size={24} />
-          </div>
-          <div className="stat-content">
-            <span className="stat-value">{broadcast.stats.calling}</span>
-            <span className="stat-label">Calling</span>
-          </div>
-        </div>
-
-        <div className="stat-card stat-card-completed">
-          <div className="stat-icon-broadcast icon-completed">
-            <CheckCircle size={24} />
-          </div>
-          <div className="stat-content">
-            <span className="stat-value">{broadcast.stats.completed}</span>
-            <span className="stat-label">Completed</span>
-          </div>
-        </div>
-
-        <div className="stat-card stat-card-failed">
-          <div className="stat-icon-broadcast icon-failed">
-            <XCircle size={24} />
-          </div>
-          <div className="stat-content">
-            <span className="stat-value">{broadcast.stats.failed}</span>
-            <span className="stat-label">Failed</span>
-          </div>
-        </div>
-
-        <div className="stat-card stat-card-queued">
-          <div className="stat-icon-broadcast icon-queued">
-            <Clock size={24} />
-          </div>
-          <div className="stat-content">
-            <span className="stat-value">{broadcast.stats.queued}</span>
-            <span className="stat-label">Queued</span>
-          </div>
-        </div>
-
-        <div className="stat-card stat-card-rate">
-          <div className="stat-icon-broadcast icon-rate">
-            <TrendingUp size={24} />
-          </div>
-          <div className="stat-content">
-            <span className="stat-value">
-              {broadcast.stats.completed > 0
-                ? Math.round((broadcast.stats.completed / (broadcast.stats.completed + broadcast.stats.failed)) * 100)
-                : 0}%
-            </span>
-            <span className="stat-label">Success Rate</span>
-          </div>
-        </div>
-
-        <div className="stat-card stat-card-opted-out">
-          <div className="stat-icon-broadcast icon-opted-out">
-            <PhoneOff size={24} />
-          </div>
-          <div className="stat-content">
-            <span className="stat-value">{broadcast.stats.opted_out || 0}</span>
-            <span className="stat-label">Opted Out</span>
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* Stats Chart */}
-      <StatsChart broadcast={broadcast} />
-
-      {/* Filter Tabs */}
       <div className="filter-tabs">
-        <button
-          className={`filter-tab ${selectedStatus === 'all' ? 'active' : ''}`}
-          onClick={() => setSelectedStatus('all')}
-        >
-          All Calls ({calls.length})
-        </button>
-        <button
-          className={`filter-tab ${selectedStatus === 'completed' ? 'active' : ''}`}
-          onClick={() => setSelectedStatus('completed')}
-        >
-          Completed ({broadcast.stats.completed})
-        </button>
-        <button
-          className={`filter-tab ${selectedStatus === 'failed' ? 'active' : ''}`}
-          onClick={() => setSelectedStatus('failed')}
-        >
-          Failed ({broadcast.stats.failed})
-        </button>
-        <button
-          className={`filter-tab ${selectedStatus === 'calling' ? 'active' : ''}`}
-          onClick={() => setSelectedStatus('calling')}
-        >
-          In Progress ({broadcast.stats.calling})
-        </button>
-        <button
-          className={`filter-tab ${selectedStatus === 'opted_out' ? 'active' : ''}`}
-          onClick={() => setSelectedStatus('opted_out')}
-        >
-          Opted Out ({broadcast.stats.opted_out || 0})
-        </button>
+        {STATUS_FILTERS.map((filter) => (
+          <button
+            type="button"
+            key={filter.key}
+            className={`filter-tab ${selectedStatus === filter.key ? 'active' : ''}`}
+            onClick={() => handleStatusChange(filter.key)}
+          >
+            {filter.label} ({stats[filter.stat] || 0})
+          </button>
+        ))}
       </div>
 
-      {/* Calls Table */}
       <CallsTable
-        calls={getFilteredCalls()}
+        calls={calls}
         getStatusColor={getStatusColor}
         maxRetries={broadcast?.config?.maxRetries || 2}
+        pagination={callPagination}
+        loading={callsLoading}
+        error={callsError}
+        onPageChange={handlePageChange}
+        onLimitChange={handleLimitChange}
       />
     </div>
   );

@@ -979,7 +979,8 @@ export const useExotelOutbound = () => {
     recurrence,
     timezone,
     allowedWindowStart,
-    allowedWindowEnd
+    allowedWindowEnd,
+    ...settings
   }) => {
     setQuickCallLoading(true);
     setError('');
@@ -1000,7 +1001,12 @@ export const useExotelOutbound = () => {
         recurrence,
         timezone,
         allowedWindowStart,
-        allowedWindowEnd
+        allowedWindowEnd,
+        originType: 'single',
+        campaignType: 'single',
+        singleRecipient: to,
+        contactCount: 1,
+        ...settings
       });
       setLastResponse(response?.data || null);
       return response?.data;
@@ -1031,7 +1037,8 @@ export const useExotelOutbound = () => {
     recurrence,
     timezone,
     allowedWindowStart,
-    allowedWindowEnd
+    allowedWindowEnd,
+    ...settings
   }) => {
     setBulkLoading(true);
     setError('');
@@ -1055,7 +1062,11 @@ export const useExotelOutbound = () => {
         recurrence,
         timezone,
         allowedWindowStart,
-        allowedWindowEnd
+        allowedWindowEnd,
+        originType: settings.originType || settings.campaignType || 'bulk',
+        campaignType: settings.campaignType || settings.originType || 'bulk',
+        contactCount: Array.isArray(numbers) ? numbers.length : 0,
+        ...settings
       });
       setLastResponse(response?.data || null);
       return response?.data;

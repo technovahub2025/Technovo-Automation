@@ -1,75 +1,61 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Phone, ArrowLeft, CheckCircle, AlertCircle, PhoneOutgoing, Mic, Clock, BarChart3, Search, Filter, Trash2, History, ListChecks } from 'lucide-react';
+import {
+  BarChart3,
+  CalendarClock,
+  Eye,
+  Filter,
+  History,
+  Mic,
+  MoreVertical,
+  Pause,
+  Phone,
+  PhoneOutgoing,
+  Play,
+  Search,
+  Trash2,
+  X
+} from 'lucide-react';
 import { useExotelOutbound } from '../../hooks/useBroadcast';
 import socketService from '../../services/socketService';
 import apiService from '../../services/api';
 import OutboundDialer from './OutboundDialer';
 import './OutboundCall.css';
-
-const formatDateTime = (value) => {
-  if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString();
-};
-
-const normalizeStatus = (value) => String(value || '').toLowerCase();
-const TERMINAL_CALL_STATUSES = new Set(['completed', 'failed', 'busy', 'no-answer', 'cancelled', 'canceled']);
+import {
+  NON_TERMINAL_CALL_STATUSES,
+  TERMINAL_CALL_STATUSES,
+  deriveOutboundType,
+  formatDateTime,
+  normalizeHistoryItem,
+  normalizeMonitorPayload,
+  normalizeScheduledItem,
+  normalizeStatus
+} from '../../utils/outboundNormalizers';
 const MONITOR_ROW_LIMIT = 1000;
 const REALTIME_FLUSH_MS = 120;
 const FILTER_DEBOUNCE_MS = 300;
-
-const getMonitorKey = (payload = {}) => {
-  const callSid = String(payload.callSid || payload.call_sid || '').trim();
-  if (callSid) return `call:${callSid}`;
-  const campaignId = String(payload.campaignId || payload.campaignDbId || '').trim();
-  const contactId = String(payload.contactId || '').trim();
-  if (campaignId && contactId) return `campaign:${campaignId}:${contactId}`;
-  if (campaignId) return `campaign:${campaignId}`;
-  return '';
-};
-
-const normalizeMonitorPayload = (payload = {}) => {
-  const status = normalizeStatus(payload.status || 'initiated');
-  const key = getMonitorKey(payload);
-  if (!key) return null;
-
-  return {
-    key,
-    type: payload.type || (payload.campaignId || payload.campaignDbId || payload.campaignName ? 'bulk' : 'single'),
-    title: payload.title || (payload.campaignId || payload.campaignDbId || payload.campaignName ? 'Bulk Campaign' : 'Single Call'),
-    status: status || 'initiated',
-    ended: typeof payload.ended === 'boolean' ? payload.ended : TERMINAL_CALL_STATUSES.has(status),
-    callSid: payload.callSid || payload.call_sid || '',
-    provider: payload.provider || '',
-    from: payload.from || '',
-    to: payload.to || payload.phoneNumber || payload.phone || '',
-    phoneNumber: payload.phoneNumber || payload.to || payload.phone || '',
-    campaignId: payload.campaignId || '',
-    campaignDbId: payload.campaignDbId || '',
-    campaignName: payload.campaignName || payload.name || '',
-    contactId: payload.contactId || '',
-    contactCount: payload.contactCount || '',
-    workflowId: payload.workflowId || '',
-    voiceId: payload.voiceId || '',
-    scheduleType: payload.scheduleType || payload.mode || 'immediate',
-    scheduledAt: payload.scheduledAt || null,
-    recurrence: payload.recurrence || payload.schedule?.recurrence || '',
-    customMessage: payload.customMessage || payload.message || '',
-    duration: Number(payload.duration || 0) || 0,
-    createdAt: payload.createdAt || payload.timestamp || payload.updatedAt || new Date().toISOString(),
-    updatedAt: payload.updatedAt || payload.timestamp || new Date().toISOString(),
-    rawResponse: payload.rawResponse || null
-  };
-};
 
 const upsertMonitorRows = (rowsByKey, incomingRows = []) => {
   const next = { ...(rowsByKey || {}) };
   incomingRows.filter(Boolean).forEach((incoming) => {
     const previous = next[incoming.key] || {};
+    const previousStatus = normalizeStatus(previous.status);
+    const incomingStatus = normalizeStatus(incoming.status);
+    if (previous.ended && TERMINAL_CALL_STATUSES.has(previousStatus) && NON_TERMINAL_CALL_STATUSES.has(incomingStatus)) {
+      next[incoming.key] = {
+        ...previous,
+        updatedAt: previous.updatedAt || incoming.updatedAt || new Date().toISOString()
+      };
+      return;
+    }
     next[incoming.key] = {
       ...previous,
       ...incoming,
+      status: previous.ended && TERMINAL_CALL_STATUSES.has(previousStatus) && !TERMINAL_CALL_STATUSES.has(incomingStatus)
+        ? previous.status
+        : incoming.status,
+      ended: previous.ended && TERMINAL_CALL_STATUSES.has(previousStatus)
+        ? true
+        : incoming.ended,
       createdAt: previous.createdAt || incoming.createdAt,
       updatedAt: incoming.updatedAt || previous.updatedAt || new Date().toISOString()
     };
@@ -85,11 +71,13 @@ const upsertMonitorRows = (rowsByKey, incomingRows = []) => {
 
 const matchesHistoryFilters = (item, filters) => {
   const status = normalizeStatus(item?.status);
+  const type = deriveOutboundType(item);
   const phoneNumber = String(item?.phoneNumber || item?.to || '').toLowerCase();
   const createdAtValue = item?.createdAt || item?.updatedAt || item?.timestamp;
   const createdAt = createdAtValue ? new Date(createdAtValue) : null;
 
   if (filters.status !== 'all' && status !== normalizeStatus(filters.status)) return false;
+  if (filters.type && filters.type !== 'all' && type !== normalizeStatus(filters.type)) return false;
   if (filters.phoneNumber && !phoneNumber.includes(String(filters.phoneNumber).toLowerCase())) return false;
 
   if (filters.startDate && createdAt) {
@@ -110,57 +98,13 @@ const upsertHistoryItem = (items, incoming, filters, pagination) => {
   if (!incoming) return items;
 
   const nextItems = Array.isArray(items) ? [...items] : [];
-  const incomingKey = String(incoming._id || incoming.callSid || incoming.id || '');
+  const formattedIncoming = normalizeHistoryItem(incoming);
+  const incomingKey = String(formattedIncoming._id || formattedIncoming.callSid || formattedIncoming.id || '');
   const index = nextItems.findIndex((item) => {
     const itemKey = String(item?._id || item?.callSid || item?.id || '');
     return incomingKey && itemKey === incomingKey;
   });
-  const matchesFilters = matchesHistoryFilters(incoming, filters);
-
-  if (index >= 0) {
-    if (matchesFilters) {
-      nextItems[index] = { ...nextItems[index], ...incoming };
-    } else {
-      nextItems.splice(index, 1);
-    }
-  } else if (matchesFilters) {
-    nextItems.unshift(incoming);
-  }
-
-  nextItems.sort((a, b) => new Date(b?.createdAt || b?.updatedAt || b?.timestamp || 0) - new Date(a?.createdAt || a?.updatedAt || a?.timestamp || 0));
-  return nextItems.slice(0, pagination.limit || filters.limit || 10);
-};
-
-const matchesCampaignFilters = (item, filters) => {
-  const status = normalizeStatus(item?.status);
-  const recurrence = normalizeStatus(item?.schedule?.recurrence || 'none');
-  const searchValue = `${item?.campaignName || item?.name || ''} ${item?.campaignId || ''}`.toLowerCase();
-
-  if (filters.status !== 'all' && status !== normalizeStatus(filters.status)) return false;
-  if (filters.recurrence !== 'all' && recurrence !== normalizeStatus(filters.recurrence)) return false;
-  if (filters.search && !searchValue.includes(String(filters.search).toLowerCase())) return false;
-
-  return true;
-};
-
-const upsertCampaignItem = (items, incoming, filters = {}, pagination = {}) => {
-  if (!incoming?._id) return items;
-
-  const formattedIncoming = {
-    _id: incoming._id,
-    campaignId: incoming.campaignId,
-    campaignName: incoming.campaignName || incoming.name || 'Untitled Campaign',
-    provider: incoming.provider || '',
-    status: incoming.status,
-    mode: incoming.mode || incoming.schedule?.scheduleType || 'immediate',
-    recurrence: incoming.schedule?.recurrence || 'none',
-    updatedAt: incoming.updatedAt || incoming.timestamp,
-    schedule: incoming.schedule || {}
-  };
-
-  const nextItems = Array.isArray(items) ? [...items] : [];
-  const index = nextItems.findIndex((item) => String(item?._id) === String(formattedIncoming._id));
-  const matchesFilters = matchesCampaignFilters(formattedIncoming, filters);
+  const matchesFilters = matchesHistoryFilters(formattedIncoming, filters);
 
   if (index >= 0) {
     if (matchesFilters) {
@@ -168,17 +112,15 @@ const upsertCampaignItem = (items, incoming, filters = {}, pagination = {}) => {
     } else {
       nextItems.splice(index, 1);
     }
-  } else if (matchesFilters && Number(pagination.page || filters.page || 1) === 1) {
+  } else if (matchesFilters) {
     nextItems.unshift(formattedIncoming);
   }
 
-  nextItems.sort((a, b) => new Date(b?.updatedAt || b?.createdAt || 0) - new Date(a?.updatedAt || a?.createdAt || 0));
-  return nextItems.slice(0, Number(pagination.limit || filters.limit || 10));
+  nextItems.sort((a, b) => new Date(b?.createdAt || b?.updatedAt || b?.timestamp || 0) - new Date(a?.createdAt || a?.updatedAt || a?.timestamp || 0));
+  return nextItems.slice(0, pagination.limit || filters.limit || 10);
 };
 
 const OutboundCall = () => {
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState(null);
   const [activeTab, setActiveTab] = useState('quick');
   const [callSettings, setCallSettings] = useState({
     recordCall: true,
@@ -194,6 +136,7 @@ const OutboundCall = () => {
     page: 1,
     limit: 10,
     status: 'all',
+    type: 'all',
     phoneNumber: '',
     startDate: '',
     endDate: ''
@@ -206,32 +149,37 @@ const OutboundCall = () => {
   const [showHistoryFilters, setShowHistoryFilters] = useState(false);
   const [selectedCallSids, setSelectedCallSids] = useState([]);
   const [callSelectionMode, setCallSelectionMode] = useState(false);
-  const [campaignFilters, setCampaignFilters] = useState({
+  const [scheduleFilters, setScheduleFilters] = useState({
     search: '',
     status: 'all',
     recurrence: 'all',
+    type: 'all',
     page: 1,
     limit: 10
   });
-  const [debouncedCampaignFilters, setDebouncedCampaignFilters] = useState(campaignFilters);
-  const [campaigns, setCampaigns] = useState([]);
-  const [campaignPagination, setCampaignPagination] = useState({ page: 1, totalPages: 1, total: 0, limit: 10 });
-  const [loadingCampaigns, setLoadingCampaigns] = useState(false);
-  const [campaignError, setCampaignError] = useState('');
-  const [showCampaignFilters, setShowCampaignFilters] = useState(false);
-  const [selectedCampaignIds, setSelectedCampaignIds] = useState([]);
-  const [campaignSelectionMode, setCampaignSelectionMode] = useState(false);
+  const [debouncedScheduleFilters, setDebouncedScheduleFilters] = useState(scheduleFilters);
+  const [scheduledItems, setScheduledItems] = useState([]);
+  const [schedulePagination, setSchedulePagination] = useState({ page: 1, totalPages: 1, total: 0, limit: 10 });
+  const [loadingSchedules, setLoadingSchedules] = useState(false);
+  const [scheduleError, setScheduleError] = useState('');
+  const [showScheduleFilters, setShowScheduleFilters] = useState(false);
+  const [selectedScheduleIds, setSelectedScheduleIds] = useState([]);
+  const [scheduleSelectionMode, setScheduleSelectionMode] = useState(false);
+  const [openActionMenu, setOpenActionMenu] = useState(null);
+  const [scheduleDrawerItem, setScheduleDrawerItem] = useState(null);
   const [monitorRowsByKey, setMonitorRowsByKey] = useState({});
   const [selectedMonitorKey, setSelectedMonitorKey] = useState('');
   const [liveCallStatus, setLiveCallStatus] = useState(null);
   const pendingMonitorRowsRef = useRef([]);
   const monitorFlushTimerRef = useRef(null);
+  const endedCallSidsRef = useRef(new Set());
   const realtimeQueueRef = useRef({ calls: new Map(), statuses: new Map(), campaigns: new Map() });
   const realtimeFlushTimerRef = useRef(null);
+  const scheduleRefreshTimerRef = useRef(null);
+  const historyRequestSeqRef = useRef(0);
+  const scheduleRequestSeqRef = useRef(0);
   const historyFiltersRef = useRef(debouncedHistoryFilters);
   const historyPaginationRef = useRef(historyPagination);
-  const campaignFiltersRef = useRef(debouncedCampaignFilters);
-  const campaignPaginationRef = useRef(campaignPagination);
 
   useExotelOutbound();
 
@@ -244,10 +192,10 @@ const OutboundCall = () => {
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      setDebouncedCampaignFilters(campaignFilters);
+      setDebouncedScheduleFilters(scheduleFilters);
     }, FILTER_DEBOUNCE_MS);
     return () => window.clearTimeout(timer);
-  }, [campaignFilters]);
+  }, [scheduleFilters]);
 
   useEffect(() => {
     historyFiltersRef.current = debouncedHistoryFilters;
@@ -257,75 +205,76 @@ const OutboundCall = () => {
     historyPaginationRef.current = historyPagination;
   }, [historyPagination]);
 
-  useEffect(() => {
-    campaignFiltersRef.current = debouncedCampaignFilters;
-  }, [debouncedCampaignFilters]);
-
-  useEffect(() => {
-    campaignPaginationRef.current = campaignPagination;
-  }, [campaignPagination]);
-
   const loadHistory = useCallback(async () => {
+    const requestSeq = historyRequestSeqRef.current + 1;
+    historyRequestSeqRef.current = requestSeq;
     try {
       setLoadingHistory(true);
       setHistoryError('');
       const params = { ...debouncedHistoryFilters, limit: Math.min(Number(debouncedHistoryFilters.limit || 10), 100), direction: 'outbound-local' };
       if (params.status === 'all') delete params.status;
+      if (params.type === 'all') delete params.type;
       if (!params.phoneNumber) delete params.phoneNumber;
       if (!params.startDate) delete params.startDate;
       if (!params.endDate) delete params.endDate;
 
       const response = await apiService.getCallHistory(params);
+      if (requestSeq !== historyRequestSeqRef.current) return;
       const payload = response?.data || {};
       setHistoryPagination(payload?.pagination || payload?.meta?.pagination || { page: 1, totalPages: 1, total: 0, limit: params.limit });
-      setCallHistory(payload?.data || []);
+      setCallHistory((payload?.data || []).map(normalizeHistoryItem));
     } catch (err) {
+      if (requestSeq !== historyRequestSeqRef.current) return;
       setHistoryError(err?.response?.data?.error?.message || err?.response?.data?.error || err?.message || 'Failed to load call history');
       setCallHistory([]);
     } finally {
-      setLoadingHistory(false);
+      if (requestSeq === historyRequestSeqRef.current) setLoadingHistory(false);
     }
   }, [debouncedHistoryFilters]);
 
-  const loadCampaigns = useCallback(async () => {
+  const loadScheduledMonitor = useCallback(async () => {
+    const requestSeq = scheduleRequestSeqRef.current + 1;
+    scheduleRequestSeqRef.current = requestSeq;
     try {
-      setLoadingCampaigns(true);
-      setCampaignError('');
+      setLoadingSchedules(true);
+      setScheduleError('');
       const params = {
-        ...debouncedCampaignFilters,
-        limit: Math.min(Number(debouncedCampaignFilters.limit || 10), 100)
+        ...debouncedScheduleFilters,
+        limit: Math.min(Number(debouncedScheduleFilters.limit || 10), 100)
       };
       if (!params.search) delete params.search;
       if (params.status === 'all') delete params.status;
       if (params.recurrence === 'all') delete params.recurrence;
-      const response = await apiService.getOutboundCampaigns(params);
+      if (params.type === 'all') delete params.type;
+
+      const response = await apiService.getOutboundSchedules(params);
+      if (requestSeq !== scheduleRequestSeqRef.current) return;
       const payload = response?.data || {};
-      const list = Array.isArray(payload?.campaigns) ? payload.campaigns : [];
-      setCampaignPagination(payload?.pagination || { page: params.page || 1, totalPages: 1, total: list.length, limit: params.limit });
-      setCampaigns(list.map((item) => ({
-        _id: item._id,
-        campaignId: item.campaignId,
-        campaignName: item.name || item.campaignName || 'Untitled Campaign',
-        provider: item.provider || '',
-        status: item.status,
-        mode: item.mode || item.schedule?.scheduleType || 'immediate',
-        recurrence: item.schedule?.recurrence || 'none',
-        updatedAt: item.updatedAt || item.createdAt,
-        schedule: item.schedule || {}
-      })));
+      const list = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload?.schedules) ? payload.schedules : [];
+      setSchedulePagination(payload?.pagination || payload?.meta?.pagination || { page: params.page || 1, totalPages: 1, total: list.length, limit: params.limit });
+      setScheduledItems(list.map(normalizeScheduledItem));
     } catch (err) {
-      setCampaignError(err?.response?.data?.message || err?.message || 'Failed to load campaigns');
-      setCampaigns([]);
-      setCampaignPagination({ page: 1, totalPages: 1, total: 0, limit: debouncedCampaignFilters.limit || 10 });
+      if (requestSeq !== scheduleRequestSeqRef.current) return;
+      setScheduleError(err?.response?.data?.message || err?.message || 'Failed to load scheduled monitor');
+      setScheduledItems([]);
+      setSchedulePagination({ page: 1, totalPages: 1, total: 0, limit: debouncedScheduleFilters.limit || 10 });
     } finally {
-      setLoadingCampaigns(false);
+      if (requestSeq === scheduleRequestSeqRef.current) setLoadingSchedules(false);
     }
-  }, [debouncedCampaignFilters]);
+  }, [debouncedScheduleFilters]);
+
+  const queueScheduleRefresh = useCallback(() => {
+    if (scheduleRefreshTimerRef.current) return;
+    scheduleRefreshTimerRef.current = window.setTimeout(() => {
+      scheduleRefreshTimerRef.current = null;
+      loadScheduledMonitor();
+    }, FILTER_DEBOUNCE_MS);
+  }, [loadScheduledMonitor]);
 
   useEffect(() => {
     if (activeTab === 'history') loadHistory();
-    if (activeTab === 'campaigns') loadCampaigns();
-  }, [activeTab, loadHistory, loadCampaigns]);
+    if (activeTab === 'scheduled') loadScheduledMonitor();
+  }, [activeTab, loadHistory, loadScheduledMonitor]);
 
   const monitorRows = useMemo(
     () => Object.values(monitorRowsByKey).sort((a, b) => new Date(b.updatedAt || b.createdAt || 0) - new Date(a.updatedAt || a.createdAt || 0)),
@@ -350,12 +299,20 @@ const OutboundCall = () => {
       monitorFlushTimerRef.current = null;
       if (!pendingRows.length) return;
 
+      pendingRows.forEach((row) => {
+        if (row.callSid && row.ended) {
+          endedCallSidsRef.current.add(row.callSid);
+        }
+      });
       setMonitorRowsByKey((prev) => upsertMonitorRows(prev, pendingRows));
       setSelectedMonitorKey((prev) => prev || pendingRows[0]?.key || '');
 
       const latestSingle = [...pendingRows].reverse().find((row) => row.type === 'single' && row.callSid);
       if (latestSingle) {
         setLiveCallStatus((prev) => {
+          if (endedCallSidsRef.current.has(latestSingle.callSid)) {
+            return prev?.callSid === latestSingle.callSid ? null : prev;
+          }
           if (latestSingle.ended) {
             return prev?.callSid === latestSingle.callSid ? null : prev;
           }
@@ -394,7 +351,10 @@ const OutboundCall = () => {
               status: data.status,
               duration: data.duration,
               createdAt: data.createdAt || data.timestamp,
-              updatedAt: data.updatedAt || data.timestamp
+              updatedAt: data.updatedAt || data.timestamp,
+              providerData: data.providerData || data.metadata || data.rawResponse?.providerData || {},
+              campaignName: data.campaignName || '',
+              campaignId: data.campaignId || ''
             }, historyFiltersRef.current, historyPaginationRef.current);
           });
 
@@ -404,7 +364,8 @@ const OutboundCall = () => {
               status: data.status,
               updatedAt: data?.execution?.updatedAt || new Date().toISOString(),
               createdAt: data?.execution?.createdAt || data?.execution?.startedAt || new Date().toISOString(),
-              phoneNumber: data?.execution?.phoneNumber || data?.execution?.to
+              phoneNumber: data?.execution?.phoneNumber || data?.execution?.to,
+              providerData: data?.execution?.providerData || {}
             }, historyFiltersRef.current, historyPaginationRef.current);
           });
 
@@ -416,12 +377,16 @@ const OutboundCall = () => {
         monitorPayloads.push(data);
         const status = normalizeStatus(data.status);
         if (TERMINAL_CALL_STATUSES.has(status)) {
+          if (data.callSid) endedCallSidsRef.current.add(data.callSid);
           setLiveCallStatus((prev) => (prev?.callSid === data.callSid ? null : prev));
         }
       });
 
       statusUpdates.forEach((data = {}) => {
         const status = normalizeStatus(data.status);
+        if (TERMINAL_CALL_STATUSES.has(status) && data.callSid) {
+          endedCallSidsRef.current.add(data.callSid);
+        }
         monitorPayloads.push({
           type: 'single',
           callSid: data.callSid,
@@ -438,25 +403,30 @@ const OutboundCall = () => {
       });
 
       if (campaignUpdates.length) {
-        setCampaigns((prev) => {
-          let next = prev;
-          campaignUpdates.forEach((incomingCampaign) => {
-            next = upsertCampaignItem(next, incomingCampaign, campaignFiltersRef.current, campaignPaginationRef.current);
-          });
-          return next;
-        });
-
         campaignUpdates.forEach((incomingCampaign) => {
+          const metadata = incomingCampaign.metadata || {};
+          const originType = String(incomingCampaign.campaignType || incomingCampaign.originType || metadata.originType || '').trim().toLowerCase();
+          const scheduleEnabled = Boolean(incomingCampaign.schedule?.enabled || incomingCampaign.mode === 'scheduled' || incomingCampaign.mode === 'recurring');
+          if (scheduleEnabled || ['scheduled', 'paused', 'completed', 'failed'].includes(normalizeStatus(incomingCampaign.status))) {
+            queueScheduleRefresh();
+          }
           monitorPayloads.push({
-            type: 'bulk',
+            type: originType === 'single' ? 'single' : 'bulk',
+            campaignType: originType || 'bulk',
             campaignId: incomingCampaign.campaignId,
             campaignDbId: incomingCampaign._id,
             campaignName: incomingCampaign.campaignName || incomingCampaign.name,
             provider: incomingCampaign.provider,
             status: incomingCampaign.status,
-            scheduleType: incomingCampaign.mode || incomingCampaign.schedule?.scheduleType,
+            phoneNumber: incomingCampaign.phoneNumber || incomingCampaign.recipientPhone || metadata.singleRecipient || '',
+            contactCount: incomingCampaign.contactSummary?.total || metadata.contactCount || '',
+            metadata,
+            scheduleType: incomingCampaign.schedule?.scheduleType || incomingCampaign.mode,
             recurrence: incomingCampaign.schedule?.recurrence,
             scheduledAt: incomingCampaign.schedule?.scheduledAt,
+            workflowId: incomingCampaign.ivrWorkflow?.workflowId || metadata.workflowId || '',
+            voiceId: incomingCampaign.voice?.voiceId || metadata.voiceId || '',
+            customMessage: incomingCampaign.message || '',
             updatedAt: incomingCampaign.updatedAt || incomingCampaign.timestamp || new Date().toISOString()
           });
         });
@@ -487,6 +457,31 @@ const OutboundCall = () => {
     };
 
     const handleCampaignUpdate = (payload = {}) => {
+      if (payload?.schedule || Array.isArray(payload?.scheduleIds)) {
+        if (payload.action === 'schedule_deleted') {
+          const deletedIds = new Set((payload.scheduleIds || []).map((id) => String(id)));
+          setScheduledItems((prev) => prev.filter((item) => !deletedIds.has(String(item.id || item._id))));
+          setSelectedScheduleIds((prev) => prev.filter((id) => !deletedIds.has(String(id))));
+          setScheduleDrawerItem((prev) => (prev && deletedIds.has(String(prev.id || prev._id)) ? null : prev));
+        } else if (payload.schedule) {
+          const normalizedSchedule = normalizeScheduledItem(payload.schedule);
+          setScheduledItems((prev) => {
+            const scheduleId = String(normalizedSchedule.id || normalizedSchedule._id || '');
+            const existingIndex = prev.findIndex((item) => String(item.id || item._id || '') === scheduleId);
+            if (existingIndex < 0) return [normalizedSchedule, ...prev];
+            const next = [...prev];
+            next[existingIndex] = { ...next[existingIndex], ...normalizedSchedule };
+            return next;
+          });
+          setScheduleDrawerItem((prev) => {
+            if (!prev) return prev;
+            return String(prev.id || prev._id || '') === String(normalizedSchedule.id || normalizedSchedule._id || '')
+              ? { ...prev, ...normalizedSchedule }
+              : prev;
+          });
+        }
+        queueScheduleRefresh();
+      }
       const incomingCampaign = payload?.campaign;
       const key = String(incomingCampaign?._id || incomingCampaign?.campaignId || '').trim();
       if (!key) return;
@@ -510,12 +505,16 @@ const OutboundCall = () => {
         realtimeFlushTimerRef.current = null;
       }
     };
-  }, [queueMonitorRows]);
+  }, [queueMonitorRows, queueScheduleRefresh]);
 
   useEffect(() => () => {
     if (monitorFlushTimerRef.current) {
       window.clearTimeout(monitorFlushTimerRef.current);
       monitorFlushTimerRef.current = null;
+    }
+    if (scheduleRefreshTimerRef.current) {
+      window.clearTimeout(scheduleRefreshTimerRef.current);
+      scheduleRefreshTimerRef.current = null;
     }
   }, []);
 
@@ -534,15 +533,26 @@ const OutboundCall = () => {
   }, [callSettings]);
 
   const handleEndCall = async (callSid) => {
+    const existingMonitor = Object.values(monitorRowsByKey).find((item) => item.callSid === callSid);
+    const endedAt = new Date().toISOString();
     try {
       await apiService.endCall(callSid);
+      endedCallSidsRef.current.add(callSid);
       setLiveCallStatus(null);
       setCallHistory((prev) => upsertHistoryItem(prev, {
         callSid,
         status: 'completed',
-        updatedAt: new Date().toISOString()
+        updatedAt: endedAt
       }, historyFilters, historyPagination));
-      queueMonitorRows([{ type: 'single', callSid, status: 'completed', ended: true, updatedAt: new Date().toISOString() }]);
+      queueMonitorRows([{
+        ...existingMonitor,
+        type: existingMonitor?.type || 'single',
+        callSid,
+        status: 'completed',
+        ended: true,
+        phoneNumber: existingMonitor?.phoneNumber || existingMonitor?.to || liveCallStatus?.phoneNumber || '',
+        updatedAt: endedAt
+      }]);
     } catch (err) {
       console.error('Failed to end call:', err);
     }
@@ -554,12 +564,12 @@ const OutboundCall = () => {
       setMonitorRowsByKey((prev) => upsertMonitorRows(prev, [normalized]));
       setSelectedMonitorKey(normalized.key);
     }
-    if (monitorPayload?.type === 'single' && monitorPayload?.callSid) {
+    if (normalized?.type === 'single' && normalized?.callSid && !normalized.ended) {
       setLiveCallStatus({
-        callSid: monitorPayload.callSid,
-        phoneNumber: monitorPayload.to,
-        startTime: monitorPayload.updatedAt || new Date().toISOString(),
-        status: monitorPayload.status || 'initiated'
+        callSid: normalized.callSid,
+        phoneNumber: normalized.phoneNumber || normalized.to,
+        startTime: normalized.createdAt || normalized.updatedAt || new Date().toISOString(),
+        status: normalized.status || 'initiated'
       });
     }
     setActiveTab('monitor');
@@ -573,13 +583,11 @@ const OutboundCall = () => {
     return `${historyPagination.total === 0 ? 0 : start}-${historyPagination.total === 0 ? 0 : end} of ${historyPagination.total}`;
   }, [historyPagination]);
 
-  const pagedCampaigns = campaigns;
-
-  const campaignInfo = useMemo(() => {
-    const start = (campaignPagination.page - 1) * campaignPagination.limit + 1;
-    const end = Math.min(campaignPagination.page * campaignPagination.limit, campaignPagination.total);
-    return `${campaignPagination.total === 0 ? 0 : start}-${campaignPagination.total === 0 ? 0 : end} of ${campaignPagination.total}`;
-  }, [campaignPagination]);
+  const scheduleInfo = useMemo(() => {
+    const start = (schedulePagination.page - 1) * schedulePagination.limit + 1;
+    const end = Math.min(schedulePagination.page * schedulePagination.limit, schedulePagination.total);
+    return `${schedulePagination.total === 0 ? 0 : start}-${schedulePagination.total === 0 ? 0 : end} of ${schedulePagination.total}`;
+  }, [schedulePagination]);
 
   useEffect(() => {
     setSelectedCallSids((prev) =>
@@ -588,13 +596,22 @@ const OutboundCall = () => {
   }, [callHistory]);
 
   useEffect(() => {
-    setSelectedCampaignIds((prev) =>
-      prev.filter((id) => campaigns.some((item) => String(item._id) === String(id)))
+    setSelectedScheduleIds((prev) =>
+      prev.filter((id) => scheduledItems.some((item) => String(item.id || item._id) === String(id)))
     );
-  }, [campaigns]);
+  }, [scheduledItems]);
+
+  useEffect(() => {
+    setScheduleDrawerItem((prev) => {
+      if (!prev) return prev;
+      const prevId = String(prev.id || prev._id || '');
+      const latest = scheduledItems.find((item) => String(item.id || item._id || '') === prevId);
+      return latest || null;
+    });
+  }, [scheduledItems]);
 
   const allVisibleCallsSelected = callHistory.length > 0 && selectedCallSids.length === callHistory.length;
-  const allVisibleCampaignsSelected = pagedCampaigns.length > 0 && selectedCampaignIds.length === pagedCampaigns.length;
+  const allVisibleSchedulesSelected = scheduledItems.length > 0 && selectedScheduleIds.length === scheduledItems.length;
 
   const toggleSelectAllCalls = () => {
     if (allVisibleCallsSelected) {
@@ -605,13 +622,13 @@ const OutboundCall = () => {
     setSelectedCallSids(callHistory.map((item) => item.callSid).filter(Boolean));
   };
 
-  const toggleSelectAllCampaigns = () => {
-    if (allVisibleCampaignsSelected) {
-      setSelectedCampaignIds([]);
-      setCampaignSelectionMode(false);
+  const toggleSelectAllSchedules = () => {
+    if (allVisibleSchedulesSelected) {
+      setSelectedScheduleIds([]);
+      setScheduleSelectionMode(false);
       return;
     }
-    setSelectedCampaignIds(pagedCampaigns.map((item) => item._id).filter(Boolean));
+    setSelectedScheduleIds(scheduledItems.map((item) => item.id || item._id).filter(Boolean));
   };
 
   const handleDeleteSelectedCalls = async () => {
@@ -626,15 +643,102 @@ const OutboundCall = () => {
     }
   };
 
-  const handleDeleteSelectedCampaigns = async () => {
-    if (!selectedCampaignIds.length) return;
+  const handleDeleteSelectedSchedules = async () => {
+    if (!selectedScheduleIds.length) return;
     try {
-      setCampaignError('');
-      await apiService.bulkDeleteOutboundCampaigns(selectedCampaignIds);
-      setCampaigns((prev) => prev.filter((item) => !selectedCampaignIds.includes(item._id)));
-      setSelectedCampaignIds([]);
+      setScheduleError('');
+      await apiService.bulkDeleteOutboundSchedules(selectedScheduleIds);
+      setScheduledItems((prev) => prev.filter((item) => !selectedScheduleIds.includes(item.id || item._id)));
+      setSelectedScheduleIds([]);
+      setScheduleSelectionMode(false);
+      loadScheduledMonitor();
     } catch (err) {
-      setCampaignError(err?.response?.data?.message || err?.message || 'Failed to delete campaigns');
+      setScheduleError(err?.response?.data?.message || err?.message || 'Failed to delete scheduled calls');
+    }
+  };
+
+  const openMonitorFromHistory = (item = {}) => {
+    const monitorItem = normalizeMonitorPayload({
+      type: item.type || 'single',
+      title: item.type === 'bulk' ? 'Bulk Campaign' : 'Single Call',
+      status: item.status || 'initiated',
+      callSid: item.callSid || '',
+      phoneNumber: item.phoneNumber || '',
+      to: item.phoneNumber || '',
+      campaignId: item.campaignId || item.providerData?.campaignId || '',
+      campaignName: item.campaignName || item.providerData?.campaignName || '',
+      workflowId: item.workflowId || item.providerData?.workflowId || '',
+      provider: item.provider || item.providerData?.provider || '',
+      metadata: item.providerData || {},
+      duration: item.duration || 0,
+      updatedAt: item.updatedAt || item.createdAt || new Date().toISOString()
+    });
+    if (monitorItem) {
+      setMonitorRowsByKey((prev) => upsertMonitorRows(prev, [monitorItem]));
+      setSelectedMonitorKey(monitorItem.key);
+    }
+    setOpenActionMenu(null);
+    setActiveTab('monitor');
+  };
+
+  const handleDeleteHistoryItem = async (callSid) => {
+    if (!callSid) return;
+    try {
+      setHistoryError('');
+      await apiService.bulkDeleteCallLogs([callSid]);
+      setCallHistory((prev) => prev.filter((item) => String(item.callSid) !== String(callSid)));
+      setSelectedCallSids((prev) => prev.filter((sid) => String(sid) !== String(callSid)));
+      setOpenActionMenu(null);
+    } catch (err) {
+      setHistoryError(err?.response?.data?.message || err?.message || 'Failed to delete call log');
+    }
+  };
+
+  const handleDeleteScheduleItem = async (scheduleId) => {
+    if (!scheduleId) return;
+    try {
+      setScheduleError('');
+      await apiService.bulkDeleteOutboundSchedules([scheduleId]);
+      setScheduledItems((prev) => prev.filter((item) => String(item.id || item._id) !== String(scheduleId)));
+      setSelectedScheduleIds((prev) => prev.filter((id) => String(id) !== String(scheduleId)));
+      setOpenActionMenu(null);
+      loadScheduledMonitor();
+    } catch (err) {
+      setScheduleError(err?.response?.data?.message || err?.message || 'Failed to delete schedule');
+    }
+  };
+
+  const toggleActionMenu = (menuKey) => {
+    setOpenActionMenu((prev) => (prev === menuKey ? null : menuKey));
+  };
+
+  const handleScheduleStatusChange = async (scheduleId, nextAction) => {
+    if (!scheduleId) return;
+    try {
+      setScheduleError('');
+      let response;
+      if (nextAction === 'pause') {
+        response = await apiService.pauseOutboundSchedule(scheduleId);
+      } else {
+        response = await apiService.resumeOutboundSchedule(scheduleId);
+      }
+      const normalizedSchedule = response?.data?.schedule ? normalizeScheduledItem(response.data.schedule) : null;
+      setScheduledItems((prev) =>
+        prev.map((item) =>
+          String(item.id || item._id) === String(scheduleId)
+            ? {
+                ...item,
+                ...(normalizedSchedule || {}),
+                status: normalizedSchedule?.status || (nextAction === 'pause' ? 'paused' : 'active'),
+                updatedAt: normalizedSchedule?.updatedAt || new Date().toISOString()
+              }
+            : item
+        )
+      );
+      setOpenActionMenu(null);
+      loadScheduledMonitor();
+    } catch (err) {
+      setScheduleError(err?.response?.data?.message || err?.message || `Failed to ${nextAction} schedule`);
     }
   };
 
@@ -664,6 +768,8 @@ const OutboundCall = () => {
                   key={item.key}
                   className={`monitor-table-row ${selectedMonitor?.key === item.key ? 'selected' : ''}`}
                   onClick={() => setSelectedMonitorKey(item.key)}
+                  aria-label={`View ${item.type === 'bulk' ? 'bulk' : 'single'} monitor details`}
+                  title="View monitor details"
                 >
                   <span><span className={`monitor-state ${item.ended ? 'ended' : 'active'}`}>{item.ended ? 'Final' : 'Active'}</span></span>
                   <span>{item.type === 'bulk' ? 'Bulk' : 'Single'}</span>
@@ -711,7 +817,7 @@ const OutboundCall = () => {
             <History size={40} strokeWidth={1.5} />
           </div>
           <h2>Call History</h2>
-          <p>Instantly updated outbound history — see your latest activity live!</p>
+          <p>Instantly updated outbound history - see your latest activity live.</p>
         </div>
         {historyError && <div className="outbound-error">{historyError}</div>}
         <div className="history-filter-bar">
@@ -729,6 +835,8 @@ const OutboundCall = () => {
           <button
             type="button"
             className={`filter-toggle-btn ${showHistoryFilters ? 'active' : ''}`}
+            aria-label={showHistoryFilters ? 'Hide history filters' : 'Show history filters'}
+            title={showHistoryFilters ? 'Hide history filters' : 'Show history filters'}
             onClick={() => {
               setShowHistoryFilters((prev) => {
                 const next = !prev;
@@ -747,6 +855,7 @@ const OutboundCall = () => {
         {showHistoryFilters && (
           <div className="filter-panel history-filter-panel">
             <label className="history-filter-field"><span>Status</span><select value={historyFilters.status} onChange={(e) => setHistoryFilters((prev) => ({ ...prev, status: e.target.value, page: 1 }))}><option value="all">All</option><option value="initiated">Initiated</option><option value="ringing">Ringing</option><option value="in-progress">In Progress</option><option value="completed">Completed</option><option value="failed">Failed</option><option value="busy">Busy</option><option value="no-answer">No Answer</option><option value="cancelled">Cancelled</option></select></label>
+            <label className="history-filter-field"><span>Type</span><select value={historyFilters.type} onChange={(e) => setHistoryFilters((prev) => ({ ...prev, type: e.target.value, page: 1 }))}><option value="all">All</option><option value="single">Single</option><option value="bulk">Bulk</option></select></label>
             <label className="history-filter-field"><span>From</span><input type="date" value={historyFilters.startDate} onChange={(e) => setHistoryFilters((prev) => ({ ...prev, startDate: e.target.value, page: 1 }))} /></label>
             <label className="history-filter-field"><span>To</span><input type="date" value={historyFilters.endDate} onChange={(e) => setHistoryFilters((prev) => ({ ...prev, endDate: e.target.value, page: 1 }))} /></label>
             <label className="history-filter-field"><span>Rows</span><select value={historyFilters.limit} onChange={(e) => setHistoryFilters((prev) => ({ ...prev, limit: Number(e.target.value), page: 1 }))}><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option><option value={100}>100</option></select></label>
@@ -778,9 +887,9 @@ const OutboundCall = () => {
           </div>
         )}
         <div className={`history-table history-table-advanced ${callSelectionMode ? 'selection-mode' : ''}`}>
-          <div className="table-header history-table-header-advanced"><span /><span>Call SID</span><span>Phone</span><span>Status</span><span>Duration</span><span>Created</span><span>Monitor</span></div>
+          <div className="table-header history-table-header-advanced"><span /><span>Call SID</span><span>Type</span><span>Phone</span><span>Status</span><span>Duration</span><span>Created</span><span>Actions</span></div>
           {callHistory.length === 0 ? (
-            <div className="table-row history-table-row-advanced history-empty-row"><span>No call history found.</span><span /><span /><span /><span /><span /><span /></div>
+            <div className="table-row history-table-row-advanced history-empty-row"><span>No call history found.</span><span /><span /><span /><span /><span /><span /><span /></div>
           ) : (
             callHistory.map((item) => (
               <div key={item._id || item.callSid} className="table-row history-table-row-advanced">
@@ -797,35 +906,33 @@ const OutboundCall = () => {
                   />
                 </span>
                 <span className="phone-number">{item.callSid || '-'}</span>
+                <span className="duration">{item.type === 'bulk' ? 'Bulk' : 'Single'}</span>
                 <span className="phone-number">{item.phoneNumber || '-'}</span>
                 <span className={`status ${String(item.status || '').toLowerCase()}`}>{item.status || '-'}</span>
                 <span className="duration">{Number(item.duration || 0)}s</span>
                 <span className="time">{formatDateTime(item.createdAt)}</span>
                 <span className="actions">
-                  <a
-                    className="action-link"
-                    href="#"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      const monitorItem = normalizeMonitorPayload({
-                        type: 'single',
-                        title: 'Single Call',
-                        status: item.status || 'initiated',
-                        callSid: item.callSid || '',
-                        phoneNumber: item.phoneNumber || '',
-                        to: item.phoneNumber || '',
-                        duration: item.duration || 0,
-                        updatedAt: item.updatedAt || item.createdAt || new Date().toISOString()
-                      });
-                      if (monitorItem) {
-                        setMonitorRowsByKey((prev) => upsertMonitorRows(prev, [monitorItem]));
-                        setSelectedMonitorKey(monitorItem.key);
-                      }
-                      setActiveTab('monitor');
-                    }}
-                  >
-                    View Monitor
-                  </a>
+                  <div className="row-action-menu">
+                    <button
+                      type="button"
+                      className="row-action-trigger"
+                      onClick={() => toggleActionMenu(`history:${item._id || item.callSid}`)}
+                      aria-label="Call actions"
+                      title="Call actions"
+                    >
+                      <MoreVertical size={16} />
+                    </button>
+                    {openActionMenu === `history:${item._id || item.callSid}` && (
+                      <div className="row-action-dropdown">
+                        <button type="button" onClick={() => openMonitorFromHistory(item)} title="View monitor">
+                          <Eye size={14} />
+                        </button>
+                        <button type="button" className="danger" onClick={() => handleDeleteHistoryItem(item.callSid)} title="Delete call log">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </span>
               </div>
             ))
@@ -835,9 +942,9 @@ const OutboundCall = () => {
           <div className="history-pagination-bar">
             <span>{historyInfo}</span>
             <div className="history-pager">
-              <button type="button" disabled={historyPagination.page <= 1 || loadingHistory} onClick={() => setHistoryFilters((prev) => ({ ...prev, page: prev.page - 1 }))}>Prev</button>
+              <button type="button" disabled={historyPagination.page <= 1 || loadingHistory} onClick={() => setHistoryFilters((prev) => ({ ...prev, page: prev.page - 1 }))} aria-label="Previous history page" title="Previous history page">Prev</button>
               <span>{historyPagination.page} / {Math.max(1, historyPagination.totalPages)}</span>
-              <button type="button" disabled={historyPagination.page >= historyPagination.totalPages || loadingHistory} onClick={() => setHistoryFilters((prev) => ({ ...prev, page: prev.page + 1 }))}>Next</button>
+              <button type="button" disabled={historyPagination.page >= historyPagination.totalPages || loadingHistory} onClick={() => setHistoryFilters((prev) => ({ ...prev, page: prev.page + 1 }))} aria-label="Next history page" title="Next history page">Next</button>
             </div>
           </div>
         </div>
@@ -845,142 +952,162 @@ const OutboundCall = () => {
     </div>
   );
 
-  const renderCampaignList = () => (
+  const renderScheduledMonitor = () => (
     <div className="call-card">
       <div className="card-content">
         <div className="call-header-outbound">
           <div className="icon-wrapper">
-            <ListChecks size={40} strokeWidth={1.5} />
+            <CalendarClock size={40} strokeWidth={1.5} />
           </div>
-          <h2>Campaign List</h2>
-          <p>Scheduled, recurring, and draft campaigns stay instantly up-to-date</p>
+          <h2>Scheduled Monitor</h2>
+          <p>Track scheduled single calls and bulk campaigns without mixing them into call history.</p>
         </div>
-        {campaignError && <div className="outbound-error">{campaignError}</div>}
+        {scheduleError && <div className="outbound-error">{scheduleError}</div>}
         <div className="history-filter-bar">
           <label className="history-filter-field">
             <span>Search</span>
             <div className="history-search-wrap">
               <Search size={14} />
               <input
-                value={campaignFilters.search}
-                onChange={(e) => setCampaignFilters((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
-                placeholder="Campaign name or ID"
+                value={scheduleFilters.search}
+                onChange={(e) => setScheduleFilters((prev) => ({ ...prev, search: e.target.value, page: 1 }))}
+                placeholder="Campaign, phone, or ID"
               />
             </div>
           </label>
           <button
             type="button"
-            className={`filter-toggle-btn ${showCampaignFilters ? 'active' : ''}`}
-            onClick={() => {
-              setShowCampaignFilters((prev) => {
-                const next = !prev;
-                if (!next && selectedCampaignIds.length === 0) {
-                  setCampaignSelectionMode(false);
-                }
-                return next;
-              });
-            }}
+            className={`filter-toggle-btn ${showScheduleFilters ? 'active' : ''}`}
+            aria-label={showScheduleFilters ? 'Hide schedule filters' : 'Show schedule filters'}
+            title={showScheduleFilters ? 'Hide schedule filters' : 'Show schedule filters'}
+            onClick={() => setShowScheduleFilters((prev) => !prev)}
           >
             <Filter size={16} />
             Filters
           </button>
         </div>
 
-        {showCampaignFilters && (
-          <div className="filter-panel campaign-filter-panel">
-            <label className="history-filter-field"><span>Status</span><select value={campaignFilters.status} onChange={(e) => setCampaignFilters((prev) => ({ ...prev, status: e.target.value, page: 1 }))}><option value="all">All</option><option value="draft">Draft</option><option value="scheduled">Scheduled</option><option value="running">Running</option><option value="completed">Completed</option><option value="failed">Failed</option><option value="partial">Partial</option><option value="paused">Paused</option></select></label>
-            <label className="history-filter-field"><span>Recurrence</span><select value={campaignFilters.recurrence} onChange={(e) => setCampaignFilters((prev) => ({ ...prev, recurrence: e.target.value, page: 1 }))}><option value="all">All</option><option value="none">None</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
-            <label className="history-filter-field"><span>Rows</span><select value={campaignFilters.limit} onChange={(e) => setCampaignFilters((prev) => ({ ...prev, limit: Number(e.target.value), page: 1 }))}><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option><option value={100}>100</option></select></label>
+        {showScheduleFilters && (
+          <div className="filter-panel scheduled-filter-panel">
+            <label className="history-filter-field"><span>Status</span><select value={scheduleFilters.status} onChange={(e) => setScheduleFilters((prev) => ({ ...prev, status: e.target.value, page: 1 }))}><option value="all">All</option><option value="active">Active</option><option value="paused">Paused</option><option value="completed">Completed</option><option value="failed">Failed</option></select></label>
+            <label className="history-filter-field"><span>Type</span><select value={scheduleFilters.type} onChange={(e) => setScheduleFilters((prev) => ({ ...prev, type: e.target.value, page: 1 }))}><option value="all">All</option><option value="single">Single</option><option value="bulk">Bulk</option></select></label>
+            <label className="history-filter-field"><span>Recurrence</span><select value={scheduleFilters.recurrence} onChange={(e) => setScheduleFilters((prev) => ({ ...prev, recurrence: e.target.value, page: 1 }))}><option value="all">All</option><option value="once">Once</option><option value="daily">Daily</option><option value="weekly">Weekly</option></select></label>
+            <label className="history-filter-field"><span>Rows</span><select value={scheduleFilters.limit} onChange={(e) => setScheduleFilters((prev) => ({ ...prev, limit: Number(e.target.value), page: 1 }))}><option value={10}>10</option><option value={20}>20</option><option value={50}>50</option><option value={100}>100</option></select></label>
             <div className="history-filter-field filter-actions">
               <span>Select</span>
               <button
                 type="button"
                 className="filter-action-btn"
+                aria-label={allVisibleSchedulesSelected ? 'Clear all visible schedules' : 'Select all visible schedules'}
+                title={allVisibleSchedulesSelected ? 'Clear all visible schedules' : 'Select all visible schedules'}
                 onClick={() => {
-                  setCampaignSelectionMode(true);
-                  toggleSelectAllCampaigns();
+                  setScheduleSelectionMode(true);
+                  toggleSelectAllSchedules();
                 }}
               >
-                {allVisibleCampaignsSelected ? 'Clear All Visible' : 'Select All Visible'}
+                {allVisibleSchedulesSelected ? 'Clear All Visible' : 'Select All Visible'}
               </button>
             </div>
             <div className="history-filter-field filter-actions delete-action">
               <button
                 type="button"
                 className="filter-action-btn danger icon-only"
-                onClick={handleDeleteSelectedCampaigns}
-                disabled={selectedCampaignIds.length === 0}
-                aria-label="Delete selected campaigns"
-                title="Delete selected"
+                onClick={handleDeleteSelectedSchedules}
+                disabled={selectedScheduleIds.length === 0}
+                aria-label="Delete selected schedules"
+                title={selectedScheduleIds.length ? `Delete selected (${selectedScheduleIds.length})` : 'Delete selected'}
               >
                 <Trash2 size={16} />
               </button>
             </div>
           </div>
         )}
-        <div className={`history-table history-table-advanced ${campaignSelectionMode ? 'selection-mode' : ''}`}>
-          <div className="table-header campaign-table-header-advanced"><span /><span>Campaign</span><span>Status</span><span>Mode</span><span>Recurrence</span><span>Updated</span><span>Monitor</span></div>
-          {pagedCampaigns.length === 0 ? (
-            <div className="table-row campaign-table-row-advanced history-empty-row"><span>No campaigns found.</span><span /><span /><span /><span /><span /><span /></div>
+
+        <div className={`history-table scheduled-monitor-table ${scheduleSelectionMode ? 'selection-mode' : ''}`}>
+          <div className="table-header scheduled-monitor-table-header"><span /><span>State</span><span>Type</span><span>Phone/Contacts</span><span>Status</span><span>Provider</span><span>Campaign</span><span>Workflow</span><span>Schedule</span><span>Next Run</span><span>Updated</span><span>Actions</span></div>
+          {scheduledItems.length === 0 ? (
+            <div className="table-row scheduled-monitor-table-row history-empty-row"><span>{loadingSchedules ? 'Loading scheduled calls...' : 'No scheduled calls found.'}</span><span /><span /><span /><span /><span /><span /><span /><span /><span /><span /><span /></div>
           ) : (
-            pagedCampaigns.map((item) => (
-              <div key={item._id} className="table-row campaign-table-row-advanced">
-                <span className="table-checkbox">
-                  <input
-                    type="checkbox"
-                    checked={selectedCampaignIds.includes(item._id)}
-                    onChange={(event) => {
-                      const checked = event.target.checked;
-                      setSelectedCampaignIds((prev) =>
-                        checked ? [...prev, item._id] : prev.filter((id) => id !== item._id)
-                      );
-                    }}
-                  />
-                </span>
-                <span className="phone-number"><strong>{item.campaignName}</strong><br /><small>{item.campaignId}</small></span>
-                <span className={`status ${String(item.status || '').toLowerCase()}`}>{item.status}</span>
-                <span className="duration">{item.mode || 'immediate'}</span>
-                <span className="duration">{item.recurrence || 'none'}</span>
-                <span className="time">{formatDateTime(item.updatedAt)}</span>
-                <span className="actions">
-                  <a
-                    className="action-link"
-                    href="#"
-                    onClick={(event) => {
-                      event.preventDefault();
-                      const monitorItem = normalizeMonitorPayload({
-                        type: 'bulk',
-                        title: 'Bulk Campaign',
-                        status: item.status,
-                        campaignId: item.campaignId,
-                        campaignName: item.campaignName,
-                        provider: item.provider || '',
-                        scheduleType: item.mode || 'immediate',
-                        recurrence: item.recurrence || 'none',
-                        scheduledAt: item.schedule?.scheduledAt || null,
-                        updatedAt: item.updatedAt
-                      });
-                      if (monitorItem) {
-                        setMonitorRowsByKey((prev) => upsertMonitorRows(prev, [monitorItem]));
-                        setSelectedMonitorKey(monitorItem.key);
-                      }
-                      setActiveTab('monitor');
-                    }}
-                  >
-                    View Monitor
-                  </a>
-                </span>
-              </div>
-            ))
+            scheduledItems.map((item) => {
+              const itemId = item.id || item._id;
+              const status = String(item.status || '').toLowerCase();
+              const isTerminalSchedule = ['completed', 'failed'].includes(status);
+              return (
+                <React.Fragment key={itemId || item.campaignId}>
+                  <div className="table-row scheduled-monitor-table-row">
+                    <span className="table-checkbox">
+                      <input
+                        type="checkbox"
+                        checked={selectedScheduleIds.includes(itemId)}
+                        onChange={(event) => {
+                          const checked = event.target.checked;
+                          setSelectedScheduleIds((prev) =>
+                            checked ? [...prev, itemId] : prev.filter((id) => id !== itemId)
+                          );
+                        }}
+                      />
+                    </span>
+                    <span><span className={`monitor-state ${item.state === 'Final' ? 'ended' : 'active'}`}>{item.state}</span></span>
+                    <span>{item.type === 'bulk' ? 'Bulk' : 'Single'}</span>
+                    <span className="phone-number">{item.displayTarget}</span>
+                    <span><span className={`status ${status}`}>{item.status || '-'}</span></span>
+                    <span>{item.provider || '-'}</span>
+                    <span className="phone-number"><strong>{item.campaignName}</strong><br /><small>{item.campaignId || '-'}</small></span>
+                    <span>{item.workflowId || '-'}</span>
+                    <span>{item.recurrence || 'once'}<br /><small>{formatDateTime(item.scheduledAt)}</small></span>
+                    <span>{formatDateTime(item.nextRunAt)}</span>
+                    <span>{formatDateTime(item.updatedAt)}</span>
+                    <span className="actions scheduled-actions">
+                      <div className="row-action-menu">
+                        <button
+                          type="button"
+                          className="row-action-trigger"
+                          onClick={() => toggleActionMenu(`schedule:${itemId}`)}
+                          aria-label="Schedule actions"
+                          title="Schedule actions"
+                        >
+                          <MoreVertical size={16} />
+                        </button>
+                        {openActionMenu === `schedule:${itemId}` && (
+                          <div className="row-action-dropdown">
+                            <button
+                              type="button"
+                              disabled={isTerminalSchedule}
+                              onClick={() => handleScheduleStatusChange(itemId, status === 'paused' ? 'resume' : 'pause')}
+                              title={status === 'paused' ? 'Resume schedule' : 'Pause schedule'}
+                            >
+                              {status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setScheduleDrawerItem(item);
+                                setOpenActionMenu(null);
+                              }}
+                              title="View details"
+                            >
+                              <Eye size={14} />
+                            </button>
+                            <button type="button" className="danger" onClick={() => handleDeleteScheduleItem(itemId)} title="Delete schedule">
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </span>
+                  </div>
+                </React.Fragment>
+              );
+            })
           )}
         </div>
         <div className="history-toolbar">
           <div className="history-pagination-bar">
-            <span>{campaignInfo}</span>
+            <span>{scheduleInfo}</span>
             <div className="history-pager">
-              <button type="button" disabled={campaignPagination.page <= 1 || loadingCampaigns} onClick={() => setCampaignFilters((prev) => ({ ...prev, page: prev.page - 1 }))}>Prev</button>
-              <span>{campaignPagination.page} / {Math.max(1, campaignPagination.totalPages)}</span>
-              <button type="button" disabled={campaignPagination.page >= campaignPagination.totalPages || loadingCampaigns} onClick={() => setCampaignFilters((prev) => ({ ...prev, page: prev.page + 1 }))}>Next</button>
+              <button type="button" disabled={schedulePagination.page <= 1 || loadingSchedules} onClick={() => setScheduleFilters((prev) => ({ ...prev, page: prev.page - 1 }))} aria-label="Previous schedule page" title="Previous schedule page">Prev</button>
+              <span>{schedulePagination.page} / {Math.max(1, schedulePagination.totalPages)}</span>
+              <button type="button" disabled={schedulePagination.page >= schedulePagination.totalPages || loadingSchedules} onClick={() => setScheduleFilters((prev) => ({ ...prev, page: prev.page + 1 }))} aria-label="Next schedule page" title="Next schedule page">Next</button>
             </div>
           </div>
         </div>
@@ -988,31 +1115,68 @@ const OutboundCall = () => {
     </div>
   );
 
+  const renderScheduleDrawer = () => {
+    if (!scheduleDrawerItem) return null;
+    const item = scheduleDrawerItem;
+    const itemId = item.id || item._id || '';
+    const allowedWindow = item.allowedWindow
+      ? `${item.allowedWindow.start || '-'} - ${item.allowedWindow.end || '-'}`
+      : '-';
+
+    return (
+      <div className="schedule-drawer-backdrop" onClick={() => setScheduleDrawerItem(null)}>
+        <aside className="schedule-details-drawer" onClick={(event) => event.stopPropagation()} aria-label="Scheduled call details">
+          <div className="schedule-drawer-header">
+            <div>
+              <h3>{item.campaignName || 'Scheduled Call'}</h3>
+              <p>{item.type === 'bulk' ? 'Bulk schedule' : 'Single schedule'}</p>
+            </div>
+            <button type="button" onClick={() => setScheduleDrawerItem(null)} aria-label="Close schedule details" title="Close schedule details">
+              <X size={16} />
+            </button>
+          </div>
+          <div className="schedule-drawer-body">
+            <div><span>Schedule ID</span><strong>{itemId || '-'}</strong></div>
+            <div><span>Campaign ID</span><strong>{item.campaignId || '-'}</strong></div>
+            <div><span>Type</span><strong>{item.type === 'bulk' ? 'Bulk' : 'Single'}</strong></div>
+            <div><span>Status</span><strong>{item.status || '-'}</strong></div>
+            <div><span>State</span><strong>{item.state || '-'}</strong></div>
+            <div><span>Phone / Contacts</span><strong>{item.type === 'single' ? item.phoneNumber || '-' : `${item.contactCount || 0} contacts`}</strong></div>
+            <div><span>Provider</span><strong>{item.provider || '-'}</strong></div>
+            <div><span>Workflow</span><strong>{item.workflowId || '-'}</strong></div>
+            <div><span>Recurrence</span><strong>{item.recurrence || 'once'}</strong></div>
+            <div><span>Scheduled At</span><strong>{formatDateTime(item.scheduledAt)}</strong></div>
+            <div><span>Next Run</span><strong>{formatDateTime(item.nextRunAt)}</strong></div>
+            <div><span>Updated</span><strong>{formatDateTime(item.updatedAt)}</strong></div>
+            <div><span>Allowed Window</span><strong>{allowedWindow}</strong></div>
+            <div><span>Timezone</span><strong>{item.timezone || item.metadata?.timezone || '-'}</strong></div>
+          </div>
+        </aside>
+      </div>
+    );
+  };
+
   return (
     <div className="outbound-call">
-      <button className="btn-link" style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: 0 }} onClick={() => window.history.back()} aria-label="Back to Dashboard">
-        <ArrowLeft size={20} />
-        Back to Dashboard
-      </button>
       <div className="outbound-header">
-        <div className="header-content">
+        <div className="outbound-header-content">
           <h1>Outbound Call Management</h1>
           <p>Manage outbound calls, scheduling, and voice broadcasts</p>
-          <div className="connection-status">
-            <span className="status-connected">
-              <span className="status-dot" aria-hidden="true" />
+          <div className="outbound-connection-status">
+            <span className="outbound-status-connected">
+              <span className="outbound-status-dot" aria-hidden="true" />
               System Active
             </span>
           </div>
         </div>
-        <div className="header-actions" />
+        <div className="outbound-header-actions" />
       </div>
       <div className="outbound-tabs">
-        <button className={`outbound-tab-btn ${activeTab === 'quick' ? 'active' : ''}`} onClick={() => setActiveTab('quick')}><PhoneOutgoing size={18} />Quick Calls</button>
-        <button className={`outbound-tab-btn ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')}><History size={18} />History</button>
-        <button className={`outbound-tab-btn ${activeTab === 'campaigns' ? 'active' : ''}`} onClick={() => setActiveTab('campaigns')}><ListChecks size={18} />Campaign List</button>
+        <button className={`outbound-tab-btn ${activeTab === 'quick' ? 'active' : ''}`} onClick={() => setActiveTab('quick')} aria-label="Quick Calls" title="Quick Calls"><PhoneOutgoing size={18} /><span>Quick Calls</span></button>
+        <button className={`outbound-tab-btn ${activeTab === 'history' ? 'active' : ''}`} onClick={() => setActiveTab('history')} aria-label="History" title="History"><History size={18} /><span>History</span></button>
+        <button className={`outbound-tab-btn ${activeTab === 'scheduled' ? 'active' : ''}`} onClick={() => setActiveTab('scheduled')} aria-label="Scheduled Monitor" title="Scheduled Monitor"><CalendarClock size={18} /><span>Scheduled Monitor</span></button>
         {showMonitorTab && (
-          <button className={`outbound-tab-btn ${activeTab === 'monitor' ? 'active' : ''}`} onClick={() => setActiveTab('monitor')}><BarChart3 size={18} />Monitor</button>
+          <button className={`outbound-tab-btn ${activeTab === 'monitor' ? 'active' : ''}`} onClick={() => setActiveTab('monitor')} aria-label="Monitor" title="Monitor"><BarChart3 size={18} /><span>Monitor</span></button>
         )}
       </div>
       {liveCallStatus && (
@@ -1024,37 +1188,19 @@ const OutboundCall = () => {
               <span className="live-duration">{Math.floor((Date.now() - new Date(liveCallStatus.startTime)) / 1000)}s</span>
             </div>
             <div className="live-call-controls">
-              <button className="call-control-btn mute"><Mic size={16} /></button>
-              <button className="call-control-btn end" onClick={() => handleEndCall(liveCallStatus.callSid)}><Phone size={16} /></button>
+              <button className="call-control-btn mute" type="button" aria-label="Mute call" title="Mute call"><Mic size={16} /></button>
+              <button className="call-control-btn end" type="button" onClick={() => handleEndCall(liveCallStatus.callSid)} aria-label="End call" title="End call"><Phone size={16} /></button>
             </div>
           </div>
         </div>
       )}
       <div className="outbound-content">
-        {activeTab === 'quick' && <OutboundDialer showBulkUpload callSettings={callSettings} onCallSettingsChange={setCallSettings} onMonitorUpdate={handleMonitorUpdate} />}
+        {activeTab === 'quick' && <OutboundDialer initialMode="single" callSettings={callSettings} onCallSettingsChange={setCallSettings} onMonitorUpdate={handleMonitorUpdate} />}
         {activeTab === 'history' && renderCallHistory()}
-        {activeTab === 'campaigns' && renderCampaignList()}
+        {activeTab === 'scheduled' && renderScheduledMonitor()}
         {activeTab === 'monitor' && renderLiveMonitor()}
       </div>
-      {result && (
-        <div className="status-card success">
-          <div className="status-icon"><CheckCircle size={24} /></div>
-          <div className="status-content">
-            <h3>Success</h3>
-            <p>{result.message || 'Operation completed successfully'}</p>
-            {(result.call_sid || result.data?.callSid || result.data?.call_sid) && <span className="sid-badge">SID: {result.call_sid || result.data?.callSid || result.data?.call_sid}</span>}
-          </div>
-        </div>
-      )}
-      {error && (
-        <div className="status-card error">
-          <div className="status-icon"><AlertCircle size={24} /></div>
-          <div className="status-content">
-            <h3>Error</h3>
-            <p>{error}</p>
-          </div>
-        </div>
-      )}
+      {renderScheduleDrawer()}
     </div>
   );
 };

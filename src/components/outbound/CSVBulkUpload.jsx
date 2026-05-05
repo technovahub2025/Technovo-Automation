@@ -1,6 +1,6 @@
 import React from 'react';
 import OutboundDialer from './OutboundDialer';
 
-const CSVBulkUpload = () => <OutboundDialer showBulkUpload />;
+const CSVBulkUpload = () => <OutboundDialer initialMode="bulk" />;
 
 export default CSVBulkUpload;

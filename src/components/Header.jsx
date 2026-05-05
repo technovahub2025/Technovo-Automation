@@ -452,13 +452,13 @@ const Header = () => {
       </div>
 
       <div className="header-right">
-        <button
+        {/* <button
           type="button"
           className="register-btn"
           onClick={() => navigate("/register-docs")}
         >
           Register Docs
-        </button>
+        </button> */}
 
         <div className="search-bar">
           <Search size={18} className="search-icon" />

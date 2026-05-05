@@ -130,34 +130,38 @@ apiService.launchOutboundBulkCampaign = (payload) =>
 apiService.outboundLocalBulkCampaign = apiService.launchOutboundBulkCampaign;
 apiService.outboundVoiceBulkCampaign = apiService.launchOutboundBulkCampaign;
 apiService.scheduleOutboundCampaign = (payload) =>
-  apiService.post("/api/outbound-local/schedule", payload);
+  apiService.post("/api/voice/outbound-local/schedule", payload);
 apiService.outboundLocalScheduleCampaign = apiService.scheduleOutboundCampaign;
 apiService.outboundVoiceScheduleCampaign = apiService.scheduleOutboundCampaign;
 apiService.getOutboundSchedules = (params = {}) =>
-  apiService.get("/api/outbound-local/schedule", { params });
+  apiService.get("/api/voice/outbound-local/schedule", { params });
 apiService.getOutboundLocalSchedules = apiService.getOutboundSchedules;
 apiService.getOutboundVoiceSchedules = apiService.getOutboundSchedules;
 apiService.retryOutboundCampaign = (payload = {}) =>
-  apiService.post("/api/outbound-local/retry", payload);
+  apiService.post("/api/voice/outbound-local/retry", payload);
 apiService.outboundLocalRetryCampaign = apiService.retryOutboundCampaign;
 apiService.outboundVoiceRetryCampaign = apiService.retryOutboundCampaign;
 apiService.createOutboundABTest = (payload) =>
-  apiService.post("/api/outbound-local/abtest", payload);
+  apiService.post("/api/voice/outbound-local/abtest", payload);
 apiService.outboundLocalABTest = apiService.createOutboundABTest;
 apiService.outboundVoiceABTest = apiService.createOutboundABTest;
 apiService.getOutboundRotationStats = () =>
-  apiService.get("/api/outbound-local/numbers/rotate");
+  apiService.get("/api/voice/outbound-local/numbers/rotate");
 apiService.outboundLocalRotateNumbers = apiService.getOutboundRotationStats;
 apiService.outboundVoiceRotateNumbers = apiService.getOutboundRotationStats;
 apiService.pauseOutboundSchedule = (scheduleId) =>
-  apiService.post(`/api/outbound-local/schedule/${scheduleId}/pause`);
+  apiService.post(`/api/voice/outbound-local/schedule/${scheduleId}/pause`);
 apiService.outboundLocalPauseSchedule = apiService.pauseOutboundSchedule;
 apiService.outboundVoicePauseSchedule = apiService.pauseOutboundSchedule;
 apiService.resumeOutboundSchedule = (scheduleId) =>
-  apiService.post(`/api/outbound-local/schedule/${scheduleId}/resume`);
+  apiService.post(`/api/voice/outbound-local/schedule/${scheduleId}/resume`);
 apiService.outboundLocalResumeSchedule = apiService.resumeOutboundSchedule;
 apiService.outboundVoiceResumeSchedule = apiService.resumeOutboundSchedule;
-apiService.cancelScheduledCall = (callId) =>
+apiService.bulkDeleteOutboundSchedules = (scheduleIds = []) =>
+  apiService.post("/api/voice/outbound-local/schedule/bulk-delete", { scheduleIds });
+apiService.outboundLocalBulkDeleteSchedules = apiService.bulkDeleteOutboundSchedules;
+apiService.outboundVoiceBulkDeleteSchedules = apiService.bulkDeleteOutboundSchedules;
+apiService.cancelScheduledCall = () =>
   Promise.resolve({ data: { success: true, message: "No scheduled-call API in backend contract" } });
 apiService.endCall = (callSid) => apiService.post(`/voice/call/${callSid}/end`);
 

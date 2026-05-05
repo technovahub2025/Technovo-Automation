@@ -3,12 +3,8 @@ import { Plus, Pencil, Trash2, Save, X, ArrowUp, ArrowDown, PlayCircle, AlertCir
 import apiService from '../services/api';
 import socketService from '../services/socketService';
 import useIVRMenus from '../hooks/useIVRMenus';
+import { getStableId, normalizeRoutingRules, normalizeRoutingRule } from '../utils/inboundNormalizers';
 import './RoutingRules.css';
-
-const normalizeRules = (responseData) => {
-  const raw = responseData?.data || responseData?.rules || responseData || [];
-  return Array.isArray(raw) ? raw : [];
-};
 
 const inferIvrPromptFromAction = (action = '') => {
   const text = String(action || '').trim();
@@ -33,12 +29,13 @@ const emitWithAck = (socket, eventName, payload = {}) =>
   });
 
 const buildRuleDraft = (rule, ivrMenus = []) => {
+  const normalizedRule = normalizeRoutingRule(rule);
   const inferredPromptKey = rule?.ivrPromptKey || inferIvrPromptFromAction(rule?.action);
   const linkedMenu = ivrMenus.find((menu) => menu.promptKey === inferredPromptKey || menu._id === rule?.ivrMenuId);
   const actionType = rule?.actionType || (inferredPromptKey ? 'ivr' : 'custom');
 
   return {
-    id: rule?.id || '',
+    id: normalizedRule.id || '',
     name: rule?.name || '',
     priority: Number.isFinite(Number(rule?.priority)) ? Number(rule.priority) : 1,
     condition: rule?.condition || '',
@@ -72,7 +69,7 @@ const RoutingRules = ({ initialRules = [] }) => {
   const hasActiveIvrMenus = activeIvrMenus.length > 0;
 
   const applyRules = useCallback((nextRules = []) => {
-    setRules(normalizeRules(nextRules).sort((a, b) => (a.priority || 0) - (b.priority || 0)));
+    setRules(normalizeRoutingRules(nextRules));
   }, []);
 
   const fetchRoutingRules = useCallback(async () => {
@@ -227,7 +224,12 @@ const RoutingRules = ({ initialRules = [] }) => {
       };
 
       const socket = socketService.connect();
-      await emitWithAck(socket, 'routing_rules:create_or_update', payload);
+      try {
+        await emitWithAck(socket, 'routing_rules:create_or_update', payload);
+      } catch {
+        await apiService.updateRoutingRule(payload);
+      }
+      await fetchRoutingRules();
       setEditingRule(null);
       setIsAddingRule(false);
     } catch (err) {
@@ -246,7 +248,12 @@ const RoutingRules = ({ initialRules = [] }) => {
     setError('');
     try {
       const socket = socketService.connect();
-      await emitWithAck(socket, 'routing_rules:delete', { ruleId });
+      try {
+        await emitWithAck(socket, 'routing_rules:delete', { ruleId });
+      } catch {
+        await apiService.deleteRoutingRule(ruleId);
+      }
+      await fetchRoutingRules();
     } catch (err) {
       console.error('Failed to delete rule:', err);
       setError(err.response?.data?.error || err.message || 'Failed to delete rule');
@@ -257,7 +264,12 @@ const RoutingRules = ({ initialRules = [] }) => {
     setError('');
     try {
       const socket = socketService.connect();
-      await emitWithAck(socket, 'routing_rules:toggle', { ruleId });
+      try {
+        await emitWithAck(socket, 'routing_rules:toggle', { ruleId });
+      } catch {
+        await apiService.toggleRoutingRule(ruleId);
+      }
+      await fetchRoutingRules();
     } catch (err) {
       console.error('Failed to toggle rule:', err);
       setError(err.response?.data?.error || err.message || 'Failed to toggle rule');
@@ -266,7 +278,7 @@ const RoutingRules = ({ initialRules = [] }) => {
 
   const handleMoveRule = async (ruleId, direction) => {
     const orderedRules = [...rules].sort((a, b) => (a.priority || 0) - (b.priority || 0));
-    const ruleIndex = orderedRules.findIndex((rule) => rule.id === ruleId);
+    const ruleIndex = orderedRules.findIndex((rule) => getStableId(rule) === String(ruleId));
     if ((direction === 'up' && ruleIndex === 0) || (direction === 'down' && ruleIndex === orderedRules.length - 1)) {
       return;
     }
@@ -279,8 +291,15 @@ const RoutingRules = ({ initialRules = [] }) => {
       [nextRules[ruleIndex], nextRules[targetIndex]] = [nextRules[targetIndex], nextRules[ruleIndex]];
       const prioritized = nextRules.map((rule, index) => ({ ...rule, priority: index + 1 }));
       const socket = socketService.connect();
-      await Promise.all(prioritized.map((rule) => emitWithAck(socket, 'routing_rules:create_or_update', rule)));
+      await Promise.all(prioritized.map(async (rule) => {
+        try {
+          await emitWithAck(socket, 'routing_rules:create_or_update', rule);
+        } catch {
+          await apiService.updateRoutingRule(rule);
+        }
+      }));
       setRules(prioritized);
+      await fetchRoutingRules();
     } catch (err) {
       console.error('Failed to move rule:', err);
       setError(err.response?.data?.error || err.message || 'Failed to reorder rules');
@@ -290,13 +309,14 @@ const RoutingRules = ({ initialRules = [] }) => {
   };
 
   const handleTestRule = async (rule) => {
-    setTestingRuleId(rule.id);
+    const ruleId = getStableId(rule);
+    setTestingRuleId(ruleId);
     setError('');
     try {
-      const response = await apiService.testRoutingRule(rule.id);
+      const response = await apiService.testRoutingRule(ruleId);
       const result = response?.data?.result || {};
       setTestResult({
-        ruleId: rule.id,
+        ruleId,
         ruleName: rule.name,
         workflowName: result?.workflow?.displayName || result?.workflow?.promptKey || '',
         optionCount: Number.isFinite(Number(result?.optionCount)) ? Number(result.optionCount) : 0,
@@ -469,11 +489,12 @@ const RoutingRules = ({ initialRules = [] }) => {
             .sort((a, b) => (a.priority || 0) - (b.priority || 0))
             .map((rule, index, ordered) => {
               const ruleActionType = rule.actionType || (inferIvrPromptFromAction(rule.action) ? 'ivr' : 'custom');
-              const isTesting = testingRuleId === rule.id;
+              const ruleId = getStableId(rule);
+              const isTesting = testingRuleId === ruleId;
               const playDisabled = isTesting || (ruleActionType === 'ivr' && !rule.ivrPromptKey && !inferIvrPromptFromAction(rule.action));
 
               return (
-                <div key={rule.id} className={`rule-item ${!rule.enabled ? 'disabled' : ''}`}>
+                <div key={ruleId} className={`rule-item ${!rule.enabled ? 'disabled' : ''}`}>
                   <div className="rule-header">
                     <div className="rule-info">
                       <span className="rule-priority">#{rule.priority}</span>
@@ -481,7 +502,7 @@ const RoutingRules = ({ initialRules = [] }) => {
                     </div>
                     <div className="rule-actions">
                       <button
-                        onClick={() => handleMoveRule(rule.id, 'up')}
+                        onClick={() => handleMoveRule(ruleId, 'up')}
                         disabled={index === 0 || saving}
                         className="btn btn-icon-rule"
                         title="Move up"
@@ -489,7 +510,7 @@ const RoutingRules = ({ initialRules = [] }) => {
                         <ArrowUp size={16} />
                       </button>
                       <button
-                        onClick={() => handleMoveRule(rule.id, 'down')}
+                        onClick={() => handleMoveRule(ruleId, 'down')}
                         disabled={index === ordered.length - 1 || saving}
                         className="btn btn-icon-rule"
                         title="Move down"
@@ -506,7 +527,7 @@ const RoutingRules = ({ initialRules = [] }) => {
                         {isTesting ? 'Testing...' : 'Play'}
                       </button>
                       <button
-                        onClick={() => handleToggleRule(rule.id)}
+                        onClick={() => handleToggleRule(ruleId)}
                         className={`btn ${rule.enabled ? 'btn-success' : 'btn-warning'}`}
                         title={rule.enabled ? 'Disable rule' : 'Enable rule'}
                       >
@@ -520,7 +541,7 @@ const RoutingRules = ({ initialRules = [] }) => {
                         <Pencil size={16} />
                       </button>
                       <button
-                        onClick={() => handleDeleteRule(rule.id)}
+                        onClick={() => handleDeleteRule(ruleId)}
                         className="btn btn-danger btn-rule-delete-rule"
                         title="Delete rule"
                       >

@@ -21,6 +21,7 @@ import {
 import leadService from '../services/leadService';
 import useSocket from '../hooks/useSocket';
 import useIVRMenus from '../hooks/useIVRMenus';
+import { normalizeLead, normalizePagination } from '../utils/inboundNormalizers';
 import './LeadsPage.css';
 
 const PAGE_SIZE = 50;
@@ -39,22 +40,9 @@ const normalizeDurationSeconds = (lead) => {
 };
 
 const mapLeadForView = (lead) => ({
-  ...lead,
-  callerName: lead?.callerName || lead?.caller?.name || '',
-  callerNumber: lead?.callerNumber || lead?.caller?.phoneNumber || '',
-  notes: lead?.notes || lead?.bookingDetails?.notes || '',
-  workflowName: lead?.workflowName || lead?.workflow?.displayName || '',
-  workflowId: lead?.workflowId || lead?.workflow?._id || '',
+  ...normalizeLead(lead),
   duration: normalizeDurationSeconds(lead),
-  audioPrompts: Array.isArray(lead?.audioPrompts)
-    ? lead.audioPrompts
-    : Array.isArray(lead?.audioRecordings)
-      ? lead.audioRecordings.map((item) => item?.url).filter(Boolean)
-      : []
 });
-
-const getPaginationTotalPages = (pagination, fallback = 1) =>
-  Number(pagination?.totalPages || pagination?.pages || fallback || 1);
 
 const formatDuration = (seconds = 0) => {
   const totalSeconds = Math.max(0, Math.floor(Number(seconds) || 0));
@@ -89,10 +77,15 @@ const LeadsPage = () => {
     limit: PAGE_SIZE
   });
   const refreshTimerRef = useRef(null);
+  const requestSeqRef = useRef(0);
 
   const selectedIvrName = useMemo(() => {
     if (!filters.workflowId) return '';
-    const selected = ivrMenus.find((menu) => String(menu._id) === String(filters.workflowId));
+    const selected = ivrMenus.find((menu) =>
+      String(menu._id || '') === String(filters.workflowId) ||
+      String(menu.id || '') === String(filters.workflowId) ||
+      String(menu.promptKey || '') === String(filters.workflowId)
+    );
     return selected?.displayName || selected?.promptKey || '';
   }, [ivrMenus, filters.workflowId]);
 
@@ -102,30 +95,30 @@ const LeadsPage = () => {
   );
 
   const fetchLeads = useCallback(async () => {
+    const requestSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = requestSeq;
     try {
       setLoading(true);
       const response = await leadService.getLeads(filters);
+      if (requestSeq !== requestSeqRef.current) return;
       const leadData = response?.data || response || {};
       const fetchedLeads = Array.isArray(leadData?.leads) ? leadData.leads : [];
       const nextPagination = leadData?.pagination || {};
       const normalizedLeads = fetchedLeads.map(mapLeadForView);
+      const safePagination = normalizePagination(nextPagination, filters);
 
       setLeads(normalizedLeads);
       setStats({
-        contactsUsed: Number(nextPagination?.total || 0)
+        contactsUsed: safePagination.total
       });
-      setPagination({
-        page: Number(nextPagination?.page || filters.page || 1),
-        limit: Number(nextPagination?.limit || filters.limit || PAGE_SIZE),
-        total: Number(nextPagination?.total || 0),
-        totalPages: getPaginationTotalPages(nextPagination)
-      });
+      setPagination(safePagination);
       setError(null);
     } catch (error) {
+      if (requestSeq !== requestSeqRef.current) return;
       setError('Failed to load leads');
       console.error(error);
     } finally {
-      setLoading(false);
+      if (requestSeq === requestSeqRef.current) setLoading(false);
     }
   }, [filters]);
 
@@ -162,7 +155,9 @@ const LeadsPage = () => {
         } else {
           next.splice(index, 1);
         }
-      } else if (matchesFilters && Number(filters.page || 1) === Number(pagination.totalPages || 1)) {
+      } else if (payload?.action !== 'deleted' && matchesFilters && Number(filters.page || 1) === 1) {
+        next.unshift(mappedLead);
+      } else if (payload?.action !== 'deleted' && matchesFilters && Number(filters.page || 1) === Number(pagination.totalPages || 1)) {
         next.push(mappedLead);
       }
 
@@ -172,6 +167,8 @@ const LeadsPage = () => {
     setPagination((prev) => {
       const nextTotal = payload?.action === 'created' && matchesFilters
         ? Number(prev.total || 0) + 1
+        : payload?.action === 'deleted' && matchesFilters
+          ? Math.max(0, Number(prev.total || 0) - 1)
         : Number(prev.total || 0);
 
       return {
@@ -527,8 +524,8 @@ const LeadsPage = () => {
                   title="Filter by IVR"
                 >
                   <option value="">All IVRs</option>
-                  {ivrMenus.map((menu) => (
-                    <option key={menu._id} value={menu._id}>
+                {ivrMenus.map((menu) => (
+                    <option key={menu._id || menu.id || menu.promptKey} value={menu._id || menu.id || menu.promptKey}>
                       {menu.displayName || menu.promptKey}
                     </option>
                   ))}
@@ -594,7 +591,7 @@ const LeadsPage = () => {
                 <tr><td colSpan={selectionMode ? 7 : 6} className="no-data">No leads found</td></tr>
               ) : leads.map((lead) => (
                 <tr
-                  key={lead._id}
+                  key={lead._id || lead.id || lead.callSid}
                   className={`lead-row ${activeDrawerLeadId === lead._id ? 'selected' : ''}`}
                 >
                   {selectionMode && (

@@ -189,18 +189,18 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
           }));
         }
       };
-      socket.on('workflow_updated', handleWorkflowUpdated);
-      socket.on('workflow_error', (error) => {
-        console.error('❌ Workflow update error via socket:', error);
+      const handleWorkflowError = (error) => {
+        console.error('Workflow update error via socket:', error);
         if (error.workflowId === menu?._id) {
-          // Could show error notification to user
           setValidationErrors([`Update failed: ${error.error}`]);
         }
-      });
+      };
+      socket.on('workflow_updated', handleWorkflowUpdated);
+      socket.on('workflow_error', handleWorkflowError);
 
       return () => {
         socket.off('workflow_updated', handleWorkflowUpdated);
-        socket.off('workflow_error');
+        socket.off('workflow_error', handleWorkflowError);
       };
     }
   }, [menu?._id, migratedWorkflow, isEditing, draftWorkflow, workflow]);
@@ -510,6 +510,13 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
   useEffect(() => {
     setCurrentStatus(stableMenuStatus || 'draft');
   }, [stableMenuStatus]);
+
+  useEffect(() => {
+    if (!isEditing || !menu?._id) return undefined;
+    return () => {
+      leaveWorkflow(menu._id);
+    };
+  }, [isEditing, leaveWorkflow, menu?._id]);
 
   if (!menu) {
     return (

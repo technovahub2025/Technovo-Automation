@@ -1,39 +1,119 @@
 .calls-table-container {
-  margin-top: 24px;
+  margin-top: 14px;
+}
+
+.calls-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
 }
 
 .calls-count {
-  font-size: 14px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 800;
   color: #64748b;
-  margin-bottom: 12px;
+}
+
+.calls-page-size {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.calls-page-size select {
+  height: 34px;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0 28px 0 10px;
+  background: #fff;
+  color: #334155;
+  font-weight: 700;
 }
 
 .calls-table-wrapper {
   overflow-x: auto;
+  max-height: min(58vh, 640px);
   border-radius: 8px;
   border: 1px solid #e2e8f0;
+}
+
+.calls-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.calls-pagination-btn {
+  width: 34px;
+  height: 34px;
+  min-height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #334155;
+  opacity: 1;
+}
+
+.calls-pagination-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1em;
+  line-height: 1;
+  color: currentColor;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.calls-pagination-btn:disabled {
+  color: #334155;
+  opacity: 1;
 }
 
 .calls-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: 13px;
+  table-layout: fixed;
+  min-width: 1040px;
 }
+
+.calls-col-status { width: 12%; }
+.calls-col-contact { width: 20%; }
+.calls-col-phone { width: 18%; }
+.calls-col-start { width: 14%; }
+.calls-col-duration { width: 10%; }
+.calls-col-attempts { width: 10%; }
+.calls-col-error { width: 16%; }
 
 .calls-table thead {
   background: #f8fafc;
 }
 
 .calls-table th {
-  padding: 12px 16px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 11px 14px;
   text-align: left;
-  font-weight: 600;
+  font-weight: 800;
   color: #475569;
-  font-size: 13px;
+  font-size: 11px;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
-  border-bottom: 2px solid #e2e8f0;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc;
 }
 
 .calls-table tbody tr {
@@ -49,21 +129,38 @@
   border-bottom: none;
 }
 
-.calls-table td {
-  padding: 14px 16px;
+.calls-table-wrapper .calls-table td {
+  padding: 12px 14px;
   color: #334155;
+  vertical-align: middle;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border-bottom: 0;
+  display: table-cell;
 }
 
-/* Status Cell */
-.status-cell {
+.calls-table-wrapper .calls-table tbody td {
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.calls-table-wrapper .calls-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.status-cell,
+.contact-cell {
   display: flex;
   align-items: center;
   gap: 8px;
+  min-width: 0;
 }
 
 .status-text {
-  font-weight: 500;
+  font-weight: 700;
   text-transform: capitalize;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .spinning {
@@ -76,79 +173,131 @@
   }
 }
 
-/* Contact Cell */
 .contact-cell {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .contact-cell svg {
   color: #94a3b8;
+  flex: 0 0 auto;
 }
 
-/* Phone Cell */
-.phone-cell {
+.contact-cell span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.broadcast-phone-cell {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-family: 'Courier New', monospace;
-  color: #64748b;
-  font-size: 13px;
+  color: #475569;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.35;
 }
 
-/* Duration Badge */
-.duration-badge {
+.duration-badge,
+.attempts-badge {
   display: inline-block;
-  padding: 4px 10px;
-  background: #f1f5f9;
+  padding: 3px 8px;
   border-radius: 6px;
-  font-weight: 600;
-  font-size: 13px;
+  font-weight: 800;
+  font-size: 12px;
+}
+
+.duration-badge {
+  background: #f1f5f9;
   color: #475569;
 }
 
-/* Attempts Badge */
 .attempts-badge {
-  display: inline-block;
-  padding: 4px 10px;
   background: #e0e7ff;
   color: #2563eb;
-  border-radius: 6px;
-  font-weight: 600;
-  font-size: 13px;
 }
 
-/* Empty State */
-.calls-empty {
+.error-cell {
+  color: #64748b;
+}
+
+.calls-empty,
+.calls-loading {
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 80px 20px;
+  min-height: 220px;
+  padding: 36px 20px;
   color: #94a3b8;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.calls-loading {
+  gap: 12px;
+  color: #64748b;
+  font-weight: 700;
 }
 
 .calls-empty svg {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .calls-empty h3 {
-  margin: 0 0 8px 0;
-  color: #64748b;
-  font-size: 18px;
+  margin: 0 0 6px;
+  color: #475569;
+  font-size: 17px;
 }
 
 .calls-empty p {
   margin: 0;
-  font-size: 14px;
+  font-size: 13px;
 }
 
-/* Row Status Colors */
+.calls-inline-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  color: #991b1b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.calls-refreshing {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.calls-single-page-note {
+  margin-top: 8px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+}
+
 .call-row.status-completed {
-  border-left: 3px solid #2563eb;
+  border-left: 3px solid #059669;
 }
 
-.call-row.status-failed {
-  border-left: 3px solid #ef4444;
+.call-row.status-failed,
+.call-row.status-busy,
+.call-row.status-no_answer,
+.call-row.status-cancelled {
+  border-left: 3px solid #dc2626;
 }
 
 .call-row.status-opted_out {
@@ -156,29 +305,25 @@
 }
 
 .call-row.status-calling,
-.call-row.status-in_progress {
-  border-left: 3px solid #3b82f6;
+.call-row.status-claiming,
+.call-row.status-ringing,
+.call-row.status-in_progress,
+.call-row.status-answered {
+  border-left: 3px solid #2563eb;
 }
 
-/* Responsive */
 @media (max-width: 768px) {
+  .calls-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .calls-table {
     font-size: 12px;
   }
 
   .calls-table th,
-  .calls-table td {
+  .calls-table-wrapper .calls-table td {
     padding: 10px 12px;
-  }
-
-  .status-cell,
-  .contact-cell {
-    gap: 4px;
-  }
-
-  .status-cell svg,
-  .contact-cell svg {
-    width: 12px;
-    height: 12px;
   }
 }

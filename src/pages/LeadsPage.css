@@ -571,46 +571,75 @@
     justify-content: center;
     gap: 6px;
     padding: 8px;
-    border-radius: 6px;
+    border-radius: 8px;
     font-size: 13px;
-    font-weight: 500;
-    border: none;
+    font-weight: 700;
+    border: 1px solid transparent;
     cursor: pointer;
     text-decoration: none;
-    transition: opacity 0.2s;
+    transition: background 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
 }
 
 .btn-action:hover {
-    opacity: 0.9;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.08);
 }
 
 .btn-action.call {
-    background: #3b82f6;
-    color: white;
+    background: #eff6ff;
+    border-color: #bfdbfe;
+    color: #1d4ed8;
     grid-column: span 2;
 }
 
 .btn-action.confirm {
-    background: #22c55e;
-    color: white;
+    background: #ecfdf5;
+    border-color: #bbf7d0;
+    color: #15803d;
 }
 
 .btn-action.cancel {
-    background: #ef4444;
-    color: white;
+    background: #fff7ed;
+    border-color: #fed7aa;
+    color: #c2410c;
 }
 
 .btn-action.complete {
-    background: #64748b;
-    color: white;
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+    color: #475569;
     grid-column: span 2;
 }
 
 .btn-action.delete {
     margin-top: 10px;
-    background: #fff5f5;
+    background: #fef2f2;
     border: 1px solid #fecaca;
     color: #b91c1c;
+}
+
+.btn-action.call:hover {
+    background: #dbeafe;
+    border-color: #93c5fd;
+}
+
+.btn-action.confirm:hover {
+    background: #dcfce7;
+    border-color: #86efac;
+}
+
+.btn-action.cancel:hover {
+    background: #ffedd5;
+    border-color: #fdba74;
+}
+
+.btn-action.complete:hover {
+    background: #e2e8f0;
+    border-color: #94a3b8;
+}
+
+.btn-action.delete:hover {
+    background: #fee2e2;
+    border-color: #fca5a5;
 }
 
 .lead-drawer-footer .btn-action {
@@ -629,10 +658,15 @@
 .pagination-bar {
     display: flex;
     align-items: center;
-    justify-content: center;
+    justify-content: flex-end;
     gap: 8px;
     margin-top: 14px;
-    flex-wrap: wrap;
+    padding: 12px 16px;
+    background: #f8fafc;
+    border: 1px solid #eef2f7;
+    border-radius: 8px;
+    flex-wrap: nowrap;
+    width: 100%;
 }
 
 .actions-cell {
@@ -825,13 +859,15 @@
     color: #64748b;
     font-size: 13px;
     font-weight: 500;
-    margin-right: 8px;
+    margin-right: auto;
+    white-space: nowrap;
 }
 
 .pagination-pages {
     display: flex;
     align-items: center;
     gap: 6px;
+    flex: 0 0 auto;
 }
 
 .pagination-btn,
@@ -934,7 +970,14 @@
     }
 
     .pagination-bar {
+        justify-content: center;
         flex-wrap: wrap;
+    }
+
+    .pagination-summary {
+        width: 100%;
+        margin-right: 0;
+        text-align: center;
     }
 
     .lead-drawer {

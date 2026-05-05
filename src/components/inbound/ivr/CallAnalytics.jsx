@@ -1,895 +1,724 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  BarChart, Bar, LineChart, Line, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  AreaChart, Area, ComposedChart
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Area,
+  AreaChart,
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Legend,
+  Line,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
 } from 'recharts';
-import { 
-  TrendingUp, TrendingDown, Calendar, Download, Filter, BarChart3, Clock, Users, Phone, Activity,
-  RefreshCw, Search, ArrowUpRight, ArrowDownRight, Minus, Target, Zap,
-  PhoneIncoming, PhoneMissed, Voicemail, MessageSquare, Bot, UserCheck, AlertCircle, Eye, ArrowLeft
+import {
+  Activity,
+  AlertCircle,
+  Bot,
+  Calendar,
+  Download,
+  Filter,
+  PhoneCall,
+  PhoneIncoming,
+  PhoneMissed,
+  Radio,
+  RefreshCw,
+  Search,
+  Timer,
+  TrendingUp,
+  UserCheck,
+  Voicemail
 } from 'lucide-react';
 import apiService from '../../../services/api';
 import './CallAnalytics.css';
 
-const INITIAL_OUTBOUND_METRICS = {
+const CHANNELS = [
+  { key: 'voiceBroadcast', label: 'Voice Broadcast', color: '#7c3aed' },
+  { key: 'inboundIvr', label: 'Inbound/IVR', color: '#2563eb' },
+  { key: 'outbound', label: 'Outbound', color: '#10b981' }
+];
+
+const STATUS_COLORS = ['#10b981', '#ef4444', '#f59e0b', '#2563eb', '#7c3aed', '#06b6d4', '#64748b'];
+const ANALYTICS_FALLBACK_MS = Number(import.meta.env.VITE_ANALYTICS_SOCKET_TIMEOUT_MS || 7000);
+const MAX_TREND_POINTS = 240;
+const MAX_RECENT_ROWS = 500;
+
+const EMPTY_CHANNEL = {
   total: 0,
-  initiated: 0,
+  active: 0,
+  completed: 0,
   failed: 0,
-  successRate: 0,
-  progress: 0,
-  campaignName: '',
-  mode: '',
-  lastUpdate: null,
-  history: []
+  missed: 0,
+  avgDuration: 0,
+  successRate: 0
+};
+
+const toNumber = (value) => Number(value || 0);
+
+const formatNumber = (value) => new Intl.NumberFormat('en-IN').format(toNumber(value));
+
+const formatDuration = (seconds) => {
+  const safeSeconds = Math.max(0, Math.round(toNumber(seconds)));
+  if (safeSeconds < 60) return `${safeSeconds}s`;
+  const minutes = Math.floor(safeSeconds / 60);
+  const remainingSeconds = safeSeconds % 60;
+  if (minutes < 60) return `${minutes}m ${remainingSeconds}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+};
+
+const normalizeType = (value) => {
+  const type = String(value || '').toLowerCase();
+  if (['voicebroadcast', 'voice_broadcast', 'voice-broadcast', 'broadcast'].includes(type)) return 'voiceBroadcast';
+  if (['outbound', 'outbound_call', 'outbound-local', 'outbound_quickcalls', 'quickcall', 'quick_call'].includes(type)) return 'outbound';
+  if (['inboundivr', 'inbound_ivr', 'inbound-ivr', 'ivr', 'inbound', 'incoming'].includes(type)) return 'inboundIvr';
+  return value || 'unknown';
+};
+
+const formatCallTypeLabel = (value) => {
+  const type = normalizeType(value);
+  if (type === 'voiceBroadcast') return 'Voice Broadcast';
+  if (type === 'inboundIvr') return 'Inbound/IVR';
+  if (type === 'outbound') return 'Outbound';
+  return String(type || 'Unknown');
+};
+
+const formatStatusLabel = (value) => String(value || 'unknown')
+  .replace(/_/g, '-')
+  .split('-')
+  .filter(Boolean)
+  .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+  .join(' ');
+
+const getChannel = (analytics, key) => {
+  if (key !== 'inboundIvr') return analytics?.channels?.[key] || EMPTY_CHANNEL;
+  const combined = analytics?.channels?.inboundIvr;
+  if (combined) return combined;
+
+  const inbound = analytics?.channels?.inbound || EMPTY_CHANNEL;
+  const ivr = analytics?.channels?.ivr || EMPTY_CHANNEL;
+  const total = toNumber(inbound.total) + toNumber(ivr.total);
+  const active = toNumber(inbound.active) + toNumber(ivr.active);
+  const completed = toNumber(inbound.completed) + toNumber(ivr.completed);
+  const failed = toNumber(inbound.failed) + toNumber(ivr.failed);
+  const missed = toNumber(inbound.missed) + toNumber(ivr.missed);
+  const totalDuration = toNumber(inbound.totalDuration) + toNumber(ivr.totalDuration);
+
+  return {
+    total,
+    active,
+    completed,
+    failed,
+    missed,
+    totalDuration,
+    avgDuration: total > 0 ? Math.round(totalDuration / total) : 0,
+    successRate: total > 0 ? Math.round((completed / total) * 100) : 0
+  };
+};
+
+const downloadCsv = (filename, sections) => {
+  const escapeCsv = (value) => {
+    if (value === null || value === undefined) return '';
+    const stringValue = String(value);
+    return /[",\n]/.test(stringValue) ? `"${stringValue.replace(/"/g, '""')}"` : stringValue;
+  };
+
+  const lines = [];
+  sections.forEach((section, index) => {
+    if (index > 0) lines.push('');
+    lines.push(section.title);
+    lines.push(section.headers.map(escapeCsv).join(','));
+    section.rows.forEach((row) => lines.push(row.map(escapeCsv).join(',')));
+  });
+
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(link);
 };
 
 const CallAnalytics = () => {
-  const navigate = useNavigate();
   const [analytics, setAnalytics] = useState(null);
-
   const [period, setPeriod] = useState('today');
+  const [filters, setFilters] = useState({ callType: 'all', status: 'all', searchQuery: '' });
+  const [showFilters, setShowFilters] = useState(true);
+  const [socketConnected, setSocketConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
-  const [error, setError] = useState(null);
-  const [realTimeData, setRealTimeData] = useState({
-    activeExecutions: 0,
-    totalExecutionsToday: 0,
-    averageExecutionTime: 0,
-    successRate: 0,
-    nodeTypeDistribution: {},
-    lastUpdate: null
-  });
-  const [socketConnected, setSocketConnected] = useState(false);
+  const [error, setError] = useState('');
+  const [lastUpdated, setLastUpdated] = useState(null);
   const socketRef = useRef(null);
-  const refreshTimeoutRef = useRef(null);
-  const fetchInFlightRef = useRef(false);
-  const previousDataRef = useRef(null);
-  
-  // Production-level state
-  const [filters, setFilters] = useState({
-    callType: 'all',
-    status: 'all',
-    searchQuery: ''
-  });
-  const [showFilters, setShowFilters] = useState(false);
-  const [comparisonPeriod, setComparisonPeriod] = useState(null);
-  const [comparisonData, setComparisonData] = useState(null);
-  const [outboundLiveMetrics, setOutboundLiveMetrics] = useState({
-    ...INITIAL_OUTBOUND_METRICS
-  });
-  const shouldShowOutboundMetrics = filters.callType === 'all' || filters.callType === 'outbound';
-  const syncOutboundMetricsFromSummary = useCallback((summary = {}, timestamp = new Date().toISOString()) => {
-    if (!shouldShowOutboundMetrics) return;
+  const requestKeyRef = useRef('');
+  const fulfilledKeyRef = useRef('');
+  const hasSnapshotRef = useRef(false);
 
-    const isOutboundScoped = filters.callType === 'outbound';
-    const total = Number(isOutboundScoped ? summary.totalCalls : summary.outboundCalls) || 0;
-    const completed = Number(
-      isOutboundScoped ? summary.completedCalls : summary.outboundCompletedCalls
-    ) || 0;
-    const failed = Number(
-      isOutboundScoped ? summary.failedCalls : summary.outboundFailedCalls
-    ) || 0;
-    const successRate = total > 0 ? Math.round((completed / total) * 100) : 0;
-    const nextPoint = {
-      time: new Date(timestamp || Date.now()).toLocaleTimeString('en-IN', {
-        hour: '2-digit',
-        minute: '2-digit'
-      }),
-      initiated: completed,
-      failed,
-      total,
-      successRate
-    };
+  const requestPayload = useMemo(() => ({
+    period,
+    callType: filters.callType,
+    status: filters.status
+  }), [period, filters.callType, filters.status]);
 
-    setOutboundLiveMetrics((prev) => ({
-      ...prev,
-      total,
-      initiated: completed,
-      failed,
-      successRate,
-      progress: total,
-      mode: 'analytics',
-      lastUpdate: timestamp,
-      history: [...prev.history, nextPoint].slice(-20)
-    }));
-  }, [shouldShowOutboundMetrics, filters.callType]);
+  const applySnapshot = useCallback((payload = {}) => {
+    const snapshot = payload?.analytics || payload?.data || payload;
+    if (!snapshot || typeof snapshot !== 'object') return;
+    hasSnapshotRef.current = true;
+    setAnalytics(snapshot);
+    setLastUpdated(payload?.timestamp || snapshot.generatedAt || new Date().toISOString());
+    setLoading(false);
+    setError('');
+  }, []);
+
+  const fetchFallback = useCallback(async (payload = requestPayload) => {
+    try {
+      setLoading(true);
+      const fallbackKey = JSON.stringify(payload);
+      const queryParams = new URLSearchParams({
+        period: payload.period,
+        callType: payload.callType,
+        status: payload.status
+      }).toString();
+      const response = await apiService.get(`/api/analytics/inbound?${queryParams}`);
+      if (requestKeyRef.current !== fallbackKey) return;
+      fulfilledKeyRef.current = fallbackKey;
+      applySnapshot(response?.data?.data || response?.data);
+    } catch (err) {
+      setError(err?.response?.data?.message || err?.message || 'Failed to load call analytics');
+      setLoading(false);
+    }
+  }, [applySnapshot, requestPayload]);
 
   useEffect(() => {
-    const scheduleAnalyticsRefresh = () => {
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-      }
-
-      // Coalesce bursty socket events into one background refresh.
-      refreshTimeoutRef.current = setTimeout(() => {
-        fetchAnalytics({ background: true });
-      }, 350);
-    };
-
     const socket = apiService.initializeSocket();
-    if (!socket) return undefined;
     socketRef.current = socket;
-
-    const handleWorkflowStats = (data) => {
-      setRealTimeData({
-        activeExecutions: data.activeExecutions || 0,
-        totalExecutionsToday: data.totalExecutionsToday || 0,
-        averageExecutionTime: data.averageExecutionTime || 0,
-        successRate: data.successRate || 0,
-        nodeTypeDistribution: data.nodeTypeDistribution || {},
-        lastUpdate: data.timestamp
-      });
-      setSocketConnected(true);
-    };
-
-    const handleCallEvent = (data) => {
-      if (data?.type === 'call_started' || data?.type === 'call_ended' || data?.type === 'call_updated') {
-        scheduleAnalyticsRefresh();
-      }
-    };
-
-    const handleAnalyticsUpdate = (data) => {
-      const snapshot = data?.analytics || data?.data || null;
-      if (!snapshot) return;
-
-      setAnalytics(snapshot);
-      syncOutboundMetricsFromSummary(snapshot?.summary || {}, data?.timestamp || new Date().toISOString());
-      setRealTimeData((prev) => ({
-        ...prev,
-        totalExecutionsToday: snapshot?.summary?.totalCalls || 0,
-        averageExecutionTime: snapshot?.summary?.avgDuration || 0,
-        successRate: snapshot?.summary?.successRate || 0,
-        nodeTypeDistribution: snapshot?.ivrBreakdown || {},
-        lastUpdate: data?.timestamp || new Date().toISOString()
-      }));
-    };
-
-    // Handle call details updates from call details controller
-    const handleCallDetailsUpdate = () => {
-      scheduleAnalyticsRefresh();
-    };
-
-    const handleInboundCallUpdate = () => {
-      scheduleAnalyticsRefresh();
-    };
-
-    const handleIVRCallUpdate = () => {
-      scheduleAnalyticsRefresh();
-    };
-
-    const handleOutboundCallUpdate = () => {
-      scheduleAnalyticsRefresh();
-    };
-
-    const handleCallListUpdate = (data) => {
-      if (data?.action === 'refresh' || data?.action === 'add' || data?.action === 'update') {
-        scheduleAnalyticsRefresh();
-      }
-    };
-    const handleOutboundMetrics = (data = {}) => {
-      if (!shouldShowOutboundMetrics) return;
-      setOutboundLiveMetrics((prev) => {
-        const nextPoint = {
-          time: new Date(data.timestamp || Date.now()).toLocaleTimeString('en-IN', {
-            hour: '2-digit',
-            minute: '2-digit'
-          }),
-          initiated: Number(data.initiated || 0),
-          failed: Number(data.failed || 0),
-          total: Number(data.total || 0),
-          successRate: Number(data.successRate || 0)
-        };
-
-        return {
-          total: Number(data.total || 0),
-          initiated: Number(data.initiated || 0),
-          failed: Number(data.failed || 0),
-          successRate: Number(data.successRate || 0),
-          progress: Number(data.progress || 0),
-          campaignName: String(data.campaignName || ''),
-          mode: String(data.mode || ''),
-          lastUpdate: data.timestamp || new Date().toISOString(),
-          history: [...prev.history, nextPoint].slice(-20)
-        };
-      });
-    };
-
 
     const handleConnect = () => {
       setSocketConnected(true);
-      socket.emit('request_ivr_stats');
-      socket.emit('join_analytics_room', {
-        period,
-        callType: filters.callType,
-        status: filters.status
-      });
-      socket.emit('request_call_analytics', {
-        period,
-        callType: filters.callType,
-        status: filters.status,
-        reason: 'connect'
-      });
-      socket.emit('subscribe_calls');
+      socket.emit('join_analytics_room', requestPayload);
+      socket.emit('request_call_analytics', { ...requestPayload, reason: 'connect' });
+    };
+    const handleDisconnect = () => setSocketConnected(false);
+    const handleSnapshot = (payload) => {
+      const matchesPeriod = String(payload?.period || period) === String(period);
+      const matchesType = String(payload?.callType || filters.callType || 'all') === String(filters.callType);
+      const matchesStatus = String(payload?.status || filters.status || 'all') === String(filters.status);
+      if (!matchesPeriod || !matchesType || !matchesStatus) return;
+      fulfilledKeyRef.current = JSON.stringify(requestPayload);
+      applySnapshot(payload);
     };
 
-    const handleDisconnect = () => setSocketConnected(false);
+    if (socket) {
+      socket.on('connect', handleConnect);
+      socket.on('disconnect', handleDisconnect);
+      socket.on('call_analytics_update', handleSnapshot);
+      socket.on('analytics_update', handleSnapshot);
 
-    socket.on('ivr_workflow_stats', handleWorkflowStats);
-    socket.on('call_event', handleCallEvent);
-    socket.on('analytics_update', handleAnalyticsUpdate);
-    socket.on('call_analytics_update', handleAnalyticsUpdate);
-    
-    // Listen for call details updates
-    socket.on('call_details_update', handleCallDetailsUpdate);
-    socket.on('inbound_call_details_update', handleInboundCallUpdate);
-    socket.on('ivr_call_details_update', handleIVRCallUpdate);
-    socket.on('outbound_call_details_update', handleOutboundCallUpdate);
-    socket.on('call_list_update', handleCallListUpdate);
-    socket.on('outbound_metrics', handleOutboundMetrics);
-    
-    socket.on('connect', handleConnect);
-    socket.on('disconnect', handleDisconnect);
-
-    // If shared socket was already connected before this page mounted,
-    // manually run connect flow so LIVE status and room subscriptions initialize.
-    if (socket.connected) {
-      handleConnect();
-    } else {
-      setSocketConnected(false);
+      if (socket.connected) setSocketConnected(true);
+      else setSocketConnected(false);
     }
-
-    // Initial fetch
-    fetchAnalytics();
 
     return () => {
-      if (refreshTimeoutRef.current) {
-        clearTimeout(refreshTimeoutRef.current);
-      }
-
-      socket.off('ivr_workflow_stats', handleWorkflowStats);
-      socket.off('call_event', handleCallEvent);
-      socket.off('analytics_update', handleAnalyticsUpdate);
-      socket.off('call_analytics_update', handleAnalyticsUpdate);
-      
-      // Clean up call details listeners
-      socket.off('call_details_update', handleCallDetailsUpdate);
-      socket.off('inbound_call_details_update', handleInboundCallUpdate);
-      socket.off('ivr_call_details_update', handleIVRCallUpdate);
-      socket.off('outbound_call_details_update', handleOutboundCallUpdate);
-      socket.off('call_list_update', handleCallListUpdate);
-      socket.off('outbound_metrics', handleOutboundMetrics);
-      
+      if (!socket) return;
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
+      socket.off('call_analytics_update', handleSnapshot);
+      socket.off('analytics_update', handleSnapshot);
       socket.emit('leave_analytics_room');
-      socket.emit('unsubscribe_calls');
     };
-
-
-  }, [period, filters.callType, filters.status, syncOutboundMetricsFromSummary]);
+  }, [applySnapshot, filters.callType, filters.status, period, requestPayload]);
 
   useEffect(() => {
-    if (!shouldShowOutboundMetrics) {
-      setOutboundLiveMetrics({ ...INITIAL_OUTBOUND_METRICS });
+    const socket = socketRef.current;
+    const key = JSON.stringify(requestPayload);
+    requestKeyRef.current = key;
+    fulfilledKeyRef.current = '';
+    setError('');
+    if (!hasSnapshotRef.current) setLoading(true);
+
+    if (socket?.connected) {
+      socket.emit('join_analytics_room', requestPayload);
+      socket.emit('request_call_analytics', { ...requestPayload, reason: 'view_change' });
     }
-  }, [shouldShowOutboundMetrics]);
 
-  const fetchAnalytics = useCallback(async (options = {}) => {
-    const { background = false } = options;
-
-    if (fetchInFlightRef.current) return;
-
-    try {
-      fetchInFlightRef.current = true;
-      if (!background) setLoading(true);
-      setError(null);
-      
-      const params = {
-        callType: filters.callType,
-        status: filters.status
-      };
-      const response = await apiService.getInboundAnalytics(period, params);
-      const normalizedData = response?.data?.data || response?.data || null;
-      setAnalytics(normalizedData);
-      syncOutboundMetricsFromSummary(normalizedData?.summary || {}, new Date().toISOString());
-      
-      if (comparisonPeriod && !background) {
-        const compResponse = await apiService.getInboundAnalytics(comparisonPeriod);
-        setComparisonData(compResponse?.data?.data || compResponse?.data || null);
+    const fallbackTimer = setTimeout(() => {
+      if (requestKeyRef.current === key && fulfilledKeyRef.current !== key) {
+        fetchFallback(requestPayload);
       }
-      
-      if (normalizedData) previousDataRef.current = { ...normalizedData };
-    } catch (error) {
-      console.error('Failed to fetch analytics:', error);
-      setError(error.message);
-    } finally {
-      fetchInFlightRef.current = false;
-      if (!background) setLoading(false);
-    }
-  }, [period, filters.callType, filters.status, comparisonPeriod, syncOutboundMetricsFromSummary]);
+    }, ANALYTICS_FALLBACK_MS);
 
-  const handleFilterChange = (key, value) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
-  };
+    return () => clearTimeout(fallbackTimer);
+  }, [fetchFallback, requestPayload]);
 
-  const clearFilters = () => {
-    setFilters({ callType: 'all', status: 'all', searchQuery: '' });
-  };
+  const summary = analytics?.summary || {};
 
-  const exportAnalytics = async (format) => {
+  const filteredCalls = useMemo(() => {
+    const search = filters.searchQuery.trim().toLowerCase();
+    const activeStatuses = new Set(['initiated', 'ringing', 'answered', 'in-progress', 'calling', 'queued', 'claiming', 'in_progress']);
+    const failedStatuses = new Set(['failed', 'busy', 'no-answer', 'no_answer', 'cancelled', 'canceled']);
+    const missedStatuses = new Set(['missed', 'busy', 'no-answer', 'no_answer', 'abandoned']);
+    return (analytics?.recentCalls || []).filter((call) => {
+      const type = normalizeType(call.type || call.callType);
+      const status = String(call.status || '').toLowerCase();
+      const matchesType = filters.callType === 'all' || type === filters.callType;
+      const matchesStatus =
+        filters.status === 'all' ||
+        status === filters.status ||
+        (filters.status === 'active' && activeStatuses.has(status)) ||
+        (filters.status === 'failed' && failedStatuses.has(status)) ||
+        (filters.status === 'missed' && missedStatuses.has(status));
+      const matchesSearch = !search ||
+        String(call.phoneNumber || call.phone || '').toLowerCase().includes(search) ||
+        String(call.callSid || call.id || '').toLowerCase().includes(search) ||
+        String(call.campaignName || '').toLowerCase().includes(search);
+      return matchesType && matchesStatus && matchesSearch;
+    });
+  }, [analytics?.recentCalls, filters]);
+
+  const lifoCalls = useMemo(() => [...filteredCalls].sort((a, b) => {
+    const firstTime = new Date(a.createdAt || 0).getTime();
+    const secondTime = new Date(b.createdAt || 0).getTime();
+    return secondTime - firstTime;
+  }).slice(0, MAX_RECENT_ROWS), [filteredCalls]);
+
+  const channelData = useMemo(() => CHANNELS.map((channel) => {
+    const metrics = getChannel(analytics, channel.key);
+    return {
+      ...channel,
+      total: toNumber(metrics.total),
+      active: toNumber(metrics.active),
+      completed: toNumber(metrics.completed),
+      failed: toNumber(metrics.failed),
+      successRate: toNumber(metrics.successRate)
+    };
+  }), [analytics]);
+
+  const statusData = useMemo(() => Object.entries(analytics?.statusBreakdown || {})
+    .map(([name, value], index) => ({
+      name: formatStatusLabel(name),
+      value: toNumber(value),
+      color: STATUS_COLORS[index % STATUS_COLORS.length]
+    }))
+    .filter((item) => item.value > 0), [analytics?.statusBreakdown]);
+
+  const trendData = useMemo(() => (analytics?.hourlyDistribution || []).map((row) => ({
+    hour: `${String(row.hour).padStart(2, '0')}:00`,
+    total: toNumber(row.total || row.calls),
+    completed: toNumber(row.completed),
+    failed: toNumber(row.failed),
+    voiceBroadcast: toNumber(row.voiceBroadcast),
+    inboundIvr: toNumber(row.inboundIvr || (toNumber(row.inbound) + toNumber(row.ivr))),
+    outbound: toNumber(row.outbound),
+    successRate: toNumber(row.successRate)
+  })).slice(-MAX_TREND_POINTS), [analytics?.hourlyDistribution]);
+
+  const dailyData = useMemo(() => Object.entries(analytics?.dailyBreakdown || {})
+    .sort(([firstDate], [secondDate]) => new Date(firstDate).getTime() - new Date(secondDate).getTime())
+    .map(([date, row]) => ({
+      rawDate: date,
+      date: new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+      total: toNumber(row.total),
+      completed: toNumber(row.completed),
+      failed: toNumber(row.failed),
+      voiceBroadcast: toNumber(row.voiceBroadcast),
+      inboundIvr: toNumber(row.inboundIvr || (toNumber(row.inbound) + toNumber(row.ivr))),
+      outbound: toNumber(row.outbound),
+      successRate: toNumber(row.successRate)
+    })), [analytics?.dailyBreakdown]);
+
+  const hasTrendData = trendData.some((row) => row.total > 0);
+  const hasDailyData = dailyData.some((row) => row.total > 0);
+  const hasChannelData = channelData.some((row) => row.total > 0);
+
+  const exportAnalytics = () => {
     try {
       setExporting(true);
-      if (format !== 'csv') return;
-
-      const escapeCsv = (value) => {
-        if (value === null || value === undefined) return '';
-        const stringValue = String(value);
-        if (/[",\n]/.test(stringValue)) {
-          return `"${stringValue.replace(/"/g, '""')}"`;
+      const exportedAt = new Date().toISOString();
+      downloadCsv(`call-analytics-${period}.csv`, [
+        {
+          title: 'Summary',
+          headers: ['Metric', 'Value'],
+          rows: [
+            ['Exported At', exportedAt],
+            ['Live Snapshot At', lastUpdated || analytics?.generatedAt || ''],
+            ['Period', period],
+            ['Filter Type', filters.callType === 'all' ? 'All Types' : formatCallTypeLabel(filters.callType)],
+            ['Filter Status', filters.status],
+            ['Search Query', filters.searchQuery],
+            ['Total Calls', summary.totalCalls || 0],
+            ['Active Calls', summary.activeCalls || 0],
+            ['Completed Calls', summary.completedCalls || 0],
+            ['Failed Calls', summary.failedCalls || 0],
+            ['Missed Calls', summary.missedCalls || 0],
+            ['Success Rate', `${summary.successRate || 0}%`],
+            ['Average Duration Seconds', summary.avgDuration || 0]
+          ]
+        },
+        {
+          title: 'Channel Breakdown',
+          headers: ['Channel', 'Total', 'Active', 'Completed', 'Failed', 'Missed', 'Average Duration', 'Success Rate'],
+          rows: channelData.map((row) => [
+            row.label,
+            row.total,
+            row.active,
+            row.completed,
+            row.failed,
+            getChannel(analytics, row.key).missed || 0,
+            getChannel(analytics, row.key).avgDuration || 0,
+            `${row.successRate}%`
+          ])
+        },
+        {
+          title: 'Hourly Trend',
+          headers: ['Hour', 'Total', 'Completed', 'Failed', 'Voice Broadcast', 'Inbound/IVR', 'Outbound', 'Success Rate'],
+          rows: trendData.map((row) => [
+            row.hour,
+            row.total,
+            row.completed,
+            row.failed,
+            row.voiceBroadcast,
+            row.inboundIvr,
+            row.outbound,
+            `${row.successRate}%`
+          ])
+        },
+        {
+          title: 'Daily Breakdown',
+          headers: ['Date', 'Total', 'Completed', 'Failed', 'Voice Broadcast', 'Inbound/IVR', 'Outbound', 'Success Rate'],
+          rows: dailyData.map((row) => [
+            row.rawDate,
+            row.total,
+            row.completed,
+            row.failed,
+            row.voiceBroadcast,
+            row.inboundIvr,
+            row.outbound,
+            `${row.successRate || 0}%`
+          ])
+        },
+        {
+          title: 'Status Mix',
+          headers: ['Status', 'Count'],
+          rows: statusData.map((row) => [row.name, row.value])
+        },
+        {
+          title: 'Recent Calls',
+          headers: ['Call ID', 'Phone Number', 'Type', 'Status', 'Duration Seconds', 'Campaign', 'Created At'],
+          rows: lifoCalls.map((call) => [
+            call.callSid || call.id || '',
+            call.phoneNumber || call.phone || '',
+            formatCallTypeLabel(call.type || call.callType),
+            call.status || '',
+            call.duration || 0,
+            call.campaignName || '',
+            call.createdAt ? new Date(call.createdAt).toISOString() : ''
+          ])
         }
-        return stringValue;
-      };
-
-      const rows = filteredCalls.map((call) => {
-        const displayType = normalizeCallType(call.type);
-        return [
-          call.callSid || '',
-          call.phoneNumber || '',
-          displayType,
-          call.status || '',
-          Number(call.duration || 0),
-          call.createdAt ? new Date(call.createdAt).toISOString() : ''
-        ];
-      });
-
-      const header = ['Call ID', 'Phone Number', 'Type', 'Status', 'Duration (sec)', 'Created At'];
-      const csvContent = [header, ...rows].map((row) => row.map(escapeCsv).join(',')).join('\n');
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `call-analytics-${period}.${format}`;
-      document.body.appendChild(a);
-      a.click();
-      window.URL.revokeObjectURL(url);
-      document.body.removeChild(a);
-    } catch (error) {
-      alert(`Export failed: ${error.message}`);
+      ]);
     } finally {
       setExporting(false);
     }
   };
 
-  const formatDuration = (seconds) => {
-    if (!seconds) return '0s';
-    if (seconds < 60) return `${seconds}s`;
-    const minutes = Math.floor(seconds / 60);
-    if (minutes < 60) return `${minutes}m ${seconds % 60}s`;
-    const hours = Math.floor(minutes / 60);
-    return `${hours}h ${minutes % 60}m`;
-  };
-
-  const formatNumber = (num) => num ? new Intl.NumberFormat().format(num) : '0';
-  const normalizeCallType = (callType) => {
-    const normalized = String(callType || '').toLowerCase().trim();
-
-    if (
-      [
-        'outbound',
-        'outbound_call',
-        'outbound_quickcalls',
-        'outbound_quickcall',
-        'quick_call',
-        'quickcall',
-        'voice_broadcast',
-        'voicebroadcast',
-        'outbound_broadcast',
-        'broadcast',
-        'bulk',
-        'bulk_campaign'
-      ].includes(normalized)
-    ) {
-      return 'outbound';
-    }
-
-    if (['ivr', 'inbound_ivr'].includes(normalized)) {
-      return 'ivr';
-    }
-
-    if (['inbound', 'incoming'].includes(normalized)) {
-      return 'inbound';
-    }
-
-    return normalized || 'unknown';
-  };
-
-  const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16'];
-
-  const getComparisonIndicator = (current, previous) => {
-    if (!previous) return null;
-    const change = ((current - previous) / previous) * 100;
-    return {
-      value: Math.abs(change).toFixed(1),
-      direction: change > 0 ? 'up' : change < 0 ? 'down' : 'neutral',
-      color: change > 0 ? '#10b981' : change < 0 ? '#ef4444' : '#64748b'
-    };
-  };
-
-  // Filter calls
-  const filteredCalls = useMemo(() => {
-    if (!analytics?.recentCalls) return [];
-    return analytics.recentCalls.filter(call => {
-      const matchesSearch = !filters.searchQuery || 
-        call.phoneNumber?.toLowerCase().includes(filters.searchQuery.toLowerCase()) ||
-        call.callSid?.toLowerCase().includes(filters.searchQuery.toLowerCase());
-      const matchesType =
-        filters.callType === 'all' || normalizeCallType(call.type) === filters.callType;
-      const matchesStatus = filters.status === 'all' || call.status === filters.status;
-      return matchesSearch && matchesType && matchesStatus;
-    });
-  }, [analytics?.recentCalls, filters]);
-
   if (loading && !analytics) {
     return (
-      <div className="call-analytics loading">
-        <div className="loading-spinner"></div>
-        <p>Loading analytics data...</p>
+      <div className="call-analytics loading-state">
+        <RefreshCw className="spin" size={28} />
+        <span>Loading realtime analytics...</span>
       </div>
     );
   }
 
-  if (error) {
+  if (error && !analytics) {
     return (
-      <div className="call-analytics empty">
-        <BarChart3 size={48} />
-        <h3>Error Loading Analytics</h3>
-        <p>{error}</p>
-        <button onClick={fetchAnalytics} className="btn btn-primary">
+      <div className="call-analytics loading-state">
+        <AlertCircle size={32} />
+        <strong>Unable to load call analytics</strong>
+        <span>{error}</span>
+        <button type="button" className="btn btn-primary" onClick={fetchFallback}>
           <RefreshCw size={16} /> Retry
         </button>
       </div>
     );
   }
 
-  const getTotalCalls = () => period === 'today' && socketConnected 
-    ? realTimeData.totalExecutionsToday || 0 
-    : analytics?.summary?.totalCalls || 0;
-
-  const getSuccessRate = () => period === 'today' && realTimeData.successRate > 0
-    ? realTimeData.successRate
-    : analytics?.summary?.successRate || 0;
-
-  const getAvgDuration = () => period === 'today' && realTimeData.averageExecutionTime > 0
-    ? realTimeData.averageExecutionTime
-    : analytics?.summary?.avgDuration || 0;
-
-  const totalCalls = getTotalCalls();
-  const successRate = getSuccessRate();
-  const avgDuration = getAvgDuration();
-  const totalCallsComp = comparisonData ? getComparisonIndicator(totalCalls, comparisonData.summary?.totalCalls) : null;
-  const successRateComp = comparisonData ? getComparisonIndicator(successRate, comparisonData.summary?.successRate) : null;
-
-  const hourlyData = (analytics?.hourlyDistribution || []).map(item => ({
-    hour: `${item.hour}:00`,
-    total: item.calls || 0,
-    completed: item.completed || 0,
-    failed: item.failed || 0,
-    successRate: item.calls > 0 ? Math.round((item.completed / item.calls) * 100) : 0
-  }));
-
-  const routingData = Object.entries(realTimeData.nodeTypeDistribution || analytics?.ivrBreakdown || {}).map(([route, count], index) => ({
-    name: route.charAt(0).toUpperCase() + route.slice(1).replace(/_/g, ' '),
-    value: count,
-    color: COLORS[index % COLORS.length]
-  }));
-
-  const dailyData = analytics?.dailyBreakdown ? Object.entries(analytics.dailyBreakdown).map(([date, data]) => ({
-    date: new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    total: data.total || 0,
-    completed: data.completed || 0,
-    failed: data.failed || 0
-  })) : [];
-
-  const hasOutboundHistory = outboundLiveMetrics.history.some((entry) =>
-    Number(entry?.total || 0) > 0 || Number(entry?.initiated || 0) > 0 || Number(entry?.failed || 0) > 0
-  );
-  const hasHourlyData = hourlyData.some((entry) => Number(entry?.total || 0) > 0);
-  const hasRoutingData = routingData.some((entry) => Number(entry?.value || 0) > 0);
-  const hasDailyData = dailyData.some((entry) => Number(entry?.total || 0) > 0);
-
   return (
     <div className="call-analytics">
-      <div className="breadcrumb-nav">
-        <button onClick={() => navigate('/')} className="back-link-btn">
-          <ArrowLeft size={16} />
-          Back to Dashboard
-        </button>
-      </div>
-
-      {/* Header */}
       <div className="analytics-header">
         <div className="header-left">
           <h2>Call Analytics</h2>
-
           <div className="period-selector">
             <Calendar size={16} />
-            <select value={period} onChange={(e) => setPeriod(e.target.value)}>
+            <select value={period} onChange={(event) => setPeriod(event.target.value)}>
               <option value="today">Today</option>
               <option value="week">This Week</option>
               <option value="month">This Month</option>
               <option value="year">This Year</option>
             </select>
           </div>
-          {comparisonPeriod && (
-            <div className="comparison-selector">
-              <span>vs</span>
-              <select value={comparisonPeriod} onChange={(e) => setComparisonPeriod(e.target.value || null)}>
-                <option value="">None</option>
-                <option value="yesterday">Yesterday</option>
-                <option value="last_week">Last Week</option>
-                <option value="last_month">Last Month</option>
-              </select>
-            </div>
-          )}
+          <span className="last-updated">Updated {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : 'N/A'}</span>
         </div>
         <div className="header-actions">
-          <div className={`live-indicator ${socketConnected ? 'connected' : 'disconnected'}`} title="Real-time Connection Status">
-            <span className="live-dot"></span>
-            <span className="live-text">{socketConnected ? 'LIVE' : 'OFFLINE'}</span>
+          <div className={`analytics-live-status ${socketConnected ? 'connected' : 'disconnected'}`}>
+            <span className="analytics-live-dot" />
+            <span>{socketConnected ? 'LIVE' : 'OFFLINE'}</span>
           </div>
-
-          <button className="btn btn-secondary" onClick={() => setShowFilters(!showFilters)}>
-            <Filter size={16} />
-            Filters
+          <button type="button" className="btn btn-secondary" onClick={() => setShowFilters((value) => !value)}>
+            <Filter size={16} /> Filters
           </button>
-
-          <button className="btn btn-secondary" onClick={() => exportAnalytics('csv')} disabled={exporting}>
-            <Download size={16} />
-            {exporting ? 'Exporting...' : 'Export CSV'}
+          <button type="button" className="btn btn-secondary" onClick={exportAnalytics} disabled={exporting}>
+            <Download size={16} /> {exporting ? 'Exporting...' : 'Export CSV'}
           </button>
         </div>
       </div>
 
-      {/* Filters Panel */}
       {showFilters && (
         <div className="filters-panel">
-          <div className="filter-group">
-            <label>Call Type</label>
-            <select value={filters.callType} onChange={(e) => handleFilterChange('callType', e.target.value)}>
+          <label>
+            <span>Call Type</span>
+            <select value={filters.callType} onChange={(event) => setFilters((prev) => ({ ...prev, callType: event.target.value }))}>
               <option value="all">All Types</option>
-              <option value="inbound">Inbound</option>
+              <option value="voiceBroadcast">Voice Broadcast</option>
+              <option value="inboundIvr">Inbound/IVR</option>
               <option value="outbound">Outbound</option>
-              <option value="ivr">IVR</option>
             </select>
-          </div>
-          <div className="filter-group">
-            <label>Status</label>
-            <select value={filters.status} onChange={(e) => handleFilterChange('status', e.target.value)}>
+          </label>
+          <label>
+            <span>Status</span>
+            <select value={filters.status} onChange={(event) => setFilters((prev) => ({ ...prev, status: event.target.value }))}>
               <option value="all">All Status</option>
+              <option value="active">Active</option>
               <option value="completed">Completed</option>
               <option value="failed">Failed</option>
               <option value="missed">Missed</option>
             </select>
-          </div>
-          <div className="filter-group">
-            <label>Search</label>
-            <input 
-              type="text" 
-              placeholder="Phone number or Call ID..."
-              value={filters.searchQuery}
-              onChange={(e) => handleFilterChange('searchQuery', e.target.value)}
-            />
-          </div>
-          <button className="btn btn-text" onClick={clearFilters}>Clear Filters</button>
+          </label>
+          <label className="search-filter">
+            <span>Search</span>
+            <div className="search-input">
+              <Search size={16} />
+              <input
+                value={filters.searchQuery}
+                placeholder="Phone, Call ID, Campaign"
+                onChange={(event) => setFilters((prev) => ({ ...prev, searchQuery: event.target.value }))}
+              />
+            </div>
+          </label>
+          <button type="button" className="btn btn-text" onClick={() => setFilters({ callType: 'all', status: 'all', searchQuery: '' })}>
+            Clear Filters
+          </button>
         </div>
       )}
 
-      {/* Summary Cards */}
       <div className="analytics-summary">
-        <div className="summary-card primary">
-          <div className="summary-icon"><PhoneIncoming size={20} /></div>
-          <div className="summary-content">
-            <h3>{formatNumber(totalCalls)}</h3>
-            <p>Total Calls</p>
-            {totalCallsComp && (
-              <span className={`trend ${totalCallsComp.direction}`} style={{ color: totalCallsComp.color }}>
-                {totalCallsComp.direction === 'up' ? <ArrowUpRight size={14} /> : 
-                 totalCallsComp.direction === 'down' ? <ArrowDownRight size={14} /> : <Minus size={14} />}
-                {totalCallsComp.value}%
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="summary-card success">
-          <div className="summary-icon"><UserCheck size={20} /></div>
-          <div className="summary-content">
-            <h3>{successRate}%</h3>
-            <p>Success Rate</p>
-            {successRateComp && (
-              <span className={`trend ${successRateComp.direction}`} style={{ color: successRateComp.color }}>
-                {successRateComp.direction === 'up' ? <ArrowUpRight size={14} /> : 
-                 successRateComp.direction === 'down' ? <ArrowDownRight size={14} /> : <Minus size={14} />}
-                {successRateComp.value}%
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="summary-card warning">
-          <div className="summary-icon"><Clock size={20} /></div>
-          <div className="summary-content">
-            <h3>{formatDuration(avgDuration)}</h3>
-            <p>Average Duration</p>
-            <span className="trend neutral"><Target size={14} /> Target: 3m</span>
-          </div>
-        </div>
-
-        <div className="summary-card danger">
-          <div className="summary-icon"><PhoneMissed size={20} /></div>
-          <div className="summary-content">
-            <h3>{formatNumber(analytics?.summary?.missedCalls || 0)}</h3>
-            <p>Missed Calls</p>
-            <span className="trend negative"><AlertCircle size={14} /> Action needed</span>
-          </div>
-        </div>
-
-        <div className="summary-card purple">
-          <div className="summary-icon"><Voicemail size={20} /></div>
-          <div className="summary-content">
-            <h3>{formatNumber(analytics?.summary?.voicemails || 0)}</h3>
-            <p>Voicemails</p>
-            <span className="trend neutral"><MessageSquare size={14} /> Pending</span>
-          </div>
-        </div>
+        <MetricCard tone="primary" icon={PhoneCall} label="Total Live Data" value={formatNumber(summary.totalCalls)} />
+        <MetricCard tone="info" icon={Activity} label="Active Calls" value={formatNumber(summary.activeCalls)} />
+        <MetricCard tone="success" icon={UserCheck} label="Success Rate" value={`${summary.successRate || 0}%`} />
+        <MetricCard tone="warning" icon={Timer} label="Avg Duration" value={formatDuration(summary.avgDuration)} />
+        <MetricCard tone="danger" icon={PhoneMissed} label="Missed / Failed" value={`${formatNumber(summary.missedCalls)} / ${formatNumber(summary.failedCalls)}`} />
+        <MetricCard tone="purple" icon={Radio} label="Broadcast Calls" value={formatNumber(summary.broadcastCalls)} />
       </div>
 
-      {/* Outbound Voice Live Metrics */}
-      {shouldShowOutboundMetrics && (
-      <div className="analytics-section">
-        <h3><Activity size={20} /> Outbound Voice Live Metrics</h3>
-        <div className="analytics-grid four-col">
-          <div className="stat-box">
-            <span className="stat-label">Total</span>
-            <span className="stat-value">{formatNumber(outboundLiveMetrics.total)}</span>
-          </div>
-          <div className="stat-box">
-            <span className="stat-label">Initiated</span>
-            <span className="stat-value">{formatNumber(outboundLiveMetrics.initiated)}</span>
-          </div>
-          <div className="stat-box">
-            <span className="stat-label">Failed</span>
-            <span className="stat-value">{formatNumber(outboundLiveMetrics.failed)}</span>
-          </div>
-          <div className="stat-box">
-            <span className="stat-label">Success Rate</span>
-            <span className="stat-value">{outboundLiveMetrics.successRate || 0}%</span>
-          </div>
-        </div>
+      <div className="channel-strip">
+        {CHANNELS.map((channel) => {
+          const metrics = getChannel(analytics, channel.key);
+          return (
+            <section className="channel-panel" key={channel.key} style={{ '--accent': channel.color }}>
+              <div>
+                <span className="channel-label">{channel.label}</span>
+                <strong>{formatNumber(metrics.total)}</strong>
+              </div>
+              <div className="channel-stats">
+                <span>Active {formatNumber(metrics.active)}</span>
+                <span>Done {formatNumber(metrics.completed)}</span>
+                <span>Failed {formatNumber(metrics.failed)}</span>
+                <span>{metrics.successRate || 0}% success</span>
+              </div>
+            </section>
+          );
+        })}
+      </div>
 
-        <div className="outbound-live-meta">
-          <span>Mode: {outboundLiveMetrics.mode || 'N/A'}</span>
-          <span>Campaign: {outboundLiveMetrics.campaignName || 'N/A'}</span>
-          <span>Progress: {formatNumber(outboundLiveMetrics.progress || 0)}</span>
-          <span>Updated: {outboundLiveMetrics.lastUpdate ? new Date(outboundLiveMetrics.lastUpdate).toLocaleTimeString() : 'N/A'}</span>
-        </div>
-
-        <div className="chart-card full-width outbound-live-chart">
-          <h3>Outbound Metrics Trend</h3>
-          {hasOutboundHistory ? (
-            <ResponsiveContainer width="100%" height={280}>
-              <AreaChart data={outboundLiveMetrics.history}>
+      <div className="analytics-charts">
+        <section className="chart-card trading-chart">
+          <div className="section-heading">
+            <h3><TrendingUp size={18} /> Realtime Call Trend</h3>
+            <span>{period}</span>
+          </div>
+          {hasTrendData ? (
+            <ResponsiveContainer width="100%" height={340}>
+              <ComposedChart data={trendData}>
                 <defs>
-                  <linearGradient id="outboundInitiatedGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="#3b82f6" stopOpacity={0.02} />
-                  </linearGradient>
-                  <linearGradient id="outboundFailedGradient" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#ef4444" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#ef4444" stopOpacity={0.02} />
+                  <linearGradient id="callVolumeGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#2563eb" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="time" stroke="#64748b" fontSize={12} />
-                <YAxis stroke="#64748b" fontSize={12} allowDecimals={false} />
+                <XAxis dataKey="hour" tick={{ fontSize: 12 }} stroke="#64748b" />
+                <YAxis yAxisId="left" tick={{ fontSize: 12 }} allowDecimals={false} stroke="#64748b" />
+                <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} domain={[0, 100]} stroke="#64748b" />
                 <Tooltip />
                 <Legend />
-                <Area type="monotone" dataKey="initiated" stroke="#3b82f6" fill="url(#outboundInitiatedGradient)" name="Initiated" />
-                <Area type="monotone" dataKey="failed" stroke="#ef4444" fill="url(#outboundFailedGradient)" name="Failed" />
-                <Line type="monotone" dataKey="successRate" stroke="#10b981" strokeWidth={2} name="Success %" dot={false} />
-              </AreaChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="chart-empty-state">No outbound trend data yet.</div>
-          )}
-        </div>
-      </div>
-      )}
-
-      {/* Charts Grid */}
-      <div className="analytics-charts">
-        {/* Hourly Volume */}
-
-        <div className="chart-card large">
-          <h3>Hourly Call Volume</h3>
-          {hasHourlyData ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <ComposedChart data={hourlyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="hour" stroke="#64748b" fontSize={12} />
-                <YAxis stroke="#64748b" fontSize={12} />
-                <Tooltip contentStyle={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px' }} />
-                <Legend />
-                <Bar dataKey="total" fill="#3b82f6" name="Total" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="completed" fill="#10b981" name="Completed" radius={[4, 4, 0, 0]} />
-                <Line type="monotone" dataKey="successRate" stroke="#f59e0b" name="Success %" strokeWidth={2} dot={false} />
+                <Area yAxisId="left" type="monotone" dataKey="total" name="Total" stroke="#2563eb" fill="url(#callVolumeGradient)" strokeWidth={2} />
+                <Bar yAxisId="left" dataKey="completed" name="Completed" fill="#10b981" radius={[4, 4, 0, 0]} />
+                <Bar yAxisId="left" dataKey="failed" name="Failed" fill="#ef4444" radius={[4, 4, 0, 0]} />
+                <Line yAxisId="right" type="monotone" dataKey="successRate" name="Success %" stroke="#f59e0b" strokeWidth={2} dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
-          ) : (
-            <div className="chart-empty-state">No hourly call volume data for this filter.</div>
-          )}
-        </div>
+          ) : <EmptyChart text="No realtime trend data for this filter." />}
+        </section>
 
-        {/* IVR Routing */}
-        <div className="chart-card">
-          <h3>IVR Routing</h3>
-          {hasRoutingData ? (
+        <section className="chart-card">
+          <div className="section-heading">
+            <h3><Activity size={18} /> Channel Volume</h3>
+          </div>
+          {hasChannelData ? (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={channelData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="label" tick={{ fontSize: 12 }} stroke="#64748b" />
+                <YAxis tick={{ fontSize: 12 }} allowDecimals={false} stroke="#64748b" />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="total" name="Total" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="active" name="Active" fill="#f59e0b" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="failed" name="Failed" fill="#ef4444" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <EmptyChart text="No channel data for this filter." />}
+        </section>
+
+        <section className="chart-card">
+          <div className="section-heading">
+            <h3><Bot size={18} /> Status Mix</h3>
+          </div>
+          {statusData.length > 0 ? (
             <ResponsiveContainer width="100%" height={300}>
               <PieChart>
-                <Pie data={routingData} cx="50%" cy="50%" innerRadius={60} outerRadius={100} paddingAngle={2} dataKey="value">
-                  {routingData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
+                <Pie data={statusData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={104} paddingAngle={2}>
+                  {statusData.map((entry) => <Cell key={entry.name} fill={entry.color} />)}
                 </Pie>
                 <Tooltip />
-                <Legend verticalAlign="bottom" height={36}/>
+                <Legend />
               </PieChart>
             </ResponsiveContainer>
-          ) : (
-            <div className="chart-empty-state">No IVR routing data yet.</div>
-          )}
-        </div>
+          ) : <EmptyChart text="No status data for this filter." />}
+        </section>
 
-        {/* Daily Trend */}
-        {dailyData.length > 0 && (
-          <div className="chart-card full-width">
-            <h3>Daily Trend</h3>
-            {hasDailyData ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <AreaChart data={dailyData}>
-                  <defs>
-                    <linearGradient id="colorTotal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3}/>
-                      <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                  <XAxis dataKey="date" stroke="#64748b" fontSize={12} />
-                  <YAxis stroke="#64748b" fontSize={12} />
-                  <Tooltip />
-                  <Legend />
-                  <Area type="monotone" dataKey="total" stroke="#3b82f6" fillOpacity={1} fill="url(#colorTotal)" name="Total" />
-                  <Line type="monotone" dataKey="completed" stroke="#10b981" strokeWidth={2} name="Completed" />
-                </AreaChart>
-              </ResponsiveContainer>
-            ) : (
-              <div className="chart-empty-state">No daily trend data for this period.</div>
-            )}
-          </div>
+        {hasDailyData && (
+          <section className="chart-card full-width">
+            <div className="section-heading">
+              <h3><Calendar size={18} /> Daily Breakdown</h3>
+            </div>
+            <ResponsiveContainer width="100%" height={300}>
+              <AreaChart data={dailyData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#64748b" />
+                <YAxis tick={{ fontSize: 12 }} allowDecimals={false} stroke="#64748b" />
+                <Tooltip />
+                <Legend />
+                <Area type="monotone" dataKey="voiceBroadcast" name="Voice Broadcast" stackId="1" stroke="#7c3aed" fill="#7c3aed" fillOpacity={0.35} />
+                <Area type="monotone" dataKey="inboundIvr" name="Inbound/IVR" stackId="1" stroke="#2563eb" fill="#2563eb" fillOpacity={0.35} />
+                <Area type="monotone" dataKey="outbound" name="Outbound" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.35} />
+              </AreaChart>
+            </ResponsiveContainer>
+          </section>
         )}
       </div>
 
-      {/* IVR Deep Dive Section */}
-      <div className="analytics-section">
-        <h3><PhoneIncoming size={20} /> IVR Analytics</h3>
-        <div className="analytics-grid four-col">
-          <div className="stat-box">
-            <span className="stat-label">IVR Containment</span>
-            <span className="stat-value">{analytics?.ivr?.containmentRate || 0}%</span>
+      <div className="operations-grid">
+        <section className="analytics-section">
+          <h3><PhoneIncoming size={18} /> Inbound/IVR Metrics</h3>
+          <div className="analytics-grid four-col">
+            <StatBox label="Inbound/IVR" value={formatNumber(getChannel(analytics, 'inboundIvr').total)} />
+            <StatBox label="Active" value={formatNumber(getChannel(analytics, 'inboundIvr').active)} />
+            <StatBox label="Containment" value={`${analytics?.ivr?.containmentRate || 0}%`} />
+            <StatBox label="Avg Wait" value={formatDuration(analytics?.queue?.avgWaitTime)} />
           </div>
-          <div className="stat-box">
-            <span className="stat-label">Menu Abandon</span>
-            <span className="stat-value">{analytics?.ivr?.abandonRate || 0}%</span>
+        </section>
+        <section className="analytics-section">
+          <h3><Voicemail size={18} /> Queue / Follow-up</h3>
+          <div className="analytics-grid four-col">
+            <StatBox label="Voicemails" value={formatNumber(summary.voicemails)} />
+            <StatBox label="Callbacks" value={formatNumber(summary.callbacks || analytics?.queue?.scheduledCallbacks)} />
+            <StatBox label="Service Level" value={`${analytics?.queue?.serviceLevel || 0}%`} />
+            <StatBox label="Abandon Rate" value={`${analytics?.queue?.abandonRate || 0}%`} />
           </div>
-          <div className="stat-box">
-            <span className="stat-label">Avg IVR Time</span>
-            <span className="stat-value">{formatDuration(analytics?.ivr?.avgIVRDuration || 0)}</span>
-          </div>
-          <div className="stat-box">
-            <span className="stat-label">Transfer Rate</span>
-            <span className="stat-value">{analytics?.ivr?.transferRate || 0}%</span>
-          </div>
-        </div>
-        <div className="ivr-flow-stats">
-          <h4>IVR Flow Performance</h4>
-          <div className="flow-grid">
-            {(analytics?.ivr?.flows || []).map((flow, idx) => (
-              <div key={idx} className="flow-item">
-                <span className="flow-name">{flow.name}</span>
-                <div className="flow-bar">
-                  <div className="flow-fill" style={{ width: `${flow.usagePercent || 0}%` }}></div>
-                </div>
-                <span className="flow-value">{flow.usagePercent || 0}%</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        </section>
       </div>
 
-      <div className="analytics-section">
-        <h3><Clock size={20} /> Queue Metrics</h3>
-        <div className="analytics-grid four-col">
-          <div className="stat-box">
-            <span className="stat-label">Avg Wait Time</span>
-            <span className="stat-value">{formatDuration(analytics?.queue?.avgWaitTime || 0)}</span>
-          </div>
-          <div className="stat-box">
-            <span className="stat-label">Max Wait Time</span>
-            <span className="stat-value">{formatDuration(analytics?.queue?.maxWaitTime || 0)}</span>
-          </div>
-          <div className="stat-box">
-            <span className="stat-label">Service Level</span>
-            <span className="stat-value">{analytics?.queue?.serviceLevel || 0}%</span>
-          </div>
-          <div className="stat-box">
-            <span className="stat-label">Abandon Rate</span>
-            <span className="stat-value">{analytics?.queue?.abandonRate || 0}%</span>
-          </div>
-          <div className="stat-box">
-            <span className="stat-label">Longest Queue</span>
-            <span className="stat-value">{formatNumber(analytics?.queue?.longestQueue || 0)}</span>
-          </div>
-          <div className="stat-box">
-            <span className="stat-label">Callbacks</span>
-            <span className="stat-value">{formatNumber(analytics?.queue?.scheduledCallbacks || 0)}</span>
-          </div>
-        </div>
-      </div>
-
-
-      {/* Recent Calls Table */}
-      {filteredCalls.length > 0 && (
-        <div className="calls-table-section">
+      <section className="calls-table-section">
+        <div className="section-heading">
           <h3>Recent Calls ({filteredCalls.length})</h3>
+          <span className="table-order-note">LIFO: newest first</span>
+          {error && <span className="inline-error">{error}</span>}
+        </div>
+        {filteredCalls.length > 0 ? (
           <div className="calls-table-container">
             <table className="calls-table">
               <thead>
                 <tr>
                   <th>Call ID</th>
-                  <th>Phone Number</th>
+                  <th>Phone</th>
                   <th>Type</th>
                   <th>Status</th>
+                  <th>Campaign</th>
                   <th>Duration</th>
                   <th>Time</th>
-                  <th>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {filteredCalls.slice(0, 10).map(call => {
-                  const displayType = normalizeCallType(call.type);
+                {lifoCalls.map((call) => {
+                  const type = normalizeType(call.type || call.callType);
                   return (
-                    <tr key={call.callSid}>
-                      <td className="call-id">{call.callSid?.slice(-8)}</td>
-                      <td>{call.phoneNumber}</td>
-                      <td><span className={`badge ${displayType}`}>{displayType}</span></td>
-                      <td><span className={`badge ${call.status}`}>{call.status}</span></td>
+                    <tr key={`${call.source || 'call'}-${call.id || call.callSid}`}>
+                      <td className="call-id">{String(call.callSid || call.id || '').slice(-10) || '-'}</td>
+                      <td>{call.phoneNumber || call.phone || '-'}</td>
+                      <td><span className={`badge ${type}`}>{formatCallTypeLabel(type)}</span></td>
+                      <td><span className={`badge ${String(call.status || 'unknown').toLowerCase()}`}>{call.status || 'unknown'}</span></td>
+                      <td>{call.campaignName || '-'}</td>
                       <td>{formatDuration(call.duration)}</td>
-                      <td>{new Date(call.createdAt).toLocaleString()}</td>
-                      <td>
-                        <button className="btn btn-icon"><Eye size={16} /></button>
-                      </td>
+                      <td>{call.createdAt ? new Date(call.createdAt).toLocaleString() : '-'}</td>
                     </tr>
                   );
                 })}
               </tbody>
             </table>
           </div>
-        </div>
-      )}
+        ) : (
+          <div className="chart-empty-state">No calls match this filter.</div>
+        )}
+      </section>
     </div>
   );
 };
 
-export default CallAnalytics;
+const MetricCard = ({ icon: Icon, label, value, tone }) => (
+  <section className={`summary-card ${tone}`}>
+    <div className="summary-icon"><Icon size={20} /></div>
+    <div className="summary-content">
+      <h3>{value}</h3>
+      <p>{label}</p>
+    </div>
+  </section>
+);
 
+const StatBox = ({ label, value }) => (
+  <div className="stat-box">
+    <span className="stat-label">{label}</span>
+    <span className="stat-value">{value}</span>
+  </div>
+);
+
+const EmptyChart = ({ text }) => <div className="chart-empty-state">{text}</div>;
+
+export default CallAnalytics;

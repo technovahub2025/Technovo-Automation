@@ -33,7 +33,7 @@
   min-height: 360px;
 }
 
-.loading-spinner {
+.routing-rules .loading-spinner {
   width: 40px;
   height: 40px;
   border: 4px solid #e5edf7;
@@ -48,7 +48,7 @@
   100% { transform: rotate(360deg); }
 }
 
-.rules-header {
+.routing-rules .rules-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -57,7 +57,7 @@
   border-bottom: 1px solid var(--rr-border);
 }
 
-.rules-header h2 {
+.routing-rules .rules-header h2 {
   margin: 0;
   font-size: 29px;
   font-weight: 700;
@@ -68,7 +68,7 @@
   gap: 10px;
 }
 
-.error-message {
+.routing-rules .error-message {
   margin: 0 0 16px 0;
   color: #991b1b;
   font-size: 14px;
@@ -78,7 +78,7 @@
   padding: 10px 12px;
 }
 
-.btn {
+.routing-rules .btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -94,62 +94,62 @@
   line-height: 1;
 }
 
-.btn:disabled {
+.routing-rules .btn:disabled {
   opacity: 0.58;
   cursor: not-allowed;
 }
 
-.btn-primary {
+.routing-rules .btn-primary {
   background: var(--rr-primary);
   color: #fff;
   box-shadow: none;
 }
 
-.btn-primary:hover:not(:disabled) {
+.routing-rules .btn-primary:hover:not(:disabled) {
   background: var(--rr-primary-strong);
 }
 
-.btn-secondary {
+.routing-rules .btn-secondary {
   background: #eaf0f8;
   color: #1f3a57;
   border-color: #d2deed;
 }
 
-.btn-secondary:hover:not(:disabled) {
+.routing-rules .btn-secondary:hover:not(:disabled) {
   background: #dde8f5;
 }
 
-.btn-success {
+.routing-rules .btn-success {
   background: #dcfce7;
   border-color: #86efac;
   color: #166534;
 }
 
-.btn-success:hover:not(:disabled) {
+.routing-rules .btn-success:hover:not(:disabled) {
   background: #c9f7d7;
 }
 
-.btn-warning {
+.routing-rules .btn-warning {
   background: #fff7ed;
   border-color: #fdba74;
   color: #9a3412;
 }
 
-.btn-warning:hover:not(:disabled) {
+.routing-rules .btn-warning:hover:not(:disabled) {
   background: #ffedd5;
 }
 
-.btn-danger {
+.routing-rules .btn-danger {
   background: #fee2e2;
   border-color: #fca5a5;
   color: #991b1b;
 }
 
-.btn-danger:hover:not(:disabled) {
+.routing-rules .btn-danger:hover:not(:disabled) {
   background: #fecaca;
 }
 
-.btn-icon-rule {
+.routing-rules .btn-icon-rule {
   width: 36px;
   height: 36px;
   padding: 0;
@@ -160,46 +160,48 @@
   font-weight: 700;
 }
 
-.btn-icon-rule:hover:not(:disabled) {
+.routing-rules .btn-icon-rule:hover:not(:disabled) {
   background: #e2e8f0;
   color: #1e293b;
 }
 
-.btn-icon-rule svg {
+.routing-rules .btn-icon-rule svg {
   stroke-width: 2.4;
 }
 
-.btn-rule-test {
+.routing-rules .btn-rule-test {
   background: #f1f5f9;
   border-color: #cbd5e1;
   color: #334155;
 }
 
-.btn-rule-edit-rule {
+.routing-rules .btn-rule-edit-rule {
+  min-width: 42px;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.routing-rules .btn-rule-edit-rule:hover:not(:disabled),
+.routing-rules .btn-rule-edit-rule:focus-visible {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1e40af;
+}
+
+.routing-rules .btn-rule-delete-rule {
   min-width: 42px;
   background: #f8fafc;
   border-color: #cbd5e1;
   color: #334155;
 }
 
-.btn-rule-edit:hover:not(:disabled) {
+.routing-rules .btn-rule-delete:hover:not(:disabled) {
   background: #f1f5f9;
   color: #1e293b;
 }
 
-.btn-rule-delete-rule {
-  min-width: 42px;
-  background: #f8fafc;
-  border-color: #cbd5e1;
-  color: #334155;
-}
-
-.btn-rule-delete:hover:not(:disabled) {
-  background: #f1f5f9;
-  color: #1e293b;
-}
-
-.rule-editor {
+.routing-rules .rule-editor {
   background: var(--rr-surface);
   border: 1px solid var(--rr-border);
   border-radius: 20px;
@@ -208,26 +210,26 @@
   box-shadow: var(--rr-shadow);
 }
 
-.rule-editor h3 {
+.routing-rules .rule-editor h3 {
   margin: 0 0 18px 0;
   font-size: 19px;
   font-weight: 700;
 }
 
-.form-group {
+.routing-rules .form-group {
   margin-bottom: 16px;
 }
 
-.form-group label {
+.routing-rules .form-group label {
   display: block;
   margin-bottom: 6px;
   font-weight: 600;
   color: #34485f;
 }
 
-.form-group input,
-.form-group textarea,
-.form-group select {
+.routing-rules .form-group input,
+.routing-rules .form-group textarea,
+.routing-rules .form-group select {
   width: 100%;
   padding: 11px 12px;
   border: 1px solid #cfdae8;
@@ -238,39 +240,39 @@
   transition: all 0.16s ease;
 }
 
-.form-group input:focus,
-.form-group textarea:focus,
-.form-group select:focus {
+.routing-rules .form-group input:focus,
+.routing-rules .form-group textarea:focus,
+.routing-rules .form-group select:focus {
   outline: none;
   border-color: #93c5fd;
   box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
   background: #fff;
 }
 
-.form-group textarea {
+.routing-rules .form-group textarea {
   resize: vertical;
   min-height: 84px;
 }
 
-.field-help {
+.routing-rules .field-help {
   margin: 8px 0 0 0;
   color: var(--rr-text-soft);
   font-size: 12px;
 }
 
-.checkbox-label {
+.routing-rules .checkbox-label {
   display: inline-flex;
   align-items: center;
   gap: 8px;
   cursor: pointer;
 }
 
-.checkbox-label input[type="checkbox"] {
+.routing-rules .checkbox-label input[type="checkbox"] {
   width: 18px;
   height: 18px;
 }
 
-.form-actions {
+.routing-rules .form-actions {
   display: flex;
   gap: 12px;
   justify-content: flex-end;
@@ -279,13 +281,13 @@
   border-top: 1px dashed #d6e0ed;
 }
 
-.rules-list {
+.routing-rules .rules-list {
   display: flex;
   flex-direction: column;
   gap: 16px;
 }
 
-.rule-item {
+.routing-rules .rule-item {
   background: var(--rr-surface);
   border: 1px solid var(--rr-border);
   border-radius: 20px;
@@ -294,17 +296,17 @@
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.rule-item:hover {
+.routing-rules .rule-item:hover {
   transform: none;
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
 }
 
-.rule-item.disabled {
+.routing-rules .rule-item.disabled {
   opacity: 0.72;
   background: #f7fbff;
 }
 
-.rule-header {
+.routing-rules .rule-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -313,13 +315,13 @@
   border-bottom: 1px solid var(--rr-border);
 }
 
-.rule-info {
+.routing-rules .rule-info {
   display: flex;
   align-items: center;
   gap: 12px;
 }
 
-.rule-priority {
+.routing-rules .rule-priority {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -333,40 +335,40 @@
   box-shadow: none;
 }
 
-.rule-info h3 {
+.routing-rules .rule-info h3 {
   margin: 0;
   font-size: 18px;
   font-weight: 700;
   color: #24384d;
 }
 
-.rule-actions {
+.routing-rules .rule-actions {
   display: flex;
   gap: 8px;
   align-items: center;
   flex-wrap: wrap;
 }
 
-.rule-details {
+.routing-rules .rule-details {
   padding: 16px 20px;
   background: #fff;
 }
 
-.rule-condition,
-.rule-action {
+.routing-rules .rule-condition,
+.routing-rules .rule-action {
   margin-bottom: 8px;
   font-size: 14px;
   line-height: 1.55;
   color: #2f455d;
 }
 
-.rule-condition strong,
-.rule-action strong {
+.routing-rules .rule-condition strong,
+.routing-rules .rule-action strong {
   color: #1f3247;
   font-weight: 700;
 }
 
-.empty-state {
+.routing-rules .empty-state {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -379,22 +381,22 @@
   border-radius: 20px;
 }
 
-.empty-state svg {
+.routing-rules .empty-state svg {
   margin-bottom: 12px;
   opacity: 0.58;
 }
 
-.empty-state p {
+.routing-rules .empty-state p {
   margin: 5px 0;
   font-size: 15px;
 }
 
-.empty-state p:first-of-type {
+.routing-rules .empty-state p:first-of-type {
   color: #2e455e;
   font-weight: 700;
 }
 
-.rule-test-result {
+.routing-rules .rule-test-result {
   margin-top: 20px;
   background: var(--rr-surface);
   border: 1px solid var(--rr-border);
@@ -403,7 +405,7 @@
   box-shadow: var(--rr-shadow);
 }
 
-.rule-test-result-header {
+.routing-rules .rule-test-result-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -411,24 +413,24 @@
   margin-bottom: 12px;
 }
 
-.rule-test-result h3 {
+.routing-rules .rule-test-result h3 {
   margin: 0;
   color: #1f3247;
   font-size: 17px;
   font-weight: 700;
 }
 
-.rule-test-close {
+.routing-rules .rule-test-close {
   padding: 7px 12px;
 }
 
-.rule-test-result p {
+.routing-rules .rule-test-result p {
   margin: 6px 0;
   font-size: 14px;
   color: #354b64;
 }
 
-.rule-test-result textarea {
+.routing-rules .rule-test-result textarea {
   width: 100%;
   margin-top: 8px;
   padding: 12px;
@@ -447,32 +449,32 @@
     border-radius: 18px;
   }
 
-  .rules-header {
+  .routing-rules .rules-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
 
-  .rule-header {
+  .routing-rules .rule-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
 
-  .rule-info {
+  .routing-rules .rule-info {
     width: 100%;
   }
 
-  .rule-actions {
+  .routing-rules .rule-actions {
     width: 100%;
     justify-content: flex-start;
   }
 
-  .form-actions {
+  .routing-rules .form-actions {
     flex-direction: column;
   }
 
-  .form-actions .btn {
+  .routing-rules .form-actions .btn {
     width: 100%;
   }
 }

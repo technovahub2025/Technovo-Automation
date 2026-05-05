@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Upload, Play, Users, Settings, AlertCircle, ArrowLeft } from 'lucide-react';
-import { useNavigate } from 'react-router-dom';
+import { Upload, Play, Users, Settings, AlertCircle } from 'lucide-react';
 import BroadcastForm from "../VoiceBroadcast/components/BroadcastForm";
 import BroadcastList from "../VoiceBroadcast/components/BroadcastList";
 import BroadcastMonitor from "../VoiceBroadcast/components/BroadcastMonitor";
@@ -21,8 +20,28 @@ const VoiceBroadcast = () => {
   });
 
   // Initialize with safe defaults
-  const { broadcasts = [], loading = false, error = null, refreshBroadcasts = () => { } } = useBroadcast() || {};
-  const navigate = useNavigate();
+  const {
+    broadcasts = [],
+    loading = false,
+    error = null,
+    summary,
+    query,
+    searchInput,
+    pagination,
+    selectedIds,
+    autoRefresh,
+    setAutoRefresh,
+    refreshBroadcasts = () => { },
+    updateQuery = () => { },
+    updateSearch = () => { },
+    resetFilters = () => { },
+    saveFilters = () => { },
+    toggleSelected = () => { },
+    setAllVisibleSelected = () => { },
+    clearSelection = () => { },
+    bulkCancel = () => { },
+    bulkDelete = () => { }
+  } = useBroadcast() || {};
 
   useEffect(() => {
     // Initial fetch
@@ -86,16 +105,6 @@ const VoiceBroadcast = () => {
     };
   }, [refreshBroadcasts]);
 
-  // Sync initial stats from loaded broadcasts if socket hasn't updated yet
-  useEffect(() => {
-    if (broadcasts.length > 0 && realtimeStats.total === 0) {
-      setRealtimeStats({
-        total: broadcasts.length,
-        active: broadcasts.filter(b => b.status === 'in_progress').length
-      });
-    }
-  }, [broadcasts]);
-
   // Memoized handlers to prevent re-renders
   const handleBroadcastCreated = useCallback((broadcastId) => {
     setActiveBroadcastId(broadcastId);
@@ -131,31 +140,14 @@ const VoiceBroadcast = () => {
   }, [refreshBroadcasts]);
 
   // Calculate stats from actual broadcast data
-  const totalCampaigns = broadcasts.length;
-  const activeCampaigns = broadcasts.filter(b => b.status === 'in_progress').length;
+  const totalCampaigns = realtimeStats.total || pagination?.total || broadcasts.length;
+  const activeCampaigns = realtimeStats.active || summary?.active || broadcasts.filter(b => b.status === 'in_progress').length;
 
   const handleRefresh = useCallback(() => {
     refreshBroadcasts();
   }, [refreshBroadcasts]);
   return (
     <div className="voice-broadcast">
-      {/* Back Button */}
-      <button
-        className="btn-link"
-        style={{
-          marginBottom: '16px',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-          paddingLeft: 0
-        }}
-        onClick={() => navigate('/')}
-        aria-label="Back to Dashboard"
-      >
-        <ArrowLeft size={20} />
-        Back to Dashboard
-      </button>
-
       {/* Header */}
       <div className="broadcast-header">
         <div className="header-content">
@@ -235,7 +227,7 @@ const VoiceBroadcast = () => {
       </div>
 
       {/* Tab Content */}
-      <div className="broadcast-content">
+      <div className={`broadcast-content ${activeTab === 'monitor' ? 'monitor-content' : ''}`}>
         {activeTab === 'create' && (
           <BroadcastForm onBroadcastCreated={handleBroadcastCreated} />
         )}
@@ -248,6 +240,22 @@ const VoiceBroadcast = () => {
             onStop={handleStopBroadcast}
             onDelete={handleDeleteBroadcast}
             onRefresh={refreshBroadcasts}
+            summary={summary}
+            query={query}
+            searchInput={searchInput}
+            pagination={pagination}
+            selectedIds={selectedIds}
+            autoRefresh={autoRefresh}
+            onAutoRefreshChange={setAutoRefresh}
+            onQueryChange={updateQuery}
+            onSearchChange={updateSearch}
+            onResetFilters={resetFilters}
+            onSaveFilters={saveFilters}
+            onToggleSelected={toggleSelected}
+            onToggleAllVisible={setAllVisibleSelected}
+            onClearSelection={clearSelection}
+            onBulkStop={bulkCancel}
+            onBulkDelete={bulkDelete}
           />
         )}
 

@@ -1,51 +1,24 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import apiService from '../services/api';
 import socketService from '../services/socketService';
+import {
+  normalizeInboundCall,
+  normalizeQueueStatus,
+  normalizeRoutingRules
+} from '../utils/inboundNormalizers';
 
 const normalizeAnalytics = (payload) => payload?.data || payload || null;
 
-const normalizeQueueStatus = (raw) => {
-  const source = raw?.queueStatus || raw?.queues || raw || {};
-  if (!source || typeof source !== 'object') return {};
-
-  const normalized = {};
-  Object.entries(source).forEach(([queueName, queueValue]) => {
-    const calls = Array.isArray(queueValue)
-      ? queueValue
-      : queueValue && Array.isArray(queueValue.calls)
-        ? queueValue.calls
-        : null;
-
-    if (!calls) return;
-
-    normalized[queueName] = calls
-      .map((caller, index) => ({
-        ...caller,
-        callSid: caller?.callSid || caller?.id || `${queueName}-${index}`,
-        phoneNumber: caller?.phoneNumber || caller?.from || caller?.callerNumber || '-',
-        queuedAt: caller?.queuedAt || caller?.createdAt || null,
-        position: Number.isFinite(Number(caller?.position)) ? Number(caller.position) : index + 1
-      }))
-      .sort((a, b) => {
-        const aPosition = Number.isFinite(Number(a.position)) ? Number(a.position) : Number.MAX_SAFE_INTEGER;
-        const bPosition = Number.isFinite(Number(b.position)) ? Number(b.position) : Number.MAX_SAFE_INTEGER;
-        if (aPosition !== bPosition) return aPosition - bPosition;
-
-        const aTime = Date.parse(a.queuedAt || '');
-        const bTime = Date.parse(b.queuedAt || '');
-        if (!Number.isFinite(aTime) && !Number.isFinite(bTime)) return 0;
-        if (!Number.isFinite(aTime)) return 1;
-        if (!Number.isFinite(bTime)) return -1;
-        return aTime - bTime;
-      });
-  });
-
-  return normalized;
-};
-
 const mergeQueueStatus = (previous, incoming) => {
   const normalized = normalizeQueueStatus(incoming);
-  if (!Object.keys(normalized).length) return previous;
+  if (!Object.keys(normalized).length) {
+    if (incoming?.queueName) {
+      const next = { ...previous };
+      delete next[incoming.queueName];
+      return next;
+    }
+    return previous;
+  }
 
   const next = { ...previous };
   Object.entries(normalized).forEach(([queueName, callers]) => {
@@ -61,7 +34,7 @@ const mergeQueueStatus = (previous, incoming) => {
 const normalizeInboundSnapshot = (payload = {}) => ({
   analytics: normalizeAnalytics(payload.overview || payload.analytics || null),
   queueStatus: normalizeQueueStatus(payload.queues || payload.queueStatus || {}),
-  routingRules: Array.isArray(payload.routingRules) ? payload.routingRules : [],
+  routingRules: normalizeRoutingRules(payload.routingRules || []),
   leadsSummary: payload.leadsSummary || { contactsUsed: 0, total: 0 },
   timestamp: payload.timestamp || new Date().toISOString()
 });
@@ -107,6 +80,7 @@ export const useInbound = (period = 'today') => {
   const [socketConnected, setSocketConnected] = useState(false);
   const pendingSnapshotRef = useRef(false);
   const mountedRef = useRef(false);
+  const requestSeqRef = useRef(0);
 
   const applySnapshot = useCallback((payload = {}) => {
     const snapshot = normalizeInboundSnapshot(payload);
@@ -119,10 +93,13 @@ export const useInbound = (period = 'today') => {
 
   const refreshInbound = useCallback(async () => {
     const socket = socketService.connect();
+    if (pendingSnapshotRef.current) return;
+    const requestSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = requestSeq;
     if (!socket) {
       setLoading(true);
       const fallback = await fetchInboundFallback(period);
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || requestSeq !== requestSeqRef.current) return;
       setAnalytics(fallback.analytics);
       setQueueStatus(fallback.queueStatus);
       setError(fallback.error || null);
@@ -130,13 +107,12 @@ export const useInbound = (period = 'today') => {
       return;
     }
 
-    if (pendingSnapshotRef.current) return;
     pendingSnapshotRef.current = true;
     setLoading(true);
 
     const fallbackAfterFailure = async (message = '') => {
       const fallback = await fetchInboundFallback(period);
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || requestSeq !== requestSeqRef.current) return;
       setAnalytics(fallback.analytics);
       setQueueStatus(fallback.queueStatus);
       setError(message || fallback.error || null);
@@ -152,7 +128,7 @@ export const useInbound = (period = 'today') => {
     socket.emit('inbound:subscribe', { period }, async (response = {}) => {
       window.clearTimeout(timeoutId);
       pendingSnapshotRef.current = false;
-      if (!mountedRef.current) return;
+      if (!mountedRef.current || requestSeq !== requestSeqRef.current) return;
 
       if (response?.success !== false && (response?.overview || response?.queues || response?.queueStatus)) {
         applySnapshot(response);
@@ -183,7 +159,10 @@ export const useInbound = (period = 'today') => {
       } else if (payload.summary || payload.recentCalls) {
         setAnalytics((prev) => ({
           ...(prev || {}),
-          ...payload
+          ...payload,
+          recentCalls: Array.isArray(payload.recentCalls)
+            ? payload.recentCalls.map((call, index) => normalizeInboundCall(call, `recent-${index}`))
+            : prev?.recentCalls
         }));
       }
     };
@@ -193,8 +172,9 @@ export const useInbound = (period = 'today') => {
     };
 
     const handleRoutingRulesUpdate = (payload = {}) => {
-      if (Array.isArray(payload.routingRules)) {
-        setRoutingRules(payload.routingRules);
+      const rules = normalizeRoutingRules(payload.routingRules || payload.rules || []);
+      if (rules.length || Array.isArray(payload.routingRules) || Array.isArray(payload.rules)) {
+        setRoutingRules(rules);
       }
     };
 

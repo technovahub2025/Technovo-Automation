@@ -1,5 +1,5 @@
 /* IVR Menu Card - Clean & Modern Design */
-.menu-card {
+.ivr-menu-tab .menu-card {
   background: #ffffff;
   border: 1px solid #e5e7eb;
   border-radius: 8px;
@@ -10,12 +10,12 @@
   font-size: 14px;
 }
 
-.menu-card:hover {
+.ivr-menu-tab .menu-card:hover {
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
   transform: translateY(-1px);
 }
 
-.menu-card-top {
+.ivr-menu-tab .menu-card-top {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -23,7 +23,7 @@
   gap: 8px;
 }
 
-.menu-card-title {
+.ivr-menu-tab .menu-card-title {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -32,7 +32,7 @@
   flex-wrap: nowrap;
 }
 
-.title-text {
+.ivr-menu-tab .title-text {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -41,7 +41,7 @@
   flex-wrap: nowrap;
 }
 
-.industry-icon {
+.ivr-menu-tab .industry-icon {
   width: 28px;
   height: 28px;
   display: flex;
@@ -53,7 +53,7 @@
   color: #6b7280;
 }
 
-.menu-card-title h3 {
+.ivr-menu-tab .menu-card-title h3 {
   margin: 0;
   font-size: 16px;
   font-weight: 600;
@@ -65,7 +65,7 @@
   max-width: 100%;
 }
 
-.industry-badge {
+.ivr-menu-tab .industry-badge {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -79,7 +79,7 @@
   letter-spacing: 0.5px;
 }
 
-.status-indicator {
+.ivr-menu-tab .status-indicator {
   padding: 4px 8px;
   border-radius: 12px;
   font-size: 11px;
@@ -100,34 +100,34 @@
 }
 
 /* Status-specific colors - using class-based approach */
-.status-indicator.status-active {
+.ivr-menu-tab .status-indicator.status-active {
   background-color: #10b981 !important;
   color: white !important;
 }
 
-.status-indicator.status-inactive {
+.ivr-menu-tab .status-indicator.status-inactive {
   background-color: #ec6e6e !important;
   color: white !important;
 }
 
-.status-indicator.status-draft {
+.ivr-menu-tab .status-indicator.status-draft {
   background-color: #f59e0b !important;
   color: white !important;
 }
 
-.status-indicator.status-testing {
+.ivr-menu-tab .status-indicator.status-testing {
   background-color: #06b6d4 !important;
   color: white !important;
 }
 
-.menu-actions {
+.ivr-menu-tab .menu-actions {
   display: flex;
   align-items: center;
   gap: 6px;
   flex-shrink: 0;
 }
 
-.action-btn {
+.ivr-menu-tab .action-btn {
   background: #ffffff;
   border: 1px solid #d1d5db;
   border-radius: 6px;
@@ -140,31 +140,31 @@
   color: #6b7280;
 }
 
-.action-btn:hover {
+.ivr-menu-tab .action-btn:hover {
   background: #f9fafb;
   border-color: #9ca3af;
   color: #374151;
 }
 
-.action-btn.test-btn:hover {
+.ivr-menu-tab .action-btn.test-btn:hover {
   background: rgba(16, 185, 129, 0.1);
   border-color: #10b981;
   color: #10b981;
 }
 
-.action-btn.edit-btn:hover {
+.ivr-menu-tab .action-btn.edit-btn:hover {
   background: rgba(99, 102, 241, 0.1);
   border-color: #6366f1;
   color: #6366f1;
 }
 
-.action-btn.delete-btn:hover {
+.ivr-menu-tab .action-btn.delete-btn:hover {
   background: rgba(239, 68, 68, 0.1);
   border-color: #ef4444;
   color: #ef4444;
 }
 
-.active-users-indicator {
+.ivr-menu-tab .active-users-indicator {
   display: flex;
   align-items: center;
   gap: 2px;
@@ -177,14 +177,14 @@
 }
 
 /* Settings Summary - Backend JSON Fields */
-.menu-card-body {
+.ivr-menu-tab .menu-card-body {
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
 
-.audio-summary,
-.menu-options-summary {
+.ivr-menu-tab .audio-summary,
+.ivr-menu-tab .menu-options-summary {
   padding: 8px 10px;
   margin-bottom: 8px;
   border-radius: 6px;
@@ -193,16 +193,16 @@
   line-height: 1.3;
 }
 
-.audio-summary {
+.ivr-menu-tab .audio-summary {
   border-left: 3px solid #3b82f6;
 }
 
-.menu-options-summary {
+.ivr-menu-tab .menu-options-summary {
   border-left: 3px solid #10b981;
 }
 
-.audio-summary strong,
-.menu-options-summary strong {
+.ivr-menu-tab .audio-summary strong,
+.ivr-menu-tab .menu-options-summary strong {
   color: #374151;
   font-size: 11px;
   font-weight: 600;
@@ -213,19 +213,19 @@
   letter-spacing: 0.5px;
 }
 
-.audio-summary .audio-text {
+.ivr-menu-tab .audio-summary .audio-text {
   color: #1f2937;
   font-weight: 500;
 }
 
-.options-list {
+.ivr-menu-tab .options-list {
   margin-top: 6px;
   display: flex;
   flex-direction: column;
   gap: 3px;
 }
 
-.option-item {
+.ivr-menu-tab .option-item {
   font-size: 12px;
   color: #374151;
   padding: 6px 10px;
@@ -239,7 +239,7 @@
   gap: 6px;
 }
 
-.option-item::before {
+.ivr-menu-tab .option-item::before {
   content: attr(data-digit);
   background: #10b981;
   color: white;
@@ -254,30 +254,30 @@
   flex-shrink: 0;
 }
 
-.edit-section {
+.ivr-menu-tab .edit-section {
   margin-bottom: 20px;
 }
 
-.edit-section:last-child {
+.ivr-menu-tab .edit-section:last-child {
   margin-bottom: 0;
 }
 
-.edit-header {
+.ivr-menu-tab .edit-header {
   margin-bottom: 8px;
   font-size: 14px;
   font-weight: 600;
   color: #1e293b;
 }
 
-.editable-settings {
+.ivr-menu-tab .editable-settings {
   padding: 16px;
   background: #f8fafc;
   border-radius: 8px;
   border: 1px solid #e2e8f0;
 }
 
-.editable-settings input,
-.editable-settings textarea {
+.ivr-menu-tab .editable-settings input,
+.ivr-menu-tab .editable-settings textarea {
   width: 100%;
   padding: 8px 12px;
   border: 1px solid #d1d5db;
@@ -287,33 +287,33 @@
   transition: border-color 0.2s ease;
 }
 
-.editable-settings input:focus,
-.editable-settings textarea:focus {
+.ivr-menu-tab .editable-settings input:focus,
+.ivr-menu-tab .editable-settings textarea:focus {
   outline: none;
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-.editable-settings textarea {
+.ivr-menu-tab .editable-settings textarea {
   resize: vertical;
   min-height: 60px;
 }
 
-.option-edit-row {
+.ivr-menu-tab .option-edit-row {
   display: grid;
   grid-template-columns: 60px 1fr 1fr;
   gap: 8px;
   margin-bottom: 8px;
 }
 
-.settings-edit-row {
+.ivr-menu-tab .settings-edit-row {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
   margin-bottom: 8px;
 }
 
-.edit-actions {
+.ivr-menu-tab .edit-actions {
   display: flex;
   gap: 12px;
   justify-content: flex-end;
@@ -321,39 +321,39 @@
   border-top: 1px solid #e2e8f0;
 }
 
-.btn-cancel {
+.ivr-menu-tab .btn-cancel {
   background: #6b7280 !important;
   color: white !important;
   border: 1px solid #6b7280 !important;
 }
 
-.btn-cancel:hover {
+.ivr-menu-tab .btn-cancel:hover {
   background: #4b5563 !important;
   border-color: #4b5563 !important;
 }
 
-.workflow-summary {
+.ivr-menu-tab .workflow-summary {
   padding: 12px;
   background: #f9fafb;
   border-radius: 8px;
   border: 1px solid #f3f4f6;
 }
 
-.industry-summary strong,
-.workflow-summary strong {
+.ivr-menu-tab .industry-summary strong,
+.ivr-menu-tab .workflow-summary strong {
   color: #374151;
   font-weight: 600;
   margin-right: 8px;
 }
 
-.workflow-info {
+.ivr-menu-tab .workflow-info {
   margin-top: 8px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
 }
 
-.workflow-info span {
+.ivr-menu-tab .workflow-info span {
   background: #ffffff;
   color: #4b5563;
   border: 1px solid #e5e7eb;
@@ -363,29 +363,29 @@
   font-weight: 500;
 }
 
-.flow-health-summary {
+.ivr-menu-tab .flow-health-summary {
   padding: 12px;
   border-radius: 8px;
   border: 1px solid #e5e7eb;
   background: #f8fafc;
 }
 
-.flow-health-summary.flow-good {
+.ivr-menu-tab .flow-health-summary.flow-good {
   border-color: #bbf7d0;
   background: #f0fdf4;
 }
 
-.flow-health-summary.flow-warning {
+.ivr-menu-tab .flow-health-summary.flow-warning {
   border-color: #fde68a;
   background: #fffbeb;
 }
 
-.flow-health-summary.flow-empty {
+.ivr-menu-tab .flow-health-summary.flow-empty {
   border-color: #e5e7eb;
   background: #f9fafb;
 }
 
-.flow-health-header {
+.ivr-menu-tab .flow-health-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -393,7 +393,7 @@
   margin-bottom: 8px;
 }
 
-.flow-health-badge {
+.ivr-menu-tab .flow-health-badge {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -406,13 +406,13 @@
   padding: 3px 8px;
 }
 
-.flow-metrics-grid {
+.ivr-menu-tab .flow-metrics-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 6px;
 }
 
-.flow-metrics-grid span {
+.ivr-menu-tab .flow-metrics-grid span {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -424,20 +424,20 @@
   padding: 6px 8px;
 }
 
-.flow-issues {
+.ivr-menu-tab .flow-issues {
   margin-top: 8px;
   font-size: 12px;
   color: #92400e;
   font-weight: 500;
 }
 
-.workflow-settings {
+.ivr-menu-tab .workflow-settings {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
 }
 
-.workflow-settings span {
+.ivr-menu-tab .workflow-settings span {
   background: white;
   padding: 4px 8px;
   border-radius: 6px;
@@ -446,7 +446,7 @@
   border: 1px solid #e5e7eb;
 }
 
-.connection-status {
+.ivr-menu-tab .connection-status {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -458,7 +458,7 @@
 }
 
 /* Full page workflow builder */
-.workflow-builder-full {
+.ivr-menu-tab .workflow-builder-full {
   position: fixed;
   top: 0;
   left: 0;
@@ -470,7 +470,7 @@
   flex-direction: column;
 }
 
-.test-run-panel {
+.ivr-menu-tab .test-run-panel {
   position: absolute;
   right: 24px;
   bottom: 24px;
@@ -487,12 +487,12 @@
   box-sizing: border-box;
 }
 
-.test-run-header {
+.ivr-menu-tab .test-run-header {
   font-weight: 700;
   margin-bottom: 6px;
 }
 
-.test-run-actions {
+.ivr-menu-tab .test-run-actions {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
@@ -500,7 +500,7 @@
   align-items: stretch;
 }
 
-.test-run-actions .btn {
+.ivr-menu-tab .test-run-actions .btn {
   width: 100%;
   min-width: 0;
   justify-content: center;
@@ -508,7 +508,7 @@
   box-sizing: border-box;
 }
 
-.test-run-controls {
+.ivr-menu-tab .test-run-controls {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
@@ -516,7 +516,7 @@
   align-items: end;
 }
 
-.test-run-controls label {
+.ivr-menu-tab .test-run-controls label {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -524,8 +524,8 @@
   color: #cbd5e1;
 }
 
-.test-run-controls input,
-.test-run-controls select {
+.ivr-menu-tab .test-run-controls input,
+.ivr-menu-tab .test-run-controls select {
   background: #111827;
   color: #e2e8f0;
   border: 1px solid #334155;
@@ -534,18 +534,18 @@
   font-size: 12px;
 }
 
-.test-run-state {
+.ivr-menu-tab .test-run-state {
   margin-top: 8px;
   font-size: 12px;
   display: grid;
   gap: 4px;
 }
 
-.test-run-message {
+.ivr-menu-tab .test-run-message {
   color: #93c5fd;
 }
 
-.test-run-log {
+.ivr-menu-tab .test-run-log {
   margin-top: 8px;
   border-top: 1px solid #334155;
   padding-top: 8px;
@@ -553,14 +553,14 @@
   gap: 4px;
 }
 
-.test-run-log-item {
+.ivr-menu-tab .test-run-log-item {
   font-size: 11px;
   color: #cbd5e1;
   word-break: break-word;
 }
 
 @media (max-width: 768px) {
-  .test-run-panel {
+  .ivr-menu-tab .test-run-panel {
     right: 12px;
     left: 12px;
     width: auto;
@@ -568,16 +568,16 @@
     max-height: min(68vh, 520px);
   }
 
-  .test-run-controls {
+  .ivr-menu-tab .test-run-controls {
     grid-template-columns: 1fr;
   }
 
-  .test-run-actions {
+  .ivr-menu-tab .test-run-actions {
     grid-template-columns: 1fr;
   }
 }
 
-.workflow-builder-full .workflow-header {
+.ivr-menu-tab .workflow-builder-full .workflow-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -589,20 +589,20 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.workflow-builder-full .workflow-info h4 {
+.ivr-menu-tab .workflow-builder-full .workflow-info h4 {
   margin: 0;
   font-size: 20px;
   font-weight: 600;
   color: #1e293b;
 }
 
-.workflow-builder-full .workflow-stats {
+.ivr-menu-tab .workflow-builder-full .workflow-stats {
   display: flex;
   gap: 16px;
   margin-top: 8px;
 }
 
-.workflow-builder-full .workflow-stats .stat-item {
+.ivr-menu-tab .workflow-builder-full .workflow-stats .stat-item {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -614,20 +614,20 @@
   font-weight: 500;
 }
 
-.workflow-builder-full .workflow-stats .stat-item.active-users {
+.ivr-menu-tab .workflow-builder-full .workflow-stats .stat-item.active-users {
   background: #dcfce7;
   color: #166534;
 }
 
-.workflow-builder-full .workflow-actions {
+.ivr-menu-tab .workflow-builder-full .workflow-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
 }
 
 /* Lock header action button sizing so Save/Test remain equal regardless of global .btn rules */
-.workflow-builder-full .workflow-actions .btn.btn-test,
-.workflow-builder-full .workflow-actions .btn.btn-save {
+.ivr-menu-tab .workflow-builder-full .workflow-actions .btn.btn-test,
+.ivr-menu-tab .workflow-builder-full .workflow-actions .btn.btn-save {
   width: 154px;
   min-width: 154px;
   max-width: 154px;
@@ -635,14 +635,14 @@
   justify-content: center;
 }
 
-.workflow-builder-full .workflow-builder {
+.ivr-menu-tab .workflow-builder-full .workflow-builder {
   flex: 1;
   overflow: hidden;
   background: #fafbfc;
 }
 
 /* Edit state */
-.menu-card.editing {
+.ivr-menu-tab .menu-card.editing {
   position: fixed;
   top: 0;
   left: 0;
@@ -652,7 +652,7 @@
   background: #ffffff;
 }
 
-.menu-card.editing .menu-card-top {
+.ivr-menu-tab .menu-card.editing .menu-card-top {
   position: sticky;
   top: 0;
   z-index: 1001;
@@ -661,12 +661,12 @@
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.menu-card.editing .menu-card-body {
+.ivr-menu-tab .menu-card.editing .menu-card-body {
   display: none;
 }
 
 /* Modern buttons */
-.btn {
+.ivr-menu-tab .btn {
   background: #3b82f6;
   color: white;
   border: none;
@@ -681,17 +681,17 @@
   gap: 6px;
 }
 
-.btn-test {
+.ivr-menu-tab .btn-test {
   background: #10b981;
   min-width: 106px;
   justify-content: center;
 }
 
-.btn-test:hover {
+.ivr-menu-tab .btn-test:hover {
   background: #059669;
 }
 
-.btn-save {
+.ivr-menu-tab .btn-save {
   background: #1d4ed8;
   color: #ffffff;
   min-width: 106px;
@@ -700,42 +700,42 @@
   box-shadow: 0 1px 2px rgba(15, 23, 42, 0.15);
 }
 
-.btn-save:hover {
+.ivr-menu-tab .btn-save:hover {
   background: #1e40af;
   color: #ffffff;
   border-color: #1e3a8a;
 }
 
-.btn-save:focus-visible {
+.ivr-menu-tab .btn-save:focus-visible {
   background: #1e40af;
   color: #ffffff;
   border-color: #1e3a8a;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.25);
 }
 
-.btn-save.btn-save-dirty {
+.ivr-menu-tab .btn-save.btn-save-dirty {
   background: #2563eb;
   border-color: #1d4ed8;
   box-shadow: 0 0 0 2px rgba(191, 219, 254, 0.9), 0 0 14px rgba(96, 165, 250, 0.55);
 }
 
-.btn-save.btn-save-dirty:hover {
+.ivr-menu-tab .btn-save.btn-save-dirty:hover {
   background: #1d4ed8;
   border-color: #1e40af;
   box-shadow: 0 0 0 2px rgba(147, 197, 253, 0.9), 0 0 16px rgba(59, 130, 246, 0.6);
 }
 
-.btn-save.btn-save-stable {
+.ivr-menu-tab .btn-save.btn-save-stable {
   background: #1e3a8a;
   border-color: #1e3a8a;
 }
 
-.btn-save.btn-save-saving {
+.ivr-menu-tab .btn-save.btn-save-saving {
   background: #1d4ed8;
   border-color: #1e40af;
 }
 
-.btn-save:disabled {
+.ivr-menu-tab .btn-save:disabled {
   background: #1e3a8a;
   color: #ffffff;
   border-color: #1e3a8a;
@@ -744,8 +744,8 @@
 }
 
 /* Keep disabled save button blue even on hover/focus (prevent pale/white look) */
-.workflow-builder-full .workflow-actions .btn.btn-save:disabled:hover,
-.workflow-builder-full .workflow-actions .btn.btn-save:disabled:focus-visible {
+.ivr-menu-tab .workflow-builder-full .workflow-actions .btn.btn-save:disabled:hover,
+.ivr-menu-tab .workflow-builder-full .workflow-actions .btn.btn-save:disabled:focus-visible {
   background: #1e3a8a;
   color: #ffffff;
   border-color: #1e3a8a;
@@ -754,19 +754,19 @@
   filter: none;
 }
 
-.btn-close-builder {
+.ivr-menu-tab .btn-close-builder {
   background: #f1f5f9;
   color: #64748b;
   border: 1px solid #e2e8f0;
 }
 
-.btn-close-builder:hover {
+.ivr-menu-tab .btn-close-builder:hover {
   background: #e2e8f0;
   color: #0f172a;
 }
 
 /* Loading state */
-.ivr-card.loading {
+.ivr-menu-tab .ivr-card.loading {
   background: #f9fafb;
   border: 1px solid #e5e7eb;
   border-radius: 12px;
@@ -778,104 +778,103 @@
 
 /* Responsive design */
 @media (max-width: 768px) {
-  .menu-card {
+  .ivr-menu-tab .menu-card {
     padding: 16px;
     margin-bottom: 16px;
   }
 
-  .menu-card-top {
+  .ivr-menu-tab .menu-card-top {
     flex-direction: column;
     align-items: stretch;
     gap: 12px;
   }
 
-  .menu-card-title {
+  .ivr-menu-tab .menu-card-title {
     flex-direction: column;
     align-items: flex-start;
     gap: 8px;
   }
 
-  .title-text {
+  .ivr-menu-tab .title-text {
     width: 100%;
   }
 
-  .menu-actions {
+  .ivr-menu-tab .menu-actions {
     justify-content: space-between;
   }
 
-  .menu-card-body {
+  .ivr-menu-tab .menu-card-body {
     gap: 6px;
   }
 
-  .greeting-summary,
-  .menu-options-summary,
-  .settings-summary {
+  .ivr-menu-tab .greeting-summary,
+  .ivr-menu-tab .menu-options-summary,
+  .ivr-menu-tab .settings-summary {
     padding: 8px 10px;
   }
 
-  .settings-grid {
+  .ivr-menu-tab .settings-grid {
     grid-template-columns: 1fr;
     gap: 6px;
   }
 
-  .option-item {
+  .ivr-menu-tab .option-item {
     padding: 4px 8px;
     font-size: 11px;
   }
 
-  .flow-metrics-grid {
+  .ivr-menu-tab .flow-metrics-grid {
     grid-template-columns: 1fr;
   }
 
-  .workflow-builder-full .workflow-header {
+  .ivr-menu-tab .workflow-builder-full .workflow-header {
     padding: 16px;
     flex-direction: column;
     align-items: stretch;
     gap: 16px;
   }
 
-  .workflow-builder-full .workflow-stats {
+  .ivr-menu-tab .workflow-builder-full .workflow-stats {
     justify-content: center;
   }
 
-  .workflow-builder-full .workflow-actions {
+  .ivr-menu-tab .workflow-builder-full .workflow-actions {
     justify-content: center;
   }
 }
 
 /* Dark mode support */
 @media (prefers-color-scheme: dark) {
-  .menu-card {
+  .ivr-menu-tab .menu-card {
     background: linear-gradient(135deg, #1e293b, #0f172a);
     border-color: rgba(51, 65, 85, 0.8);
   }
 
-  .menu-card-title h3 {
+  .ivr-menu-tab .menu-card-title h3 {
     color: #f1f5f9;
   }
 
-  .industry-summary,
-  .workflow-summary {
+  .ivr-menu-tab .industry-summary,
+  .ivr-menu-tab .workflow-summary {
     background: linear-gradient(135deg, #334155, #1e293b);
     border-color: rgba(51, 65, 85, 0.6);
   }
 
-  .action-btn {
+  .ivr-menu-tab .action-btn {
     background: rgba(30, 41, 59, 0.9);
     border-color: rgba(51, 65, 85, 0.8);
     color: #cbd5e1;
   }
 }
 
-.last-edited {
+.ivr-menu-tab .last-edited {
   color: #6c757d;
 }
 
 /* ===============================
    IVR Card UI Patch (Non-logic)
 =============================== */
-
-.menu-card {
+.ivr-menu-tab .menu-card {
   border-radius: 16px;
   border: 1px solid #d9e2ee;
   padding: 14px;
@@ -883,30 +882,30 @@
   margin-bottom: 16px;
 }
 
-.menu-card-top {
+.ivr-menu-tab .menu-card-top {
   margin-bottom: 12px;
   gap: 12px;
 }
 
-.menu-card-title {
+.ivr-menu-tab .menu-card-title {
   min-width: 0;
   flex: 1 1 auto;
   align-items: center;
 }
 
-.menu-title-icon {
+.ivr-menu-tab .menu-title-icon {
   width: 32px;
   height: 32px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   flex: 0 0 auto;
-  border-radius: 10px;
+  border-radius: 999px;
   background: #eff6ff;
   color: #2563eb;
 }
 
-.title-text {
+.ivr-menu-tab .title-text {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -915,7 +914,7 @@
   line-height: 1;
 }
 
-.menu-card-title h3 {
+.ivr-menu-tab .menu-card-title h3 {
   font-size: 21px;
   font-weight: 700;
   line-height: 1.2;
@@ -926,7 +925,7 @@
   white-space: nowrap;
 }
 
-.status-indicator {
+.ivr-menu-tab .status-indicator {
   min-width: 58px;
   width: auto;
   max-width: none;
@@ -942,12 +941,12 @@
   justify-content: center;
 }
 
-.menu-actions {
+.ivr-menu-tab .menu-actions {
   gap: 8px;
   align-items: center;
 }
 
-.action-btn {
+.ivr-menu-tab .action-btn {
   width: 38px;
   height: 38px;
   padding: 0;
@@ -958,46 +957,46 @@
   color: #41566f;
 }
 
-.action-btn svg {
+.ivr-menu-tab .action-btn svg {
   display: block;
   width: 16px;
   height: 16px;
   flex-shrink: 0;
 }
 
-.action-btn:hover {
+.ivr-menu-tab .action-btn:hover {
   background: #edf4fc;
   border-color: #b8c8dc;
 }
 
-.action-btn.delete-btn {
+.ivr-menu-tab .action-btn.delete-btn {
   background: #fff1f2;
   border-color: #fecdd3;
   color: #be123c;
 }
 
-.action-btn.delete-btn:hover {
+.ivr-menu-tab .action-btn.delete-btn:hover {
   background: #ffe4e6;
   border-color: #fda4af;
   color: #9f1239;
 }
 
-.workflow-summary,
-.flow-health-summary {
+.ivr-menu-tab .workflow-summary,
+.ivr-menu-tab .flow-health-summary {
   border-radius: 10px;
 }
 
-.workflow-summary {
+.ivr-menu-tab .workflow-summary {
   background: #f7faff;
   border: 1px solid #e2ebf7;
   padding: 14px;
 }
 
-.workflow-info {
+.ivr-menu-tab .workflow-info {
   gap: 7px;
 }
 
-.workflow-info span {
+.ivr-menu-tab .workflow-info span {
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1009,76 +1008,76 @@
   min-height: 30px;
 }
 
-.summary-title {
+.ivr-menu-tab .summary-title {
   display: inline-flex !important;
   align-items: center;
   gap: 7px;
   min-width: 0;
 }
 
-.workflow-info span svg,
-.flow-metrics-grid span svg,
-.summary-title svg {
+.ivr-menu-tab .workflow-info span svg,
+.ivr-menu-tab .flow-metrics-grid span svg,
+.ivr-menu-tab .summary-title svg {
   flex: 0 0 auto;
 }
 
-.flow-health-summary {
+.ivr-menu-tab .flow-health-summary {
   padding: 12px;
 }
 
-.flow-health-header strong {
+.ivr-menu-tab .flow-health-header strong {
   font-size: 16px;
 }
 
-.flow-health-badge {
+.ivr-menu-tab .flow-health-badge {
   border-radius: 999px;
 }
 
-.flow-metrics-grid span {
+.ivr-menu-tab .flow-metrics-grid span {
   border-radius: 8px;
   font-size: 13px;
   min-height: 34px;
 }
 
 @media (max-width: 768px) {
-  .menu-card {
+  .ivr-menu-tab .menu-card {
     padding: 12px;
     border-radius: 14px;
   }
 
-  .menu-card-title {
+  .ivr-menu-tab .menu-card-title {
     flex-direction: row;
     align-items: center;
   }
 
-  .title-text {
+  .ivr-menu-tab .title-text {
     width: 100%;
     min-width: 0;
   }
 
-  .menu-title-icon {
+  .ivr-menu-tab .menu-title-icon {
     width: 30px;
     height: 30px;
   }
 
-  .menu-card-title h3 {
+  .ivr-menu-tab .menu-card-title h3 {
     font-size: 20px;
   }
 
-  .action-btn {
+  .ivr-menu-tab .action-btn {
     width: 36px;
     height: 36px;
   }
 }
 
 /* Keep top-right IVR card icons perfectly aligned (prevents global css conflicts) */
-.menu-card .menu-actions {
+.ivr-menu-tab .menu-card .menu-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
-.menu-card .menu-actions .action-btn {
+.ivr-menu-tab .menu-card .menu-actions .action-btn {
   width: 38px;
   height: 38px;
   min-width: 38px;
@@ -1089,17 +1088,18 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border-radius: 999px;
   vertical-align: middle;
   align-self: center;
 }
 
-.menu-card .menu-actions .action-btn svg {
+.ivr-menu-tab .menu-card .menu-actions .action-btn svg {
   width: 16px;
   height: 16px;
   display: block;
   flex-shrink: 0;
 }
 
-.menu-card .menu-actions .action-btn.delete-btn {
+.ivr-menu-tab .menu-card .menu-actions .action-btn.delete-btn {
   margin: 0;
 }

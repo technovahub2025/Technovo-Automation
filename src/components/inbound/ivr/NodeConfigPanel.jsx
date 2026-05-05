@@ -1238,7 +1238,7 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
     <div className="node-config-panel">
       <div className="panel-header">
         <h3>Configure {(node?.type || 'node').replace('_', ' ')} Node</h3>
-        <button className="close-btn" onClick={onClose}>
+        <button type="button" className="close-btn" onClick={onClose}>
           <X size={20} />
         </button>
       </div>
@@ -1248,10 +1248,15 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
       </div>
 
       <div className="panel-footer">
-        <button className="btn btn-secondary" onClick={onClose}>
+        <button type="button" className="node-config-action node-config-cancel-btn" onClick={onClose}>
           Cancel
         </button>
-        <button className="btn btn-primary" onClick={handleSave} disabled={isSaving || isUploading}>
+        <button
+          type="button"
+          className="node-config-action node-config-save-btn"
+          onClick={handleSave}
+          disabled={isSaving || isUploading}
+        >
           <Save size={16} />
           {isSaving ? 'Saving...' : 'Save Changes'}
         </button>

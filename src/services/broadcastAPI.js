@@ -15,11 +15,20 @@ export const broadcastAPI = {
   getBroadcastCalls: (broadcastId, params = {}) =>
     apiService.get(`/broadcast/${broadcastId}/calls`, { params }),
 
+  getBroadcastSummaryDetails: (broadcastId) =>
+    apiService.get(`/broadcast/${broadcastId}/summary-details`),
+
   listBroadcasts: (params = {}) =>
     apiService.get("/broadcast/list", { params }),
 
   deleteBroadcast: (broadcastId) =>
     apiService.delete(`/broadcast/${broadcastId}`),
+
+  bulkCancelBroadcasts: (ids = []) =>
+    apiService.post("/broadcast/bulk/cancel", { ids }),
+
+  bulkDeleteBroadcasts: (ids = []) =>
+    apiService.post("/broadcast/bulk/delete", { ids }),
 };
 
 export default broadcastAPI;

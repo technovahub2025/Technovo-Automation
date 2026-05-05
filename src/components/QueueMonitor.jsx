@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Users, Clock, Phone, AlertCircle } from 'lucide-react';
+import { normalizeQueueStatus } from '../utils/inboundNormalizers';
 import './QueueMonitor.css';
 
 const toTimestamp = (value) => {
@@ -12,49 +13,6 @@ const getWaitSeconds = (queuedAt) => {
   const queuedAtMs = toTimestamp(queuedAt);
   if (queuedAtMs === null) return 0;
   return Math.max(0, Math.floor((Date.now() - queuedAtMs) / 1000));
-};
-
-const normalizeQueueData = (raw) => {
-  const source = raw?.queueStatus || raw?.queues || raw || {};
-  if (!source || typeof source !== 'object') return {};
-
-  if (source.name && Array.isArray(source.calls)) {
-    return normalizeQueueData({ [source.name]: source.calls });
-  }
-
-  const normalized = {};
-  Object.entries(source).forEach(([queueName, queueValue]) => {
-    const calls = Array.isArray(queueValue)
-      ? queueValue
-      : queueValue && Array.isArray(queueValue.calls)
-        ? queueValue.calls
-        : null;
-
-    if (!calls) return;
-
-    normalized[queueName] = calls
-      .map((caller, index) => ({
-        ...caller,
-        callSid: caller?.callSid || caller?.id || `${queueName}-call-${index}`,
-        phoneNumber: caller?.phoneNumber || caller?.from || caller?.callerNumber || '-',
-        queuedAt: caller?.queuedAt || caller?.createdAt || null,
-        position: Number.isFinite(Number(caller?.position)) ? Number(caller.position) : index + 1
-      }))
-      .sort((a, b) => {
-        const aPosition = Number.isFinite(Number(a.position)) ? Number(a.position) : Number.MAX_SAFE_INTEGER;
-        const bPosition = Number.isFinite(Number(b.position)) ? Number(b.position) : Number.MAX_SAFE_INTEGER;
-        if (aPosition !== bPosition) return aPosition - bPosition;
-
-        const aTime = toTimestamp(a.queuedAt);
-        const bTime = toTimestamp(b.queuedAt);
-        if (aTime === null && bTime === null) return 0;
-        if (aTime === null) return 1;
-        if (bTime === null) return -1;
-        return aTime - bTime;
-      });
-  });
-
-  return normalized;
 };
 
 const normalizeAnalyticsQueue = (payload) => {
@@ -84,7 +42,7 @@ const QueueMonitor = ({ queues: inboundQueues = {}, analyticsQueueStats: inbound
   });
 
   useEffect(() => {
-    setQueues(normalizeQueueData(inboundQueues));
+    setQueues(normalizeQueueStatus(inboundQueues));
   }, [inboundQueues]);
 
   useEffect(() => {
