@@ -1,6 +1,9 @@
 import { useEffect, useRef } from 'react';
 import webSocketService from '../../services/websocketService';
-import { mergeMessagePreservingReplyContext } from './replyMessageMergeUtils';
+import {
+  mergeMessagePreservingReplyContext,
+  resolvePreferredMessageStatus
+} from './replyMessageMergeUtils';
 import { showIncomingMessageSystemNotification } from './teamInboxNotificationUtils';
 import { publishCrmContactSync } from '../../utils/crmSyncEvents';
 
@@ -27,7 +30,6 @@ export const useInboxRealtimeEffects = ({
   setSelectedConversation,
   applyLeadScoreUpdateToConversation,
   setSidebarRefreshing,
-  conversationStatusCacheRef,
   realtimeResyncTimerRef
 }) => {
   const getContactIdFromConversationPayload = (conversation = {}) =>
@@ -46,33 +48,10 @@ export const useInboxRealtimeEffects = ({
         ''
     ).trim();
 
-  const pickConversationStatus = (incomingStatus = '', previousStatus = '') => {
-    const normalizedIncoming = String(incomingStatus || '').trim().toLowerCase();
-    const normalizedPrevious = String(previousStatus || '').trim().toLowerCase();
-    const incomingRank = MESSAGE_STATUS_RANK[normalizedIncoming] || 0;
-    const previousRank = MESSAGE_STATUS_RANK[normalizedPrevious] || 0;
-    if (previousRank > incomingRank) return normalizedPrevious;
-    return normalizedIncoming || normalizedPrevious;
-  };
-
-  const updateConversationStatusCache = (conversationId, messageId, status) => {
-    const normalizedConversationId = String(conversationId || '').trim();
-    const normalizedMessageId = String(messageId || '').trim();
-    const normalizedStatus = String(status || '').trim().toLowerCase();
-    if (!normalizedConversationId || !normalizedStatus) return;
-
-    const currentEntry = conversationStatusCacheRef?.current?.get(normalizedConversationId) || {};
-    const nextStatus = pickConversationStatus(normalizedStatus, currentEntry.lastMessageStatus);
-    conversationStatusCacheRef?.current?.set(normalizedConversationId, {
-      lastMessageStatus: nextStatus,
-      lastMessageWhatsappMessageId:
-        normalizedMessageId || String(currentEntry.lastMessageWhatsappMessageId || '').trim()
-    });
-  };
-
   const notifiedIncomingMessageKeysRef = useRef(new Set());
   const lastContactRefreshAtRef = useRef(0);
   const lastVisibilityRefreshAtRef = useRef(0);
+  const lastConversationListRefreshAtRef = useRef(0);
   const bootstrapLoadPromiseRef = useRef(null);
   const lastBootstrapLoadAtRef = useRef(0);
   const callbacksRef = useRef({
@@ -193,7 +172,22 @@ export const useInboxRealtimeEffects = ({
 
           found = true;
           const mergedConversation = callbacksRef.current.enrichConversationIdentity(
-            { ...conversation, ...incomingConversation },
+            {
+              ...conversation,
+              ...incomingConversation,
+              lastMessageStatus: resolvePreferredMessageStatus(
+                conversation?.lastMessageStatus,
+                incomingConversation?.lastMessageStatus
+              ),
+              lastMessageWhatsappMessageId:
+                String(
+                  incomingConversation?.lastMessageWhatsappMessageId ||
+                    incomingConversation?.lastMessageMessageId ||
+                    incomingConversation?.lastMessageId ||
+                    ''
+                ).trim() ||
+                String(conversation?.lastMessageWhatsappMessageId || '').trim()
+            },
             [conversation, incomingConversation, ...prev]
           );
 
@@ -383,6 +377,7 @@ export const useInboxRealtimeEffects = ({
       console.log('Message status update:', data);
 
       const incomingStatus = String(data?.status || '').toLowerCase();
+      const eventConversationId = String(data?.conversationId || '').trim();
       const incomingMessageIds = new Set(
         [
           data?.messageId,
@@ -400,44 +395,57 @@ export const useInboxRealtimeEffects = ({
       let foundMatch = false;
 
       setMessages((prev) =>
-        prev.map((message) => {
-          const messageIds = [message?._id, message?.messageId, message?.whatsappMessageId]
-            .filter(Boolean)
-            .map((value) => String(value));
+        (() => {
+          const nextMessages = prev.slice();
+          const updateMessageAtIndex = (index) => {
+            if (index < 0 || index >= nextMessages.length) return false;
+            const message = nextMessages[index];
+            const currentStatus = String(message?.status || '').toLowerCase();
+            const currentRank = statusRank[currentStatus] || 0;
+            const nextRank = statusRank[incomingStatus] || currentRank;
 
-          const matched = messageIds.some((id) => incomingMessageIds.has(id));
-          if (!matched) return message;
+            if (nextRank < currentRank) return true;
 
-          foundMatch = true;
-          const currentStatus = String(message?.status || '').toLowerCase();
-          const currentRank = statusRank[currentStatus] || 0;
-          const nextRank = statusRank[incomingStatus] || currentRank;
+            nextMessages[index] = {
+              ...message,
+              status: incomingStatus || currentStatus,
+              errorMessage:
+                incomingStatus === 'failed'
+                  ? String(data?.errorMessage || message?.errorMessage || '').trim()
+                  : ''
+            };
+            foundMatch = true;
+            return true;
+          };
 
-          return nextRank >= currentRank
-            ? {
-                ...message,
-                status: incomingStatus || currentStatus,
-                errorMessage:
-                  incomingStatus === 'failed'
-                    ? String(data?.errorMessage || message?.errorMessage || '').trim()
-                    : ''
-              }
-            : message;
-        })
+          for (let index = 0; index < nextMessages.length; index += 1) {
+            const message = nextMessages[index];
+            const messageIds = [message?._id, message?.messageId, message?.whatsappMessageId]
+              .filter(Boolean)
+              .map((value) => String(value));
+
+            const matched = messageIds.some((id) => incomingMessageIds.has(id));
+            if (!matched) continue;
+            updateMessageAtIndex(index);
+          }
+
+          if (!foundMatch && eventConversationId) {
+            for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
+              const message = nextMessages[index];
+              const messageConversationId = String(message?.conversationId || '').trim();
+              const isOutboundAgentMessage = String(message?.sender || '').trim().toLowerCase() === 'agent';
+              if (!isOutboundAgentMessage) continue;
+              if (messageConversationId && messageConversationId !== eventConversationId) continue;
+              updateMessageAtIndex(index);
+              if (foundMatch) break;
+            }
+          }
+
+          return nextMessages;
+        })()
       );
 
       if (incomingStatus) {
-        const eventConversationId = String(data?.conversationId || '').trim();
-        const eventMessageId = String(
-          data?.messageId ||
-            data?.id ||
-            data?.whatsappMessageId ||
-            data?.message?.messageId ||
-            data?.message?.whatsappMessageId ||
-            ''
-        ).trim();
-        updateConversationStatusCache(eventConversationId, eventMessageId, incomingStatus);
-
         setConversations((prev) =>
           prev.map((conversation) => {
             const conversationIdValue = String(conversation?._id || '').trim();
@@ -448,14 +456,18 @@ export const useInboxRealtimeEffects = ({
 
             if (!matchesConversation) return conversation;
 
-            const previousStatus = String(conversation?.lastMessageStatus || '').trim().toLowerCase();
-            const nextStatus = pickConversationStatus(incomingStatus, previousStatus);
             const nextConversation = {
               ...conversation,
-              lastMessageStatus: nextStatus
+              lastMessageStatus: resolvePreferredMessageStatus(
+                conversation?.lastMessageStatus,
+                incomingStatus
+              ),
+              lastMessageWhatsappMessageId:
+                String(data?.messageId || data?.whatsappMessageId || '').trim() ||
+                String(conversation?.lastMessageWhatsappMessageId || '').trim()
             };
 
-            if (nextStatus === 'read' || nextStatus === 'delivered') {
+            if (incomingStatus === 'read' || incomingStatus === 'delivered') {
               nextConversation.lastMessageFrom = 'agent';
             }
 
@@ -473,20 +485,29 @@ export const useInboxRealtimeEffects = ({
             (previewMessageId && Array.from(incomingMessageIds).includes(previewMessageId));
 
           if (!selectedMatches) return prev;
-          const previousStatus = String(prev?.lastMessageStatus || '').trim().toLowerCase();
-          const nextStatus = pickConversationStatus(incomingStatus, previousStatus);
           return {
             ...prev,
-            lastMessageStatus: nextStatus,
-            ...(nextStatus === 'read' || nextStatus === 'delivered'
+            lastMessageStatus: resolvePreferredMessageStatus(
+              prev?.lastMessageStatus,
+              incomingStatus
+            ),
+            lastMessageWhatsappMessageId:
+              String(data?.messageId || data?.whatsappMessageId || '').trim() ||
+              String(prev?.lastMessageWhatsappMessageId || '').trim(),
+            ...(incomingStatus === 'read' || incomingStatus === 'delivered'
               ? { lastMessageFrom: 'agent' }
               : {})
           };
         });
+
+        const now = Date.now();
+        if (now - lastConversationListRefreshAtRef.current > 5000) {
+          lastConversationListRefreshAtRef.current = now;
+          callbacksRef.current.loadConversations({ silent: true });
+        }
       }
 
       const activeConversation = selectedConversationRef.current;
-      const eventConversationId = data?.conversationId ? String(data.conversationId) : '';
       if (
         !foundMatch &&
         activeConversation &&

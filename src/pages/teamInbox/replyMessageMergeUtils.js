@@ -1,5 +1,31 @@
 const toCleanString = (value = '') => String(value || '').trim();
 
+const MESSAGE_STATUS_RANK = {
+  sending: 0,
+  pending: 0,
+  sent: 1,
+  delivered: 2,
+  read: 3,
+  failed: 4
+};
+
+const getMessageStatusRank = (status) => {
+  const normalizedStatus = toCleanString(status).toLowerCase();
+  return MESSAGE_STATUS_RANK[normalizedStatus] ?? -1;
+};
+
+export const resolvePreferredMessageStatus = (existingStatus, incomingStatus) => {
+  const normalizedExistingStatus = toCleanString(existingStatus).toLowerCase();
+  const normalizedIncomingStatus = toCleanString(incomingStatus).toLowerCase();
+
+  if (!normalizedIncomingStatus) return normalizedExistingStatus;
+  if (!normalizedExistingStatus) return normalizedIncomingStatus;
+
+  return getMessageStatusRank(normalizedIncomingStatus) >= getMessageStatusRank(normalizedExistingStatus)
+    ? normalizedIncomingStatus
+    : normalizedExistingStatus;
+};
+
 const getMessageIdentityKey = (message = {}) => {
   const messageId = toCleanString(message?._id || message?.id);
   if (messageId) return `id:${messageId}`;
@@ -23,6 +49,14 @@ export const mergeMessagePreservingReplyContext = (existingMessage = {}, incomin
     ...existingMessage,
     ...incomingMessage
   };
+
+  const preferredStatus = resolvePreferredMessageStatus(
+    existingMessage?.status,
+    incomingMessage?.status
+  );
+  if (preferredStatus) {
+    merged.status = preferredStatus;
+  }
 
   const incomingReplyTo =
     incomingMessage?.replyTo && typeof incomingMessage.replyTo === 'object'
