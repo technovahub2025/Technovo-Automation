@@ -60,6 +60,10 @@ const DAILY_LEGEND_PAYLOAD = [
   { value: 'Inbound/IVR', dataKey: 'inboundIvr', type: 'line', color: '#2563eb' },
   { value: 'Outbound', dataKey: 'outbound', type: 'line', color: '#10b981' }
 ];
+const DAILY_BAR_LEGEND_PAYLOAD = DAILY_LEGEND_PAYLOAD.map((entry) => ({
+  ...entry,
+  type: 'square'
+}));
 const ANALYTICS_FALLBACK_MS = Number(import.meta.env.VITE_ANALYTICS_SOCKET_TIMEOUT_MS || 7000);
 const MAX_TREND_POINTS = 240;
 const MAX_RECENT_ROWS = 500;
@@ -355,6 +359,7 @@ const CallAnalytics = () => {
 
   const hasTrendData = trendData.some((row) => row.total > 0);
   const hasDailyData = dailyData.some((row) => row.total > 0);
+  const shouldUseDailyBarChart = dailyData.length <= 1;
   const hasChannelData = channelData.some((row) => row.total > 0);
   const shouldShowTrendSeries = useCallback((dataKey) => !activeTrendSeries || activeTrendSeries === dataKey, [activeTrendSeries]);
   const shouldShowChannelSeries = useCallback((dataKey) => !activeChannelSeries || activeChannelSeries === dataKey, [activeChannelSeries]);
@@ -671,22 +676,41 @@ const CallAnalytics = () => {
               <h3><Calendar size={18} /> Daily Breakdown</h3>
             </div>
             <ResponsiveContainer width="100%" height={300}>
-              <AreaChart data={dailyData}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
-                <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#64748b" />
-                <YAxis tick={{ fontSize: 12 }} allowDecimals={false} stroke="#64748b" />
-                <Tooltip />
-                <Legend payload={DAILY_LEGEND_PAYLOAD} onClick={handleDailyLegendClick} />
-                {shouldShowDailySeries('voiceBroadcast') && (
-                  <Area type="monotone" dataKey="voiceBroadcast" name="Voice Broadcast" stackId="1" stroke="#7c3aed" fill="#7c3aed" fillOpacity={0.35} />
-                )}
-                {shouldShowDailySeries('inboundIvr') && (
-                  <Area type="monotone" dataKey="inboundIvr" name="Inbound/IVR" stackId="1" stroke="#2563eb" fill="#2563eb" fillOpacity={0.35} />
-                )}
-                {shouldShowDailySeries('outbound') && (
-                  <Area type="monotone" dataKey="outbound" name="Outbound" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.35} />
-                )}
-              </AreaChart>
+              {shouldUseDailyBarChart ? (
+                <BarChart data={dailyData} barCategoryGap="35%">
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#64748b" />
+                  <YAxis tick={{ fontSize: 12 }} allowDecimals={false} stroke="#64748b" />
+                  <Tooltip />
+                  <Legend payload={DAILY_BAR_LEGEND_PAYLOAD} onClick={handleDailyLegendClick} />
+                  {shouldShowDailySeries('voiceBroadcast') && (
+                    <Bar dataKey="voiceBroadcast" name="Voice Broadcast" fill="#7c3aed" radius={[4, 4, 0, 0]} maxBarSize={56} />
+                  )}
+                  {shouldShowDailySeries('inboundIvr') && (
+                    <Bar dataKey="inboundIvr" name="Inbound/IVR" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={56} />
+                  )}
+                  {shouldShowDailySeries('outbound') && (
+                    <Bar dataKey="outbound" name="Outbound" fill="#10b981" radius={[4, 4, 0, 0]} maxBarSize={56} />
+                  )}
+                </BarChart>
+              ) : (
+                <AreaChart data={dailyData}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" />
+                  <XAxis dataKey="date" tick={{ fontSize: 12 }} stroke="#64748b" />
+                  <YAxis tick={{ fontSize: 12 }} allowDecimals={false} stroke="#64748b" />
+                  <Tooltip />
+                  <Legend payload={DAILY_LEGEND_PAYLOAD} onClick={handleDailyLegendClick} />
+                  {shouldShowDailySeries('voiceBroadcast') && (
+                    <Area type="monotone" dataKey="voiceBroadcast" name="Voice Broadcast" stackId="1" stroke="#7c3aed" fill="#7c3aed" fillOpacity={0.35} />
+                  )}
+                  {shouldShowDailySeries('inboundIvr') && (
+                    <Area type="monotone" dataKey="inboundIvr" name="Inbound/IVR" stackId="1" stroke="#2563eb" fill="#2563eb" fillOpacity={0.35} />
+                  )}
+                  {shouldShowDailySeries('outbound') && (
+                    <Area type="monotone" dataKey="outbound" name="Outbound" stackId="1" stroke="#10b981" fill="#10b981" fillOpacity={0.35} />
+                  )}
+                </AreaChart>
+              )}
             </ResponsiveContainer>
           </section>
         )}
@@ -759,15 +783,18 @@ const CallAnalytics = () => {
   );
 };
 
-const MetricCard = ({ icon: Icon, label, value, tone }) => (
-  <section className={`summary-card ${tone}`}>
-    <div className="summary-icon"><Icon size={20} /></div>
-    <div className="summary-content">
-      <h3>{value}</h3>
-      <p>{label}</p>
-    </div>
-  </section>
-);
+const MetricCard = ({ icon, label, value, tone }) => {
+  const SummaryIcon = icon;
+  return (
+    <section className={`summary-card ${tone}`}>
+      <div className="summary-icon"><SummaryIcon size={20} /></div>
+      <div className="summary-content">
+        <h3>{value}</h3>
+        <p>{label}</p>
+      </div>
+    </section>
+  );
+};
 
 const StatBox = ({ label, value }) => (
   <div className="stat-box">

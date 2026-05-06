@@ -28,6 +28,14 @@ const FINAL_BROADCAST_STATUSES = new Set(['completed', 'failed', 'cancelled']);
 
 const getCallId = (call = {}) => String(call._id || call.callId || '').trim();
 
+const getErrorMessage = (error, fallback) => {
+  const payload = error?.response?.data;
+  const value = payload?.error || payload?.message || error?.message;
+  if (typeof value === 'string' && value.trim()) return value;
+  if (Array.isArray(value)) return value.filter(Boolean).join(', ') || fallback;
+  return fallback;
+};
+
 const BroadcastMonitor = ({ broadcastId, onBroadcastUpdated }) => {
   const [broadcast, setBroadcast] = useState(null);
   const [calls, setCalls] = useState([]);
@@ -128,7 +136,7 @@ const BroadcastMonitor = ({ broadcastId, onBroadcastUpdated }) => {
       setConnectionStatus((prev) => (prev === 'connected' ? prev : 'connected'));
     } catch (error) {
       if (requestId !== statusRequestRef.current) return;
-      setStatusError(error.response?.data?.error || 'Failed to load broadcast status');
+      setStatusError(getErrorMessage(error, 'Failed to load broadcast status'));
       console.error('Failed to load broadcast status:', error);
     } finally {
       if (requestId === statusRequestRef.current && !silent) setStatusLoading(false);
@@ -159,7 +167,7 @@ const BroadcastMonitor = ({ broadcastId, onBroadcastUpdated }) => {
       }));
     } catch (error) {
       if (requestId !== callsRequestRef.current) return;
-      setCallsError(error.response?.data?.error || 'Failed to load broadcast calls');
+      setCallsError(getErrorMessage(error, 'Failed to load broadcast calls'));
       console.error('Failed to load broadcast calls:', error);
     } finally {
       if (requestId === callsRequestRef.current && !silent) setCallsLoading(false);

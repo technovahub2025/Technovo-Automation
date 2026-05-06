@@ -42,8 +42,15 @@ const getStatusIcon = (status) => {
   }
 };
 
+const stringifyCellValue = (value) => {
+  if (!value) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return value.message || value.error || '';
+};
+
 const CallRow = memo(({ call, getStatusColor, maxRetries }) => {
-  const errorMessage = call.twilioError?.message || call.error?.message || call.error || '';
+  const errorMessage = stringifyCellValue(call.twilioError?.message || call.error?.message || call.error);
 
   return (
     <tr className={`call-row status-${call.status}`}>
@@ -112,7 +119,7 @@ const CallsTable = ({ calls, getStatusColor, maxRetries = 2, pagination, loading
       {error && (
         <div className="calls-inline-error" role="alert">
           <AlertCircle size={16} />
-          {error}
+          {stringifyCellValue(error) || 'Failed to load broadcast calls'}
         </div>
       )}
 

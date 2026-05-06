@@ -33,6 +33,7 @@ import {
 const MONITOR_ROW_LIMIT = 1000;
 const REALTIME_FLUSH_MS = 120;
 const FILTER_DEBOUNCE_MS = 300;
+const STATUS_RECONCILE_MS = 5000;
 
 const upsertMonitorRows = (rowsByKey, incomingRows = []) => {
   const next = { ...(rowsByKey || {}) };
@@ -326,6 +327,91 @@ const OutboundCall = () => {
       }
     }, REALTIME_FLUSH_MS);
   }, []);
+
+  const applyOutboundStatusUpdate = useCallback((data = {}) => {
+    const payload = data.call || data;
+    const callSid = String(payload.callSid || '').trim();
+    if (!callSid) return;
+
+    const status = normalizeStatus(payload.status || payload.providerStatus);
+    const ended = TERMINAL_CALL_STATUSES.has(status) || Boolean(payload.ended);
+    const updatedAt = payload.updatedAt || new Date().toISOString();
+    const normalizedPayload = {
+      ...payload,
+      type: payload.type || payload.campaignType || payload.originType || 'single',
+      callSid,
+      status,
+      ended,
+      updatedAt,
+      createdAt: payload.createdAt || updatedAt,
+      providerData: payload.providerData || payload.metadata || {},
+      metadata: payload.metadata || payload.providerData || {}
+    };
+
+    setCallHistory((prev) =>
+      upsertHistoryItem(prev, normalizedPayload, historyFiltersRef.current, historyPaginationRef.current)
+    );
+
+    if (ended) {
+      endedCallSidsRef.current.add(callSid);
+      setLiveCallStatus((prev) => (prev?.callSid === callSid ? null : prev));
+    } else {
+      setLiveCallStatus((prev) => (
+        prev?.callSid === callSid
+          ? { ...prev, status: status || prev.status }
+          : prev
+      ));
+    }
+
+    queueMonitorRows([normalizedPayload]);
+  }, [queueMonitorRows]);
+
+  useEffect(() => {
+    const monitorStatus = normalizeStatus(selectedMonitor?.status);
+    const selectedCallSid = selectedMonitor?.type === 'single'
+      && selectedMonitor?.callSid
+      && !selectedMonitor?.ended
+      && NON_TERMINAL_CALL_STATUSES.has(monitorStatus)
+      ? selectedMonitor.callSid
+      : '';
+    const callSid = String(liveCallStatus?.callSid || selectedCallSid || '').trim();
+    if (!callSid || endedCallSidsRef.current.has(callSid)) return undefined;
+
+    let cancelled = false;
+    let inFlight = false;
+
+    const reconcile = async () => {
+      if (cancelled || inFlight || endedCallSidsRef.current.has(callSid)) return;
+      inFlight = true;
+      try {
+        const response = await apiService.getOutboundCallStatus(callSid);
+        if (!cancelled) {
+          applyOutboundStatusUpdate(response?.data?.call || response?.data || {});
+        }
+      } catch (err) {
+        if (import.meta.env.DEV) {
+          console.warn('Outbound call status reconcile failed:', err?.response?.data || err?.message);
+        }
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    reconcile();
+    const intervalId = window.setInterval(reconcile, STATUS_RECONCILE_MS);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [
+    applyOutboundStatusUpdate,
+    liveCallStatus?.callSid,
+    selectedMonitor?.callSid,
+    selectedMonitor?.ended,
+    selectedMonitor?.status,
+    selectedMonitor?.type
+  ]);
 
   useEffect(() => {
     const socket = socketService.connect();
