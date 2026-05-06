@@ -1,5 +1,5 @@
 export const TERMINAL_CALL_STATUSES = new Set(['completed', 'failed', 'busy', 'no-answer', 'cancelled', 'canceled']);
-export const NON_TERMINAL_CALL_STATUSES = new Set(['initiated', 'ringing', 'answered', 'in-progress', 'running', 'scheduled']);
+export const NON_TERMINAL_CALL_STATUSES = new Set(['queued', 'initiated', 'ringing', 'answered', 'in-progress', 'running', 'scheduled']);
 
 export const normalizeStatus = (value) => String(value || '').toLowerCase();
 

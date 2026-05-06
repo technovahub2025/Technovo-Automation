@@ -1526,11 +1526,42 @@
 .monitor-table-header,
 .monitor-table-row {
   display: grid;
-  grid-template-columns: 0.7fr 0.7fr 1.05fr 0.85fr 0.8fr 1.2fr 1fr 0.7fr 1.15fr;
-  gap: 12px;
+  grid-template-columns:
+    minmax(76px, 0.55fr)
+    minmax(76px, 0.5fr)
+    minmax(142px, 0.95fr)
+    minmax(112px, 0.72fr)
+    minmax(96px, 0.62fr)
+    minmax(132px, 0.9fr)
+    minmax(180px, 1.05fr)
+    minmax(76px, 0.5fr)
+    minmax(176px, 1fr);
+  column-gap: 14px;
   align-items: center;
-  min-width: 1080px;
+  min-width: 1220px;
   padding: 14px 16px;
+}
+
+.monitor-table-header > span,
+.monitor-table-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.monitor-table-header > span:nth-child(1),
+.monitor-table-header > span:nth-child(4),
+.monitor-table-header > span:nth-child(8),
+.monitor-table-row > span:nth-child(1),
+.monitor-table-row > span:nth-child(4),
+.monitor-table-row > span:nth-child(8) {
+  justify-self: center;
+}
+
+.monitor-table-header > span:nth-child(9),
+.monitor-table-row > span:nth-child(9) {
+  justify-self: start;
 }
 
 .monitor-table-header {

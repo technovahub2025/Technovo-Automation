@@ -101,6 +101,8 @@ apiService.outboundLocalQuickCall = apiService.quickOutboundCall;
 apiService.outboundVoiceQuickCall = apiService.quickOutboundCall;
 apiService.getOutboundOverview = () =>
   apiService.get("/api/voice/outbound-local/overview");
+apiService.getOutboundCallStatus = (callSid) =>
+  apiService.get(`/api/voice/outbound-local/calls/${encodeURIComponent(callSid)}/status`);
 apiService.getOutboundCampaigns = (params = {}) =>
   apiService.get("/api/voice/outbound-local/campaigns", { params });
 apiService.bulkDeleteCallLogs = (callSids = []) =>

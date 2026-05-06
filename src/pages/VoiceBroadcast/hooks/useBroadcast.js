@@ -30,6 +30,14 @@ const readSavedQuery = () => {
 const getCampaignId = (campaign = {}) =>
   String(campaign._id || campaign.id || campaign.broadcastId || '').trim();
 
+const getErrorMessage = (err, fallback) => {
+  const payload = err?.response?.data;
+  const value = payload?.error || payload?.message || err?.message;
+  if (typeof value === 'string' && value.trim()) return value;
+  if (Array.isArray(value)) return value.filter(Boolean).join(', ') || fallback;
+  return fallback;
+};
+
 const normalizeCampaign = (campaign = {}) => ({
   ...campaign,
   _id: campaign._id || campaign.id,
@@ -102,7 +110,7 @@ export const useBroadcast = () => {
         total: responseData.total ?? responseData.pagination?.total ?? prev.total
       }));
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to load broadcasts');
+      setError(getErrorMessage(err, 'Failed to load broadcasts'));
       console.error('Refresh broadcasts error:', err);
     } finally {
       if (!options.silent) setLoading(false);

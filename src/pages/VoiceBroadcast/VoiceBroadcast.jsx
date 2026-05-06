@@ -9,6 +9,14 @@ import socketService from '../../services/socketService';
 import apiService from '../../services/api';
 import './VoiceBroadcast.css';
 
+const renderMessage = (value, fallback = 'Something went wrong') => {
+  if (typeof value === 'string' && value.trim()) return value;
+  if (Array.isArray(value)) return value.filter(Boolean).join(', ') || fallback;
+  if (value?.message && typeof value.message === 'string') return value.message;
+  if (value?.error && typeof value.error === 'string') return value.error;
+  return fallback;
+};
+
 const VoiceBroadcast = () => {
 
   const [activeTab, setActiveTab] = useState('create');
@@ -271,7 +279,7 @@ const VoiceBroadcast = () => {
       {error && (
         <div className="error-message" role="alert">
           <AlertCircle size={18} aria-hidden="true" />
-          {error}
+          {renderMessage(error, 'Failed to load broadcasts')}
         </div>
       )}
     </div>
