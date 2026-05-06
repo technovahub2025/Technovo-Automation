@@ -20,6 +20,7 @@ import {
   Trash2,
   XCircle
 } from 'lucide-react';
+import { formatVoiceDateTime } from '../../../utils/voiceTime';
 import './BroadcastList.css';
 
 const getCampaignId = (campaign = {}) => String(campaign._id || campaign.id || '').trim();
@@ -28,13 +29,7 @@ const numberFormat = new Intl.NumberFormat('en-US');
 
 const formatDate = (dateString) => {
   if (!dateString) return '-';
-  return new Date(dateString).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit'
-  });
+  return formatVoiceDateTime(dateString);
 };
 
 const getStats = (campaign = {}) => ({

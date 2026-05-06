@@ -23,6 +23,7 @@ import useIVRWorkflowSocket from '../../../hooks/useIVRWorkflowSocket';
 import socketService from '../../../services/socketService';
 import WorkflowBuilderCanvas from './WorkflowBuilderCanvas';
 import { ivrService } from '../../../services/ivrService';
+import { formatVoiceDate } from '../../../utils/voiceTime';
 import './IVRMenuCard.css';
 
 function IVRMenuCard({ menu, onUpdate, onDelete }) {
@@ -465,7 +466,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
     if (diffMinutes < 1) return 'Just now';
     if (diffMinutes < 60) return `${diffMinutes}m ago`;
     if (diffHours < 24) return `${diffHours}h ago`;
-    return date.toLocaleDateString();
+    return formatVoiceDate(date);
   };
 
   useEffect(() => {
@@ -1114,7 +1115,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
                 </span>
                 <span className="stat-item">
                   <Clock size={14} />
-                  {new Date(menu.updatedAt || menu.createdAt).toLocaleDateString()}
+                  {formatVoiceDate(menu.updatedAt || menu.createdAt)}
                 </span>
                 {activeUsers.length > 0 && (
                   <span className="stat-item active-users">

@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useExotelOutbound } from '../../hooks/useBroadcast';
 import ContactUploader from '../../pages/VoiceBroadcast/components/ContactUploader';
+import { formatVoiceDateTime } from '../../utils/voiceTime';
 import './OutboundDialer.css';
 
 const EXOTEL_NUMBER_PLACEHOLDER = '+91XXXXXXXXXX';
@@ -681,7 +682,7 @@ const OutboundDialer = ({
                     <h4>{selectedTemplate.name}</h4>
                   </div>
                   <span className="template-preview-meta">
-                    Updated {new Date(selectedTemplate.updatedAt || selectedTemplate.createdAt || Date.now()).toLocaleString()}
+                    Updated {formatVoiceDateTime(selectedTemplate.updatedAt || selectedTemplate.createdAt || Date.now())}
                   </span>
                 </div>
                 <div className="template-preview-body">

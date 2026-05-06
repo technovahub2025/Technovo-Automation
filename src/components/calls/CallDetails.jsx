@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import apiService from '../../services/api';
 import socketService from '../../services/socketService';
+import { formatVoiceDateTime } from '../../utils/voiceTime';
 import './CallDetails.css';
 
 
@@ -122,8 +123,7 @@ const CallDetails = () => {
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
-    return new Date(dateString).toLocaleString();
+    return formatVoiceDateTime(dateString, { fallback: 'N/A' });
   };
 
   const getStatusIcon = (status) => {

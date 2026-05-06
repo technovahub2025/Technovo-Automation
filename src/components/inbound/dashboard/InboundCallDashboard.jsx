@@ -1,5 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import useInboundCalls from '../../../hooks/useInboundCalls';
+import { formatVoiceTime } from '../../../utils/voiceTime';
 import './InboundCallDashboard.css';
 
 const InboundCallDashboard = () => {
@@ -10,13 +11,17 @@ const InboundCallDashboard = () => {
     transferCall,
     hangupCall,
     getQueueStats,
-    loading,
-    error,
   } = useInboundCalls();
 
   const [selectedCall, setSelectedCall] = useState(null);
   const [transferDestination, setTransferDestination] = useState('');
   const [showTransferModal, setShowTransferModal] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    const intervalId = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(intervalId);
+  }, []);
 
   /**
    * Get queue statistics
@@ -87,7 +92,7 @@ const InboundCallDashboard = () => {
   const getCallDuration = (call) => {
     if (!call.answeredAt) return 'Ringing';
     
-    const duration = Math.floor((Date.now() - new Date(call.answeredAt).getTime()) / 1000);
+    const duration = Math.floor((now - new Date(call.answeredAt).getTime()) / 1000);
     return formatDuration(duration);
   };
 
@@ -291,7 +296,7 @@ const InboundCallDashboard = () => {
               <tbody>
                 {callHistory.slice(0, 10).map(call => (
                   <tr key={call._id}>
-                    <td>{new Date(call.endedAt).toLocaleTimeString()}</td>
+                    <td>{formatVoiceTime(call.endedAt)}</td>
                     <td>{call.from}</td>
                     <td>{call.answeredBy || 'N/A'}</td>
                     <td>{call.duration ? formatDuration(call.duration) : 'N/A'}</td>

@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import useSocket from '../../../hooks/useSocket';
 import apiService from '../../../services/api';
+import { formatVoiceTime } from '../../../utils/voiceTime';
 import './CallMonitor.css';
 
 const TERMINAL_STATUSES = new Set(['completed', 'failed', 'busy', 'no-answer', 'no_answer', 'canceled', 'cancelled', 'opted_out']);
 
 const CallMonitor = () => {
     const [activeCalls, setActiveCalls] = useState([]);
+    const [now, setNow] = useState(() => Date.now());
     const [workflowStats, setWorkflowStats] = useState({
         totalCalls: 0,
         successRate: 0,
@@ -14,6 +16,11 @@ const CallMonitor = () => {
         completedCalls: 0
     });
     const { socket } = useSocket();
+
+    useEffect(() => {
+        const intervalId = setInterval(() => setNow(Date.now()), 1000);
+        return () => clearInterval(intervalId);
+    }, []);
     const normalizeActiveCall = useCallback((call = {}, index = 0) => ({
         id: String(call.callSid || call.call_sid || call.callId || call._id || `active-${index}`),
         phoneNumber: call.phoneNumber || call?.phone || call?.contact?.phone || '-',
@@ -70,7 +77,7 @@ const CallMonitor = () => {
 
     useEffect(() => {
         if (!socket) return;
-        fetchActiveCalls();
+        const initialFetchId = setTimeout(fetchActiveCalls, 0);
         const intervalId = setInterval(fetchActiveCalls, 5000);
 
         const handleWorkflowCallStarted = (data = {}) => {
@@ -163,6 +170,7 @@ const CallMonitor = () => {
         socket.on('ivr_workflow_update', handleIvrWorkflowUpdate);
 
         return () => {
+            clearTimeout(initialFetchId);
             clearInterval(intervalId);
             socket.off('workflow_call_started', handleWorkflowCallStarted);
             socket.off('workflow_call_node', handleWorkflowCallNode);
@@ -207,13 +215,13 @@ const CallMonitor = () => {
                                         <div className="detail-item">
                                             <span className="label">Started:</span>
                                             <span className="value">
-                                                {new Date(call.startTime || call.createdAt).toLocaleTimeString()}
+                                                {formatVoiceTime(call.startTime || call.createdAt)}
                                             </span>
                                         </div>
                                         <div className="detail-item">
                                             <span className="label">Duration:</span>
                                             <span className="value">
-                                                {Math.max(0, Math.floor((Date.now() - new Date(call.startTime || call.createdAt)) / 1000))}s
+                                                {Math.max(0, Math.floor((now - new Date(call.startTime || call.createdAt)) / 1000))}s
                                             </span>
                                         </div>
                                     </div>

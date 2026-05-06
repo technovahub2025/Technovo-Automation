@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import socketService from '../../services/socketService';
+import { formatVoiceTime } from '../../utils/voiceTime';
 
 const MAX_POINTS = 20;
 
 const LiveMetrics = ({ initialMetrics = null, isQuickCallLoading = false, alwaysVisible = false }) => {
   const [series, setSeries] = useState([]);
   const [latest, setLatest] = useState({ total: 0, initiated: 0, failed: 0, successRate: 0 });
-  const [isVisible, setIsVisible] = useState(false);
   const [hasActiveCampaign, setHasActiveCampaign] = useState(false);
 
   useEffect(() => {
@@ -16,10 +16,7 @@ const LiveMetrics = ({ initialMetrics = null, isQuickCallLoading = false, always
 
     const handleMetrics = (payload = {}) => {
       const point = {
-        time: new Date(payload.timestamp || Date.now()).toLocaleTimeString('en-IN', {
-          hour: '2-digit',
-          minute: '2-digit'
-        }),
+        time: formatVoiceTime(payload.timestamp || Date.now(), { second: false, showZone: false }),
         initiated: Number(payload.initiated || 0),
         failed: Number(payload.failed || 0),
         total: Number(payload.total || 0)
@@ -39,7 +36,6 @@ const LiveMetrics = ({ initialMetrics = null, isQuickCallLoading = false, always
       const isCompleted = Boolean(payload?.completed);
       const nextHasActiveCampaign = mode === 'quick' ? false : !isCompleted;
       setHasActiveCampaign(nextHasActiveCampaign);
-      setIsVisible(alwaysVisible || isQuickCallLoading || nextHasActiveCampaign);
     };
 
     socket.on('outbound_metrics', handleMetrics);
@@ -49,11 +45,8 @@ const LiveMetrics = ({ initialMetrics = null, isQuickCallLoading = false, always
     };
   }, [alwaysVisible, isQuickCallLoading]);
 
-  useEffect(() => {
-    setIsVisible(Boolean(alwaysVisible || isQuickCallLoading || hasActiveCampaign));
-  }, [alwaysVisible, isQuickCallLoading, hasActiveCampaign]);
-
   const chartData = useMemo(() => series, [series]);
+  const isVisible = Boolean(alwaysVisible || isQuickCallLoading || hasActiveCampaign);
   const displayedLatest = useMemo(() => {
     const hasLiveData = series.length > 0;
     if (hasLiveData) return latest;

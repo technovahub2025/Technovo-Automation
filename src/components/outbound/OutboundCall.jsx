@@ -30,6 +30,7 @@ import {
   normalizeScheduledItem,
   normalizeStatus
 } from '../../utils/outboundNormalizers';
+import { dateOnlyToIstIsoBoundary } from '../../utils/voiceTime';
 const MONITOR_ROW_LIMIT = 1000;
 const REALTIME_FLUSH_MS = 120;
 const FILTER_DEBOUNCE_MS = 300;
@@ -216,8 +217,10 @@ const OutboundCall = () => {
       if (params.status === 'all') delete params.status;
       if (params.type === 'all') delete params.type;
       if (!params.phoneNumber) delete params.phoneNumber;
-      if (!params.startDate) delete params.startDate;
-      if (!params.endDate) delete params.endDate;
+      if (params.startDate) params.startDate = dateOnlyToIstIsoBoundary(params.startDate, false);
+      else delete params.startDate;
+      if (params.endDate) params.endDate = dateOnlyToIstIsoBoundary(params.endDate, true);
+      else delete params.endDate;
 
       const response = await apiService.getCallHistory(params);
       if (requestSeq !== historyRequestSeqRef.current) return;

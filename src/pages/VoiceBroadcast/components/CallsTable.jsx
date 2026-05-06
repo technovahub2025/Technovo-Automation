@@ -1,5 +1,6 @@
 import React, { memo, useMemo } from 'react';
 import { Phone, Clock, User, CheckCircle, XCircle, Loader, PhoneOff, AlertCircle } from 'lucide-react';
+import { formatVoiceTime } from '../../../utils/voiceTime';
 import './CallsTable.css';
 
 const PAGE_SIZE_OPTIONS = [25, 50, 100, 200];
@@ -13,11 +14,7 @@ const formatDuration = (seconds) => {
 
 const formatTime = (dateString) => {
   if (!dateString) return '-';
-  return new Date(dateString).toLocaleTimeString('en-US', {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit'
-  });
+  return formatVoiceTime(dateString);
 };
 
 const getStatusIcon = (status) => {

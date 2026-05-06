@@ -35,6 +35,7 @@ import {
   Voicemail
 } from 'lucide-react';
 import apiService from '../../../services/api';
+import { formatVoiceDateTime, formatVoiceTime } from '../../../utils/voiceTime';
 import './CallAnalytics.css';
 
 const CHANNELS = [
@@ -347,7 +348,7 @@ const CallAnalytics = () => {
     .sort(([firstDate], [secondDate]) => new Date(firstDate).getTime() - new Date(secondDate).getTime())
     .map(([date, row]) => ({
       rawDate: date,
-      date: new Date(date).toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }),
+      date: new Date(date).toLocaleDateString('en-IN', { timeZone: 'Asia/Kolkata', day: '2-digit', month: 'short' }),
       total: toNumber(row.total),
       completed: toNumber(row.completed),
       failed: toNumber(row.failed),
@@ -506,7 +507,7 @@ const CallAnalytics = () => {
               <option value="year">This Year</option>
             </select>
           </div>
-          <span className="last-updated">Updated {lastUpdated ? new Date(lastUpdated).toLocaleTimeString() : 'N/A'}</span>
+          <span className="last-updated">Updated {lastUpdated ? formatVoiceTime(lastUpdated) : 'N/A'}</span>
         </div>
         <div className="header-actions">
           <div className={`analytics-live-status ${socketConnected ? 'connected' : 'disconnected'}`}>
@@ -768,7 +769,7 @@ const CallAnalytics = () => {
                       <td><span className={`badge ${String(call.status || 'unknown').toLowerCase()}`}>{call.status || 'unknown'}</span></td>
                       <td>{call.campaignName || '-'}</td>
                       <td>{formatDuration(call.duration)}</td>
-                      <td>{call.createdAt ? new Date(call.createdAt).toLocaleString() : '-'}</td>
+                      <td>{formatVoiceDateTime(call.createdAt)}</td>
                     </tr>
                   );
                 })}

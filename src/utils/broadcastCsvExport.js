@@ -1,3 +1,5 @@
+import { formatVoiceDateTime } from './voiceTime';
+
 const toSafeNumber = (value) => {
   const parsed = Number(value || 0);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -5,16 +7,7 @@ const toSafeNumber = (value) => {
 
 const formatDateTime = (value) => {
   if (!value) return '';
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return '';
-  return parsed.toLocaleString('en-US', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: true
-  });
+  return formatVoiceDateTime(value);
 };
 
 export const BROADCAST_CAMPAIGN_EXPORT_HEADERS = [

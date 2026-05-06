@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { useCallbacks, useVoicemail } from '../../../hooks/useCallbacksVoicemail';
+import { formatVoiceDateTime } from '../../../utils/voiceTime';
 import './CallbacksVoicemailManager.css';
 
 const CallbacksVoicemailManager = () => {
@@ -9,7 +10,6 @@ const CallbacksVoicemailManager = () => {
     completeCallback,
     deleteCallback,
     loading: callbacksLoading,
-    error: callbacksError,
   } = useCallbacks();
 
   const {
@@ -18,13 +18,11 @@ const CallbacksVoicemailManager = () => {
     deleteVoicemail,
     getTranscription,
     loading: voicemailLoading,
-    error: voicemailError,
   } = useVoicemail();
 
   const [activeTab, setActiveTab] = useState('callbacks');
   const [showCreateCallback, setShowCreateCallback] = useState(false);
   const [selectedVoicemail, setSelectedVoicemail] = useState(null);
-  const [playingVoicemail, setPlayingVoicemail] = useState(null);
   const [callbackForm, setCallbackForm] = useState({
     phoneNumber: '',
     customerName: '',
@@ -123,7 +121,6 @@ const CallbacksVoicemailManager = () => {
    * Handle voicemail playback
    */
   const handlePlayVoicemail = useCallback((voicemail) => {
-    setPlayingVoicemail(voicemail._id);
     setSelectedVoicemail(voicemail);
 
     if (!voicemail.isRead) {
@@ -143,7 +140,6 @@ const CallbacksVoicemailManager = () => {
       await deleteVoicemail(voicemailId);
       if (selectedVoicemail?._id === voicemailId) {
         setSelectedVoicemail(null);
-        setPlayingVoicemail(null);
       }
     } catch (err) {
       console.error('Failed to delete voicemail:', err);
@@ -169,8 +165,7 @@ const CallbacksVoicemailManager = () => {
    * Format date/time
    */
   const formatDateTime = (date) => {
-    const d = new Date(date);
-    return d.toLocaleString();
+    return formatVoiceDateTime(date);
   };
 
   /**

@@ -1,12 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { Play, Pause, RefreshCw, Download, Trash2, Plus, Globe, Volume2, Clock, BarChart3 } from 'lucide-react';
 import { ivrService } from '../../services/ivrService';
+import { formatVoiceDate } from '../../../utils/voiceTime';
 
 const IVRManagement = () => {
   const [prompts, setPrompts] = useState([]);
   const [languages, setLanguages] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedPrompt, setSelectedPrompt] = useState(null);
   const [generatingAudio, setGeneratingAudio] = useState({});
   const [stats, setStats] = useState(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -271,7 +271,7 @@ const IVRManagement = () => {
                             </button>
                           </div>
                           <div className="text-xs text-gray-500">
-                            Generated: {new Date(audioFile.generatedAt).toLocaleDateString()}
+                            Generated: {formatVoiceDate(audioFile.generatedAt)}
                             {audioFile.duration && ` • ${audioFile.duration.toFixed(1)}s`}
                           </div>
                         </div>

@@ -1,3 +1,5 @@
+import { formatVoiceDateTime } from './voiceTime';
+
 export const TERMINAL_CALL_STATUSES = new Set(['completed', 'failed', 'busy', 'no-answer', 'cancelled', 'canceled']);
 export const NON_TERMINAL_CALL_STATUSES = new Set(['queued', 'initiated', 'ringing', 'answered', 'in-progress', 'running', 'scheduled']);
 
@@ -5,9 +7,7 @@ export const normalizeStatus = (value) => String(value || '').toLowerCase();
 
 export const formatDateTime = (value) => {
   if (!value) return '-';
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return '-';
-  return date.toLocaleString();
+  return formatVoiceDateTime(value);
 };
 
 export const deriveOutboundType = (payload = {}) => {
