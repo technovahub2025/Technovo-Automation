@@ -4,6 +4,8 @@ import { mergeMessagePreservingReplyContext } from './replyMessageMergeUtils';
 import { showIncomingMessageSystemNotification } from './teamInboxNotificationUtils';
 import { publishCrmContactSync } from '../../utils/crmSyncEvents';
 
+const MESSAGE_STATUS_RANK = { sent: 1, delivered: 2, read: 3, failed: 4 };
+
 export const useInboxRealtimeEffects = ({
   currentUserId,
   notificationMode,
@@ -25,6 +27,7 @@ export const useInboxRealtimeEffects = ({
   setSelectedConversation,
   applyLeadScoreUpdateToConversation,
   setSidebarRefreshing,
+  conversationStatusCacheRef,
   realtimeResyncTimerRef
 }) => {
   const getContactIdFromConversationPayload = (conversation = {}) =>
@@ -35,7 +38,41 @@ export const useInboxRealtimeEffects = ({
         ''
     ).trim();
 
+  const getConversationLastOutboundMessageId = (conversation = {}) =>
+    String(
+      conversation?.lastMessageWhatsappMessageId ||
+        conversation?.lastMessageMessageId ||
+        conversation?.lastMessageId ||
+        ''
+    ).trim();
+
+  const pickConversationStatus = (incomingStatus = '', previousStatus = '') => {
+    const normalizedIncoming = String(incomingStatus || '').trim().toLowerCase();
+    const normalizedPrevious = String(previousStatus || '').trim().toLowerCase();
+    const incomingRank = MESSAGE_STATUS_RANK[normalizedIncoming] || 0;
+    const previousRank = MESSAGE_STATUS_RANK[normalizedPrevious] || 0;
+    if (previousRank > incomingRank) return normalizedPrevious;
+    return normalizedIncoming || normalizedPrevious;
+  };
+
+  const updateConversationStatusCache = (conversationId, messageId, status) => {
+    const normalizedConversationId = String(conversationId || '').trim();
+    const normalizedMessageId = String(messageId || '').trim();
+    const normalizedStatus = String(status || '').trim().toLowerCase();
+    if (!normalizedConversationId || !normalizedStatus) return;
+
+    const currentEntry = conversationStatusCacheRef?.current?.get(normalizedConversationId) || {};
+    const nextStatus = pickConversationStatus(normalizedStatus, currentEntry.lastMessageStatus);
+    conversationStatusCacheRef?.current?.set(normalizedConversationId, {
+      lastMessageStatus: nextStatus,
+      lastMessageWhatsappMessageId:
+        normalizedMessageId || String(currentEntry.lastMessageWhatsappMessageId || '').trim()
+    });
+  };
+
   const notifiedIncomingMessageKeysRef = useRef(new Set());
+  const lastContactRefreshAtRef = useRef(0);
+  const lastVisibilityRefreshAtRef = useRef(0);
   const bootstrapLoadPromiseRef = useRef(null);
   const lastBootstrapLoadAtRef = useRef(0);
   const callbacksRef = useRef({
@@ -133,7 +170,11 @@ export const useInboxRealtimeEffects = ({
         !callbacksRef.current.hasRealContactName(incomingConversationRaw) &&
         !callbacksRef.current.getMappedContactName(incomingConversationRaw?.contactPhone)
       ) {
-        callbacksRef.current.loadContacts({ silent: true });
+        const now = Date.now();
+        if (now - lastContactRefreshAtRef.current > 30000) {
+          lastContactRefreshAtRef.current = now;
+          callbacksRef.current.loadContacts({ silent: true });
+        }
       }
 
       setConversations((prev) => {
@@ -385,6 +426,65 @@ export const useInboxRealtimeEffects = ({
         })
       );
 
+      if (incomingStatus) {
+        const eventConversationId = String(data?.conversationId || '').trim();
+        const eventMessageId = String(
+          data?.messageId ||
+            data?.id ||
+            data?.whatsappMessageId ||
+            data?.message?.messageId ||
+            data?.message?.whatsappMessageId ||
+            ''
+        ).trim();
+        updateConversationStatusCache(eventConversationId, eventMessageId, incomingStatus);
+
+        setConversations((prev) =>
+          prev.map((conversation) => {
+            const conversationIdValue = String(conversation?._id || '').trim();
+            const previewMessageId = getConversationLastOutboundMessageId(conversation);
+            const matchesConversation =
+              (eventConversationId && conversationIdValue === eventConversationId) ||
+              (previewMessageId && Array.from(incomingMessageIds).includes(previewMessageId));
+
+            if (!matchesConversation) return conversation;
+
+            const previousStatus = String(conversation?.lastMessageStatus || '').trim().toLowerCase();
+            const nextStatus = pickConversationStatus(incomingStatus, previousStatus);
+            const nextConversation = {
+              ...conversation,
+              lastMessageStatus: nextStatus
+            };
+
+            if (nextStatus === 'read' || nextStatus === 'delivered') {
+              nextConversation.lastMessageFrom = 'agent';
+            }
+
+            return nextConversation;
+          })
+        );
+
+        setSelectedConversation((prev) => {
+          if (!prev) return prev;
+          const eventConversationId = String(data?.conversationId || '').trim();
+          const selectedConversationId = String(prev?._id || '').trim();
+          const previewMessageId = getConversationLastOutboundMessageId(prev);
+          const selectedMatches =
+            (eventConversationId && selectedConversationId === eventConversationId) ||
+            (previewMessageId && Array.from(incomingMessageIds).includes(previewMessageId));
+
+          if (!selectedMatches) return prev;
+          const previousStatus = String(prev?.lastMessageStatus || '').trim().toLowerCase();
+          const nextStatus = pickConversationStatus(incomingStatus, previousStatus);
+          return {
+            ...prev,
+            lastMessageStatus: nextStatus,
+            ...(nextStatus === 'read' || nextStatus === 'delivered'
+              ? { lastMessageFrom: 'agent' }
+              : {})
+          };
+        });
+      }
+
       const activeConversation = selectedConversationRef.current;
       const eventConversationId = data?.conversationId ? String(data.conversationId) : '';
       if (
@@ -480,7 +580,7 @@ export const useInboxRealtimeEffects = ({
     bootstrapInboxData({
       silentConversations: useSilentBootstrap,
       silentContacts: true,
-      force: true
+      force: false
     }).finally(() => {
       if (useSilentBootstrap && typeof setSidebarRefreshing === 'function') {
         setSidebarRefreshing(false);
@@ -491,6 +591,10 @@ export const useInboxRealtimeEffects = ({
   useEffect(() => {
     const onFocusRefresh = () => {
       if (document.visibilityState && document.visibilityState !== 'visible') return;
+
+      const now = Date.now();
+      if (now - lastVisibilityRefreshAtRef.current < 30000) return;
+      lastVisibilityRefreshAtRef.current = now;
       callbacksRef.current.loadConversations({ silent: true });
     };
     window.addEventListener('focus', onFocusRefresh);

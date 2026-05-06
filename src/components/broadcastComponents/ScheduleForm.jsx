@@ -37,10 +37,16 @@ const ScheduleForm = ({
   filteredTemplates,
   customMessage,
   onCustomMessageChange,
+  selectedTemplateCategory = '',
   onFileUpload,
   uploadedFile,
   recipients,
   fileVariables,
+  templateHeaderMediaUrl,
+  templateHeaderMediaUploading = false,
+  templateHeaderMediaError = '',
+  onTemplateHeaderMediaUpload,
+  onClearTemplateHeaderMedia,
   onClearUpload,
   onOpenContactAudiencePicker,
   onCloseContactAudiencePicker,
@@ -75,6 +81,8 @@ const ScheduleForm = ({
   onRetryMaxAttemptsChange = () => {},
   retryBackoffSeconds = 45,
   onRetryBackoffSecondsChange = () => {},
+  deliveryBatchSize = 50,
+  onDeliveryBatchSizeChange = () => {},
   respectOptOut = true,
   onRespectOptOutChange = () => {},
   suppressionListRaw = '',
@@ -83,6 +91,7 @@ const ScheduleForm = ({
   const scheduleInputRef = React.useRef(null);
   const hasAppliedResetVersion = React.useRef(false);
   const [isDragOver, setIsDragOver] = React.useState(false);
+  const [isTemplateHeaderDragOver, setIsTemplateHeaderDragOver] = React.useState(false);
   const [draftSavedAt, setDraftSavedAt] = React.useState(null);
   const [hasStoredDraft, setHasStoredDraft] = React.useState(false);
   const hasRestoredDraftRef = React.useRef(false);
@@ -166,6 +175,9 @@ const ScheduleForm = ({
       if (typeof parsed.retryBackoffSeconds !== 'undefined') {
         onRetryBackoffSecondsChange?.(String(parsed.retryBackoffSeconds));
       }
+      if (typeof parsed.deliveryBatchSize !== 'undefined') {
+        onDeliveryBatchSizeChange?.(String(parsed.deliveryBatchSize));
+      }
       if (typeof parsed.respectOptOut === 'boolean') {
         onRespectOptOutChange?.(parsed.respectOptOut);
       }
@@ -196,6 +208,7 @@ const ScheduleForm = ({
     onRetryPolicyEnabledChange,
     onRetryMaxAttemptsChange,
     onRetryBackoffSecondsChange,
+    onDeliveryBatchSizeChange,
     onRespectOptOutChange,
     onSuppressionListRawChange
   ]);
@@ -214,6 +227,7 @@ const ScheduleForm = ({
     retryPolicyEnabled: Boolean(retryPolicyEnabled),
     retryMaxAttempts,
     retryBackoffSeconds,
+    deliveryBatchSize,
     respectOptOut: Boolean(respectOptOut),
     suppressionListRaw: String(suppressionListRaw || '')
   }), [
@@ -230,6 +244,7 @@ const ScheduleForm = ({
     retryPolicyEnabled,
     retryMaxAttempts,
     retryBackoffSeconds,
+    deliveryBatchSize,
     respectOptOut,
     suppressionListRaw
   ]);
@@ -255,6 +270,34 @@ const ScheduleForm = ({
     quietHoursEnabled,
     suppressionListRaw
   ]);
+
+  const templateHeaderUploadInputId = 'schedule-template-header-upload';
+  const handleTemplateHeaderUploadClick = () => {
+    const input = document.getElementById(templateHeaderUploadInputId);
+    if (input) input.click();
+  };
+
+  const handleTemplateHeaderDragOver = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsTemplateHeaderDragOver(true);
+  };
+
+  const handleTemplateHeaderDragLeave = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsTemplateHeaderDragOver(false);
+  };
+
+  const handleTemplateHeaderDrop = async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsTemplateHeaderDragOver(false);
+    const file = event.dataTransfer?.files?.[0];
+    if (file && typeof onTemplateHeaderMediaUpload === 'function') {
+      await onTemplateHeaderMediaUpload(file);
+    }
+  };
 
   React.useEffect(() => {
     if (!canUseSessionStorage()) return;
@@ -333,8 +376,46 @@ const ScheduleForm = ({
     return numbers.length > 0 ? Math.max(...numbers) : 0;
   }, []);
 
+  const selectedTemplate = React.useMemo(
+    () => (officialTemplates || []).find((t) => t.name === templateName) || null,
+    [officialTemplates, templateName]
+  );
+  const selectedTemplateHeader =
+    selectedTemplate?.content?.header ||
+    selectedTemplate?.header ||
+    (Array.isArray(selectedTemplate?.components)
+      ? selectedTemplate.components.find(
+          (component) => String(component?.type || '').trim().toUpperCase() === 'HEADER'
+        ) || null
+      : null);
+  const selectedTemplateHeaderType = String(
+    selectedTemplateHeader?.type ||
+    selectedTemplateHeader?.format ||
+    selectedTemplate?.type ||
+    selectedTemplate?.mediaType ||
+    selectedTemplate?.headerType ||
+    selectedTemplate?.templateType ||
+    ''
+  ).toLowerCase();
+  const selectedTemplateHasImageHeader =
+    selectedTemplateHeaderType === 'image' ||
+    (
+      Boolean(
+        selectedTemplateHeader?.mediaUrl ||
+        selectedTemplateHeader?.example?.header_handle?.[0] ||
+        selectedTemplateHeader?.header_handle?.[0]
+      ) &&
+      !String(selectedTemplateHeader?.text || '').trim()
+    );
+  const selectedTemplateHeaderMediaUrl = String(
+    templateHeaderMediaUrl ||
+    selectedTemplateHeader?.mediaUrl ||
+    selectedTemplateHeader?.example?.header_handle?.[0] ||
+    selectedTemplateHeader?.header_handle?.[0] ||
+    ''
+  ).trim();
+
   const buildSampleCsvRows = React.useCallback(() => {
-    const selectedTemplate = (officialTemplates || []).find((t) => t.name === templateName);
     const variableCount = messageType === 'template' ? getTemplateVariableCount(selectedTemplate) : 0;
 
     const headers = ['phone'];
@@ -357,7 +438,7 @@ const ScheduleForm = ({
       firstDataRow.join(','),
       secondDataRow.join(',')
     ];
-  }, [officialTemplates, templateName, messageType, getTemplateVariableCount]);
+  }, [selectedTemplate, messageType, getTemplateVariableCount]);
 
   const downloadSampleCsv = () => {
     const csvRows = buildSampleCsvRows();
@@ -496,6 +577,53 @@ const ScheduleForm = ({
       const customFieldCount = Object.keys(fullData).filter((key) => !['phone', 'mobile', 'number', 'name', 'variables'].includes(String(key).toLowerCase())).length;
       const isMissingPhone = !normalizedPhone || normalizedPhone === '-';
       const isDuplicatePhone = !isMissingPhone && (phoneCountMap.get(normalizedPhone) || 0) > 1;
+      const optInStatus = String(
+        recipient?.whatsappOptInStatus ||
+        raw.whatsappOptInStatus ||
+        fullData.whatsappOptInStatus ||
+        raw.optInStatus ||
+        fullData.optInStatus ||
+        ''
+      ).trim().toLowerCase();
+      const optInScope = String(
+        recipient?.whatsappOptInScope ||
+        raw.whatsappOptInScope ||
+        fullData.whatsappOptInScope ||
+        raw.scope ||
+        fullData.scope ||
+        ''
+      ).trim().toLowerCase();
+      const consentEvidence = Boolean(
+        raw.whatsappOptInAt ||
+        fullData.whatsappOptInAt ||
+        raw.whatsappOptInTextSnapshot ||
+        fullData.whatsappOptInTextSnapshot ||
+        raw.consentText ||
+        fullData.consentText ||
+        raw.whatsappOptInProofType ||
+        fullData.whatsappOptInProofType ||
+        raw.proofType ||
+        fullData.proofType ||
+        raw.whatsappOptInProofId ||
+        fullData.whatsappOptInProofId ||
+        raw.proofId ||
+        fullData.proofId ||
+        raw.whatsappOptInProofUrl ||
+        fullData.whatsappOptInProofUrl ||
+        raw.proofUrl ||
+        fullData.proofUrl
+      );
+      const hasOptIn = optInStatus === 'opted_in' || consentEvidence;
+      const hasMarketingScope = optInScope === 'marketing' || optInScope === 'both';
+      const recentlyInteracted = Boolean(
+        raw.lastInboundMessageAt ||
+        fullData.lastInboundMessageAt ||
+        raw.serviceWindowClosesAt ||
+        fullData.serviceWindowClosesAt
+      );
+      const isMarketingTemplate = String(selectedTemplateCategory || '').trim().toLowerCase() === 'marketing';
+      const hasMarketingEligibility = hasOptIn || recentlyInteracted;
+      const missingOptIn = messageType === 'template' && isMarketingTemplate && !hasMarketingEligibility;
 
       return {
         index,
@@ -503,12 +631,25 @@ const ScheduleForm = ({
         name,
         customFieldCount,
         qualityLabel: isMissingPhone ? 'Missing phone' : isDuplicatePhone ? 'Duplicate phone' : 'Valid',
-        qualityTone: isMissingPhone || isDuplicatePhone ? 'issue' : 'ok'
+        qualityTone: isMissingPhone || isDuplicatePhone ? 'issue' : 'ok',
+        optInLabel: isMissingPhone
+          ? 'N/A'
+          : missingOptIn
+            ? 'Opt-in missing'
+            : hasMarketingScope
+              ? 'Opted in'
+              : 'Consent unknown',
+        optInTone: isMissingPhone
+          ? 'muted'
+          : missingOptIn
+            ? 'issue'
+            : 'ok'
       };
     });
 
     const missingPhoneCount = rows.filter((row) => row.qualityLabel === 'Missing phone').length;
     const duplicatePhoneCount = rows.filter((row) => row.qualityLabel === 'Duplicate phone').length;
+    const missingOptInCount = rows.filter((row) => row.optInTone === 'issue').length;
     const validCount = rows.filter((row) => row.qualityTone === 'ok').length;
     const skippedCount = missingPhoneCount + duplicatePhoneCount;
 
@@ -519,10 +660,11 @@ const ScheduleForm = ({
         skippedCount,
         missingPhoneCount,
         duplicatePhoneCount,
+        missingOptInCount,
         hasIssues: skippedCount > 0
       }
     };
-  }, [recipients]);
+  }, [recipients, messageType, selectedTemplateCategory]);
 
   const recipientDiagnostics = React.useMemo(() => getRecipientDiagnostics(), [getRecipientDiagnostics]);
   const contactRows = React.useMemo(
@@ -547,18 +689,16 @@ const ScheduleForm = ({
   };
 
   const requiredColumnsLabel = React.useMemo(() => {
-    const selectedTemplate = (officialTemplates || []).find((t) => t.name === templateName);
     const variableCount = messageType === 'template' ? getTemplateVariableCount(selectedTemplate) : 0;
     const columns = ['phone'];
     for (let i = 1; i <= variableCount; i += 1) {
       columns.push(`var${i}`);
     }
     return columns.join(', ');
-  }, [officialTemplates, templateName, messageType, getTemplateVariableCount]);
+  }, [selectedTemplate, messageType, getTemplateVariableCount]);
 
   const getSelectedTemplatePreview = () => {
     if (!templateName) return 'Select a template';
-    const selectedTemplate = (officialTemplates || []).find((t) => t.name === templateName);
     if (!selectedTemplate) return `Template: ${templateName}`;
 
     let text = extractTemplateBody(selectedTemplate) || `Template: ${templateName}`;
@@ -623,6 +763,11 @@ const ScheduleForm = ({
       }
     }
 
+    const batchSize = toInteger(deliveryBatchSize);
+    if (Number.isNaN(batchSize) || batchSize < 1 || batchSize > 500) {
+      return { isInvalid: true, reason: 'Delivery batch size must be between 1 and 500.' };
+    }
+
     if (suppressionListMeta.invalidEntries.length > 0) {
       return {
         isInvalid: true,
@@ -641,6 +786,7 @@ const ScheduleForm = ({
     retryPolicyEnabled,
     retryMaxAttempts,
     retryBackoffSeconds,
+    deliveryBatchSize,
     suppressionListMeta
   ]);
 
@@ -886,7 +1032,6 @@ const ScheduleForm = ({
                   </select>
 
                   {templateName && (() => {
-                    const selectedTemplate = officialTemplates.find((t) => t.name === templateName);
                     const variableCount = selectedTemplate
                       ? (selectedTemplate.content?.body?.match(/\{\{\d+\}\}/g) || []).length
                       : 0;
@@ -897,6 +1042,101 @@ const ScheduleForm = ({
                     ) : null;
                   })()}
                 </div>
+
+                {selectedTemplate ? (
+                  <div className="template-header-hint">
+                    <span className="template-header-hint__label">Header</span>
+                    <span className={`template-header-hint__chip ${selectedTemplateHasImageHeader ? 'is-image' : 'is-text'}`}>
+                      {selectedTemplateHasImageHeader ? 'Image template' : 'Text template'}
+                    </span>
+                    <span className="template-header-hint__text">
+                      {selectedTemplateHasImageHeader
+                        ? 'This template requires an image header. Upload one before sending.'
+                        : 'This approved template uses text-only header content.'}
+                    </span>
+                  </div>
+                ) : null}
+
+                {selectedTemplateHasImageHeader ? (
+                  <div
+                    className={`template-media-upload-box${isTemplateHeaderDragOver ? ' is-drag-over' : ''}`}
+                    onDragOver={handleTemplateHeaderDragOver}
+                    onDragLeave={handleTemplateHeaderDragLeave}
+                    onDrop={handleTemplateHeaderDrop}
+                    onClick={handleTemplateHeaderUploadClick}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleTemplateHeaderUploadClick();
+                      }
+                    }}
+                  >
+                    <div className="template-media-upload-box__empty-state">
+                      <div className="template-media-upload-box__icon-shell">
+                        <Upload size={18} />
+                      </div>
+                      <div className="template-media-upload-box__copy">
+                        <strong>{selectedTemplateHeaderMediaUrl ? 'Replace the image header' : 'Drop image here'}</strong>
+                        <span>
+                          {isTemplateHeaderDragOver
+                            ? 'Release to upload this image for the template header.'
+                            : 'PNG or JPG works best. You can also click to browse.'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="template-media-upload-box__header">
+                      <strong>Image Header</strong>
+                      <span>{selectedTemplateHeaderMediaUrl ? 'Ready to send' : 'Upload required'}</span>
+                    </div>
+                    <div className="template-media-upload-box__dropzone-copy">
+                      {isTemplateHeaderDragOver
+                        ? 'Drop the image here to upload it for this template.'
+                        : 'Drag and drop an image here, or choose one from your device.'}
+                    </div>
+                    <div className="template-media-upload-box__actions">
+                      <input
+                        id={templateHeaderUploadInputId}
+                        type="file"
+                        accept="image/*"
+                        className="template-media-upload-box__input"
+                        onChange={onTemplateHeaderMediaUpload}
+                        disabled={templateHeaderMediaUploading}
+                      />
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleTemplateHeaderUploadClick();
+                        }}
+                        disabled={templateHeaderMediaUploading}
+                      >
+                        {templateHeaderMediaUploading ? 'Uploading...' : selectedTemplateHeaderMediaUrl ? 'Replace Image' : 'Upload Image'}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onClearTemplateHeaderMedia?.();
+                        }}
+                        disabled={templateHeaderMediaUploading || !selectedTemplateHeaderMediaUrl}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    {selectedTemplateHeaderMediaUrl ? (
+                      <div className="template-media-upload-box__preview">
+                        <img src={selectedTemplateHeaderMediaUrl} alt={`${templateName} header`} />
+                      </div>
+                    ) : null}
+                    {templateHeaderMediaError ? (
+                      <div className="template-media-upload-box__error">{templateHeaderMediaError}</div>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 <small>These are your approved templates from WhatsApp Business Manager</small>
               </div>
@@ -1088,6 +1328,15 @@ const ScheduleForm = ({
                         ? 'Use CRM contacts now. CSV remains available as fallback.'
                         : 'CSV must include "phone" or "mobile" column when used'}
                     </small>
+                    {audienceSourceMode === 'csv' ? (
+                      <small className="csv-consent-hint">
+                        For marketing templates, include opt-in fields when available:
+                        <strong> whatsappOptInStatus</strong>, <strong>whatsappOptInScope</strong>,
+                        <strong> consentText</strong>, <strong>proofType</strong>,
+                        <strong> proofId</strong>, and <strong>proofUrl</strong>.
+                        Phone-only CSVs can be imported, but marketing sends will still require a valid opted-in contact.
+                      </small>
+                    ) : null}
                   </div>
 
                   <button
@@ -1159,6 +1408,13 @@ const ScheduleForm = ({
                     )}
                   </div>
 
+                  {audienceSourceMode === 'csv' && recipientQualitySummary.missingOptInCount > 0 ? (
+                    <div className="csv-optin-warning">
+                      <strong>{recipientQualitySummary.missingOptInCount} CSV rows are missing WhatsApp opt-in.</strong>{' '}
+                      Marketing templates can only send to opted-in contacts.
+                    </div>
+                  ) : null}
+
                   <div className="recipient-quality-actions">
                     <button
                       type="button"
@@ -1185,6 +1441,7 @@ const ScheduleForm = ({
                           <th>#</th>
                           <th>Phone</th>
                           <th>Name</th>
+                          {audienceSourceMode === 'csv' ? <th>Opt-in</th> : null}
                           <th>Custom Fields</th>
                         </tr>
                       </thead>
@@ -1202,6 +1459,13 @@ const ScheduleForm = ({
                               </span>
                             </td>
                             <td>{row.name}</td>
+                            {audienceSourceMode === 'csv' ? (
+                              <td>
+                                <span className={`phone-quality-badge ${row.optInTone}`}>
+                                  {row.optInLabel}
+                                </span>
+                              </td>
+                            ) : null}
                             <td>
                               {row.customFieldCount > 0 ? (
                                 <span className="field-badge">{row.customFieldCount} fields</span>
@@ -1372,6 +1636,19 @@ const ScheduleForm = ({
                   </div>
                 </div>
 
+                <div className="policy-field">
+                  <span>Delivery batch size</span>
+                  <input
+                    type="number"
+                    min="1"
+                    max="500"
+                    value={deliveryBatchSize}
+                    onChange={(event) => onDeliveryBatchSizeChange(event.target.value)}
+                    onBlur={() => onDeliveryBatchSizeChange(String(Math.min(500, Math.max(1, Number(deliveryBatchSize) || 50))))}
+                  />
+                  <small>Controls how many recipients the backend processes before moving to the next batch.</small>
+                </div>
+
                 <label className="policy-checkbox-row">
                   <input
                     type="checkbox"
@@ -1507,6 +1784,8 @@ const ScheduleForm = ({
           <MessagePreview
             messageType={messageType}
             templateName={templateName}
+            selectedTemplate={selectedTemplate}
+            templateHeaderMediaUrl={selectedTemplateHeaderMediaUrl}
             customMessage={customMessage}
             recipients={recipients}
             getTemplatePreview={getSelectedTemplatePreview}

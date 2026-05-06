@@ -12,6 +12,18 @@ import {
 
 const DEFAULT_MESSAGES_PAGE_LIMIT = 30;
 const CONVERSATION_LIST_LOADING_TIMEOUT_MS = 8000;
+const MESSAGE_STATUS_RANK = { sent: 1, delivered: 2, read: 3, failed: 4 };
+
+const pickConversationStatus = (incomingStatus = '', previousStatus = '') => {
+  const normalizedIncoming = String(incomingStatus || '').trim().toLowerCase();
+  const normalizedPrevious = String(previousStatus || '').trim().toLowerCase();
+
+  const incomingRank = MESSAGE_STATUS_RANK[normalizedIncoming] || 0;
+  const previousRank = MESSAGE_STATUS_RANK[normalizedPrevious] || 0;
+
+  if (previousRank > incomingRank) return normalizedPrevious;
+  return normalizedIncoming || normalizedPrevious;
+};
 
 const normalizeMessagePageMeta = (meta = {}, fallbackLimit = DEFAULT_MESSAGES_PAGE_LIMIT) => ({
   limit: Number(meta?.limit || fallbackLimit) || fallbackLimit,
@@ -44,6 +56,7 @@ export const createInboxDataActions = ({
   messageCacheRef,
   messagePaginationCacheRef,
   messageLoadPromiseMapRef,
+  conversationStatusCacheRef,
   setSidebarRefreshing,
   notifyActionFeedback,
   confirmAction
@@ -79,7 +92,45 @@ export const createInboxDataActions = ({
       }
       if (!silent) setLoading(true);
       const data = await whatsappService.getConversations();
-      setConversations(Array.isArray(data) ? data.map(normalizeConversation) : []);
+      const incomingConversations = Array.isArray(data) ? data.map(normalizeConversation) : [];
+      setConversations((prev) => {
+        const previousById = new Map(
+          (Array.isArray(prev) ? prev : [])
+            .map((conversation) => [String(conversation?._id || conversation?.id || '').trim(), conversation])
+            .filter(([id]) => Boolean(id))
+        );
+
+        return incomingConversations.map((conversation) => {
+          const conversationId = String(conversation?._id || conversation?.id || '').trim();
+          const previous = conversationId ? previousById.get(conversationId) : null;
+          const cachedStatusEntry = conversationId
+            ? conversationStatusCacheRef?.current?.get(conversationId)
+            : null;
+          if (!previous) return conversation;
+
+          const nextStatus = pickConversationStatus(
+            conversation?.lastMessageStatus || cachedStatusEntry?.lastMessageStatus,
+            previous?.lastMessageStatus || cachedStatusEntry?.lastMessageStatus
+          );
+          const previousFrom = String(previous?.lastMessageFrom || '').trim().toLowerCase();
+          const incomingFrom = String(conversation?.lastMessageFrom || '').trim().toLowerCase();
+          const nextFrom =
+            nextStatus === String(previous?.lastMessageStatus || '').trim().toLowerCase()
+              ? previousFrom || incomingFrom
+              : incomingFrom || previousFrom;
+          const nextWhatsappMessageId =
+            String(conversation?.lastMessageWhatsappMessageId || '').trim() ||
+            String(previous?.lastMessageWhatsappMessageId || '').trim() ||
+            String(cachedStatusEntry?.lastMessageWhatsappMessageId || '').trim();
+
+          return {
+            ...conversation,
+            lastMessageStatus: nextStatus,
+            lastMessageFrom: nextFrom || conversation?.lastMessageFrom || previous?.lastMessageFrom,
+            lastMessageWhatsappMessageId: nextWhatsappMessageId
+          };
+        });
+      });
     } catch (error) {
       console.error('Failed to load conversations:', error);
     } finally {
@@ -355,7 +406,8 @@ export const createInboxDataActions = ({
   };
 
   const sendMessage = async (options = {}) => {
-    if (!messageInput.trim() || !selectedConversation || sendingMessage) return false;
+    const overrideMessage = String(options?.messageOverride || '').trim();
+    if ((!messageInput.trim() && !overrideMessage) || !selectedConversation || sendingMessage) return false;
 
     let optimisticId = null;
     let textToSend = '';
@@ -364,11 +416,13 @@ export const createInboxDataActions = ({
       setSendingMessage(true);
       const activeConversationId =
         getConversationIdValue(selectedConversation) || String(conversationId || '').trim();
-      textToSend = messageInput.trim();
+      textToSend = overrideMessage || messageInput.trim();
       optimisticId = `temp-${Date.now()}`;
 
       // Optimistic UI: show outgoing message instantly.
-      setMessageInput('');
+      if (!overrideMessage) {
+        setMessageInput('');
+      }
       appendMessageUnique({
         _id: optimisticId,
         sender: 'agent',
@@ -504,7 +558,9 @@ export const createInboxDataActions = ({
         return true;
       } else {
         setMessages((prev) => prev.filter((message) => message._id !== optimisticId));
-        setMessageInput(textToSend);
+        if (!overrideMessage) {
+          setMessageInput(textToSend);
+        }
         console.error('Failed to send message:', result?.error);
         notify(result?.error || 'Message send failed', 'error');
         return false;
@@ -513,7 +569,7 @@ export const createInboxDataActions = ({
       if (optimisticId) {
         setMessages((prev) => prev.filter((message) => message._id !== optimisticId));
       }
-      if (textToSend) {
+      if (textToSend && !String(options?.messageOverride || '').trim()) {
         setMessageInput((prev) => prev || textToSend);
       }
       console.error('Error sending message:', error);

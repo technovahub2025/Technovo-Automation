@@ -46,12 +46,25 @@ export const getWhatsAppConversationState = (contact = {}) => {
   const normalizedOptInStatus = normalizeWhatsappOptInStatus(contact);
   const normalizedOptInScope = normalizeOptInScope(contact?.whatsappOptInScope);
   const serviceWindowClosesAt = toSafeDate(contact?.serviceWindowClosesAt);
+  const lastInboundMessageAt = toSafeDate(contact?.lastInboundMessageAt);
+  const inferredServiceWindowClosesAt = lastInboundMessageAt
+    ? new Date(lastInboundMessageAt.getTime() + 24 * 60 * 60 * 1000)
+    : null;
+  const effectiveServiceWindowClosesAt =
+    serviceWindowClosesAt && inferredServiceWindowClosesAt
+      ? new Date(
+          Math.max(
+            serviceWindowClosesAt.getTime(),
+            inferredServiceWindowClosesAt.getTime()
+          )
+        )
+      : serviceWindowClosesAt || inferredServiceWindowClosesAt;
   const marketingWindowStartAt = toSafeDate(contact?.whatsappMarketingWindowStartedAt);
   const marketingLastSentAt = toSafeDate(contact?.whatsappMarketingLastSentAt);
   const marketingSendCount = Number(contact?.whatsappMarketingSendCount || 0) || 0;
   const now = new Date();
   const serviceWindowOpen = Boolean(
-    serviceWindowClosesAt && serviceWindowClosesAt.getTime() > now.getTime()
+    effectiveServiceWindowClosesAt && effectiveServiceWindowClosesAt.getTime() > now.getTime()
   );
   const marketingWindowStart = marketingWindowStartAt || marketingLastSentAt;
   const marketingWindowExpiresAt =
@@ -82,7 +95,7 @@ export const getWhatsAppConversationState = (contact = {}) => {
 
   return {
     normalizedOptInStatus,
-    serviceWindowClosesAt,
+    serviceWindowClosesAt: effectiveServiceWindowClosesAt,
     serviceWindowOpen,
     freeformAllowed,
     templateOnly,

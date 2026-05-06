@@ -13,6 +13,8 @@ const LEAD_SCORING_DEFAULTS = {
   readScore: 2,
   replyScore: 5,
   keywordRules: [],
+  whatsappOptInScope: 'marketing',
+  whatsappOptInKeywordRules: [],
   automation: {
     isEnabled: false,
     stageThreshold: 45,
@@ -81,6 +83,30 @@ const resolveLeadScoringEndpointState = async ({ force = false } = {}) => {
   return leadScoringEndpointState;
 };
 
+const postWith404Retry = async (url, data, config = {}, { retryOn404 = true } = {}) => {
+  try {
+    return await axios.post(url, data, config);
+  } catch (error) {
+    const is404 = Number(error?.response?.status || 0) === 404;
+    if (!retryOn404 || !is404) {
+      throw error;
+    }
+
+    // If the backend has just restarted or the route table is catching up, a short retry
+    // is safer than failing the composer immediately.
+    try {
+      await axios.get(`${API_BASE_URL}/api/version`, {
+        headers: getAuthHeaders(false)
+      });
+    } catch {
+      // ignore version probe failures and proceed with retry
+    }
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    return axios.post(url, data, config);
+  }
+};
+
 
 
 export const whatsappService = {
@@ -130,7 +156,7 @@ export const whatsappService = {
         payload.whatsappContextMessageId = whatsappContextMessageId;
       }
 
-      const response = await axios.post(
+      const response = await postWith404Retry(
         `${API_BASE_URL}/api/messages/send`,
         payload,
         { headers: getAuthHeaders() }
@@ -155,7 +181,7 @@ export const whatsappService = {
 
     try {
 
-      const response = await axios.post(
+      const response = await postWith404Retry(
         `${API_BASE_URL}/api/messages/send`,
         { to, mediaType, mediaUrl, text, conversationId },
         { headers: getAuthHeaders() }
@@ -1031,13 +1057,16 @@ export const whatsappService = {
       return response.data;
     } catch (error) {
       console.error('Failed to create template:', error);
+      const metaUserMessage =
+        error?.response?.data?.details?.error?.error_user_msg ||
+        error?.response?.data?.details?.error?.error_user_title ||
+        error?.response?.data?.error ||
+        error?.response?.data?.message ||
+        error?.message ||
+        "Failed to create template";
       return {
         success: false,
-        error:
-          error?.response?.data?.error ||
-          error?.response?.data?.message ||
-          error?.message ||
-          "Failed to create template",
+        error: metaUserMessage,
         details: error?.response?.data || null
       };
     }

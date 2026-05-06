@@ -7,10 +7,14 @@ import { resolveApiBaseUrl } from "./apiBaseUrl";
 import { registerUnauthorizedAxiosInterceptor } from "./serviceAuth";
 
 const API_BASE_URL = resolveApiBaseUrl();
+const ADMIN_API_BASE_URL =
+  String(import.meta.env.VITE_API_ADMIN_URL || '').trim().replace(/\/+$/, '');
+const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 30000);
+const LONG_TIMEOUT_MS = Number(import.meta.env.VITE_API_LONG_TIMEOUT_MS || 60000);
 
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
-  timeout: 10000,
+  timeout: DEFAULT_TIMEOUT_MS,
   headers: {
     "Content-Type": "application/json",
   },
@@ -88,44 +92,87 @@ export const apiClient = {
    * Get all conversations with optional filtering
    * @param {Object} params - Query parameters (status, assignedTo, search)
    */
-  getConversations: (params = {}) => api.get('/conversations', { params }),
+  getConversations: (params = {}) => api.get('/conversations', { params, timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Get single conversation by ID
    * @param {string} id - Conversation ID
    */
-  getConversation: (id) => api.get(`/conversations/${id}`),
+  getConversation: (id) => api.get(`/conversations/${id}`, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Create new conversation
    * @param {Object} data - Conversation data
    */
-  createConversation: (data) => api.post('/conversations', data),
+  createConversation: (data) => api.post('/conversations', data, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Update conversation
    * @param {string} id - Conversation ID
    * @param {Object} data - Update data
    */
-  updateConversation: (id, data) => api.put(`/conversations/${id}`, data),
+  updateConversation: (id, data) => api.put(`/conversations/${id}`, data, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Mark conversation as read
    * @param {string} id - Conversation ID
    */
-  markConversationAsRead: (id) => api.put(`/conversations/${id}/read`),
+  markConversationAsRead: (id) => api.put(`/conversations/${id}/read`, undefined, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Get messages for a conversation
    * @param {string} conversationId - Conversation ID
    */
-  getMessages: (conversationId) => api.get(`/conversations/${conversationId}/messages`),
+  getMessages: (conversationId) => api.get(`/conversations/${conversationId}/messages`, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Send message
    * @param {Object} data - Message data (to, text, conversationId, mediaUrl, mediaType)
    */
-  sendMessage: (data) => api.post('/messages/send', data),
+  sendMessage: (data) => api.post('/messages/send', data, { timeout: LONG_TIMEOUT_MS }),
+
+  uploadBroadcastTemplateMedia: async (file) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    const uploadApi = axios.create({
+      baseURL: `${String(API_BASE_URL || '').trim().replace(/\/+$/, '')}/api`,
+      timeout: 30000,
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      withCredentials: false
+    });
+
+    uploadApi.interceptors.request.use((config) => {
+      const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
+      const token =
+        localStorage.getItem(tokenKey) ||
+        localStorage.getItem('authToken') ||
+        localStorage.getItem('token');
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+      return config;
+    });
+
+    try {
+    const response = await uploadApi.post('/messages/template-header-media', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+      return response.data;
+    } catch (error) {
+      if (error?.response?.status === 404) {
+        const notFound = new Error(
+          'Template header upload endpoint is not available on the running broadcast backend. Restart the backend so it loads /api/messages/template-header-media.'
+        );
+        notFound.status = 404;
+        throw notFound;
+      }
+      throw error;
+    }
+  },
 
   // ============ CONTACTS ============
   
@@ -133,89 +180,96 @@ export const apiClient = {
    * Get all contacts with optional filtering
    * @param {Object} params - Query parameters (search, tags)
    */
-  getContacts: (params = {}) => api.get('/contacts', { params }),
+  getContacts: (params = {}) => api.get('/contacts', { params, timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Create new contact
    * @param {Object} data - Contact data
    */
-  createContact: (data) => api.post('/contacts', data),
+  createContact: (data) => api.post('/contacts', data, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Import multiple contacts
    * @param {Array} contacts - Array of contact objects
    */
-  importContacts: (contacts) => api.post('/contacts/import', { contacts }),
+  importContacts: (contacts) => api.post('/contacts/import', { contacts }, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Update contact
    * @param {string} id - Contact ID
    * @param {Object} data - Update data
    */
-  updateContact: (id, data) => api.put(`/contacts/${id}`, data),
+  updateContact: (id, data) => api.put(`/contacts/${id}`, data, { timeout: LONG_TIMEOUT_MS }),
 
-  markContactWhatsAppOptIn: (id, data = {}) => api.post(`/contacts/${id}/whatsapp-opt-in`, data),
+  markContactWhatsAppOptIn: (id, data = {}) => api.post(`/contacts/${id}/whatsapp-opt-in`, data, { timeout: LONG_TIMEOUT_MS }),
 
-  markContactWhatsAppOptOut: (id, data = {}) => api.post(`/contacts/${id}/whatsapp-opt-out`, data),
+  markContactWhatsAppOptOut: (id, data = {}) => api.post(`/contacts/${id}/whatsapp-opt-out`, data, { timeout: LONG_TIMEOUT_MS }),
 
-  getContactWhatsAppStatus: (id) => api.get(`/contacts/${id}/whatsapp-status`),
+  getContactWhatsAppStatus: (id) => api.get(`/contacts/${id}/whatsapp-status`, { timeout: LONG_TIMEOUT_MS }),
 
-  getContactWhatsAppConsentAudit: (id) => api.get(`/contacts/${id}/whatsapp-consent-audit`),
+  getContactWhatsAppConsentAudit: (id) => api.get(`/contacts/${id}/whatsapp-consent-audit`, { timeout: LONG_TIMEOUT_MS }),
 
-  getAudienceSegments: (params = {}) => api.get('/audience-segments', { params }),
-  createAudienceSegment: (data) => api.post('/audience-segments', data),
-  deleteAudienceSegment: (id) => api.delete(`/audience-segments/${id}`),
+  getAudienceSegments: (params = {}) => api.get('/audience-segments', { params, timeout: LONG_TIMEOUT_MS }),
+  createAudienceSegment: (data) => api.post('/audience-segments', data, { timeout: LONG_TIMEOUT_MS }),
+  deleteAudienceSegment: (id) => api.delete(`/audience-segments/${id}`, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Delete contact
    * @param {string} id - Contact ID
    */
-  deleteContact: (id) => api.delete(`/contacts/${id}`),
+  deleteContact: (id) => api.delete(`/contacts/${id}`, { timeout: LONG_TIMEOUT_MS }),
 
   // ============ MISSED CALLS ============
-  getMissedCalls: (params = {}) => api.get('/missedcalls', { params }),
-  resolveMissedCall: (id, payload = {}) => api.put(`/missedcalls/${id}/resolve`, payload),
-  runMissedCallNow: (id) => api.post(`/missedcalls/${id}/run-now`),
-  getMissedCallSettings: () => api.get('/missedcalls/settings'),
-  updateMissedCallSettings: (data) => api.put('/missedcalls/settings', data),
+  getMissedCalls: (params = {}) => api.get('/missedcalls', { params, timeout: LONG_TIMEOUT_MS }),
+  resolveMissedCall: (id, payload = {}) => api.put(`/missedcalls/${id}/resolve`, payload, { timeout: LONG_TIMEOUT_MS }),
+  runMissedCallNow: (id) => api.post(`/missedcalls/${id}/run-now`, undefined, { timeout: LONG_TIMEOUT_MS }),
+  getMissedCallSettings: () => api.get('/missedcalls/settings', { timeout: LONG_TIMEOUT_MS }),
+  updateMissedCallSettings: (data) => api.put('/missedcalls/settings', data, { timeout: LONG_TIMEOUT_MS }),
 
   // ============ TEMPLATES ============
   
   /**
-   * Get all templates from Meta WhatsApp Business API
+   * Get all templates, preferring Meta but falling back to local templates when Meta is unavailable.
    * @param {Object} params - Query parameters (status, category, language)
    */
-  getTemplates: (params = {}) => api.get('/templates/meta', { params, timeout: 30000 }),
+  getTemplates: async (params = {}) => {
+    try {
+      return await api.get('/templates/meta', { params, timeout: LONG_TIMEOUT_MS });
+    } catch (error) {
+      console.warn('Meta template fetch failed, falling back to local templates:', error?.response?.status || error?.message);
+      return api.get('/templates', { params, timeout: LONG_TIMEOUT_MS });
+    }
+  },
   
   /**
    * Sync templates from Meta WhatsApp Business API
    */
-  syncTemplates: () => api.post('/templates/meta/sync', undefined, { timeout: 30000 }),
+  syncTemplates: () => api.post('/templates/meta/sync', undefined, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Get single template by ID
    * @param {string} id - Template ID
    */
-  getTemplate: (id) => api.get(`/templates/${id}`),
+  getTemplate: (id) => api.get(`/templates/${id}`, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Create new template
    * @param {Object} data - Template data
    */
-  createTemplate: (data) => api.post('/templates', data),
+  createTemplate: (data) => api.post('/templates', data, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Update template
    * @param {string} id - Template ID
    * @param {Object} data - Update data
    */
-  updateTemplate: (id, data) => api.put(`/templates/${id}`, data),
+  updateTemplate: (id, data) => api.put(`/templates/${id}`, data, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Delete template
    * @param {string} id - Template ID
    */
-  deleteTemplate: (id) => api.delete(`/templates/${id}`),
+  deleteTemplate: (id) => api.delete(`/templates/${id}`, { timeout: LONG_TIMEOUT_MS }),
   
   // ============ BULK MESSAGING ============
   
@@ -223,17 +277,17 @@ export const apiClient = {
    * Upload CSV file for bulk messaging
    * @param {Object} data - CSV data object with csvData field
    */
-  uploadCSV: (data) => api.post('/bulk/upload', data),
+  uploadCSV: (data) => api.post('/bulk/upload', data, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Send bulk messages
    * @param {Object} data - Bulk message data
    */
-  sendBulkMessages: (data) => api.post('/bulk/send', data),
+  sendBulkMessages: (data) => api.post('/bulk/send', data, { timeout: LONG_TIMEOUT_MS }),
 
-  validateBroadcastAudience: (data) => api.post('/bulk/validate-audience', data),
+  validateBroadcastAudience: (data) => api.post('/bulk/validate-audience', data, { timeout: LONG_TIMEOUT_MS }),
 
-  syncMetaLeadConsentBatch: (data) => api.post('/meta-ads/leads/sync-consent/batch', data),
+  syncMetaLeadConsentBatch: (data) => api.post('/meta-ads/leads/sync-consent/batch', data, { timeout: LONG_TIMEOUT_MS }),
 
   // ============ CONVERSATIONS & CONTACTS ============
   
@@ -242,7 +296,7 @@ export const apiClient = {
    * This endpoint doesn't exist yet - using regular contacts instead
    * @param {Object} params - Query parameters
    */
-  getConversationContacts: (params = {}) => api.get('/conversations/contacts/unique', { params }),
+  getConversationContacts: (params = {}) => api.get('/conversations/contacts/unique', { params, timeout: LONG_TIMEOUT_MS }),
 
   // ============ BROADCASTS ============
   
@@ -250,64 +304,64 @@ export const apiClient = {
    * Get all broadcasts with optional filtering
    * @param {Object} params - Query parameters
    */
-  getBroadcasts: (params = {}) => api.get('/broadcasts', { params }),
+  getBroadcasts: (params = {}) => api.get('/broadcasts', { params, timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Get single broadcast by ID
    * @param {string} id - Broadcast ID
    */
-  getBroadcast: (id) => api.get(`/broadcasts/${id}`),
+  getBroadcast: (id) => api.get(`/broadcasts/${id}`, { timeout: LONG_TIMEOUT_MS }),
 
   getBroadcastReliabilitySummary: (params = {}) =>
-    api.get('/broadcasts/analytics/reliability', { params }),
+    api.get('/broadcasts/analytics/reliability', { params, timeout: LONG_TIMEOUT_MS }),
 
-  retryFailedBroadcastRecipients: (id) => api.post(`/broadcasts/${id}/retry-failed`),
+  retryFailedBroadcastRecipients: (id) => api.post(`/broadcasts/${id}/retry-failed`, undefined, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Create new broadcast campaign
    * @param {Object} data - Broadcast data
    */
-  createBroadcast: (data) => api.post('/broadcasts', data),
+  createBroadcast: (data) => api.post('/broadcasts', data, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Send broadcast campaign
    * @param {string} id - Broadcast ID
    */
-  sendBroadcast: (id) => api.post(`/broadcasts/${id}/send`),
+  sendBroadcast: (id) => api.post(`/broadcasts/${id}/send`, undefined, { timeout: LONG_TIMEOUT_MS }),
 
   /**
    * Cancel scheduled broadcast campaign
    * @param {string} id - Broadcast ID
    */
-  cancelBroadcast: (id) => api.post(`/broadcasts/${id}/cancel`),
+  cancelBroadcast: (id) => api.post(`/broadcasts/${id}/cancel`, undefined, { timeout: LONG_TIMEOUT_MS }),
 
   /**
    * Pause scheduled broadcast campaign
    * @param {string} id - Broadcast ID
    */
-  pauseBroadcast: (id) => api.post(`/broadcasts/${id}/pause`),
+  pauseBroadcast: (id) => api.post(`/broadcasts/${id}/pause`, undefined, { timeout: LONG_TIMEOUT_MS }),
 
   /**
    * Resume paused broadcast campaign
    * @param {string} id - Broadcast ID
    */
-  resumeBroadcast: (id) => api.post(`/broadcasts/${id}/resume`),
+  resumeBroadcast: (id) => api.post(`/broadcasts/${id}/resume`, undefined, { timeout: LONG_TIMEOUT_MS }),
 
   /**
    * Check scheduled broadcasts
    */
-  checkScheduledBroadcasts: () => api.post('/broadcasts/check-scheduled'),
+  checkScheduledBroadcasts: () => api.post('/broadcasts/check-scheduled', undefined, { timeout: LONG_TIMEOUT_MS }),
 
   /**
    * Sync broadcast stats from team inbox messages
    */
-  syncBroadcastStats: (id) => api.post(`/broadcasts/${id}/sync-stats`),
+  syncBroadcastStats: (id) => api.post(`/broadcasts/${id}/sync-stats`, undefined, { timeout: LONG_TIMEOUT_MS }),
 
   /**
    * Delete broadcast campaign
    * @param {string} id - Broadcast ID
    */
-  deleteBroadcast: (id) => api.delete(`/broadcasts/${id}`),
+  deleteBroadcast: (id) => api.delete(`/broadcasts/${id}`, { timeout: LONG_TIMEOUT_MS }),
 
   // ============ ANALYTICS ============
   
@@ -315,14 +369,14 @@ export const apiClient = {
    * Get platform analytics
    * @param {Object} params - Query parameters
    */
-  getAnalytics: (params = {}) => api.get('/analytics', { params }),
+  getAnalytics: (params = {}) => api.get('/analytics', { params, timeout: LONG_TIMEOUT_MS }),
 
   // ============ HEALTH & SYSTEM ============
   
   /**
    * Check API health status
    */
-  healthCheck: () => api.get('/health', { baseURL: API_BASE_URL }),
+  healthCheck: () => api.get('/version'),
 
   // ============ UTILITY METHODS ============
   

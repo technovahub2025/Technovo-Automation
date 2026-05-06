@@ -5,6 +5,8 @@ class SocketService {
     this.socket = null;
     this.isDev = import.meta.env.DEV;
     this.useCredentials = String(import.meta.env.VITE_SOCKET_WITH_CREDENTIALS || import.meta.env.VITE_API_WITH_CREDENTIALS || 'false').toLowerCase() === 'true';
+    this.loggedConnectError = false;
+    this.loggedReconnectFailure = false;
   }
 
   getToken() {
@@ -86,6 +88,8 @@ class SocketService {
     });
 
     this.socket.on('connect', () => {
+      this.loggedConnectError = false;
+      this.loggedReconnectFailure = false;
       if (this.isDev) {
         console.log('Shared socket connected:', this.socket.id);
       }
@@ -98,8 +102,9 @@ class SocketService {
     });
 
     this.socket.on('connect_error', (error) => {
-      if (this.isDev) {
-        console.error('Socket connection error:', error.message);
+      if (this.isDev && !this.loggedConnectError) {
+        this.loggedConnectError = true;
+        console.warn('Socket connection error. Realtime updates will retry quietly in the background.');
       }
 
       if (this.isAuthError(error)) {
@@ -132,7 +137,12 @@ class SocketService {
     });
 
     this.socket.on('reconnect_failed', () => {
-      console.error('Socket reconnection failed');
+      if (!this.loggedReconnectFailure) {
+        this.loggedReconnectFailure = true;
+        if (this.isDev) {
+          console.warn('Socket reconnection stopped after the configured retry limit.');
+        }
+      }
       this.socket = null;
     });
 

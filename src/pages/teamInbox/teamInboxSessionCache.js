@@ -1,4 +1,4 @@
-const TEAM_INBOX_CACHE_VERSION = 3;
+const TEAM_INBOX_CACHE_VERSION = 5;
 const TEAM_INBOX_CACHE_PREFIX = 'team-inbox-cache';
 
 const TEAM_INBOX_BOOTSTRAP_TTL_MS = 30 * 60 * 1000;
@@ -228,6 +228,8 @@ const sanitizeConversationForCache = (conversation = {}) => {
     lastMessage: pickString(conversation.lastMessage),
     lastMessageTime: pickString(conversation.lastMessageTime),
     lastMessageFrom: pickString(conversation.lastMessageFrom),
+    lastMessageWhatsappMessageId: pickString(conversation.lastMessageWhatsappMessageId),
+    lastMessageStatus: pickString(conversation.lastMessageStatus),
     lastMessageMediaType: pickString(conversation.lastMessageMediaType),
     lastMessagePreviewText: pickString(conversation.lastMessagePreviewText),
     lastMessageAttachmentName: pickString(conversation.lastMessageAttachmentName),

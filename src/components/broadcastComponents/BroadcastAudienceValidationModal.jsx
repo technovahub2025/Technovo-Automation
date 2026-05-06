@@ -55,11 +55,13 @@ const BroadcastAudienceValidationModal = ({
 
         {!validation?.canProceed ? (
           <div className="broadcast-validation-banner broadcast-validation-banner--error">
-            No eligible recipients found. Fix the audience and try again.
+            {summary.missingMarketingOptIn > 0
+              ? 'This is a marketing template, but the selected contacts do not have WhatsApp marketing opt-in or a recent customer interaction.'
+              : 'No eligible recipients found. Fix the audience and try again.'}
           </div>
         ) : (summary.invalid || 0) > 0 ? (
           <div className="broadcast-validation-banner broadcast-validation-banner--warning">
-            {summary.eligible || 0} eligible recipients will be used and {summary.invalid || 0} recipients will be skipped.
+            {summary.eligible || 0} recipients are eligible and {summary.invalid || 0} will be marked failed in the broadcast report.
           </div>
         ) : (
           <div className="broadcast-validation-banner broadcast-validation-banner--success">
@@ -99,11 +101,9 @@ const BroadcastAudienceValidationModal = ({
           <button type="button" className="secondary-btn" onClick={onClose}>
             Close
           </button>
-          {validation?.canProceed ? (
-            <button type="button" className="primary-btn" onClick={onProceed}>
-              Continue with Eligible Recipients
-            </button>
-          ) : null}
+          <button type="button" className="primary-btn" onClick={onProceed}>
+            Continue with Selected Audience
+          </button>
         </div>
       </div>
     </div>

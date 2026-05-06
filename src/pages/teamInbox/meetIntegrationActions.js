@@ -284,7 +284,13 @@ export const createMeetIntegrationActions = ({
         String(selectedTemplate.name || '').trim(),
         language,
         variables,
-        activeConversationId
+        activeConversationId,
+        [],
+        {
+          contactId,
+          contactName,
+          templateCategory: String(selectedTemplate?.category || '').trim().toLowerCase()
+        }
       );
       if (result?.success === false) {
         throw new Error(result?.error || 'Failed to send meeting template.');

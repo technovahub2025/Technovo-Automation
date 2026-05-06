@@ -128,25 +128,16 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
       }
       setIsRecipientLoading(true);
       try {
-        const [broadcastResult, contactsResult] = await Promise.allSettled([
-          apiClient.getBroadcast(safeBroadcast._id),
-          apiClient.getContacts()
-        ]);
+        const broadcastResult = await apiClient.getBroadcast(safeBroadcast._id);
 
-        const response =
-          broadcastResult.status === 'fulfilled' ? broadcastResult.value : null;
-        const contactsResponse =
-          contactsResult.status === 'fulfilled' ? contactsResult.value : null;
+        const response = broadcastResult || null;
 
         const payload = response?.data?.data || response?.data || {};
         setBroadcastDetails(payload);
-        const contactsPayload =
-          contactsResponse?.data?.data || contactsResponse?.data || [];
         const apiRows = Array.isArray(payload?.recipientDetails) ? payload.recipientDetails : [];
         const fallbackRows = mapRecipientsToRows(payload?.recipients);
         const localFallbackRows = mapRecipientsToRows(safeBroadcast?.recipients);
         const mergedNameMap = new Map([
-          ...buildNameMap(contactsPayload),
           ...buildNameMap(payload?.recipients),
           ...buildNameMap(safeBroadcast?.recipients)
         ]);

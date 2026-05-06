@@ -470,8 +470,16 @@
 }
 
 .conversation-preview-status-icon {
-    color: #53bdeb;
     flex-shrink: 0;
+}
+
+.conversation-preview-status-icon.status-sent,
+.conversation-preview-status-icon.status-delivered {
+    color: #667781;
+}
+
+.conversation-preview-status-icon.status-read {
+    color: #53bdeb;
 }
 
 .conversation-preview-media-icon {
@@ -668,6 +676,25 @@
 .chat-header-operator-chip--sla.chat-header-operator-chip--healthy {
     background: rgba(22, 101, 52, 0.28);
     color: #dcfce7;
+}
+
+.chat-header-operator-chip--whatsapp {
+    border: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+.chat-header-operator-chip--whatsapp.chat-header-operator-chip--whatsapp-service-open {
+    background: rgba(16, 185, 129, 0.22);
+    color: #d1fae5;
+}
+
+.chat-header-operator-chip--whatsapp.chat-header-operator-chip--whatsapp-template-only {
+    background: rgba(99, 102, 241, 0.22);
+    color: #e0e7ff;
+}
+
+.chat-header-operator-chip--whatsapp.chat-header-operator-chip--whatsapp-opted-out {
+    background: rgba(239, 68, 68, 0.22);
+    color: #fee2e2;
 }
 
 
@@ -4746,6 +4773,60 @@
     margin-top: 8px;
     background: #f1f5ff;
     border-color: #d6e0ff;
+}
+
+.workspace-debug-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    border-style: dashed;
+    background: #f8fafc;
+}
+
+.workspace-debug-card--ok {
+    border-color: #bbf7d0;
+}
+
+.workspace-debug-card--warn {
+    border-color: #fdba74;
+    background: #fffaf2;
+}
+
+.workspace-debug-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.workspace-debug-row {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    font-size: 12px;
+}
+
+.workspace-debug-row span {
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    font-weight: 700;
+}
+
+.workspace-debug-row strong {
+    color: #0f172a;
+    font-weight: 600;
+    word-break: break-word;
+}
+
+.workspace-debug-note {
+    margin: 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #475569;
 }
 
 .whatsapp-status-warning {

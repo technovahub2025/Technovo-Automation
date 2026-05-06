@@ -15,6 +15,11 @@ const NewBroadcastPopup = ({
   recipients,
   onFileUpload,
   onClearUpload,
+  templateHeaderMediaUrl,
+  templateHeaderMediaUploading = false,
+  templateHeaderMediaError = '',
+  onTemplateHeaderMediaUpload,
+  onClearTemplateHeaderMedia,
   onOpenContactAudiencePicker,
   onClearSelectedAudience,
   audienceSourceMode = 'contacts',
@@ -44,11 +49,78 @@ const NewBroadcastPopup = ({
   onRetryMaxAttemptsChange,
   retryBackoffSeconds,
   onRetryBackoffSecondsChange,
+  deliveryBatchSize = 50,
+  onDeliveryBatchSizeChange = () => {},
   respectOptOut,
   onRespectOptOutChange,
   suppressionListRaw,
   onSuppressionListRawChange
 }) => {
+  const [isTemplateHeaderDragOver, setIsTemplateHeaderDragOver] = React.useState(false);
+  const selectedTemplate = (officialTemplates || []).find((template) => template.name === templateName) || null;
+  const selectedTemplateHeader =
+    selectedTemplate?.content?.header ||
+    selectedTemplate?.header ||
+    (Array.isArray(selectedTemplate?.components)
+      ? selectedTemplate.components.find(
+          (component) => String(component?.type || '').trim().toUpperCase() === 'HEADER'
+        ) || null
+      : null);
+  const selectedTemplateHeaderType = String(
+    selectedTemplateHeader?.type ||
+    selectedTemplateHeader?.format ||
+    selectedTemplate?.type ||
+    selectedTemplate?.mediaType ||
+    selectedTemplate?.headerType ||
+    selectedTemplate?.templateType ||
+    ''
+  ).toLowerCase();
+  const selectedTemplateHasImageHeader =
+    selectedTemplateHeaderType === 'image' ||
+    (
+      Boolean(
+        selectedTemplateHeader?.mediaUrl ||
+        selectedTemplateHeader?.example?.header_handle?.[0] ||
+        selectedTemplateHeader?.header_handle?.[0]
+      ) &&
+      !String(selectedTemplateHeader?.text || '').trim()
+    );
+  const selectedTemplateHeaderMediaUrl = String(
+    templateHeaderMediaUrl ||
+    selectedTemplateHeader?.mediaUrl ||
+    selectedTemplateHeader?.example?.header_handle?.[0] ||
+    selectedTemplateHeader?.header_handle?.[0] ||
+    ''
+  ).trim();
+  const templateHeaderUploadInputId = 'new-broadcast-template-header-upload';
+
+  const handleTemplateHeaderUploadClick = () => {
+    const input = document.getElementById(templateHeaderUploadInputId);
+    if (input) input.click();
+  };
+
+  const handleTemplateHeaderDragOver = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsTemplateHeaderDragOver(true);
+  };
+
+  const handleTemplateHeaderDragLeave = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsTemplateHeaderDragOver(false);
+  };
+
+  const handleTemplateHeaderDrop = async (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsTemplateHeaderDragOver(false);
+    const file = event.dataTransfer?.files?.[0];
+    if (file && typeof onTemplateHeaderMediaUpload === 'function') {
+      await onTemplateHeaderMediaUpload(file);
+    }
+  };
+
   const triggerCsvPicker = () => {
     const input = document.getElementById('csv-file-popup');
     if (input) input.click();
@@ -118,6 +190,101 @@ const NewBroadcastPopup = ({
                   </option>
                 ))}
               </select>
+              {selectedTemplate ? (
+                <>
+                <div className="template-header-hint">
+                  <span className="template-header-hint__label">Header</span>
+                  <span className={`template-header-hint__chip ${selectedTemplateHasImageHeader ? 'is-image' : 'is-text'}`}>
+                    {selectedTemplateHasImageHeader ? 'Image template' : 'Text template'}
+                  </span>
+                  <span className="template-header-hint__text">
+                    {selectedTemplateHasImageHeader
+                      ? 'This template requires an image header. Upload one before sending.'
+                      : 'This template does not use an image header.'}
+                  </span>
+                </div>
+                {selectedTemplateHasImageHeader ? (
+                  <div
+                    className={`template-media-upload-box template-media-upload-box--compact${isTemplateHeaderDragOver ? ' is-drag-over' : ''}`}
+                    onDragOver={handleTemplateHeaderDragOver}
+                    onDragLeave={handleTemplateHeaderDragLeave}
+                    onDrop={handleTemplateHeaderDrop}
+                    onClick={handleTemplateHeaderUploadClick}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        handleTemplateHeaderUploadClick();
+                      }
+                    }}
+                  >
+                    <div className="template-media-upload-box__empty-state">
+                      <div className="template-media-upload-box__icon-shell">
+                        <Upload size={18} />
+                      </div>
+                      <div className="template-media-upload-box__copy">
+                        <strong>{selectedTemplateHeaderMediaUrl ? 'Replace the image header' : 'Drop image here'}</strong>
+                        <span>
+                          {isTemplateHeaderDragOver
+                            ? 'Release to upload this image for the template header.'
+                            : 'PNG or JPG works best. You can also click to browse.'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="template-media-upload-box__header">
+                      <strong>Image Header</strong>
+                      <span>{selectedTemplateHeaderMediaUrl ? 'Ready to send' : 'Upload required'}</span>
+                    </div>
+                    <div className="template-media-upload-box__dropzone-copy">
+                      {isTemplateHeaderDragOver
+                        ? 'Drop the image here to upload it for this template.'
+                        : 'Drag and drop an image here, or choose one from your device.'}
+                    </div>
+                    <div className="template-media-upload-box__actions">
+                      <input
+                        id={templateHeaderUploadInputId}
+                        type="file"
+                        accept="image/*"
+                        className="template-media-upload-box__input"
+                        onChange={onTemplateHeaderMediaUpload}
+                        disabled={templateHeaderMediaUploading}
+                      />
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          handleTemplateHeaderUploadClick();
+                        }}
+                        disabled={templateHeaderMediaUploading}
+                      >
+                        {templateHeaderMediaUploading ? 'Uploading...' : selectedTemplateHeaderMediaUrl ? 'Replace Image' : 'Upload Image'}
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-btn"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onClearTemplateHeaderMedia?.();
+                        }}
+                        disabled={templateHeaderMediaUploading || !selectedTemplateHeaderMediaUrl}
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    {selectedTemplateHeaderMediaUrl ? (
+                      <div className="template-media-upload-box__preview">
+                        <img src={selectedTemplateHeaderMediaUrl} alt={`${templateName} header`} />
+                      </div>
+                    ) : null}
+                    {templateHeaderMediaError ? (
+                      <div className="template-media-upload-box__error">{templateHeaderMediaError}</div>
+                    ) : null}
+                  </div>
+                ) : null}
+                </>
+              ) : null}
             </div>
           )}
 
@@ -365,6 +532,19 @@ const NewBroadcastPopup = ({
                   className="form-input"
                 />
               </div>
+            </div>
+
+            <div className="policy-field">
+              <span>Delivery batch size</span>
+              <input
+                type="number"
+                min="1"
+                max="500"
+                value={deliveryBatchSize}
+                onChange={(event) => onDeliveryBatchSizeChange(event.target.value)}
+                className="form-input"
+              />
+              <small>How many recipients to process before moving to the next batch.</small>
             </div>
 
             <div className="policy-toggle">

@@ -65,10 +65,27 @@ export const getConversationPreviewMeta = (conversation = {}) => {
       ? formatConversationDocumentPreviewText(conversation, defaultPreviewText)
       : defaultPreviewText;
 
+  const lastMessageFrom = String(conversation?.lastMessageFrom || '').trim().toLowerCase();
+  const lastMessageStatus = String(conversation?.lastMessageStatus || '').trim().toLowerCase();
+  const resolvedStatus =
+    lastMessageFrom === 'agent' ? lastMessageStatus || 'sent' : '';
+  const statusIconTone =
+    resolvedStatus === 'read'
+      ? 'read'
+      : resolvedStatus === 'delivered'
+        ? 'delivered'
+        : resolvedStatus === 'sent'
+          ? 'sent'
+          : '';
+  const statusIconType =
+    resolvedStatus === 'read' || resolvedStatus === 'delivered' ? 'double' : 'single';
+
   return {
     mediaType,
     isMedia: Boolean(mediaType),
-    showStatusIcon: String(conversation?.lastMessageFrom || '').trim().toLowerCase() === 'agent',
+    showStatusIcon: Boolean(statusIconTone),
+    statusIconTone,
+    statusIconType,
     previewText
   };
 };

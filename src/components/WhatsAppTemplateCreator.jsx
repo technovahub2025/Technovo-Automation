@@ -359,6 +359,23 @@ const WhatsAppTemplateCreator = () => {
     return /[{}]/.test(textWithoutValidPlaceholders);
   };
 
+  const containsStandaloneVariableLine = (text) => {
+    if (!text) return false;
+    return text
+      .split(/\r?\n/)
+      .some((line) => /^\s*\{\{\d+\}\}\s*$/.test(line));
+  };
+
+  const buildMetaSafeText = (text) =>
+    String(text || '')
+      .replace(/\r\n/g, '\n')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter(Boolean)
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
   const validateTemplateRules = () => {
     const errors = {};
     const body = (templateData.content.body || '').trim();
@@ -383,6 +400,8 @@ const WhatsAppTemplateCreator = () => {
       errors.body = 'Body content is required.';
     } else if (containsInvalidBraceVariable(body)) {
       errors.body = 'Variables must use numeric format: {{1}}, {{2}}.';
+    } else if (containsStandaloneVariableLine(body)) {
+      errors.body = 'Variables cannot be alone on a line. Put text before or after the variable.';
     } else if (/^\s*\{\{\d+\}\}/.test(body)) {
       errors.body = 'Variable cannot be at the start of body.';
     } else if (/\{\{\d+\}\}\s*$/.test(body)) {
@@ -453,6 +472,11 @@ const WhatsAppTemplateCreator = () => {
     setSubmitStatus(null);
 
     try {
+      const sanitizedBody = String(templateData.content.body || '').trim();
+      const sanitizedHeaderText = String(templateData.content.header.text || '').trim();
+      const sanitizedFooter = String(templateData.content.footer || '').trim();
+      const metaSafeBody = buildMetaSafeText(sanitizedBody);
+
       // Convert to Meta API format for consistency
       const metaFormatData = {
         name: templateData.name,
@@ -462,14 +486,14 @@ const WhatsAppTemplateCreator = () => {
       };
 
       // Add body component
-      if (templateData.content.body) {
+      if (metaSafeBody) {
         const bodyComponent = {
           type: "BODY",
-          text: templateData.content.body
+          text: metaSafeBody
         };
         
         // Add examples if variables are present
-        const variableNumbers = extractVariableNumbers(templateData.content.body);
+        const variableNumbers = extractVariableNumbers(sanitizedBody);
         if (variableNumbers.length > 0) {
           // Use the actual variable examples from the state
           const exampleValues = variableNumbers.map(num => variableExamples[num] || `Example ${num}`);
@@ -491,19 +515,19 @@ const WhatsAppTemplateCreator = () => {
             header_handle: ["example"]
           } : undefined
         });
-      } else if (templateData.content.header.type === 'text' && templateData.content.header.text) {
+      } else if (templateData.content.header.type === 'text' && sanitizedHeaderText) {
         metaFormatData.components.push({
           type: "HEADER",
           format: "TEXT",
-          text: templateData.content.header.text
+          text: sanitizedHeaderText
         });
       }
 
       // Add footer component if present
-      if (templateData.content.footer) {
+      if (sanitizedFooter) {
         metaFormatData.components.push({
           type: "FOOTER",
-          text: templateData.content.footer
+          text: sanitizedFooter
         });
       }
 

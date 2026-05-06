@@ -1914,6 +1914,8 @@ const ChatArea = ({
   const isVoiceSending = voiceRecorderState.status === 'sending';
   const showVoiceRecorderComposer = isVoiceRecordingActive || isVoiceSending;
   const slaMeta = resolveConversationSlaMeta(selectedConversation);
+  const whatsappStateLabel = String(whatsappMessagingState?.statusLabel || '').trim();
+  const whatsappStateTone = String(whatsappMessagingState?.badgeTone || '').trim() || 'template-only';
 
   if (!selectedConversation) {
     return (
@@ -1955,6 +1957,20 @@ const ChatArea = ({
                   }`}
                 >
                   {slaMeta.label}
+                </span>
+              )}
+              {whatsappStateLabel && (
+                <span
+                  className={`chat-header-operator-chip chat-header-operator-chip--whatsapp chat-header-operator-chip--whatsapp-${whatsappStateTone}`}
+                  title={
+                    whatsappMessagingState?.optedOut
+                      ? 'This contact has opted out of WhatsApp outreach.'
+                      : whatsappMessagingState?.freeformAllowed
+                        ? 'Free-form replies are allowed for this contact.'
+                        : 'Free-form replies are closed. Use an approved template.'
+                  }
+                >
+                  {whatsappStateLabel}
                 </span>
               )}
             </div>
