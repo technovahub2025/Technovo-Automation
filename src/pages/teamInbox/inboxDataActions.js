@@ -3,7 +3,8 @@ import { whatsappService } from '../../services/whatsappService';
 import { startLoadingTimeoutGuard } from '../../utils/loadingGuard';
 import {
   mergeMessagePreservingReplyContext,
-  mergeOrderedMessagesPreservingReplyContext
+  mergeOrderedMessagesPreservingReplyContext,
+  resolvePreferredMessageStatus
 } from './replyMessageMergeUtils';
 import {
   readTeamInboxThreadCache,
@@ -12,18 +13,6 @@ import {
 
 const DEFAULT_MESSAGES_PAGE_LIMIT = 30;
 const CONVERSATION_LIST_LOADING_TIMEOUT_MS = 8000;
-const MESSAGE_STATUS_RANK = { sent: 1, delivered: 2, read: 3, failed: 4 };
-
-const pickConversationStatus = (incomingStatus = '', previousStatus = '') => {
-  const normalizedIncoming = String(incomingStatus || '').trim().toLowerCase();
-  const normalizedPrevious = String(previousStatus || '').trim().toLowerCase();
-
-  const incomingRank = MESSAGE_STATUS_RANK[normalizedIncoming] || 0;
-  const previousRank = MESSAGE_STATUS_RANK[normalizedPrevious] || 0;
-
-  if (previousRank > incomingRank) return normalizedPrevious;
-  return normalizedIncoming || normalizedPrevious;
-};
 
 const normalizeMessagePageMeta = (meta = {}, fallbackLimit = DEFAULT_MESSAGES_PAGE_LIMIT) => ({
   limit: Number(meta?.limit || fallbackLimit) || fallbackLimit,
@@ -56,7 +45,6 @@ export const createInboxDataActions = ({
   messageCacheRef,
   messagePaginationCacheRef,
   messageLoadPromiseMapRef,
-  conversationStatusCacheRef,
   setSidebarRefreshing,
   notifyActionFeedback,
   confirmAction
@@ -93,6 +81,48 @@ export const createInboxDataActions = ({
       if (!silent) setLoading(true);
       const data = await whatsappService.getConversations();
       const incomingConversations = Array.isArray(data) ? data.map(normalizeConversation) : [];
+
+      const hydratedConversations = await Promise.all(
+        incomingConversations.map(async (conversation) => {
+          const conversationId = String(conversation?._id || conversation?.id || '').trim();
+          if (!conversationId) return conversation;
+
+          try {
+            const latestPage = await whatsappService.getMessagesPage(conversationId, {
+              limit: 1
+            });
+            const latestMessage = Array.isArray(latestPage?.data) ? latestPage.data[0] : null;
+            if (!latestMessage) return conversation;
+
+            const latestSender = String(latestMessage?.sender || '').trim().toLowerCase();
+            const latestStatus = String(latestMessage?.status || '').trim().toLowerCase();
+            const resolvedStatus =
+              latestSender === 'agent'
+                ? resolvePreferredMessageStatus(conversation?.lastMessageStatus, latestStatus)
+                : conversation?.lastMessageStatus || '';
+
+            return normalizeConversation({
+              ...conversation,
+              lastMessage: String(latestMessage?.text || conversation?.lastMessage || '').trim(),
+              lastMessageTime:
+                latestMessage?.timestamp ||
+                latestMessage?.createdAt ||
+                conversation?.lastMessageTime,
+              lastMessageFrom: latestSender || String(conversation?.lastMessageFrom || '').trim(),
+              lastMessageStatus: resolvedStatus,
+              lastMessageWhatsappMessageId:
+                String(latestMessage?.whatsappMessageId || '').trim() ||
+                String(conversation?.lastMessageWhatsappMessageId || '').trim(),
+              lastMessageMediaType:
+                String(latestMessage?.mediaType || conversation?.lastMessageMediaType || '').trim()
+            });
+          } catch (error) {
+            console.warn('Failed to hydrate conversation summary:', conversationId, error);
+            return conversation;
+          }
+        })
+      );
+
       setConversations((prev) => {
         const previousById = new Map(
           (Array.isArray(prev) ? prev : [])
@@ -100,34 +130,23 @@ export const createInboxDataActions = ({
             .filter(([id]) => Boolean(id))
         );
 
-        return incomingConversations.map((conversation) => {
+        return hydratedConversations.map((conversation) => {
           const conversationId = String(conversation?._id || conversation?.id || '').trim();
           const previous = conversationId ? previousById.get(conversationId) : null;
-          const cachedStatusEntry = conversationId
-            ? conversationStatusCacheRef?.current?.get(conversationId)
-            : null;
           if (!previous) return conversation;
-
-          const nextStatus = pickConversationStatus(
-            conversation?.lastMessageStatus || cachedStatusEntry?.lastMessageStatus,
-            previous?.lastMessageStatus || cachedStatusEntry?.lastMessageStatus
-          );
-          const previousFrom = String(previous?.lastMessageFrom || '').trim().toLowerCase();
-          const incomingFrom = String(conversation?.lastMessageFrom || '').trim().toLowerCase();
-          const nextFrom =
-            nextStatus === String(previous?.lastMessageStatus || '').trim().toLowerCase()
-              ? previousFrom || incomingFrom
-              : incomingFrom || previousFrom;
-          const nextWhatsappMessageId =
-            String(conversation?.lastMessageWhatsappMessageId || '').trim() ||
-            String(previous?.lastMessageWhatsappMessageId || '').trim() ||
-            String(cachedStatusEntry?.lastMessageWhatsappMessageId || '').trim();
 
           return {
             ...conversation,
-            lastMessageStatus: nextStatus,
-            lastMessageFrom: nextFrom || conversation?.lastMessageFrom || previous?.lastMessageFrom,
-            lastMessageWhatsappMessageId: nextWhatsappMessageId
+            lastMessageStatus: resolvePreferredMessageStatus(
+              previous?.lastMessageStatus,
+              conversation?.lastMessageStatus
+            ),
+            lastMessageFrom:
+              String(conversation?.lastMessageFrom || '').trim() ||
+              String(previous?.lastMessageFrom || '').trim(),
+            lastMessageWhatsappMessageId:
+              String(conversation?.lastMessageWhatsappMessageId || '').trim() ||
+              String(previous?.lastMessageWhatsappMessageId || '').trim()
           };
         });
       });
@@ -471,7 +490,6 @@ export const createInboxDataActions = ({
               message._id === optimisticId
                 ? {
                     ...mergeMessagePreservingReplyContext(message, sentMessage),
-                    status: sentMessage.status || 'sent',
                     replyTo:
                       sentMessage?.replyTo ||
                       message?.replyTo ||
@@ -503,7 +521,6 @@ export const createInboxDataActions = ({
                 ...next,
                 {
                   ...sentMessage,
-                  status: sentMessage.status || 'sent',
                   ...replyMetadata
                 }
               ];
@@ -550,7 +567,15 @@ export const createInboxDataActions = ({
           setMessages((prev) =>
             prev.map((message) =>
               message._id === optimisticId
-                ? { ...message, status: 'sent' }
+                ? {
+                    ...message,
+                    status:
+                      ['delivered', 'read', 'failed'].includes(
+                        String(message?.status || '').trim().toLowerCase()
+                      )
+                        ? String(message.status).trim().toLowerCase()
+                        : 'sent'
+                  }
                 : message
             )
           );
@@ -691,7 +716,17 @@ export const createInboxDataActions = ({
       if (!sentMessage) {
         setMessages((prev) =>
           prev.map((message) =>
-            message._id === optimisticId ? { ...message, status: 'sent' } : message
+            message._id === optimisticId
+              ? {
+                  ...message,
+                  status:
+                    ['delivered', 'read', 'failed'].includes(
+                      String(message?.status || '').trim().toLowerCase()
+                    )
+                      ? String(message.status).trim().toLowerCase()
+                      : 'sent'
+                }
+              : message
           )
         );
       } else {
@@ -728,7 +763,6 @@ export const createInboxDataActions = ({
             message._id === optimisticId
               ? {
                   ...mergeMessagePreservingReplyContext(message, sentMessage),
-                  status: sentMessage.status || 'sent',
                   replyTo: sentMessage?.replyTo || message?.replyTo,
                   replyToMessageId:
                     sentMessage?.replyToMessageId || message?.replyToMessageId || '',
@@ -751,7 +785,6 @@ export const createInboxDataActions = ({
               ...next,
               {
                 ...sentMessage,
-                status: sentMessage.status || 'sent',
                 ...replyMetadata
               }
             ];
@@ -847,7 +880,15 @@ export const createInboxDataActions = ({
         setMessages((prev) =>
           prev.map((message) =>
             String(message?._id || '') === optimisticId
-              ? { ...message, status: 'sent' }
+              ? {
+                  ...message,
+                  status:
+                    ['delivered', 'read', 'failed'].includes(
+                      String(message?.status || '').trim().toLowerCase()
+                    )
+                      ? String(message.status).trim().toLowerCase()
+                      : 'sent'
+                }
               : message
           )
         );

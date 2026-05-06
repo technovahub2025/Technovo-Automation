@@ -47,6 +47,7 @@ import {
   formatMessageTime,
   getMessageKey
 } from './teamInbox/teamInboxDisplayUtils';
+import { resolvePreferredMessageStatus } from './teamInbox/replyMessageMergeUtils';
 
 const TEAM_INBOX_DRAFTS_PREFIX = 'team-inbox:drafts:v1';
 
@@ -186,7 +187,6 @@ const TeamInbox = () => {
   const messageCacheRef = useRef(new Map());
   const messagePaginationCacheRef = useRef(new Map());
   const messageLoadPromiseMapRef = useRef(new Map());
-  const conversationStatusCacheRef = useRef(new Map());
   const restoredBootstrapCacheUserRef = useRef('');
   const consumedTemplateOpenNonceRef = useRef('');
   const commonEmojis = [
@@ -545,66 +545,6 @@ const TeamInbox = () => {
       );
     };
   }, [conversations, navigate]);
-
-  useEffect(() => {
-    const activeConversationId = String(
-      selectedConversation?._id || selectedConversation?.id || ''
-    ).trim();
-    if (!activeConversationId || !Array.isArray(messages) || messages.length === 0) return;
-
-    const latestAgentMessage = [...messages]
-      .reverse()
-      .find((message) => String(message?.sender || '').trim().toLowerCase() === 'agent');
-
-    if (!latestAgentMessage) return;
-
-    const nextStatus = String(latestAgentMessage?.status || '').trim().toLowerCase();
-    if (!nextStatus) return;
-
-    const nextFrom = String(latestAgentMessage?.sender || 'agent').trim().toLowerCase() || 'agent';
-    const nextConversationId = activeConversationId;
-    const nextMessageId = String(
-      latestAgentMessage?.whatsappMessageId ||
-        latestAgentMessage?._id ||
-        latestAgentMessage?.messageId ||
-        ''
-    ).trim();
-
-    const currentCachedStatus =
-      conversationStatusCacheRef.current.get(nextConversationId)?.lastMessageStatus || '';
-    const currentRank = { sent: 1, delivered: 2, read: 3, failed: 4 }[currentCachedStatus] || 0;
-    const nextRank = { sent: 1, delivered: 2, read: 3, failed: 4 }[nextStatus] || 0;
-    if (nextRank >= currentRank) {
-      conversationStatusCacheRef.current.set(nextConversationId, {
-        lastMessageStatus: nextStatus,
-        lastMessageWhatsappMessageId: nextMessageId
-      });
-    }
-
-    setConversations((prev) =>
-      prev.map((conversation) =>
-        String(conversation?._id || conversation?.id || '').trim() === nextConversationId
-          ? {
-              ...conversation,
-              lastMessageFrom: nextFrom,
-              lastMessageStatus: nextStatus
-            }
-          : conversation
-      )
-    );
-
-    setSelectedConversation((prev) =>
-      prev && String(prev?._id || prev?.id || '').trim() === activeConversationId
-        ? {
-            ...prev,
-            lastMessageFrom: nextFrom,
-            lastMessageStatus: nextStatus
-          }
-        : prev
-    );
-  }, [messages, selectedConversation?._id, selectedConversation?.id]);
-
-
 
   const appendMessageUnique = (incomingMessage) => {
 
@@ -994,7 +934,6 @@ const TeamInbox = () => {
     messageCacheRef,
     messagePaginationCacheRef,
     messageLoadPromiseMapRef,
-    conversationStatusCacheRef,
     setSidebarRefreshing,
     setMessagesOlderLoading,
     setMessagesHasMore,
@@ -1062,7 +1001,6 @@ const TeamInbox = () => {
     setSelectedConversation,
     applyLeadScoreUpdateToConversation,
     setSidebarRefreshing,
-    conversationStatusCacheRef,
     realtimeResyncTimerRef
   });
   const {
@@ -1101,6 +1039,49 @@ const TeamInbox = () => {
       }),
     [conversations, searchTerm, conversationFilter, getUnreadCount, getConversationDisplayName]
   );
+
+  const sidebarConversations = useMemo(() => {
+    const activeId = String(selectedConversation?._id || '').trim();
+    if (!activeId || !Array.isArray(messages) || messages.length === 0) {
+      return filteredConversations;
+    }
+
+    const latestVisibleMessage = [...messages]
+      .filter((message) => String(message?.sender || '').trim())
+      .slice()
+      .sort((left, right) => {
+        const leftTime = new Date(left?.timestamp || left?.whatsappTimestamp || left?.createdAt || 0).valueOf();
+        const rightTime = new Date(right?.timestamp || right?.whatsappTimestamp || right?.createdAt || 0).valueOf();
+        return leftTime - rightTime;
+      })
+      .at(-1);
+
+    if (!latestVisibleMessage) {
+      return filteredConversations;
+    }
+
+    return filteredConversations.map((conversation) => {
+      if (String(conversation?._id || '').trim() !== activeId) {
+        return conversation;
+      }
+
+      const latestSender = String(latestVisibleMessage?.sender || '').trim().toLowerCase();
+      const latestStatus = String(latestVisibleMessage?.status || '').trim().toLowerCase();
+
+      return {
+        ...conversation,
+        lastMessageFrom: latestSender || conversation?.lastMessageFrom || '',
+        lastMessageStatus:
+          latestSender === 'agent'
+            ? resolvePreferredMessageStatus(conversation?.lastMessageStatus, latestStatus)
+            : conversation?.lastMessageStatus || '',
+        lastMessageWhatsappMessageId:
+          String(latestVisibleMessage?.whatsappMessageId || '').trim() ||
+          String(conversation?.lastMessageWhatsappMessageId || '').trim()
+      };
+    });
+  }, [filteredConversations, messages, selectedConversation?._id]);
+
   filteredConversationsRef.current = filteredConversations;
 
   const handleMessageInputChange = (nextValue) => {
@@ -1372,7 +1353,7 @@ const TeamInbox = () => {
         showSelectMode={showSelectMode}
         selectedForDeletion={selectedForDeletion}
         loading={loading}
-        filteredConversations={filteredConversations}
+        filteredConversations={sidebarConversations}
         selectedConversation={selectedConversation}
         searchTerm={searchTerm}
         searchInputRef={sidebarSearchInputRef}
