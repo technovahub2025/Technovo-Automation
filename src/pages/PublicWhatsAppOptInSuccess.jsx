@@ -1,4 +1,5 @@
 import React from "react";
+import { toAppPath } from "../utils/appRouteBase";
 import "./PublicWhatsAppOptInSuccess.css";
 
 function PublicWhatsAppOptInSuccess() {
@@ -10,7 +11,7 @@ function PublicWhatsAppOptInSuccess() {
         <p>
           You will receive WhatsApp updates from Technovohub. You can reply STOP anytime to opt out.
         </p>
-        <a className="public-optin-success-button" href="/" rel="noreferrer">
+        <a className="public-optin-success-button" href={toAppPath("/")} rel="noreferrer">
           Back to site
         </a>
       </div>

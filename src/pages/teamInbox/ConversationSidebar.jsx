@@ -5,6 +5,7 @@ import {
   MoreVertical,
   ChevronDown,
   Trash2,
+  Check,
   CheckCheck,
   Image as ImageIcon,
   FileText,
@@ -276,11 +277,23 @@ const ConversationSidebar = ({
                     <div className="conversation-bottom">
                       <div className="conversation-preview-line">
                         {previewMeta.showStatusIcon && (
-                          <CheckCheck
-                            size={14}
-                            className="conversation-preview-status-icon"
-                            aria-hidden="true"
-                          />
+                          previewMeta.statusIconType === 'double' ? (
+                            <CheckCheck
+                              size={14}
+                              className={`conversation-preview-status-icon ${
+                                previewMeta.statusIconTone ? `status-${previewMeta.statusIconTone}` : ''
+                              }`}
+                              aria-hidden="true"
+                            />
+                          ) : (
+                            <Check
+                              size={14}
+                              className={`conversation-preview-status-icon ${
+                                previewMeta.statusIconTone ? `status-${previewMeta.statusIconTone}` : ''
+                              }`}
+                              aria-hidden="true"
+                            />
+                          )
                         )}
                         {previewMeta.isMedia && renderConversationMediaIcon(previewMeta.mediaType)}
                         <p className="preview">{previewMeta.previewText}</p>

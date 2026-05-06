@@ -6,11 +6,19 @@ import whatsappLogo from '../../assets/WhatsApp.svg.webp';
 const MessagePreview = ({
   messageType,
   templateName,
+  selectedTemplate,
+  templateHeaderMediaUrl,
   customMessage,
   recipients,
   getTemplatePreview,
   getMessagePreview
 }) => {
+  const templateHeader = selectedTemplate?.content?.header || null;
+  const templateHeaderType = String(templateHeader?.type || templateHeader?.format || '').trim().toLowerCase();
+  const resolvedTemplateHeaderMediaUrl = String(
+    templateHeaderMediaUrl || templateHeader?.mediaUrl || ''
+  ).trim();
+
   const getCurrentTime = () => {
     const now = new Date();
     return now.toLocaleTimeString('en-US', {
@@ -74,7 +82,23 @@ const MessagePreview = ({
           <div className="message-bubble sent">
             {messageType === 'template' ? (
               templateName ? (
-                <p className="template-content">{getTemplatePreview()}</p>
+                <>
+                  {templateHeaderType === 'image' && resolvedTemplateHeaderMediaUrl ? (
+                    <div className="template-media-preview">
+                      <img
+                        src={resolvedTemplateHeaderMediaUrl}
+                        alt={`${templateName} header`}
+                        className="template-media-preview__image"
+                      />
+                      <span className="template-media-preview__label">Image header from template</span>
+                    </div>
+                  ) : templateHeaderType === 'image' ? (
+                    <div className="template-media-preview template-media-preview--missing">
+                      <span className="template-media-preview__label">Image header required. Upload one to preview.</span>
+                    </div>
+                  ) : null}
+                  <p className="template-content">{getTemplatePreview()}</p>
+                </>
               ) : (
                 <p className="placeholder-text">Select a template to preview</p>
               )

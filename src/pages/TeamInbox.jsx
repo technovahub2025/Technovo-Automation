@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect, useRef, useContext } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useContext } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import './TeamInbox.css';
 import { googleCalendarService } from '../services/googleCalendarService';
@@ -164,6 +164,8 @@ const TeamInbox = () => {
   const [whatsAppConsentAuditLoading, setWhatsAppConsentAuditLoading] = useState(false);
   const [whatsAppConsentAuditError, setWhatsAppConsentAuditError] = useState('');
   const [whatsAppConsentAuditData, setWhatsAppConsentAuditData] = useState(null);
+  const [leadScoringSettings, setLeadScoringSettings] = useState(null);
+  const [leadScoringSettingsLoading, setLeadScoringSettingsLoading] = useState(false);
   const messagesEndRef = useRef(null);
   const chatMessagesRef = useRef(null);
   const inboxMenuRef = useRef(null);
@@ -184,6 +186,7 @@ const TeamInbox = () => {
   const messageCacheRef = useRef(new Map());
   const messagePaginationCacheRef = useRef(new Map());
   const messageLoadPromiseMapRef = useRef(new Map());
+  const conversationStatusCacheRef = useRef(new Map());
   const restoredBootstrapCacheUserRef = useRef('');
   const consumedTemplateOpenNonceRef = useRef('');
   const commonEmojis = [
@@ -202,6 +205,7 @@ const TeamInbox = () => {
   ];
   const storedUser = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; } })();
   const currentUserId = user?.id || user?._id || storedUser?.id || storedUser?._id || localStorage.getItem('userId') || null;
+  const currentCompanyId = user?.companyId || storedUser?.companyId || localStorage.getItem('companyId') || null;
   const routeOutreachTarget = getWhatsAppOutreachTargetFromLocationState(location.state);
   const requestedConversationFilter = String(searchParams.get('filter') || 'all').trim().toLowerCase();
   const activeConversationId = String(selectedConversation?._id || '').trim();
@@ -258,6 +262,42 @@ const TeamInbox = () => {
   useEffect(() => {
     writeTeamInboxDrafts(currentUserId, conversationDrafts);
   }, [conversationDrafts, currentUserId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadLeadScoringSettings = async () => {
+      if (!String(currentUserId || '').trim()) {
+        setLeadScoringSettings(null);
+        return;
+      }
+
+      try {
+        setLeadScoringSettingsLoading(true);
+        const result = await apiClient.getLeadScoringSettings();
+        if (cancelled) return;
+        if (result?.success === false) {
+          setLeadScoringSettings(null);
+          return;
+        }
+        setLeadScoringSettings(result?.data || result || null);
+      } catch {
+        if (!cancelled) {
+          setLeadScoringSettings(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setLeadScoringSettingsLoading(false);
+        }
+      }
+    };
+
+    loadLeadScoringSettings();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!activeConversationId) return;
@@ -506,6 +546,64 @@ const TeamInbox = () => {
     };
   }, [conversations, navigate]);
 
+  useEffect(() => {
+    const activeConversationId = String(
+      selectedConversation?._id || selectedConversation?.id || ''
+    ).trim();
+    if (!activeConversationId || !Array.isArray(messages) || messages.length === 0) return;
+
+    const latestAgentMessage = [...messages]
+      .reverse()
+      .find((message) => String(message?.sender || '').trim().toLowerCase() === 'agent');
+
+    if (!latestAgentMessage) return;
+
+    const nextStatus = String(latestAgentMessage?.status || '').trim().toLowerCase();
+    if (!nextStatus) return;
+
+    const nextFrom = String(latestAgentMessage?.sender || 'agent').trim().toLowerCase() || 'agent';
+    const nextConversationId = activeConversationId;
+    const nextMessageId = String(
+      latestAgentMessage?.whatsappMessageId ||
+        latestAgentMessage?._id ||
+        latestAgentMessage?.messageId ||
+        ''
+    ).trim();
+
+    const currentCachedStatus =
+      conversationStatusCacheRef.current.get(nextConversationId)?.lastMessageStatus || '';
+    const currentRank = { sent: 1, delivered: 2, read: 3, failed: 4 }[currentCachedStatus] || 0;
+    const nextRank = { sent: 1, delivered: 2, read: 3, failed: 4 }[nextStatus] || 0;
+    if (nextRank >= currentRank) {
+      conversationStatusCacheRef.current.set(nextConversationId, {
+        lastMessageStatus: nextStatus,
+        lastMessageWhatsappMessageId: nextMessageId
+      });
+    }
+
+    setConversations((prev) =>
+      prev.map((conversation) =>
+        String(conversation?._id || conversation?.id || '').trim() === nextConversationId
+          ? {
+              ...conversation,
+              lastMessageFrom: nextFrom,
+              lastMessageStatus: nextStatus
+            }
+          : conversation
+      )
+    );
+
+    setSelectedConversation((prev) =>
+      prev && String(prev?._id || prev?.id || '').trim() === activeConversationId
+        ? {
+            ...prev,
+            lastMessageFrom: nextFrom,
+            lastMessageStatus: nextStatus
+          }
+        : prev
+    );
+  }, [messages, selectedConversation?._id, selectedConversation?.id]);
+
 
 
   const appendMessageUnique = (incomingMessage) => {
@@ -548,6 +646,7 @@ const TeamInbox = () => {
     selectedTemplateOption,
     getTemplateCompositeKey,
     getTemplateLanguageCode,
+    getTemplateCategory,
     extractTemplateVariableCount,
     extractTemplateHeaderVariableCount,
     getTemplateHeaderFormat,
@@ -600,6 +699,38 @@ const TeamInbox = () => {
     if (showTemplateSendModal) return;
     openTemplateSendModal();
   }, [openTemplateSendModal, pendingTemplateTarget, showTemplateSendModal]);
+
+  const groupedMessages = useMemo(() => buildGroupedMessages(messages), [messages]);
+  const latestInboundMessageAtFromThread = useMemo(() => {
+    if (!Array.isArray(messages) || messages.length === 0) return null;
+
+    let latestTime = 0;
+    for (const message of messages) {
+      if (String(message?.sender || '').trim().toLowerCase() !== 'contact') continue;
+      const candidate = new Date(
+        message?.whatsappTimestamp || message?.timestamp || message?.createdAt
+      );
+      const candidateTime = candidate.getTime();
+      if (Number.isNaN(candidateTime)) continue;
+      if (candidateTime > latestTime) {
+        latestTime = candidateTime;
+      }
+    }
+
+    return latestTime ? new Date(latestTime).toISOString() : null;
+  }, [messages]);
+
+  const whatsappStateContactSource =
+    selectedConversation?.contactId && typeof selectedConversation.contactId === 'object'
+      ? {
+          ...selectedConversation.contactId,
+          ...(latestInboundMessageAtFromThread
+            ? { lastInboundMessageAt: latestInboundMessageAtFromThread }
+            : {})
+        }
+      : selectedConversation?.contactId || {};
+
+  const selectedWhatsAppState = getWhatsAppConversationState(whatsappStateContactSource);
 
   const {
     applyContactUpdateLocally,
@@ -863,6 +994,7 @@ const TeamInbox = () => {
     messageCacheRef,
     messagePaginationCacheRef,
     messageLoadPromiseMapRef,
+    conversationStatusCacheRef,
     setSidebarRefreshing,
     setMessagesOlderLoading,
     setMessagesHasMore,
@@ -930,6 +1062,7 @@ const TeamInbox = () => {
     setSelectedConversation,
     applyLeadScoreUpdateToConversation,
     setSidebarRefreshing,
+    conversationStatusCacheRef,
     realtimeResyncTimerRef
   });
   const {
@@ -957,13 +1090,17 @@ const TeamInbox = () => {
     confirmAction: confirmTeamInboxAction
   });
 
-  const filteredConversations = filterConversations({
-    conversations,
-    searchTerm,
-    conversationFilter,
-    getUnreadCount,
-    getConversationDisplayName
-  });
+  const filteredConversations = useMemo(
+    () =>
+      filterConversations({
+        conversations,
+        searchTerm,
+        conversationFilter,
+        getUnreadCount,
+        getConversationDisplayName
+      }),
+    [conversations, searchTerm, conversationFilter, getUnreadCount, getConversationDisplayName]
+  );
   filteredConversationsRef.current = filteredConversations;
 
   const handleMessageInputChange = (nextValue) => {
@@ -976,21 +1113,43 @@ const TeamInbox = () => {
     }));
   };
 
-  const groupedMessages = buildGroupedMessages(messages);
-  const selectedWhatsAppState =
-    selectedConversation?.contactId && typeof selectedConversation.contactId === 'object'
-      ? getWhatsAppConversationState(selectedConversation.contactId)
-      : {
-          normalizedOptInStatus: 'unknown',
-          serviceWindowClosesAt: null,
-          serviceWindowOpen: true,
-          freeformAllowed: true,
-          templateOnly: false,
-          optedOut: false,
-          marketingTemplateAllowed: true,
-          statusLabel: '24h Open',
-          badgeTone: 'service-open'
-        };
+  const handleSendOptInPrompt = async () => {
+    if (!selectedConversation) {
+      setContactInfoMessage('No conversation selected.');
+      setContactInfoMessageTone('error');
+      return;
+    }
+
+    if (selectedWhatsAppState?.optedOut) {
+      setContactInfoMessage('This contact has opted out. Restore consent before sending any WhatsApp prompt.');
+      setContactInfoMessageTone('error');
+      return;
+    }
+
+    if (!selectedWhatsAppState?.freeformAllowed) {
+      setContactInfoMessage('The 24-hour window is closed. Send an approved template first.');
+      setContactInfoMessageTone('error');
+      return;
+    }
+
+    const optInKeyword = 'INTERESTED';
+    const brandName = import.meta.env.VITE_BRAND_NAME || 'Technovohub';
+    const promptMessage = `Reply ${optInKeyword} to receive WhatsApp updates from ${brandName}. Reply STOP anytime to opt out.`;
+
+    try {
+      setContactInfoActionBusy(true);
+      const sent = await sendMessage({ messageOverride: promptMessage });
+      if (sent) {
+        setContactInfoMessage('Opt-in prompt sent.');
+        setContactInfoMessageTone('success');
+      } else {
+        setContactInfoMessage('Unable to send opt-in prompt.');
+        setContactInfoMessageTone('error');
+      }
+    } finally {
+      setContactInfoActionBusy(false);
+    }
+  };
 
   const openSelectedConversationOptInModal = () => {
     const activeContact =
@@ -1289,6 +1448,7 @@ const TeamInbox = () => {
           templateOptions={templateOptions}
           getTemplateCompositeKey={getTemplateCompositeKey}
           getTemplateLanguageCode={getTemplateLanguageCode}
+          getTemplateCategory={getTemplateCategory}
           extractTemplateVariableCount={extractTemplateVariableCount}
           extractTemplateHeaderVariableCount={extractTemplateHeaderVariableCount}
           getTemplateHeaderFormat={getTemplateHeaderFormat}
@@ -1313,9 +1473,14 @@ const TeamInbox = () => {
         getLeadStageValue={getLeadStageValue}
         handleLeadStageChange={handleLeadStageChange}
         contactInfoActionBusy={contactInfoActionBusy}
+        currentUserId={currentUserId}
+        currentCompanyId={currentCompanyId}
         whatsappMessagingState={selectedWhatsAppState}
+        leadScoringSettings={leadScoringSettings}
+        leadScoringSettingsLoading={leadScoringSettingsLoading}
         leadStageOptions={leadStageOptions}
         openTemplateSendModal={openTemplateSendModal}
+        onSendOptInPrompt={handleSendOptInPrompt}
         onMarkWhatsAppOptIn={handleMarkSelectedConversationOptIn}
         onOpenWhatsAppOptInModal={openSelectedConversationOptInModal}
         onMarkWhatsAppOptOut={handleMarkSelectedConversationOptOut}

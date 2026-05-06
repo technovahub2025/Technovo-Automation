@@ -689,85 +689,130 @@ const Contacts = () => {
         return Object.keys(importPreview[0]).filter(key => key !== 'lineNumber');
     };
 
-    const getMappedContacts = () => {
-        return importRows.map(row => {
-            const contact = {};
-            
-            // Map fields based on user selection
-            Object.keys(importMapping).forEach(field => {
-                const sourceField = importMapping[field];
-                if (sourceField && row[sourceField] !== undefined) {
-                    switch (field) {
-                        case 'name': {
-                            // Combine first and last name if available
-                            const firstName = row[sourceField] || '';
-                            const lastNameField = importMapping['lastName'];
-                            const lastName = lastNameField ? (row[lastNameField] || '') : '';
-                            contact[field] = [firstName, lastName].filter(Boolean).join(' ').trim();
-                            break;
-                        }
-                        case 'phone': {
-                            // Clean phone number
-                            let phone = row[sourceField] || '';
-                            phone = phone.replace(/[^0-9+]/g, '');
-                            if (!phone.startsWith('+') && phone.length > 0) {
-                                phone = '+' + phone;
-                            }
-                            contact[field] = phone;
-                            break;
-                        }
-                        case 'email':
-                            contact[field] = row[sourceField] || '';
-                            break;
-                        case 'tags': {
-                            // Split tags by comma
-                            const tags = row[sourceField] || '';
-                            contact[field] = tags.split(',').map(tag => tag.trim()).filter(Boolean);
-                            break;
-                        }
-                        case 'status':
-                            contact[field] = row[sourceField] || 'Unknown';
-                            break;
-                        case 'consentText':
-                            contact[field] = row[sourceField] || '';
-                            break;
-                        case 'proofType':
-                            contact[field] = row[sourceField] || '';
-                            break;
-                        case 'proofId':
-                            contact[field] = row[sourceField] || '';
-                            break;
-                        case 'proofUrl':
-                            contact[field] = row[sourceField] || '';
-                            break;
-                        case 'scope':
-                            contact[field] = row[sourceField] || '';
-                            break;
-                        case 'capturedBy':
-                            contact[field] = row[sourceField] || '';
-                            break;
-                        case 'listName':
-                            contact[field] = row[sourceField] || '';
-                            break;
-                        default:
-                            // Handle custom attributes
-                            if (field.startsWith('custom_attribute_')) {
-                                contact[field] = row[sourceField] || '';
-                            }
-                            break;
-                    }
-                }
-            });
-
-            return contact;
-        }).filter(contact => contact.phone); // Only include contacts with phone numbers
+    const normalizeImportStatusValue = (value = '') => {
+        const normalized = String(value || '').trim().toLowerCase();
+        if (!normalized) return 'unknown';
+        if (normalized === 'opted_in' || normalized === 'opted-in') return 'opted-in';
+        if (normalized === 'opted_out' || normalized === 'opted-out') return 'opted-out';
+        if (normalized === 'unknown') return 'unknown';
+        return normalized.replace(/_/g, '-');
     };
 
+    const mapImportedRow = (row) => {
+        const contact = {};
+
+        Object.keys(importMapping).forEach(field => {
+            const sourceField = importMapping[field];
+            if (sourceField && row[sourceField] !== undefined) {
+                switch (field) {
+                    case 'name': {
+                        const firstName = row[sourceField] || '';
+                        const lastNameField = importMapping['lastName'];
+                        const lastName = lastNameField ? (row[lastNameField] || '') : '';
+                        contact[field] = [firstName, lastName].filter(Boolean).join(' ').trim();
+                        break;
+                    }
+                    case 'phone': {
+                        let phone = row[sourceField] || '';
+                        phone = phone.replace(/[^0-9+]/g, '');
+                        if (!phone.startsWith('+') && phone.length > 0) {
+                            phone = '+' + phone;
+                        }
+                        contact[field] = phone;
+                        break;
+                    }
+                    case 'email':
+                        contact[field] = row[sourceField] || '';
+                        break;
+                    case 'tags': {
+                        const tags = row[sourceField] || '';
+                        contact[field] = tags.split(',').map(tag => tag.trim()).filter(Boolean);
+                        break;
+                    }
+                    case 'status':
+                        contact[field] = row[sourceField] || 'Unknown';
+                        break;
+                    case 'consentText':
+                        contact[field] = row[sourceField] || '';
+                        break;
+                    case 'proofType':
+                        contact[field] = row[sourceField] || '';
+                        break;
+                    case 'proofId':
+                        contact[field] = row[sourceField] || '';
+                        break;
+                    case 'proofUrl':
+                        contact[field] = row[sourceField] || '';
+                        break;
+                    case 'scope':
+                        contact[field] = row[sourceField] || '';
+                        break;
+                    case 'capturedBy':
+                        contact[field] = row[sourceField] || '';
+                        break;
+                    case 'listName':
+                        contact[field] = row[sourceField] || '';
+                        break;
+                    default:
+                        if (field.startsWith('custom_attribute_')) {
+                            contact[field] = row[sourceField] || '';
+                        }
+                        break;
+                }
+            }
+        });
+
+        const normalizedStatus = normalizeImportStatusValue(contact.status || row[importMapping.status] || 'Unknown');
+        const consentText = String(contact.consentText || '').trim();
+        const proofType = String(contact.proofType || '').trim();
+
+        return {
+            lineNumber: row.lineNumber,
+            contact: contact.phone ? contact : null,
+            status: normalizedStatus,
+            consentText,
+            proofType,
+            willNeedReview: normalizedStatus === 'opted-in' && (!consentText || !proofType),
+            missingFields: [
+                !consentText ? 'consent text' : null,
+                !proofType ? 'proof type' : null
+            ].filter(Boolean)
+        };
+    };
+
+    const getImportAuditSummary = () => {
+        const rows = importRows.map(mapImportedRow).filter((row) => row.contact?.phone);
+        const optedInRows = rows.filter((row) => row.status === 'opted-in');
+        const reviewRows = rows.filter((row) => row.willNeedReview);
+
+        return {
+            rows,
+            optedInCount: optedInRows.length,
+            reviewCount: reviewRows.length,
+            safeOptInCount: optedInRows.length - reviewRows.length,
+            reviewRows: reviewRows.slice(0, 5)
+        };
+    };
+
+    const getMappedContacts = () =>
+        importAudit.rows
+            .filter((row) => !row.willNeedReview)
+            .map((row) => row.contact)
+            .filter((contact) => contact?.phone);
+
     const handleImportContacts = async () => {
+        const blockedRows = importAudit.reviewRows;
         const mappedContacts = getMappedContacts();
         
         if (mappedContacts.length === 0) {
-            showNotification('No valid contacts to import', 'error');
+            if (blockedRows.length > 0) {
+                showNotification(
+                    `Import blocked: ${blockedRows.length} opted-in row${blockedRows.length === 1 ? ' is' : 's are'} missing consent text or proof type.`,
+                    'error'
+                );
+            } else {
+                showNotification('No valid contacts to import', 'error');
+            }
             return;
         }
 
@@ -776,11 +821,14 @@ const Contacts = () => {
         const result = await apiClient.importContacts(mappedContacts);
         
         if (result.data.success) {
-                const warnings = Array.isArray(result.data?.results?.warnings) ? result.data.results.warnings : [];
-                const warningSuffix = warnings.length
-                    ? ` ${warnings.length} row${warnings.length === 1 ? ' was' : 's were'} kept as Unknown because consent proof was missing.`
+                const importErrors = Array.isArray(result.data?.results?.errors) ? result.data.results.errors : [];
+                const blockedSuffix = blockedRows.length
+                    ? ` ${blockedRows.length} opted-in row${blockedRows.length === 1 ? ' was' : 's were'} blocked because consent proof was incomplete.`
                     : '';
-                showNotification(`Successfully imported ${mappedContacts.length} contacts!${warningSuffix}`);
+                const errorSuffix = importErrors.length
+                    ? ` ${importErrors.length} row${importErrors.length === 1 ? ' was' : 's were'} rejected by backend validation.`
+                    : '';
+                showNotification(`Successfully imported ${mappedContacts.length} contacts!${blockedSuffix}${errorSuffix}`);
                 setShowImportModal(false);
                 setImportFile(null);
                 setImportRows([]);
@@ -827,6 +875,8 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
             fileInputRef.current.value = '';
         }
     };
+
+    const importAudit = useMemo(() => getImportAuditSummary(), [importRows, importMapping]);
 
     const getAllContacts = () => {
         // Show only database contacts
@@ -1833,7 +1883,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                             <li><strong>Last Name</strong> - Contact's last name</li>
                                             <li><strong>WhatsApp Number</strong> - Phone number with country code</li>
                                             <li><strong>Email</strong> - Email address (optional)</li>
-                                            <li><strong>Opt-in Status</strong> - Opted-in, Opted-out, or Unknown. Opted-in only saves when consent text and proof type are present.</li>
+                                            <li><strong>Opt-in Status</strong> - Opted-in, Opted-out, or Unknown. Opted-in rows must include consent text and proof type.</li>
                                             <li><strong>Consent Text</strong> - Required if the row is meant to be opted in</li>
                                             <li><strong>Proof Type</strong> - Required if the row is meant to be opted in</li>
                                             <li><strong>Proof ID</strong> - Optional proof reference</li>
@@ -1843,7 +1893,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                             <li><strong>custom_attribute_1,2,3</strong> - Custom fields (optional)</li>
                                         </ul>
                                         <p className="contacts-modal-note">
-                                            Tip: quoted values are supported, so tags like <strong>VIP, Lead</strong> will import correctly. Opt-in is only saved when consent text and proof type are present.
+                                            Tip: quoted values are supported, so tags like <strong>VIP, Lead</strong> will import correctly. Opted-in rows without consent text and proof type will be blocked.
                                         </p>
                                         <button 
                                             className="secondary-btn download-sample-btn" 
@@ -1862,6 +1912,28 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                         <h4>Map Your Fields</h4>
                                         <p>Match your CSV columns to our contact fields:</p>
                                     </div>
+
+                                    {importAudit.reviewCount > 0 && (
+                                        <div className="contacts-import-warning" role="status" aria-live="polite">
+                                            <strong>
+                                                {importAudit.reviewCount} row{importAudit.reviewCount === 1 ? '' : 's'} marked Opted-in will be blocked unless they include both consent text and proof type.
+                                            </strong>
+                                            <p>
+                                                {importAudit.optedInCount} row{importAudit.optedInCount === 1 ? '' : 's'} in this file are marked Opted-in.
+                                                {importAudit.safeOptInCount > 0 ? ` ${importAudit.safeOptInCount} already have complete consent proof.` : ''}
+                                            </p>
+                                            <ul>
+                                                {importAudit.reviewRows.map((row) => (
+                                                    <li key={`import-audit-${row.lineNumber}`}>
+                                                        Line {row.lineNumber}: missing {row.missingFields.join(' and ')}.
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                            <p className="contacts-modal-note">
+                                                Tip: add the missing fields now so these contacts can be imported as Opted-in immediately.
+                                            </p>
+                                        </div>
+                                    )}
                                     
                                     <div className="mapping-table-container">
                                         <table className="mapping-table">

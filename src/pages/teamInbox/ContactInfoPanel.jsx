@@ -46,9 +46,14 @@ const ContactInfoPanel = ({
   getLeadStageValue,
   handleLeadStageChange,
   contactInfoActionBusy,
+  currentUserId,
+  currentCompanyId,
   whatsappMessagingState,
+  leadScoringSettings,
+  leadScoringSettingsLoading,
   leadStageOptions,
   openTemplateSendModal,
+  onSendOptInPrompt,
   onMarkWhatsAppOptIn,
   onOpenWhatsAppOptInModal,
   onMarkWhatsAppOptOut,
@@ -155,6 +160,17 @@ const ContactInfoPanel = ({
   const leadScore = getConversationLeadScore(selectedConversation);
   const isUnknownContact = contactName === 'Unknown Contact';
   const contactOptInScope = String(selectedConversation?.contactId?.whatsappOptInScope || 'unknown').trim() || 'unknown';
+  const selectedContactUserId = String(selectedConversation?.contactId?.userId || '').trim();
+  const selectedContactCompanyId = String(selectedConversation?.contactId?.companyId || '').trim();
+  const currentWorkspaceUserId = String(currentUserId || '').trim();
+  const currentWorkspaceCompanyId = String(currentCompanyId || '').trim();
+  const optInKeywordCount = Array.isArray(leadScoringSettings?.whatsappOptInKeywordRules)
+    ? leadScoringSettings.whatsappOptInKeywordRules.filter((rule) => String(rule?.keyword || '').trim()).length
+    : 0;
+  const workspaceMismatch = Boolean(
+    (selectedContactUserId && currentWorkspaceUserId && selectedContactUserId !== currentWorkspaceUserId) ||
+      (selectedContactCompanyId && currentWorkspaceCompanyId && selectedContactCompanyId !== currentWorkspaceCompanyId)
+  );
   const marketingLimit = Number(import.meta.env.VITE_WHATSAPP_MARKETING_TEMPLATE_MAX_PER_24H || 1);
   const marketingLimitLabel = Number.isFinite(marketingLimit) && marketingLimit > 0 ? Math.floor(marketingLimit) : 1;
   const marketingCount =
@@ -202,6 +218,13 @@ const ContactInfoPanel = ({
         {isExpanded ? <div className="contact-info-section-body">{content}</div> : null}
       </div>
     );
+  };
+
+  const formatWorkspaceId = (value) => {
+    const normalized = String(value || '').trim();
+    if (!normalized) return '-';
+    if (normalized.length <= 12) return normalized;
+    return `${normalized.slice(0, 6)}…${normalized.slice(-4)}`;
   };
 
   return (
@@ -356,6 +379,39 @@ const ContactInfoPanel = ({
           </div>
         </div>
 
+        <div
+          className={`contact-info-card workspace-debug-card${workspaceMismatch ? ' workspace-debug-card--warn' : ' workspace-debug-card--ok'}`}
+        >
+          <h4>Workspace Check</h4>
+          <div className="workspace-debug-grid">
+            <div className="workspace-debug-row">
+              <span>Current session</span>
+              <strong>
+                {formatWorkspaceId(currentWorkspaceUserId)} / {formatWorkspaceId(currentWorkspaceCompanyId)}
+              </strong>
+            </div>
+            <div className="workspace-debug-row">
+              <span>Selected contact</span>
+              <strong>
+                {formatWorkspaceId(selectedContactUserId)} / {formatWorkspaceId(selectedContactCompanyId)}
+              </strong>
+            </div>
+            <div className="workspace-debug-row">
+              <span>Opt-in keywords</span>
+              <strong>
+                {leadScoringSettingsLoading ? 'Loading...' : `${optInKeywordCount} configured`}
+              </strong>
+            </div>
+          </div>
+          <p className="workspace-debug-note">
+            {workspaceMismatch
+              ? 'This contact belongs to a different workspace. Keywords saved in the current workspace will not apply here.'
+              : optInKeywordCount > 0
+                ? 'Exact keyword replies will mark this contact as opted in in this workspace.'
+                : 'No WhatsApp opt-in keywords are configured in this workspace yet.'}
+          </p>
+        </div>
+
         <div className="contact-info-card">
           <h4>Actions</h4>
           <p className="contact-info-section-note">WhatsApp actions</p>
@@ -372,6 +428,27 @@ const ContactInfoPanel = ({
           >
             <MessageSquare size={14} />
             Send Template
+          </button>
+          <button
+            type="button"
+            className="lead-action-btn lead-action-btn--neutral"
+            onClick={onSendOptInPrompt}
+            disabled={
+              contactInfoActionBusy ||
+              sendingMessage ||
+              whatsappMessagingState?.optedOut ||
+              !whatsappMessagingState?.freeformAllowed
+            }
+            title={
+              whatsappMessagingState?.optedOut
+                ? 'This contact opted out.'
+                : !whatsappMessagingState?.freeformAllowed
+                  ? 'Open the 24-hour window before sending an opt-in prompt.'
+                  : 'Send a consent prompt message to collect opt-in.'
+            }
+          >
+            <MessageSquare size={14} />
+            Send Opt-In Prompt
           </button>
           <p className="contact-info-section-note">CRM actions</p>
           <button

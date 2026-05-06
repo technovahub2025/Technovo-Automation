@@ -48,7 +48,8 @@ const ContactAudiencePickerModal = ({
   const [tagFilter, setTagFilter] = useState('');
   const [optInFilter, setOptInFilter] = useState('all');
   const [sourceTypeFilter, setSourceTypeFilter] = useState('all');
-  const [marketingEligibleOnly, setMarketingEligibleOnly] = useState(true);
+  const [marketingEligibleOnly, setMarketingEligibleOnly] = useState(false);
+  const [recentlyInteractedOnly, setRecentlyInteractedOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
@@ -62,9 +63,10 @@ const ContactAudiencePickerModal = ({
         tagFilter: normalizeText(tagFilter),
         optInFilter,
         sourceTypeFilter,
-        marketingEligibleOnly
+        marketingEligibleOnly,
+        recentlyInteractedOnly
       }),
-    [searchTerm, tagFilter, optInFilter, sourceTypeFilter, marketingEligibleOnly]
+    [searchTerm, tagFilter, optInFilter, sourceTypeFilter, marketingEligibleOnly, recentlyInteractedOnly]
   );
   const prevQuerySignatureRef = useRef(querySignature);
 
@@ -85,7 +87,8 @@ const ContactAudiencePickerModal = ({
 
   const buildContactQueryParams = useCallback((includePagination = true) => {
     const params = {
-      marketingEligible: marketingEligibleOnly ? 'true' : 'false'
+      marketingEligible: marketingEligibleOnly ? 'true' : 'false',
+      recentlyInteractedOnly: recentlyInteractedOnly ? 'true' : 'false'
     };
 
     if (includePagination) {
@@ -99,7 +102,7 @@ const ContactAudiencePickerModal = ({
     if (sourceTypeFilter !== 'all') params.sourceType = sourceTypeFilter;
 
     return params;
-  }, [marketingEligibleOnly, page, searchTerm, tagFilter, optInFilter, sourceTypeFilter]);
+  }, [marketingEligibleOnly, recentlyInteractedOnly, page, searchTerm, tagFilter, optInFilter, sourceTypeFilter]);
 
   useEffect(() => {
     if (!open) return;
@@ -114,7 +117,8 @@ const ContactAudiencePickerModal = ({
     setTagFilter('');
     setOptInFilter('all');
     setSourceTypeFilter('all');
-    setMarketingEligibleOnly(true);
+    setMarketingEligibleOnly(false);
+    setRecentlyInteractedOnly(false);
     setPage(1);
     setHasMore(true);
     setError('');
@@ -305,7 +309,16 @@ const ContactAudiencePickerModal = ({
             checked={marketingEligibleOnly}
             onChange={(event) => setMarketingEligibleOnly(event.target.checked)}
           />
-          <span>Show only marketing-eligible contacts</span>
+          <span>Show only marketing-ready contacts</span>
+        </label>
+
+        <label className="policy-checkbox" style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+          <input
+            type="checkbox"
+            checked={recentlyInteractedOnly}
+            onChange={(event) => setRecentlyInteractedOnly(event.target.checked)}
+          />
+          <span>Show only recently interacted contacts</span>
         </label>
 
         {error ? (
@@ -352,7 +365,7 @@ const ContactAudiencePickerModal = ({
 
         {matchedContactsCount === 0 ? (
           <div className="broadcast-validation-banner broadcast-validation-banner--warning" style={{ marginBottom: 12 }}>
-            No contacts match the current filters. Try unchecking marketing-only or adjusting opt-in, source, or tag filters.
+            No contacts match the current filters. Try unchecking marketing-ready or recently interacted filters, or adjust opt-in, source, or tag filters.
           </div>
         ) : null}
 

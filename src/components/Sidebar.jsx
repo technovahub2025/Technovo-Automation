@@ -111,7 +111,9 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         isEnabled: true,
         readScore: '2',
         replyScore: '5',
-        keywordRules: [{ keyword: '', score: '1' }]
+        keywordRules: [{ keyword: '', score: '1' }],
+        whatsappOptInScope: 'marketing',
+        whatsappOptInKeywordRules: [{ keyword: '', score: '1' }]
     });
     const [showGoogleCalendarModal, setShowGoogleCalendarModal] = useState(false);
     const [googleCalendarLoading, setGoogleCalendarLoading] = useState(false);
@@ -248,11 +250,30 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         return normalized.length > 0 ? normalized : [{ keyword: '', score: '1' }];
     };
 
+    const normalizeOptInKeywordRulesForForm = (rules = []) => {
+        const normalized = Array.isArray(rules)
+            ? rules
+                .map((rule) => ({
+                    keyword: String(rule?.keyword || '').trim()
+                }))
+                .filter((rule) => rule.keyword)
+            : [];
+
+        return normalized.length > 0 ? normalized : [{ keyword: '' }];
+    };
+
     const buildLeadScoringFormFromSettings = (settings = {}) => ({
         isEnabled: settings?.isEnabled !== false,
         readScore: String(toSafeNonNegativeNumber(settings?.readScore, 2)),
         replyScore: String(toSafeNonNegativeNumber(settings?.replyScore, 5)),
-        keywordRules: normalizeKeywordRulesForForm(settings?.keywordRules || [])
+        keywordRules: normalizeKeywordRulesForForm(settings?.keywordRules || []),
+        whatsappOptInScope:
+            ['marketing', 'service', 'both'].includes(String(settings?.whatsappOptInScope || 'marketing').trim().toLowerCase())
+                ? String(settings?.whatsappOptInScope || 'marketing').trim().toLowerCase()
+                : 'marketing',
+        whatsappOptInKeywordRules: normalizeOptInKeywordRulesForForm(
+            settings?.whatsappOptInKeywordRules || []
+        )
     });
 
     const getInitials = (name) => {
@@ -344,10 +365,29 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         }));
     };
 
+    const updateLeadOptInKeywordRule = (index, field, value) => {
+        if (field !== 'keyword') return;
+        setLeadScoringForm((prev) => ({
+            ...prev,
+            whatsappOptInKeywordRules: prev.whatsappOptInKeywordRules.map((rule, ruleIndex) =>
+                ruleIndex === index
+                    ? { ...rule, keyword: value }
+                    : rule
+            )
+        }));
+    };
+
     const addLeadKeywordRule = () => {
         setLeadScoringForm((prev) => ({
             ...prev,
             keywordRules: [...prev.keywordRules, { keyword: '', score: '1' }]
+        }));
+    };
+
+    const addLeadOptInKeywordRule = () => {
+        setLeadScoringForm((prev) => ({
+            ...prev,
+            whatsappOptInKeywordRules: [...prev.whatsappOptInKeywordRules, { keyword: '' }]
         }));
     };
 
@@ -357,6 +397,16 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
             return {
                 ...prev,
                 keywordRules: remainingRules.length > 0 ? remainingRules : [{ keyword: '', score: '1' }]
+            };
+        });
+    };
+
+    const removeLeadOptInKeywordRule = (index) => {
+        setLeadScoringForm((prev) => {
+            const remainingRules = prev.whatsappOptInKeywordRules.filter((_, ruleIndex) => ruleIndex !== index);
+            return {
+                ...prev,
+                whatsappOptInKeywordRules: remainingRules.length > 0 ? remainingRules : [{ keyword: '' }]
             };
         });
     };
@@ -374,6 +424,13 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                     .map((rule) => ({
                         keyword: String(rule?.keyword || '').trim(),
                         score: toSafeNonNegativeNumber(rule?.score, 1)
+                    }))
+                    .filter((rule) => rule.keyword),
+                whatsappOptInScope: String(leadScoringForm.whatsappOptInScope || 'marketing').trim().toLowerCase() || 'marketing',
+                whatsappOptInKeywordRules: (leadScoringForm.whatsappOptInKeywordRules || [])
+                    .map((rule) => ({
+                        keyword: String(rule?.keyword || '').trim(),
+                        score: 1
                     }))
                     .filter((rule) => rule.keyword)
             };
@@ -1610,6 +1667,57 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                                 className="bulk-lead-scoring-remove-btn"
                                                 onClick={() => removeLeadKeywordRule(index)}
                                                 disabled={leadScoringForm.keywordRules.length <= 1}
+                                            >
+                                                Remove
+                                            </button>
+                                        </div>
+                                    ))}
+                                </div>
+
+                                <div className="bulk-lead-scoring-keywords-header" style={{ marginTop: '1rem' }}>
+                                    <div>
+                                        <h4>WhatsApp Opt-In Keywords</h4>
+                                        <p style={{ margin: '0.25rem 0 0', color: '#64748b', fontSize: '0.85rem' }}>
+                                            Exact replies here can mark a contact as opted in after an explicit opt-in prompt.
+                                        </p>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="bulk-lead-scoring-add-btn"
+                                        onClick={addLeadOptInKeywordRule}
+                                    >
+                                        Add Keyword
+                                    </button>
+                                </div>
+
+                                <div className="bulk-lead-scoring-grid" style={{ marginTop: '0.75rem' }}>
+                                    <label className="bulk-lead-scoring-field">
+                                        <span>Opt-In Scope</span>
+                                        <select
+                                            value={leadScoringForm.whatsappOptInScope}
+                                            onChange={(event) => updateLeadScoringField('whatsappOptInScope', event.target.value)}
+                                        >
+                                            <option value="marketing">Marketing</option>
+                                            <option value="service">Service</option>
+                                            <option value="both">Marketing + Service</option>
+                                        </select>
+                                    </label>
+                                </div>
+
+                                <div className="bulk-lead-scoring-keyword-list">
+                                    {leadScoringForm.whatsappOptInKeywordRules.map((rule, index) => (
+                                        <div className="bulk-lead-scoring-keyword-row" key={`sidebar-optin-keyword-rule-${index}`}>
+                                            <input
+                                                type="text"
+                                                placeholder="Opt-in keyword"
+                                                value={rule.keyword}
+                                                onChange={(event) => updateLeadOptInKeywordRule(index, 'keyword', event.target.value)}
+                                            />
+                                            <button
+                                                type="button"
+                                                className="bulk-lead-scoring-remove-btn"
+                                                onClick={() => removeLeadOptInKeywordRule(index)}
+                                                disabled={leadScoringForm.whatsappOptInKeywordRules.length <= 1}
                                             >
                                                 Remove
                                             </button>

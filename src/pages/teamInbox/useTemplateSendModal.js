@@ -6,6 +6,7 @@ export const useTemplateSendModal = ({
   selectedConversation,
   templateTarget,
   conversationId,
+  whatsappMessagingState,
   onMissingContactPhone,
   onTemplateSent,
   onTemplateModalClosed
@@ -15,11 +16,14 @@ export const useTemplateSendModal = ({
   const [templateSending, setTemplateSending] = useState(false);
   const [templateOptions, setTemplateOptions] = useState([]);
   const [selectedTemplateKey, setSelectedTemplateKey] = useState('');
+  const [manualTemplateName, setManualTemplateName] = useState('');
   const [templateVariableValues, setTemplateVariableValues] = useState([]);
   const [templateHeaderVariableValues, setTemplateHeaderVariableValues] = useState([]);
   const [templateHeaderMediaUrl, setTemplateHeaderMediaUrl] = useState('');
   const [templateModalMessage, setTemplateModalMessage] = useState('');
   const [templateModalMessageTone, setTemplateModalMessageTone] = useState('info');
+  const contactMarketingTemplateAllowed = Boolean(whatsappMessagingState?.marketingTemplateAllowed);
+  const contactOptedOut = Boolean(whatsappMessagingState?.optedOut);
 
   const brandLogoUrl = String(import.meta.env.VITE_BRAND_LOGO_URL || '').trim();
   const resolvedTemplateTarget =
@@ -57,6 +61,9 @@ export const useTemplateSendModal = ({
 
   const getTemplateLanguageCode = (template = {}) =>
     String(template?.language || template?.languageCode || 'en_US').trim() || 'en_US';
+
+  const getTemplateCategory = (template = {}) =>
+    String(template?.category || '').trim().toLowerCase();
 
   const extractVariableCountFromText = (text = '') => {
     const matches = [...String(text || '').matchAll(/\{\{(\d+)\}\}/g)];
@@ -99,6 +106,14 @@ export const useTemplateSendModal = ({
 
   const selectedTemplateOption =
     templateOptions.find((template) => getTemplateCompositeKey(template) === selectedTemplateKey) || null;
+  const fallbackTemplateName = String(manualTemplateName || '').trim();
+  const selectedTemplateCategory = getTemplateCategory(selectedTemplateOption);
+  const effectiveTemplateCategory = selectedTemplateOption
+    ? selectedTemplateCategory
+    : fallbackTemplateName
+      ? 'utility'
+      : '';
+  const selectedTemplateRequiresMarketingOptIn = effectiveTemplateCategory === 'marketing';
 
   const getDefaultHeaderMediaUrl = (template = {}) => {
     if (!templateRequiresHeaderMedia(template)) return '';
@@ -114,15 +129,30 @@ export const useTemplateSendModal = ({
       const approvedTemplates = rawTemplates.filter((template) =>
         ['APPROVED', 'ACTIVE'].includes(String(template?.status || '').toUpperCase())
       );
-      const usableTemplates = approvedTemplates.length > 0 ? approvedTemplates : rawTemplates;
+      const availableTemplates = approvedTemplates.length > 0 ? approvedTemplates : rawTemplates;
+      const allowedTemplates = contactOptedOut
+        ? []
+        : contactMarketingTemplateAllowed
+          ? availableTemplates
+          : availableTemplates.filter((template) => getTemplateCategory(template) !== 'marketing');
+      const usableTemplates = contactOptedOut
+        ? []
+        : contactMarketingTemplateAllowed
+          ? availableTemplates
+          : allowedTemplates;
       setTemplateOptions(usableTemplates);
 
       if (!usableTemplates.length) {
         setSelectedTemplateKey('');
+        setManualTemplateName('');
         setTemplateVariableValues([]);
         setTemplateHeaderVariableValues([]);
         setTemplateHeaderMediaUrl('');
-        setTemplateModalMessage('No templates found. Create or sync templates first.');
+        setTemplateModalMessage(
+          contactOptedOut
+            ? 'This contact has opted out, so no WhatsApp templates can be sent.'
+            : 'No templates available for this contact. Marketing templates require WhatsApp marketing opt-in.'
+        );
         setTemplateModalMessageTone('error');
         return;
       }
@@ -130,6 +160,7 @@ export const useTemplateSendModal = ({
       const defaultTemplate = usableTemplates[0];
       const defaultKey = getTemplateCompositeKey(defaultTemplate);
       setSelectedTemplateKey(defaultKey);
+      setManualTemplateName('');
 
       const bodyVariableCount = extractTemplateVariableCount(defaultTemplate);
       const headerVariableCount = extractTemplateHeaderVariableCount(defaultTemplate);
@@ -140,10 +171,16 @@ export const useTemplateSendModal = ({
       if (approvedTemplates.length === 0) {
         setTemplateModalMessage('No approved template found. Showing available templates.');
         setTemplateModalMessageTone('error');
+      } else if (!contactMarketingTemplateAllowed) {
+        setTemplateModalMessage(
+          'Marketing templates are hidden because this contact does not have marketing opt-in.'
+        );
+        setTemplateModalMessageTone('info');
       }
     } catch (error) {
       setTemplateOptions([]);
       setSelectedTemplateKey('');
+      setManualTemplateName('');
       setTemplateVariableValues([]);
       setTemplateHeaderVariableValues([]);
       setTemplateHeaderMediaUrl('');
@@ -180,6 +217,7 @@ export const useTemplateSendModal = ({
 
   const handleTemplateSelectionChange = (templateKey) => {
     setSelectedTemplateKey(templateKey);
+    setManualTemplateName('');
     const selectedTemplate = templateOptions.find((template) => getTemplateCompositeKey(template) === templateKey);
     const variableCount = extractTemplateVariableCount(selectedTemplate);
     const headerVariableCount = extractTemplateHeaderVariableCount(selectedTemplate);
@@ -208,6 +246,16 @@ export const useTemplateSendModal = ({
     setTemplateHeaderMediaUrl(String(value || ''));
   };
 
+  const handleManualTemplateNameChange = (value) => {
+    setManualTemplateName(String(value || '').trimStart());
+    if (String(value || '').trim()) {
+      setSelectedTemplateKey('');
+      setTemplateVariableValues([]);
+      setTemplateHeaderVariableValues([]);
+      setTemplateHeaderMediaUrl('');
+    }
+  };
+
   const handleSendTemplate = async () => {
     try {
       const activeConversationId =
@@ -219,18 +267,23 @@ export const useTemplateSendModal = ({
       const selectedTemplate = templateOptions.find(
         (template) => getTemplateCompositeKey(template) === selectedTemplateKey
       );
-      if (!selectedTemplate) {
-        throw new Error('Please select a valid template.');
+      const resolvedTemplateName = String(
+        selectedTemplate?.name || manualTemplateName || ''
+      ).trim();
+      if (!resolvedTemplateName) {
+        throw new Error('Please select or enter a template name.');
       }
 
-      const templateName = String(selectedTemplate?.name || '').trim();
-      if (!templateName) {
-        throw new Error('Template name is missing.');
+      const selectedCategory = selectedTemplate ? getTemplateCategory(selectedTemplate) : 'utility';
+      if (selectedCategory === 'marketing' && !contactMarketingTemplateAllowed) {
+        throw new Error(
+          'This contact does not have marketing opt-in. Choose a service template instead.'
+        );
       }
 
-      const language = getTemplateLanguageCode(selectedTemplate);
-      const bodyVariableCount = extractTemplateVariableCount(selectedTemplate);
-      const headerVariableCount = extractTemplateHeaderVariableCount(selectedTemplate);
+      const language = selectedTemplate ? getTemplateLanguageCode(selectedTemplate) : 'en_US';
+      const bodyVariableCount = selectedTemplate ? extractTemplateVariableCount(selectedTemplate) : 0;
+      const headerVariableCount = selectedTemplate ? extractTemplateHeaderVariableCount(selectedTemplate) : 0;
       const bodyVariables = templateVariableValues
         .slice(0, bodyVariableCount)
         .map((value) => String(value || '').trim());
@@ -251,7 +304,7 @@ export const useTemplateSendModal = ({
 
       const templateComponents = [];
       const headerFormat = getTemplateHeaderFormat(selectedTemplate);
-      if (templateRequiresHeaderMedia(selectedTemplate)) {
+      if (selectedTemplate && templateRequiresHeaderMedia(selectedTemplate)) {
         const mediaUrl = String(templateHeaderMediaUrl || '').trim();
         if (!mediaUrl) {
           throw new Error(
@@ -272,7 +325,7 @@ export const useTemplateSendModal = ({
             }
           ]
         });
-      } else if (headerVariableCount > 0) {
+      } else if (selectedTemplate && headerVariableCount > 0) {
         templateComponents.push({
           type: 'HEADER',
           parameters: headerVariables.map((value) => ({
@@ -297,7 +350,7 @@ export const useTemplateSendModal = ({
 
       const result = await whatsappService.sendTemplateMessage(
         resolvedTemplateTarget.contactPhone,
-        templateName,
+        resolvedTemplateName,
         language,
         bodyVariables,
         activeConversationId,
@@ -305,7 +358,7 @@ export const useTemplateSendModal = ({
         {
           contactId: resolvedTemplateTarget?.contactId || '',
           contactName: resolvedTemplateTarget?.contactName || '',
-          templateCategory: String(selectedTemplate?.category || '').trim()
+          templateCategory: selectedCategory
         }
       );
 
@@ -346,14 +399,19 @@ export const useTemplateSendModal = ({
     templateSending,
     templateOptions,
     selectedTemplateKey,
+    manualTemplateName,
     templateVariableValues,
     templateHeaderVariableValues,
     templateHeaderMediaUrl,
     templateModalMessage,
     templateModalMessageTone,
     selectedTemplateOption,
+    selectedTemplateCategory,
+    selectedTemplateRequiresMarketingOptIn,
+    contactMarketingTemplateAllowed,
     getTemplateCompositeKey,
     getTemplateLanguageCode,
+    getTemplateCategory,
     extractTemplateVariableCount,
     extractTemplateHeaderVariableCount,
     getTemplateHeaderFormat,
@@ -361,6 +419,7 @@ export const useTemplateSendModal = ({
     openTemplateSendModal,
     closeTemplateSendModal,
     handleTemplateSelectionChange,
+    handleManualTemplateNameChange,
     handleTemplateVariableChange,
     handleTemplateHeaderVariableChange,
     handleTemplateHeaderMediaUrlChange,

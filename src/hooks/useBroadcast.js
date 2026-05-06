@@ -72,34 +72,6 @@ const sanitizeBroadcastForCache = (broadcast = {}) => ({
     Number.isFinite(Number(broadcast?.recipientCount)) && Number(broadcast.recipientCount) >= 0
       ? Number(broadcast.recipientCount)
       : 0,
-  audienceSource:
-    broadcast?.audienceSource && typeof broadcast.audienceSource === 'object'
-      ? {
-          mode: String(broadcast.audienceSource.mode || '').trim(),
-          label: String(broadcast.audienceSource.label || '').trim(),
-          type: String(broadcast.audienceSource.type || '').trim(),
-          segmentId: String(broadcast.audienceSource.segmentId || '').trim(),
-          segmentName: String(broadcast.audienceSource.segmentName || '').trim(),
-          sourceName: String(broadcast.audienceSource.sourceName || '').trim(),
-          uploadedFileName: String(broadcast.audienceSource.uploadedFileName || '').trim(),
-          recipientCount: Number(broadcast.audienceSource.recipientCount || 0) || 0,
-          selectedContactCount: Number(broadcast.audienceSource.selectedContactCount || 0) || 0,
-          hasContactIds: Boolean(broadcast.audienceSource.hasContactIds)
-        }
-      : {},
-  audienceSnapshot:
-    broadcast?.audienceSnapshot && typeof broadcast.audienceSnapshot === 'object'
-      ? {
-          mode: String(broadcast.audienceSnapshot.mode || '').trim(),
-          label: String(broadcast.audienceSnapshot.label || '').trim(),
-          sourceType: String(broadcast.audienceSnapshot.sourceType || '').trim(),
-          segmentId: String(broadcast.audienceSnapshot.segmentId || '').trim(),
-          segmentName: String(broadcast.audienceSnapshot.segmentName || '').trim(),
-          uploadedFileName: String(broadcast.audienceSnapshot.uploadedFileName || '').trim(),
-          recipientCount: Number(broadcast.audienceSnapshot.recipientCount || 0) || 0,
-          selectedContactCount: Number(broadcast.audienceSnapshot.selectedContactCount || 0) || 0
-        }
-      : {},
   stats:
     broadcast?.stats && typeof broadcast.stats === 'object'
       ? {
@@ -162,7 +134,6 @@ export const useBroadcast = () => {
   const [wsConnected, setWsConnected] = useState(false);
   const loadRequestSeqRef = useRef(0);
   const latestAppliedSeqRef = useRef(0);
-  const broadcastRefreshTimerRef = useRef(null);
   const currentUserId = resolveCacheUserId();
   const broadcastPageCacheRef = useRef(null);
 
@@ -183,6 +154,9 @@ export const useBroadcast = () => {
   const [templateVariables, setTemplateVariables] = useState([]);
   const [fileVariables, setFileVariables] = useState([]);
   const [selectedLocalTemplate, setSelectedLocalTemplate] = useState('');
+  const [templateHeaderMediaUrl, setTemplateHeaderMediaUrl] = useState('');
+  const [templateHeaderMediaUploading, setTemplateHeaderMediaUploading] = useState(false);
+  const [templateHeaderMediaError, setTemplateHeaderMediaError] = useState('');
 
   // Campaign name
   const [broadcastName, setBroadcastName] = useState('');
@@ -235,8 +209,18 @@ export const useBroadcast = () => {
       persistBroadcastPageCache({ templates: customTemplates });
     } catch (error) {
       console.error('Failed to load templates:', error);
+      const cachedTemplates = readSidebarPageCache(BROADCAST_PAGE_CACHE_NAMESPACE, {
+        currentUserId,
+        allowStale: true
+      });
+      const cachedTemplateList = Array.isArray(cachedTemplates?.data?.templates)
+        ? cachedTemplates.data.templates
+        : [];
+      if (cachedTemplateList.length > 0) {
+        setTemplates(cachedTemplateList);
+      }
     }
-  }, [persistBroadcastPageCache]);
+  }, [currentUserId, persistBroadcastPageCache]);
 
   const loadBroadcasts = useCallback(async () => {
     const requestSeq = ++loadRequestSeqRef.current;
@@ -273,9 +257,16 @@ export const useBroadcast = () => {
     } catch (error) {
       console.error('Failed to sync Meta templates:', error);
       console.error('Error response:', error.response?.data);
-      setOfficialTemplates([]);
+      const cachedTemplates = readSidebarPageCache(BROADCAST_PAGE_CACHE_NAMESPACE, {
+        currentUserId,
+        allowStale: true
+      });
+      const cachedTemplateList = Array.isArray(cachedTemplates?.data?.officialTemplates)
+        ? cachedTemplates.data.officialTemplates
+        : [];
+      setOfficialTemplates(cachedTemplateList);
     }
-  }, [persistBroadcastPageCache]);
+  }, [currentUserId, persistBroadcastPageCache]);
 
   
 
@@ -309,20 +300,8 @@ export const useBroadcast = () => {
 
         return updatedBroadcasts;
       });
-
-      if (broadcastRefreshTimerRef.current) {
-        clearTimeout(broadcastRefreshTimerRef.current);
-      }
-      broadcastRefreshTimerRef.current = setTimeout(() => loadBroadcasts(), 200);
     }
-  }, [loadBroadcasts]);
-
-  const handleBroadcastListChange = useCallback(() => {
-    if (broadcastRefreshTimerRef.current) {
-      clearTimeout(broadcastRefreshTimerRef.current);
-    }
-    broadcastRefreshTimerRef.current = setTimeout(() => loadBroadcasts(), 100);
-  }, [loadBroadcasts]);
+  }, []);
 
   // Handle message status updates
   const handleMessageStatusUpdate = useCallback((data) => {
@@ -433,9 +412,7 @@ export const useBroadcast = () => {
       allowStale: true
     });
 
-    const bootstrapTimer = window.setTimeout(() => {
-      if (!cachedBroadcastPage?.data || isCancelled) return;
-
+    if (cachedBroadcastPage?.data) {
       broadcastPageCacheRef.current = cachedBroadcastPage.data;
 
       if (Array.isArray(cachedBroadcastPage.data.broadcasts)) {
@@ -453,9 +430,10 @@ export const useBroadcast = () => {
           setLastUpdated(parsedLastUpdated);
         }
       }
-      loadTemplates();
-      loadBroadcasts();
-    }, 0);
+    }
+
+    loadTemplates();
+    loadBroadcasts();
 
     // Setup WebSocket for real-time updates
     const setupWebSocket = async () => {
@@ -475,19 +453,11 @@ export const useBroadcast = () => {
 
         webSocketService.on('broadcast_stats_updated', handleBroadcastStatsUpdate);
         webSocketService.on('message_status', handleMessageStatusUpdate);
-        webSocketService.on('broadcast_created', handleBroadcastListChange);
-        webSocketService.on('broadcast_updated', handleBroadcastListChange);
-        webSocketService.on('broadcast_deleted', handleBroadcastListChange);
 
         return () => {
           webSocketService.off('connected', handleConnected);
           webSocketService.off('disconnected', handleDisconnected);
           webSocketService.off('error', handleError);
-          webSocketService.off('broadcast_stats_updated', handleBroadcastStatsUpdate);
-          webSocketService.off('message_status', handleMessageStatusUpdate);
-          webSocketService.off('broadcast_created', handleBroadcastListChange);
-          webSocketService.off('broadcast_updated', handleBroadcastListChange);
-          webSocketService.off('broadcast_deleted', handleBroadcastListChange);
         };
       } catch (error) {
         console.error('Failed to connect WebSocket:', error);
@@ -504,19 +474,12 @@ export const useBroadcast = () => {
     // Cleanup on unmount
     return () => {
       isCancelled = true;
-      window.clearTimeout(bootstrapTimer);
       if (cleanupEvents) cleanupEvents();
       webSocketService.off('broadcast_stats_updated', handleBroadcastStatsUpdate);
       webSocketService.off('message_status', handleMessageStatusUpdate);
-      webSocketService.off('broadcast_created', handleBroadcastListChange);
-      webSocketService.off('broadcast_updated', handleBroadcastListChange);
-      webSocketService.off('broadcast_deleted', handleBroadcastListChange);
-      if (broadcastRefreshTimerRef.current) {
-        clearTimeout(broadcastRefreshTimerRef.current);
-      }
       setWsConnected(false);
     };
-  }, [currentUserId, handleBroadcastListChange, handleBroadcastStatsUpdate, handleMessageStatusUpdate, handleWebSocketMessage, loadBroadcasts, loadTemplates]);
+  }, [currentUserId, handleBroadcastStatsUpdate, handleMessageStatusUpdate, handleWebSocketMessage, loadBroadcasts, loadTemplates]);
 
   // Fallback polling only when websocket is unavailable.
   useEffect(() => {
@@ -764,6 +727,102 @@ export const useBroadcast = () => {
     setTemplateVariables(uniqueVars);
   };
 
+  const getTemplateHeaderComponent = useCallback((template = {}) => {
+    if (!template || typeof template !== 'object') return null;
+    if (Array.isArray(template.components)) {
+      return (
+        template.components.find(
+          (component) => String(component?.type || '').trim().toUpperCase() === 'HEADER'
+        ) || null
+      );
+    }
+    return template?.content?.header || template?.header || null;
+  }, []);
+
+  const templateRequiresImageHeader = useCallback((template = {}) => {
+    const header = getTemplateHeaderComponent(template);
+    const normalizedHeaderType = String(
+      header?.type ||
+      header?.format ||
+      template?.type ||
+      template?.mediaType ||
+      template?.headerType ||
+      template?.templateType ||
+      ''
+    ).trim().toLowerCase();
+    const hasHeaderHandle = Boolean(
+      header?.mediaUrl ||
+      header?.example?.header_handle?.[0] ||
+      header?.header_handle?.[0]
+    );
+
+    return normalizedHeaderType === 'image' || (hasHeaderHandle && !String(header?.text || '').trim());
+  }, [getTemplateHeaderComponent]);
+
+  const resetTemplateHeaderMediaState = useCallback((template = null) => {
+    const header = getTemplateHeaderComponent(template);
+    const headerType = String(
+      header?.type ||
+      header?.format ||
+      template?.type ||
+      template?.mediaType ||
+      template?.headerType ||
+      template?.templateType ||
+      ''
+    ).trim().toLowerCase();
+    if (headerType === 'image') {
+      setTemplateHeaderMediaUrl(
+        String(
+          header?.mediaUrl ||
+          header?.example?.header_handle?.[0] ||
+          header?.header_handle?.[0] ||
+          ''
+        ).trim()
+      );
+    } else {
+      setTemplateHeaderMediaUrl('');
+    }
+    setTemplateHeaderMediaError('');
+  }, [getTemplateHeaderComponent]);
+
+  const handleTemplateHeaderMediaFileUpload = useCallback(async (eventOrFile) => {
+    const file =
+      eventOrFile?.target?.files?.[0] ||
+      eventOrFile?.files?.[0] ||
+      eventOrFile ||
+      null;
+    if (!file) return;
+
+    setTemplateHeaderMediaUploading(true);
+    setTemplateHeaderMediaError('');
+
+    try {
+      const result = await apiClient.uploadBroadcastTemplateMedia(file);
+      const uploadedUrl = String(result?.data?.data?.mediaUrl || result?.data?.mediaUrl || '').trim();
+      if (!uploadedUrl) {
+        throw new Error('Failed to upload image.');
+      }
+      setTemplateHeaderMediaUrl(uploadedUrl);
+    } catch (error) {
+      console.error('Failed to upload broadcast template header image:', error);
+      setTemplateHeaderMediaError(
+        error?.message ||
+        error?.response?.data?.error ||
+        'Failed to upload image.'
+      );
+    } finally {
+      if (eventOrFile?.target) {
+        eventOrFile.target.value = '';
+      }
+      setTemplateHeaderMediaUploading(false);
+    }
+  }, []);
+
+  const clearTemplateHeaderMedia = useCallback(() => {
+    setTemplateHeaderMediaUrl('');
+    setTemplateHeaderMediaError('');
+  }, []);
+
   // Filter and sort broadcasts
   const getFilteredAndSortedBroadcasts = () => {
     let filtered = [...broadcasts];
@@ -932,6 +991,9 @@ export const useBroadcast = () => {
     templateVariables, setTemplateVariables,
     fileVariables, setFileVariables,
     selectedLocalTemplate, setSelectedLocalTemplate,
+    templateHeaderMediaUrl, setTemplateHeaderMediaUrl,
+    templateHeaderMediaUploading, setTemplateHeaderMediaUploading,
+    templateHeaderMediaError, setTemplateHeaderMediaError,
     broadcastName, setBroadcastName,
 
     // Functions
@@ -946,6 +1008,11 @@ export const useBroadcast = () => {
     getSortByLabel,
     getStatusClass,
     extractTemplateVariables,
+    getTemplateHeaderComponent,
+    templateRequiresImageHeader,
+    resetTemplateHeaderMediaState,
+    handleTemplateHeaderMediaFileUpload,
+    clearTemplateHeaderMedia,
     getFilteredAndSortedBroadcasts,
     downloadAllCampaigns
   };
@@ -975,7 +1042,6 @@ export const useExotelOutbound = () => {
     workflowId,
     scheduleType,
     scheduledAt,
-    scheduledAtLocal,
     recurrence,
     timezone,
     allowedWindowStart,
@@ -997,7 +1063,6 @@ export const useExotelOutbound = () => {
         workflowId,
         scheduleType,
         scheduledAt,
-        scheduledAtLocal,
         recurrence,
         timezone,
         allowedWindowStart,
@@ -1033,7 +1098,6 @@ export const useExotelOutbound = () => {
     workflowId,
     scheduleType,
     scheduledAt,
-    scheduledAtLocal,
     recurrence,
     timezone,
     allowedWindowStart,
@@ -1058,7 +1122,6 @@ export const useExotelOutbound = () => {
         workflowId,
         scheduleType,
         scheduledAt,
-        scheduledAtLocal,
         recurrence,
         timezone,
         allowedWindowStart,

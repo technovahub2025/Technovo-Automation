@@ -109,6 +109,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
     fileVariables, setFileVariables,
 
+    templateHeaderMediaUrl,
+    templateHeaderMediaUploading,
+    templateHeaderMediaError,
+
     broadcastName, setBroadcastName,
 
 
@@ -132,6 +136,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     getStatusClass,
 
     extractTemplateVariables,
+    templateRequiresImageHeader,
+    resetTemplateHeaderMediaState,
+    handleTemplateHeaderMediaFileUpload,
+    clearTemplateHeaderMedia,
 
     getFilteredAndSortedBroadcasts,
 
@@ -195,6 +203,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const [quietHoursEndHour, setQuietHoursEndHour] = useState(9);
   const [quietHoursTimezone, setQuietHoursTimezone] = useState('Asia/Kolkata');
   const [quietHoursAction, setQuietHoursAction] = useState('defer');
+  const [deliveryBatchSize, setDeliveryBatchSize] = useState(50);
   const [retryPolicyEnabled, setRetryPolicyEnabled] = useState(true);
   const [retryMaxAttempts, setRetryMaxAttempts] = useState(3);
   const [retryBackoffSeconds, setRetryBackoffSeconds] = useState(45);
@@ -545,13 +554,19 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
       }
 
+      resetTemplateHeaderMediaState(selectedTemplate);
+
     } else {
 
       setTemplateVariables([]);
 
       setLanguage('en_US');
 
+      clearTemplateHeaderMedia();
+
     }
+
+    resetTemplateHeaderMediaState(selectedTemplate);
 
   };
 
@@ -586,6 +601,88 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         if (result.data.success) {
 
           const recipientsWithFullData = result.data.csvData || result.data.recipients || [];
+
+          const csvRows = recipientsWithFullData.map((recipient) => {
+            const row = recipient?.fullData || recipient?.data || recipient || {};
+            const rawTags = Array.isArray(row?.tags)
+              ? row.tags
+              : String(row?.tags || '').split(',').map((tag) => tag.trim()).filter(Boolean);
+            const normalizedStatus = String(
+              row?.whatsappOptInStatus ||
+              row?.optInStatus ||
+              row?.status ||
+              ''
+            ).trim().toLowerCase();
+            const consentText = String(
+              row?.whatsappOptInTextSnapshot ||
+              row?.consentText ||
+              row?.optInText ||
+              row?.consentSnapshot ||
+              ''
+            ).trim();
+            const proofType = String(
+              row?.whatsappOptInProofType ||
+              row?.proofType ||
+              row?.consentProofType ||
+              ''
+            ).trim();
+            const proofId = String(
+              row?.whatsappOptInProofId ||
+              row?.proofId ||
+              row?.consentProofId ||
+              ''
+            ).trim();
+            const proofUrl = String(
+              row?.whatsappOptInProofUrl ||
+              row?.proofUrl ||
+              row?.consentProofUrl ||
+              ''
+            ).trim();
+            const scope = String(
+              row?.whatsappOptInScope ||
+              row?.scope ||
+              row?.consentScope ||
+              ''
+            ).trim();
+            const hasConsentEvidence =
+              Boolean(consentText || proofType || proofId || proofUrl || scope);
+
+            return {
+              name: String(row?.name || row?.contactName || recipient?.name || '').trim(),
+              phone: String(recipient?.phone || row?.phone || row?.mobile || row?.whatsappNumber || '').trim(),
+              email: String(row?.email || row?.emailAddress || '').trim(),
+              tags: rawTags,
+              sourceType: String(row?.sourceType || 'imported').trim() || 'imported',
+              ...(normalizedStatus === 'opted-in' || hasConsentEvidence
+                ? {
+                    whatsappOptInStatus: 'opted_in',
+                    whatsappOptInScope: scope || 'marketing',
+                    whatsappOptInTextSnapshot: consentText || 'CSV import consent',
+                    whatsappOptInProofType: proofType || 'csv',
+                    whatsappOptInProofId: proofId,
+                    whatsappOptInProofUrl: proofUrl,
+                    whatsappOptInSource: String(row?.whatsappOptInSource || 'csv_import').trim() || 'csv_import'
+                  }
+                : {}),
+              ...(normalizedStatus === 'opted-out'
+                ? {
+                    whatsappOptInStatus: 'opted_out',
+                    whatsappOptInSource: String(row?.whatsappOptInSource || 'csv_import').trim() || 'csv_import'
+                  }
+                : {})
+            };
+          }).filter((contact) => String(contact.phone || '').trim());
+
+          if (csvRows.length > 0) {
+            try {
+              const importResult = await apiClient.importContacts(csvRows);
+              if (!importResult?.data?.success && importResult?.data?.error) {
+                console.warn('CSV contact import returned a non-success response:', importResult.data);
+              }
+            } catch (importError) {
+              console.warn('CSV contact import failed, continuing with parsed recipients:', importError);
+            }
+          }
 
           setRecipients(recipientsWithFullData);
 
@@ -762,7 +859,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           startHour: parseIntegerInRange(quietHoursStartHour, { min: 0, max: 23, fallback: 22 }),
           endHour: parseIntegerInRange(quietHoursEndHour, { min: 0, max: 23, fallback: 9 }),
           timezone: String(quietHoursTimezone || '').trim() || 'Asia/Kolkata',
-          action: String(quietHoursAction || '').toLowerCase() === 'skip' ? 'skip' : 'defer'
+          action: String(quietHoursAction || '').toLowerCase() === 'skip' ? 'skip' : 'defer',
+          batchSize: parseIntegerInRange(deliveryBatchSize, { min: 1, max: 500, fallback: 50 })
         }
       },
       retryPolicy: {
@@ -952,23 +1050,39 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const validateAudienceOrAbort = async ({ recipientsPayload, selectedTemplate }) => {
     const templateCategory =
       messageType === 'template'
-        ? String(selectedTemplate?.category || '').trim().toLowerCase()
+        ? String(selectedTemplate?.category || 'utility').trim().toLowerCase()
         : '';
 
-    const validationResponse = await apiClient.validateBroadcastAudience({
-      recipients: recipientsPayload,
-      messageType,
-      templateCategory
-    });
+    try {
+      const validationResponse = await apiClient.validateBroadcastAudience({
+        recipients: recipientsPayload,
+        messageType,
+        templateCategory
+      });
 
-    const validation =
-      validationResponse?.data?.data || validationResponse?.data || null;
+      const validation =
+        validationResponse?.data?.data || validationResponse?.data || null;
 
-    return {
-      templateCategory,
-      validation
-    };
+      return {
+        templateCategory,
+        validation
+      };
+    } catch (error) {
+      const status = Number(error?.response?.status || 0);
+      const backendMessage = String(error?.response?.data?.error || error?.message || '').trim();
+      if (status === 403) {
+        alert(backendMessage || 'This workspace is currently read-only or does not have broadcast permission.');
+        return null;
+      }
+      throw error;
+    }
   };
+
+  const selectedTemplateCategory = React.useMemo(() => {
+    if (messageType !== 'template') return '';
+    const selectedTemplate = officialTemplates.find((template) => template.name === templateName);
+    return String(selectedTemplate?.category || '').trim().toLowerCase();
+  }, [messageType, officialTemplates, templateName]);
 
   const openAudienceValidationModal = (validationResult) => {
     setPendingAudienceValidation(validationResult);
@@ -1039,25 +1153,18 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
       selectedTemplate = officialTemplates.find(t => t.name === templateName);
-
-      if (!selectedTemplate) {
-
-        alert('Template not found. Please sync templates and try again.');
-
-        return;
-
-      }
+      const selectedTemplateRequiresImageHeader = templateRequiresImageHeader(selectedTemplate);
 
       // Extract template content for storing in broadcast
-      templateContent = extractTemplateBody(selectedTemplate);
+      templateContent = selectedTemplate ? extractTemplateBody(selectedTemplate) : '';
 
 
 
       const approvedStatuses = ['APPROVED', 'approved', 'ACTIVE', 'active'];
 
-      if (!approvedStatuses.includes(selectedTemplate.status)) {
+      if (!approvedStatuses.includes(selectedTemplate?.status)) {
 
-        console.warn(`⚠️ Template "${templateName}" has status "${selectedTemplate.status}". Proceeding anyway...`);
+        console.warn(`Template "${templateName}" has status "${selectedTemplate?.status || 'unknown'}". Proceeding anyway...`);
 
       }
 
@@ -1069,6 +1176,11 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         return;
 
+      }
+
+      if (selectedTemplateRequiresImageHeader && !String(templateHeaderMediaUrl || '').trim()) {
+        alert('This template requires an image header. Please upload an image before sending.');
+        return;
       }
 
     }
@@ -1100,7 +1212,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         messageType,
 
-        recipients: audienceValidation.validation?.eligibleRecipients || recipientPreparation.eligibleRecipients,
+        recipients: recipientPreparation.eligibleRecipients,
 
         ...buildAudiencePayload(),
 
@@ -1111,7 +1223,9 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           language,
 
           templateContent,
-          templateCategory: audienceValidation.templateCategory,
+          templateCategory: selectedTemplateCategory || audienceValidation.templateCategory || 'utility',
+          mediaUrl: String(templateHeaderMediaUrl || '').trim(),
+          mediaType: String(templateHeaderMediaUrl || '').trim() ? 'image' : '',
 
           templateParameters: templateVariables.map((variable, index) => ({
 
@@ -1151,6 +1265,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         setBroadcastName('');
 
         setTemplateName('');
+        clearTemplateHeaderMedia();
 
         setCustomMessage('');
 
@@ -1166,6 +1281,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         setQuietHoursEndHour(9);
         setQuietHoursTimezone('Asia/Kolkata');
         setQuietHoursAction('defer');
+        setDeliveryBatchSize(50);
         setRetryPolicyEnabled(true);
         setRetryMaxAttempts(3);
         setRetryBackoffSeconds(45);
@@ -1258,15 +1374,14 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
       selectedTemplate = officialTemplates.find(t => t.name === templateName);
+      const selectedTemplateRequiresImageHeader = templateRequiresImageHeader(selectedTemplate);
 
 
 
       if (!selectedTemplate) {
-
-        alert('Template not found. Please sync templates and try again.');
-
-        return;
-
+        console.warn(
+          `Template "${templateName}" is not in the synced list. Proceeding with the entered template name.`
+        );
       }
 
       // Extract template content for storing in broadcast
@@ -1275,9 +1390,9 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
       const approvedStatuses = ['APPROVED', 'approved', 'ACTIVE', 'active'];
 
-      if (!approvedStatuses.includes(selectedTemplate.status)) {
+      if (!approvedStatuses.includes(selectedTemplate?.status)) {
 
-        console.warn(`⚠️ Template "${templateName}" has status "${selectedTemplate.status}". Proceeding anyway...`);
+        console.warn(`Template "${templateName}" has status "${selectedTemplate?.status || 'unknown'}". Proceeding anyway...`);
 
       }
 
@@ -1289,6 +1404,11 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         return;
 
+      }
+
+      if (selectedTemplateRequiresImageHeader && !String(templateHeaderMediaUrl || '').trim()) {
+        alert('This template requires an image header. Please upload an image before sending.');
+        return;
       }
 
     }
@@ -1325,13 +1445,15 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         messageType,
 
-        recipients: audienceValidation.validation?.eligibleRecipients || recipientPreparation.eligibleRecipients,
+        recipients: recipientPreparation.eligibleRecipients,
 
-        ...(messageType === 'template' ? { 
-          templateName, 
+        ...(messageType === 'template' ? {
+          templateName,
           language,
           templateContent,
-          templateCategory: audienceValidation.templateCategory
+          templateCategory: selectedTemplateCategory || audienceValidation.templateCategory || 'utility',
+          mediaUrl: String(templateHeaderMediaUrl || '').trim(),
+          mediaType: String(templateHeaderMediaUrl || '').trim() ? 'image' : ''
         } : { customMessage }),
         ...buildPolicyPayload()
 
@@ -1366,6 +1488,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         setBroadcastName('');
 
         setTemplateName('');
+        clearTemplateHeaderMedia();
 
         setCustomMessage('');
 
@@ -1377,6 +1500,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         setQuietHoursEndHour(9);
         setQuietHoursTimezone('Asia/Kolkata');
         setQuietHoursAction('defer');
+        setDeliveryBatchSize(50);
         setRetryPolicyEnabled(true);
         setRetryMaxAttempts(3);
         setRetryBackoffSeconds(45);
@@ -1396,8 +1520,13 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     } catch (error) {
 
       console.error('Broadcast send error:', error);
-
-      alert('Failed to send campaign: ' + error.message);
+      const status = Number(error?.response?.status || 0);
+      const backendMessage = String(error?.response?.data?.error || error?.message || '').trim();
+      if (status === 403) {
+        alert(backendMessage || 'Broadcast is blocked for this workspace until activation.');
+      } else {
+        alert('Failed to send campaign: ' + (backendMessage || 'Unknown error'));
+      }
 
     } finally {
 
@@ -1549,6 +1678,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const resetComposerForm = () => {
     setBroadcastName('');
     setTemplateName('');
+    clearTemplateHeaderMedia();
     setCustomMessage('');
     setScheduledTime('');
     setUploadedFile(null);
@@ -1562,6 +1692,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     setQuietHoursEndHour(9);
     setQuietHoursTimezone('Asia/Kolkata');
     setQuietHoursAction('defer');
+    setDeliveryBatchSize(50);
     setRetryPolicyEnabled(true);
     setRetryMaxAttempts(3);
     setRetryBackoffSeconds(45);
@@ -1582,12 +1713,12 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         ? {
             broadcast_name: broadcastName.trim(),
             messageType,
-            recipients: validationResult?.validation?.eligibleRecipients || recipientsPayload
+            recipients: recipientsPayload
           }
         : {
             name: broadcastName,
             messageType,
-            recipients: validationResult?.validation?.eligibleRecipients || recipientsPayload
+            recipients: recipientsPayload
           }),
       ...buildAudiencePayload(),
       ...(messageType === 'template'
@@ -1680,7 +1811,13 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       alert('Failed to send: ' + (result.data.error || result.data.message));
     } catch (error) {
       console.error('Broadcast continue after validation error:', error);
-      alert('Failed to continue broadcast: ' + error.message);
+      const status = Number(error?.response?.status || 0);
+      const backendMessage = String(error?.response?.data?.error || error?.message || '').trim();
+      if (status === 403) {
+        alert(backendMessage || 'Broadcast is blocked for this workspace until activation.');
+      } else {
+        alert('Failed to continue broadcast: ' + (backendMessage || 'Unknown error'));
+      }
     } finally {
       broadcastSubmitInFlightRef.current = false;
       setIsSending(false);
@@ -1738,7 +1875,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         payload.sendTemplate = {
           templateName,
           language: language || selectedTemplate?.language || 'en_US',
-          templateCategory: String(selectedTemplate?.category || 'marketing').toLowerCase(),
+          templateCategory: String(selectedTemplate?.category || 'utility').toLowerCase(),
           variables: firstRecipientVariables
         };
       }
@@ -1781,6 +1918,11 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           uploadedFile={uploadedFile}
           recipients={recipients}
           fileVariables={fileVariables}
+          templateHeaderMediaUrl={templateHeaderMediaUrl}
+          templateHeaderMediaUploading={templateHeaderMediaUploading}
+          templateHeaderMediaError={templateHeaderMediaError}
+          onTemplateHeaderMediaUpload={handleTemplateHeaderMediaFileUpload}
+          onClearTemplateHeaderMedia={clearTemplateHeaderMedia}
           onClearUpload={handleClearUpload}
           onOpenContactAudiencePicker={openContactAudiencePicker}
           onClearSelectedAudience={clearSelectedAudience}
@@ -1788,6 +1930,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           onAudienceSourceModeChange={setAudienceSourceMode}
           audienceSourceLabel={audienceSourceLabel}
           onAutoCleanRecipients={handleAutoCleanRecipients}
+          selectedTemplateCategory={selectedTemplateCategory}
           scheduledTime={scheduledTime}
           onScheduledTimeChange={(e) => setScheduledTime(e.target.value)}
           isSending={isSending}
@@ -1815,6 +1958,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           onRetryMaxAttemptsChange={setRetryMaxAttempts}
           retryBackoffSeconds={retryBackoffSeconds}
           onRetryBackoffSecondsChange={setRetryBackoffSeconds}
+          deliveryBatchSize={deliveryBatchSize}
+          onDeliveryBatchSizeChange={setDeliveryBatchSize}
           respectOptOut={respectOptOut}
           onRespectOptOutChange={setRespectOptOut}
           suppressionListRaw={suppressionListRaw}
@@ -2106,6 +2251,11 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           recipients={recipients}
 
           fileVariables={fileVariables}
+          templateHeaderMediaUrl={templateHeaderMediaUrl}
+          templateHeaderMediaUploading={templateHeaderMediaUploading}
+          templateHeaderMediaError={templateHeaderMediaError}
+          onTemplateHeaderMediaUpload={handleTemplateHeaderMediaFileUpload}
+          onClearTemplateHeaderMedia={clearTemplateHeaderMedia}
 
           onClearUpload={handleClearUpload}
           onOpenContactAudiencePicker={openContactAudiencePicker}
@@ -2114,6 +2264,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           onAudienceSourceModeChange={setAudienceSourceMode}
           audienceSourceLabel={audienceSourceLabel}
           onAutoCleanRecipients={handleAutoCleanRecipients}
+          selectedTemplateCategory={selectedTemplateCategory}
 
           scheduledTime={scheduledTime}
 
@@ -2152,6 +2303,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           onRetryMaxAttemptsChange={setRetryMaxAttempts}
           retryBackoffSeconds={retryBackoffSeconds}
           onRetryBackoffSecondsChange={setRetryBackoffSeconds}
+          deliveryBatchSize={deliveryBatchSize}
+          onDeliveryBatchSizeChange={setDeliveryBatchSize}
           respectOptOut={respectOptOut}
           onRespectOptOutChange={setRespectOptOut}
           suppressionListRaw={suppressionListRaw}
@@ -2233,6 +2386,11 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         onFileUpload={handleFileUpload}
 
         onClearUpload={handleClearUpload}
+        templateHeaderMediaUrl={templateHeaderMediaUrl}
+        templateHeaderMediaUploading={templateHeaderMediaUploading}
+        templateHeaderMediaError={templateHeaderMediaError}
+        onTemplateHeaderMediaUpload={handleTemplateHeaderMediaFileUpload}
+        onClearTemplateHeaderMedia={clearTemplateHeaderMedia}
         onOpenContactAudiencePicker={openContactAudiencePicker}
         onCloseContactAudiencePicker={closeContactAudiencePicker}
         onClearSelectedAudience={clearSelectedAudience}
@@ -2278,6 +2436,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         onRetryMaxAttemptsChange={setRetryMaxAttempts}
         retryBackoffSeconds={retryBackoffSeconds}
         onRetryBackoffSecondsChange={setRetryBackoffSeconds}
+        deliveryBatchSize={deliveryBatchSize}
+        onDeliveryBatchSizeChange={setDeliveryBatchSize}
         respectOptOut={respectOptOut}
         onRespectOptOutChange={setRespectOptOut}
         suppressionListRaw={suppressionListRaw}
