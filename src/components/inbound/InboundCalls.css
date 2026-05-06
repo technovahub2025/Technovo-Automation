@@ -307,17 +307,17 @@
   line-height: 1.4;
 }
 
-.inbound-calls .status-indicator {
+.inbound-calls .inbound-queue-status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
 }
 
-.inbound-calls .status-indicator.available {
+.inbound-calls .inbound-queue-status-dot.available {
   background: #10b981;
 }
 
-.inbound-calls .status-indicator.busy {
+.inbound-calls .inbound-queue-status-dot.busy {
   background: #f59e0b;
 }
 
@@ -402,11 +402,14 @@
 }
 
 .inbound-calls {
-  padding: 0;
+  padding: 24px;
   width: 100%;
   max-width: 100%;
-  overflow-x: hidden;
-  min-height: calc(100vh - 72px);
+  min-height: calc(100vh - 48px);
+  overflow-x: clip;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
 }
 
 .inbound-calls .inbound-tabs-new {
@@ -419,7 +422,7 @@
   white-space: nowrap;
 }
 
-.inbound-calls .status-indicator {
+.inbound-calls .inbound-queue-status-dot {
   display: inline-block;
   flex-shrink: 0;
 }
@@ -474,7 +477,8 @@
 
 @media (max-width: 768px) {
   .inbound-calls {
-    padding: 0;
+    padding: 18px;
+    min-height: calc(100vh - 32px);
   }
 
   .inbound-calls .inbound-header-new h1 {
@@ -510,7 +514,7 @@
 
 @media (max-width: 560px) {
   .inbound-calls {
-    padding: 0;
+    padding: 14px;
   }
 
   .inbound-calls .inbound-tabs-new {

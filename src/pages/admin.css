@@ -531,6 +531,8 @@
 .user-list {
   max-height: 60vh;
   overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(148, 163, 184, 0.9) transparent;
 }
 
 .user-list--tall {
@@ -538,7 +540,23 @@
 }
 
 .user-list--page {
-  max-height: calc(100vh - 300px);
+  max-height: clamp(420px, calc(100vh - 360px), 620px);
+  padding-right: 6px;
+  overscroll-behavior: contain;
+}
+
+.user-list::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.user-list::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.82);
+  border-radius: 999px;
+}
+
+.user-list::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .users-list-table {

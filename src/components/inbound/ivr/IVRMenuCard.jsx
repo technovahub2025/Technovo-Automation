@@ -1051,6 +1051,8 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
     onDelete(menu._id);
   };
 
+  const workflowName = menu.displayName || menu.ivrName || menu.name || 'Untitled IVR';
+
   return (
     <div className={`menu-card ${isEditing ? 'editing' : ''}`}>
       <div className="menu-card-top">
@@ -1059,7 +1061,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
             <Workflow size={17} />
           </div>
           <div className="title-text">
-            <h3>{menu.displayName || menu.ivrName || menu.name || 'Untitled IVR'}</h3>
+            <h3 title={workflowName}>{workflowName}</h3>
             <span
               className={`status-indicator status-${currentStatus}`}
               title={`Current status: ${currentStatus}`}

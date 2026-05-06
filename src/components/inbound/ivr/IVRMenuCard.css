@@ -508,6 +508,21 @@
   box-sizing: border-box;
 }
 
+.ivr-menu-tab .test-run-actions .btn.btn-secondary,
+.ivr-menu-tab .test-run-actions .btn.btn-secondary:hover:not(:disabled),
+.ivr-menu-tab .test-run-actions .btn.btn-secondary:focus-visible,
+.ivr-menu-tab .test-run-actions .btn.btn-secondary:active {
+  background: #2563eb;
+  color: #ffffff;
+  border: 1px solid #1d4ed8;
+  box-shadow: none;
+}
+
+.ivr-menu-tab .test-run-actions .btn.btn-secondary:hover:not(:disabled),
+.ivr-menu-tab .test-run-actions .btn.btn-secondary:focus-visible {
+  background: #1d4ed8;
+}
+
 .ivr-menu-tab .test-run-controls {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -909,12 +924,15 @@
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: 1 1 auto;
   flex-wrap: nowrap;
   min-width: 0;
+  max-width: 100%;
   line-height: 1;
 }
 
 .ivr-menu-tab .menu-card-title h3 {
+  flex: 1 1 auto;
   font-size: 21px;
   font-weight: 700;
   line-height: 1.2;
@@ -926,6 +944,7 @@
 }
 
 .ivr-menu-tab .status-indicator {
+  flex: 0 0 auto;
   min-width: 58px;
   width: auto;
   max-width: none;

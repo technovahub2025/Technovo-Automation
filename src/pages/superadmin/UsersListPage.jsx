@@ -74,6 +74,19 @@ const DOCUMENT_UPLOAD_OPTIONS = [
   "Passport"
 ];
 
+const getUserLifoTime = (user = {}) => {
+  const explicitDate = user.createdAt || user.updatedAt || user.registeredAt || user.created_at || user.updated_at;
+  const parsedDate = explicitDate ? Date.parse(explicitDate) : NaN;
+  if (Number.isFinite(parsedDate)) return parsedDate;
+
+  const objectId = String(user._id || user.id || "");
+  if (/^[a-f\d]{24}$/i.test(objectId)) {
+    return parseInt(objectId.slice(0, 8), 16) * 1000;
+  }
+
+  return 0;
+};
+
 const UsersListPage = () => {
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(true);
@@ -255,7 +268,8 @@ const UsersListPage = () => {
             String(user.email || "").toLowerCase().includes(term) ||
             String(user.companyId || "").toLowerCase().includes(term)
           );
-        }),
+        })
+        .sort((a, b) => getUserLifoTime(b) - getUserLifoTime(a)),
     [companyFilter, roleFilter, searchTerm, users]
   );
 

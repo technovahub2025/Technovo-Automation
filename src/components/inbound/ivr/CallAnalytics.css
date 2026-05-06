@@ -1,12 +1,14 @@
 .call-analytics {
-  min-height: 100vh;
-  padding: 0;
-  background: #f8fafc;
+  min-height: calc(100vh - 48px);
+  padding: 24px;
+  background: #ffffff;
   color: #0f172a;
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
 }
 
 .analytics-header,
@@ -521,7 +523,8 @@
 
 @media (max-width: 720px) {
   .call-analytics {
-    padding: 0;
+    padding: 18px;
+    min-height: calc(100vh - 32px);
   }
 
   .analytics-header,
@@ -563,6 +566,10 @@
 }
 
 @media (max-width: 480px) {
+  .call-analytics {
+    padding: 14px;
+  }
+
   .analytics-header h2 {
     font-size: 21px;
     line-height: 1.2;

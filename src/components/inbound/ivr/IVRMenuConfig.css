@@ -563,7 +563,7 @@
 
 .ivr-menu-tab .menus-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(380px, 100%), 1fr));
   gap: 16px;
   align-items: start;
 }

@@ -6,6 +6,7 @@ import {
   Search,
   Download,
   Trash2,
+  BarChart3,
   SlidersHorizontal,
   MoreVertical,
   X,
@@ -58,6 +59,8 @@ const LeadsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [activeDrawerLeadId, setActiveDrawerLeadId] = useState(null);
+  const [activeActionMenuLeadId, setActiveActionMenuLeadId] = useState(null);
+  const [actionMenuPosition, setActionMenuPosition] = useState(null);
   const [selectedLeadIds, setSelectedLeadIds] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -246,6 +249,23 @@ const LeadsPage = () => {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [activeDrawerLeadId]);
+
+  useEffect(() => {
+    if (!activeActionMenuLeadId) return undefined;
+
+    const closeActionMenu = () => {
+      setActiveActionMenuLeadId(null);
+      setActionMenuPosition(null);
+    };
+    window.addEventListener('click', closeActionMenu);
+    window.addEventListener('scroll', closeActionMenu, true);
+    window.addEventListener('resize', closeActionMenu);
+    return () => {
+      window.removeEventListener('click', closeActionMenu);
+      window.removeEventListener('scroll', closeActionMenu, true);
+      window.removeEventListener('resize', closeActionMenu);
+    };
+  }, [activeActionMenuLeadId]);
 
   const handleSearchChange = (event) => {
     setSearchInput(event.target.value);
@@ -444,7 +464,7 @@ const LeadsPage = () => {
           <p className="subtitle">IVR-specific lead tracking</p>
         </div>
         <div className="header-stats">
-          <div className="stat-card">
+          <div className="leads-stat-card">
             <span className="stat-value">{stats.contactsUsed}</span>
             <span className="stat-label">Contacts Used</span>
           </div>
@@ -623,18 +643,77 @@ const LeadsPage = () => {
                   <td className="leads-col-received">{formatDate(lead.createdAt)}</td>
                   <td className="leads-col-duration duration-cell">{formatDuration(lead.duration)}</td>
                   <td className="leads-col-actions actions-cell">
-                    <button
-                      className="btn-kebab"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setActiveDrawerLeadId(lead._id);
-                      }}
-                      title="Open lead actions"
-                      aria-label="Open lead actions"
-                      type="button"
-                    >
-                      <MoreVertical size={18} />
-                    </button>
+                    <div className="lead-row-actions">
+                      <button
+                        className={`btn-kebab ${activeActionMenuLeadId === lead._id ? 'active' : ''}`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          const isCurrentMenu = String(activeActionMenuLeadId || '') === String(lead._id || '');
+                          if (isCurrentMenu) {
+                            setActiveActionMenuLeadId(null);
+                            setActionMenuPosition(null);
+                            return;
+                          }
+
+                          const rect = event.currentTarget.getBoundingClientRect();
+                          const menuWidth = 152;
+                          const menuHeight = 104;
+                          const viewportPadding = 12;
+                          const nextLeft = Math.min(
+                            Math.max(viewportPadding, rect.right - menuWidth),
+                            window.innerWidth - menuWidth - viewportPadding
+                          );
+                          const nextTop = window.innerHeight - rect.bottom < menuHeight + viewportPadding
+                            ? Math.max(viewportPadding, rect.top - menuHeight - 8)
+                            : rect.bottom + 8;
+
+                          setActionMenuPosition({ top: nextTop, left: nextLeft });
+                          setActiveActionMenuLeadId(lead._id);
+                        }}
+                        title="Open lead actions"
+                        aria-label="Open lead actions"
+                        aria-expanded={activeActionMenuLeadId === lead._id}
+                        type="button"
+                      >
+                        <MoreVertical size={18} />
+                      </button>
+                      {activeActionMenuLeadId === lead._id && (
+                        <div
+                          className="lead-row-actions-menu"
+                          style={actionMenuPosition || undefined}
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <button
+                            className="lead-row-menu-item open"
+                            onClick={() => {
+                              setActiveActionMenuLeadId(null);
+                              setActionMenuPosition(null);
+                              setActiveDrawerLeadId(lead._id);
+                            }}
+                            title="View results"
+                            aria-label="View results"
+                            type="button"
+                          >
+                            <BarChart3 size={16} />
+                            <span>View results</span>
+                          </button>
+                          <button
+                            className="lead-row-menu-item delete"
+                            onClick={() => {
+                              setActiveActionMenuLeadId(null);
+                              setActionMenuPosition(null);
+                              handleDeleteLead(lead._id);
+                            }}
+                            title="Delete lead"
+                            aria-label="Delete lead"
+                            type="button"
+                          >
+                            <Trash2 size={16} />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </td>
                 </tr>
               ))}

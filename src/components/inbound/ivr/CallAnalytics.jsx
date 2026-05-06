@@ -167,7 +167,7 @@ const CallAnalytics = () => {
   const [analytics, setAnalytics] = useState(null);
   const [period, setPeriod] = useState('today');
   const [filters, setFilters] = useState({ callType: 'all', status: 'all', searchQuery: '' });
-  const [showFilters, setShowFilters] = useState(true);
+  const [showFilters, setShowFilters] = useState(false);
   const [socketConnected, setSocketConnected] = useState(false);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
@@ -716,7 +716,7 @@ const CallAnalytics = () => {
       <section className="calls-table-section">
         <div className="section-heading">
           <h3>Recent Calls ({filteredCalls.length})</h3>
-          <span className="table-order-note">LIFO: newest first</span>
+          <span className="table-order-note">Newest first</span>
           {error && <span className="inline-error">{error}</span>}
         </div>
         {filteredCalls.length > 0 ? (

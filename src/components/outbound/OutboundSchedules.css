@@ -1,11 +1,13 @@
 .outbound-schedules-page {
-  padding: 0;
-  background: #f8fafc;
-  min-height: 100vh;
+  padding: 24px;
+  background: #ffffff;
+  min-height: calc(100vh - 48px);
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: clip;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
 }
 
 .outbound-schedules-page.embedded {
@@ -274,7 +276,8 @@
 
 @media (max-width: 640px) {
   .outbound-schedules-page {
-    padding: 0;
+    padding: 14px;
+    min-height: calc(100vh - 32px);
   }
 
   .schedules-header h1 {

@@ -1130,7 +1130,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
 
                     
 
-                    <div
+                    {/* <div
                         className={`icon-item ${openMenu === 'settings' ? 'active' : ''}`}
                         onMouseEnter={(e) => {
                             if (!isMobile) {
@@ -1166,7 +1166,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         <span className="submenu-arrow-indicator" aria-hidden="true">
                             {openMenu === 'settings' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
                         </span>
-                    </div>
+                    </div> */}
                 </nav>
 
                 <div className="sidebar-dark-footer">

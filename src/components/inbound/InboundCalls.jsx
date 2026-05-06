@@ -199,7 +199,7 @@ const InboundCalls = () => {
                   <span className="queue-count">{count} callers</span>
                 </div>
                 <div className="queue-status">
-                  <span className={`status-indicator ${count > 0 ? 'busy' : 'available'}`} />
+                  <span className={`inbound-queue-status-dot ${count > 0 ? 'busy' : 'available'}`} />
                 </div>
               </div>
             ))}
