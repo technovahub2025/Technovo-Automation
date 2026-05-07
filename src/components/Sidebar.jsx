@@ -34,6 +34,7 @@ import {
     ChevronRight,
     Menu,
     X,
+    Send,
     PhoneIncoming,
     PhoneOutgoing,
     LineChart
@@ -67,7 +68,8 @@ const ROUTE_PREFETCHERS = {
     '/voice-automation/outbound/schedules': () => import('../components/outbound/OutboundSchedules'),
     '/voice-automation/history': () => import('../components/inbound/ivr/CallAnalytics'),
     '/missedcalls/overview': () => import('../pages/MissedCallsOverviewPage'),
-    '/email-automation': () => import('../pages/EmailAutomation'),
+    '/email-automation/dashboard': () => import('../pages/EmailAutomationDashboard'),
+    '/email-automation/bulk-email': () => import('../pages/EmailAutomation'),
 };
 
 const defaultGoogleCalendarStatus = {
@@ -864,6 +866,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         currentPath.startsWith('/voice-automation/history');
 
     const isMissedCallsRouteActive = currentPath.startsWith('/missedcalls');
+    const isEmailAutomationRouteActive = currentPath.startsWith('/email-automation');
     const isMetaAdsRouteActive =
         isRouteActive('/ads-manager') ||
         isRouteActive('/insights') ||
@@ -1161,21 +1164,37 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
 
                     {canUseEmailAutomation && (
                         <div
-                            className={`icon-item ${isRouteActive('/email-automation') ? 'active' : ''}`}
-                            onMouseEnter={() => {
+                            className={`icon-item ${isEmailAutomationRouteActive ? 'active' : ''} ${openMenu === 'emailAutomation' ? 'expanded' : ''}`}
+                            onMouseEnter={(e) => {
                                 if (!isMobile) {
-                                    setOpenMenu(null);
+                                    cancelDesktopFlyoutClose();
+                                    openDesktopFlyout('emailAutomation', e);
+                                    prefetchRoute('/email-automation/dashboard');
+                                    prefetchRoute('/email-automation/bulk-email');
                                 }
-                                prefetchRoute('/email-automation');
                             }}
-                            onClick={() => {
-                                setOpenMenu(null);
-                                navigate('/email-automation');
+                            onClick={(e) => {
+                                if (isMobile) {
+                                    if (openMenu === 'emailAutomation' && isOverlayOpen) {
+                                        setIsOverlayOpen(false);
+                                        setOpenMenu(null);
+                                    } else {
+                                        setOpenMenu('emailAutomation');
+                                        setIsOverlayOpen(true);
+                                        if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                    }
+                                    return;
+                                }
+                                if (isCompactMobile) setIsMobileSidebarOpen(true);
+                                handleHubMenuToggle('emailAutomation', e);
                             }}
                             title="Email Automation"
                         >
                             <Mail size={24} />
                             <span className="icon-label">Email</span>
+                            <span className="submenu-arrow-indicator" aria-hidden="true">
+                                {openMenu === 'emailAutomation' ? <ChevronLeft size={12} /> : <ChevronRight size={12} />}
+                            </span>
                         </div>
                     )}
                         </>
@@ -1308,6 +1327,41 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 >
                                     <Users size={20} />
                                     <span>Contacts</span>
+                                </NavLink>
+                            </nav>
+                        </>
+                    )}
+
+                    {openMenu === 'emailAutomation' && (
+                        <>
+                            <div className="panel-header">
+                                <h3>Email Automation</h3>
+                                {isMobile && (
+                                    <button className="panel-close-btn" onClick={toggleOverlay} title="Close menu">
+                                        <X size={20} />
+                                    </button>
+                                )}
+                            </div>
+                            <nav className="panel-menu">
+                                <NavLink
+                                    to="/email-automation/dashboard"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/email-automation/dashboard')}
+                                    onFocus={() => prefetchRoute('/email-automation/dashboard')}
+                                    onClick={closeMobileMenusAfterNavigate}
+                                >
+                                    <LayoutDashboard size={20} />
+                                    <span>Email Dashboard</span>
+                                </NavLink>
+                                <NavLink
+                                    to="/email-automation/bulk-email"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onMouseEnter={() => prefetchRoute('/email-automation/bulk-email')}
+                                    onFocus={() => prefetchRoute('/email-automation/bulk-email')}
+                                    onClick={closeMobileMenusAfterNavigate}
+                                >
+                                    <Send size={20} />
+                                    <span>Bulk Email</span>
                                 </NavLink>
                             </nav>
                         </>

@@ -38,6 +38,7 @@ const OutboundCall = lazy(() => import("./components/outbound/OutboundCall"));
 const OutboundSchedules = lazy(() => import("./components/outbound/OutboundSchedules"));
 const CallAnalytics = lazy(() => import("./components/inbound/ivr/CallAnalytics"));
 const VoiceBroadcast = lazy(() => import("./pages/VoiceBroadcast/VoiceBroadcast"));
+const EmailAutomationDashboard = lazy(() => import("./pages/EmailAutomationDashboard"));
 const EmailAutomation = lazy(() => import("./pages/EmailAutomation"));
 const PDFExtractor = lazy(() => import("./pages/PDFExtractor"));
 const MetaVerification = lazy(() => import("./pages/MetaVerification"));
@@ -194,7 +195,15 @@ function App() {
           <Route path="missedcalls/overview" element={renderLazyRoute(<MissedCallsOverviewPage />, "Loading missed calls overview...")} />
           <Route path="missedcalls/calls" element={renderLazyRoute(<MissedCallsCallsPage />, "Loading missed calls...")} />
           <Route path="missedcalls/automation" element={renderLazyRoute(<MissedCallsAutomationPage />, "Loading missed call automation...")} />
-          <Route path="email-automation" element={renderLazyRoute(<EmailAutomation />, "Loading email automation...")} />
+          <Route path="email-automation" element={<Navigate to="/email-automation/dashboard" replace />} />
+          <Route
+            path="email-automation/dashboard"
+            element={renderLazyRoute(<EmailAutomationDashboard />, "Loading email automation dashboard...")}
+          />
+          <Route
+            path="email-automation/bulk-email"
+            element={renderLazyRoute(<EmailAutomation />, "Loading bulk email...")}
+          />
           <Route path="pdf-extractor" element={renderLazyRoute(<PDFExtractor />, "Loading PDF extractor...")} />
           <Route path="verification" element={renderLazyRoute(<MetaVerification />, "Loading verification...")} />
           <Route path="register-docs" element={renderLazyRoute(<RegisterDocuments />, "Loading documents...")} />
