@@ -31,6 +31,8 @@ const WhatsAppConsentAuditModal = ({
   if (!open) return null;
 
   const entries = metadataEntries(data?.whatsappOptInMetadata);
+  const isLandingPageSource = String(data?.whatsappOptInSource || '').trim().toLowerCase() === 'landing_page';
+  const consentReference = renderValue(data?.whatsappOptInProofId);
 
   return (
     <div className="modal-overlay whatsapp-consent-audit-overlay">
@@ -74,8 +76,8 @@ const WhatsAppConsentAuditModal = ({
                   <strong>{renderValue(data?.whatsappOptInProofType)}</strong>
                 </div>
                 <div className="whatsapp-consent-audit-row">
-                  <span>Proof ID</span>
-                  <strong>{renderValue(data?.whatsappOptInProofId)}</strong>
+                  <span>Consent Reference</span>
+                  <strong>{consentReference}</strong>
                 </div>
                 <div className="whatsapp-consent-audit-row">
                   <span>Proof URL</span>
@@ -115,6 +117,15 @@ const WhatsAppConsentAuditModal = ({
                 <h4>Consent Text Snapshot</h4>
                 <div className="whatsapp-consent-audit-note">{renderValue(data?.whatsappOptInTextSnapshot)}</div>
               </div>
+
+              {isLandingPageSource && consentReference !== '-' ? (
+                <div className="whatsapp-consent-audit-section">
+                  <h4>Landing Page Reference</h4>
+                  <div className="whatsapp-consent-audit-note">
+                    This consent was captured from the landing page flow and assigned an internal reference ID for audit tracking.
+                  </div>
+                </div>
+              ) : null}
 
               {entries.length ? (
                 <div className="whatsapp-consent-audit-section">

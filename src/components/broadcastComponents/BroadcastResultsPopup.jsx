@@ -11,6 +11,7 @@ const BroadcastResultsPopup = ({
 }) => {
   if (!isOpen) return null;
 
+  const isQueued = Boolean(results?.queued);
   const successRate = results?.total_sent > 0 
     ? ((results.successful / results.total_sent) * 100).toFixed(1)
     : 0;
@@ -77,8 +78,12 @@ const BroadcastResultsPopup = ({
           {isSending ? (
             <div className="sending-status">
               <div className="spinner"></div>
-              <p>Your broadcast is being sent...</p>
-              <p className="sub-text">This may take a few moments</p>
+              <p>{isQueued ? 'Your broadcast has been queued.' : 'Your broadcast is being sent...'}</p>
+              <p className="sub-text">
+                {isQueued
+                  ? 'Sending continues in the background. You can leave this page.'
+                  : 'This may take a few moments'}
+              </p>
             </div>
           ) : (
             <>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, Send, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X, FileText, Copy, ExternalLink, MoreVertical } from 'lucide-react';
 import Papa from 'papaparse';
 import { apiClient } from '../services/whatsappapi';
@@ -9,6 +9,7 @@ import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
 import { buildPublicWhatsAppOptInDemoUrl, buildWhatsAppOutreachState } from '../utils/whatsappOutreachNavigation';
 import { getWhatsAppConversationState } from '../utils/whatsappContactState';
 import {
+    clearSidebarPageCache,
     readSidebarPageCache,
     resolveCacheUserId,
     writeSidebarPageCache
@@ -17,7 +18,7 @@ import './Contacts.css';
 
 const CONTACTS_LOADING_TIMEOUT_MS = 8000;
 const CONTACTS_CACHE_TTL_MS = 10 * 60 * 1000;
-const CONTACTS_CACHE_NAMESPACE = 'contacts-page';
+const CONTACTS_CACHE_NAMESPACE = 'contacts-page:v2';
 const CONTACTS_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
 
 const sanitizeContactForCache = (contact = {}) => ({
@@ -81,11 +82,86 @@ const getCapturedByLabel = () => {
     }
 };
 
+const MIN_PHONE_DIGITS = 10;
+const MAX_PHONE_DIGITS = 15;
+const CONTACTS_ROUTE_QUERY_KEYS = {
+    page: 'page',
+    pageSize: 'pageSize',
+    search: 'search',
+    activeFilter: 'activeFilter',
+    sort: 'sort'
+};
+
+const parsePositiveInteger = (value, fallback) => {
+    const parsed = Number.parseInt(String(value || '').trim(), 10);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+};
+
+const readContactsRouteState = (searchParams) => {
+    const params = searchParams instanceof URLSearchParams ? searchParams : new URLSearchParams();
+    return {
+        currentPage: parsePositiveInteger(params.get(CONTACTS_ROUTE_QUERY_KEYS.page), 1),
+        pageSize: CONTACTS_PAGE_SIZE_OPTIONS.includes(Number(params.get(CONTACTS_ROUTE_QUERY_KEYS.pageSize)))
+            ? Number(params.get(CONTACTS_ROUTE_QUERY_KEYS.pageSize))
+            : 10,
+        searchTerm: String(params.get(CONTACTS_ROUTE_QUERY_KEYS.search) || '').trim(),
+        lastActiveFilter: String(params.get(CONTACTS_ROUTE_QUERY_KEYS.activeFilter) || 'all').trim() || 'all',
+        sortOption: String(params.get(CONTACTS_ROUTE_QUERY_KEYS.sort) || 'name-asc').trim() || 'name-asc'
+    };
+};
+
+const buildContactsRouteSearchParams = ({
+    currentPage,
+    pageSize,
+    searchTerm,
+    lastActiveFilter,
+    sortOption
+}) => {
+    const params = new URLSearchParams();
+    const normalizedSearch = String(searchTerm || '').trim();
+    const normalizedFilter = String(lastActiveFilter || 'all').trim() || 'all';
+    const normalizedSort = String(sortOption || 'name-asc').trim() || 'name-asc';
+
+    if (currentPage && Number(currentPage) > 1) {
+        params.set(CONTACTS_ROUTE_QUERY_KEYS.page, String(currentPage));
+    }
+    if (pageSize && Number(pageSize) !== 10) {
+        params.set(CONTACTS_ROUTE_QUERY_KEYS.pageSize, String(pageSize));
+    }
+    if (normalizedSearch) {
+        params.set(CONTACTS_ROUTE_QUERY_KEYS.search, normalizedSearch);
+    }
+    if (normalizedFilter !== 'all') {
+        params.set(CONTACTS_ROUTE_QUERY_KEYS.activeFilter, normalizedFilter);
+    }
+    if (normalizedSort !== 'name-asc') {
+        params.set(CONTACTS_ROUTE_QUERY_KEYS.sort, normalizedSort);
+    }
+
+    return params;
+};
+
+const normalizeImportedPhone = (value = '') => {
+    const cleaned = String(value || '').replace(/[^0-9+]/g, '');
+    if (!cleaned) return '';
+    return cleaned.startsWith('+') ? cleaned : `+${cleaned}`;
+};
+
+const isValidImportedPhone = (value = '') => {
+    const digits = String(value || '').replace(/\D/g, '');
+    return digits.length >= MIN_PHONE_DIGITS && digits.length <= MAX_PHONE_DIGITS;
+};
+
 const Contacts = () => {
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
+    const initialRouteStateRef = useRef(null);
+    if (!initialRouteStateRef.current) {
+        initialRouteStateRef.current = readContactsRouteState(searchParams);
+    }
     const [contacts, setContacts] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [searchTerm, setSearchTerm] = useState('');
+    const [searchTerm, setSearchTerm] = useState(initialRouteStateRef.current.searchTerm);
     const [showAddModal, setShowAddModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [editingContact, setEditingContact] = useState(null);
@@ -94,8 +170,8 @@ const Contacts = () => {
     const [selectionMode, setSelectionMode] = useState(false);
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
     const [showSortDropdown, setShowSortDropdown] = useState(false);
-    const [lastActiveFilter, setLastActiveFilter] = useState('all');
-    const [sortOption, setSortOption] = useState('name-asc');
+    const [lastActiveFilter, setLastActiveFilter] = useState(initialRouteStateRef.current.lastActiveFilter);
+    const [sortOption, setSortOption] = useState(initialRouteStateRef.current.sortOption);
     const [showImportModal, setShowImportModal] = useState(false);
     const [importFile, setImportFile] = useState(null);
     const [importRows, setImportRows] = useState([]);
@@ -115,8 +191,8 @@ const Contacts = () => {
     const [auditData, setAuditData] = useState(null);
     const [notification, setNotification] = useState(null);
     const [activeActionsMenuId, setActiveActionsMenuId] = useState(null);
-    const [currentPage, setCurrentPage] = useState(1);
-    const [pageSize, setPageSize] = useState(10);
+    const [currentPage, setCurrentPage] = useState(initialRouteStateRef.current.currentPage);
+    const [pageSize, setPageSize] = useState(initialRouteStateRef.current.pageSize);
     const fileInputRef = useRef(null);
     const currentUserId = resolveCacheUserId();
 
@@ -214,6 +290,15 @@ const Contacts = () => {
         loadContacts();
     }, [currentUserId, loadContacts]);
 
+    useEffect(() => {
+        const routeState = readContactsRouteState(searchParams);
+        setCurrentPage(routeState.currentPage);
+        setPageSize(routeState.pageSize);
+        setSearchTerm(routeState.searchTerm);
+        setLastActiveFilter(routeState.lastActiveFilter);
+        setSortOption(routeState.sortOption);
+    }, [searchParams]);
+
     const copyPublicOptInLink = useCallback(async (contact) => {
         const link = buildPublicWhatsAppOptInDemoUrl(contact, {
             source: 'contacts_share',
@@ -245,14 +330,23 @@ const Contacts = () => {
     }, [showNotification]);
 
     const handleAddContact = async () => {
-        if (!newContact.phone) {
+        const normalizedPhone = normalizeImportedPhone(newContact.phone);
+        if (!normalizedPhone) {
             showNotification('Phone number is required', 'error');
+            return;
+        }
+        if (!isValidImportedPhone(normalizedPhone)) {
+            showNotification(
+                `Phone number must contain ${MIN_PHONE_DIGITS}-${MAX_PHONE_DIGITS} digits.`,
+                'error'
+            );
             return;
         }
 
         try {
             const contactData = {
                 ...newContact,
+                phone: normalizedPhone,
                 tags: newContact.tags ? newContact.tags.split(',').map(tag => tag.trim()) : [],
                 whatsappOptInStatus: 'unknown',
                 isBlocked: false
@@ -318,6 +412,18 @@ const Contacts = () => {
         if (!editingContact) return;
         
         try {
+            const normalizedPhone = normalizeImportedPhone(newContact.phone);
+            if (!normalizedPhone) {
+                showNotification('Phone number is required', 'error');
+                return;
+            }
+            if (!isValidImportedPhone(normalizedPhone)) {
+                showNotification(
+                    `Phone number must contain ${MIN_PHONE_DIGITS}-${MAX_PHONE_DIGITS} digits.`,
+                    'error'
+                );
+                return;
+            }
             const existingOptInStatus = getWhatsAppOptInStatus(editingContact);
             const nextWhatsappOptInStatus =
                 newContact.status === 'Opted-out'
@@ -340,7 +446,7 @@ const Contacts = () => {
 
             const contactData = {
                 name: newContact.name,
-                phone: newContact.phone,
+                phone: normalizedPhone,
                 email: newContact.email,
                 tags: newContact.tags
                     ? newContact.tags.split(',').map(tag => tag.trim()).filter(Boolean)
@@ -444,6 +550,21 @@ const Contacts = () => {
         const parsedSize = Number(nextSize);
         if (!Number.isFinite(parsedSize) || parsedSize <= 0) return;
         setPageSize(parsedSize);
+        setCurrentPage(1);
+    };
+
+    const handleSearchTermChange = (value) => {
+        setSearchTerm(value);
+        setCurrentPage(1);
+    };
+
+    const handleLastActiveFilterChange = (value) => {
+        setLastActiveFilter(value);
+        setCurrentPage(1);
+    };
+
+    const handleSortOptionChange = (value) => {
+        setSortOption(value);
         setCurrentPage(1);
     };
 
@@ -567,18 +688,29 @@ const Contacts = () => {
     };
 
     const getWhatsAppOptInStatus = (contact = {}) => {
-        const normalized = String(contact?.whatsappOptInStatus || '').trim().toLowerCase();
+        const normalized = String(contact?.whatsappOptInStatus || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[-\s]+/g, '_');
         if (normalized === 'opted_in') return 'opted-in';
         if (normalized === 'opted_out') return 'opted-out';
+        const normalizedSource = String(contact?.whatsappOptInSource || contact?.source || '')
+            .trim()
+            .toLowerCase();
+        const normalizedSourceType = String(contact?.sourceType || '').trim().toLowerCase();
         const hasConsentEvidence = Boolean(
             String(contact?.whatsappOptInAt || '').trim() ||
             String(contact?.whatsappOptInTextSnapshot || '').trim() ||
             String(contact?.whatsappOptInProofType || '').trim() ||
             String(contact?.whatsappOptInProofId || '').trim() ||
             String(contact?.whatsappOptInProofUrl || '').trim() ||
-            String(contact?.whatsappOptInPageUrl || '').trim()
+            String(contact?.whatsappOptInPageUrl || '').trim() ||
+            ['landing_page', 'public_opt_in', 'website_form'].includes(normalizedSource)
         );
         if (hasConsentEvidence) return 'opted-in';
+        if (['imported', 'csv_import'].includes(normalizedSourceType) && !contact?.isBlocked && !contact?.whatsappOptOutAt) {
+            return 'opted-in';
+        }
         return contact?.isBlocked || contact?.whatsappOptOutAt ? 'opted-out' : 'unknown';
     };
 
@@ -666,6 +798,7 @@ const Contacts = () => {
                     setImportHeaders(headers);
                     setImportRows(normalizedRows);
                     setImportPreview(normalizedRows.slice(0, 5));
+                    setImportMapping(buildAutoImportMapping(headers));
                     setImportStep('mapping');
                 },
                 error: () => {
@@ -689,13 +822,48 @@ const Contacts = () => {
         return Object.keys(importPreview[0]).filter(key => key !== 'lineNumber');
     };
 
+    const normalizeImportHeaderKey = (value = '') =>
+        String(value || '')
+            .trim()
+            .toLowerCase()
+            .replace(/[^a-z0-9]+/g, '');
+
+    const findImportHeader = (headers = [], ...aliases) => {
+        const lookup = new Map(headers.map((header) => [normalizeImportHeaderKey(header), header]));
+        for (const alias of aliases) {
+            const match = lookup.get(normalizeImportHeaderKey(alias));
+            if (match) return match;
+        }
+        return '';
+    };
+
+    const buildAutoImportMapping = (headers = []) => ({
+        name: findImportHeader(headers, 'first name', 'firstname', 'full name', 'name'),
+        lastName: findImportHeader(headers, 'last name', 'lastname', 'surname'),
+        phone: findImportHeader(
+            headers,
+            'whatsapp number',
+            'phone number',
+            'phone',
+            'mobile',
+            'mobile number',
+            'contact number'
+        ),
+        email: findImportHeader(headers, 'email', 'email address', 'emailaddress'),
+        status: findImportHeader(headers, 'opt-in status', 'status', 'whatsapp opt-in status'),
+        scope: findImportHeader(headers, 'consent scope', 'scope', 'whatsapp opt-in scope'),
+        listName: findImportHeader(headers, 'list name', 'listname'),
+        tags: findImportHeader(headers, 'tags', 'tag'),
+        capturedBy: findImportHeader(headers, 'captured by', 'capturedby')
+    });
+
     const normalizeImportStatusValue = (value = '') => {
-        const normalized = String(value || '').trim().toLowerCase();
+        const normalized = String(value || '').trim().toLowerCase().replace(/[\s_]+/g, '-');
         if (!normalized) return 'unknown';
-        if (normalized === 'opted_in' || normalized === 'opted-in') return 'opted-in';
-        if (normalized === 'opted_out' || normalized === 'opted-out') return 'opted-out';
+        if (normalized === 'opted-in') return 'opted-in';
+        if (normalized === 'opted-out') return 'opted-out';
         if (normalized === 'unknown') return 'unknown';
-        return normalized.replace(/_/g, '-');
+        return normalized;
     };
 
     const mapImportedRow = (row) => {
@@ -713,12 +881,7 @@ const Contacts = () => {
                         break;
                     }
                     case 'phone': {
-                        let phone = row[sourceField] || '';
-                        phone = phone.replace(/[^0-9+]/g, '');
-                        if (!phone.startsWith('+') && phone.length > 0) {
-                            phone = '+' + phone;
-                        }
-                        contact[field] = phone;
+                        contact[field] = normalizeImportedPhone(row[sourceField] || '');
                         break;
                     }
                     case 'email':
@@ -731,18 +894,6 @@ const Contacts = () => {
                     }
                     case 'status':
                         contact[field] = row[sourceField] || 'Unknown';
-                        break;
-                    case 'consentText':
-                        contact[field] = row[sourceField] || '';
-                        break;
-                    case 'proofType':
-                        contact[field] = row[sourceField] || '';
-                        break;
-                    case 'proofId':
-                        contact[field] = row[sourceField] || '';
-                        break;
-                    case 'proofUrl':
-                        contact[field] = row[sourceField] || '';
                         break;
                     case 'scope':
                         contact[field] = row[sourceField] || '';
@@ -762,52 +913,66 @@ const Contacts = () => {
             }
         });
 
-        const normalizedStatus = normalizeImportStatusValue(contact.status || row[importMapping.status] || 'Unknown');
-        const consentText = String(contact.consentText || '').trim();
-        const proofType = String(contact.proofType || '').trim();
+        const phone = String(contact.phone || '').trim();
+        const validPhone = isValidImportedPhone(phone);
+        const normalizedStatus = 'opted-in';
+        const importedConsentReferenceId = `landing-page-import-${String(row.lineNumber || 'row').trim()}-${phone.slice(-4) || 'contact'}-${Date.now().toString(36)}`;
+
+        if (validPhone) {
+            contact.status = 'Opted-in';
+            contact.whatsappOptInStatus = 'opted_in';
+            contact.whatsappOptInSource = 'landing_page';
+            contact.whatsappOptInScope = contact.scope || row[importMapping.scope] || 'marketing';
+            contact.whatsappOptInTextSnapshot = 'Consent captured via website landing page during CSV import.';
+            contact.whatsappOptInProofType = 'import_record';
+            contact.whatsappOptInProofId = importedConsentReferenceId;
+            contact.whatsappOptInCapturedBy = contact.capturedBy || row[importMapping.capturedBy] || 'csv_import';
+            contact.whatsappOptInPageUrl = '';
+            contact.whatsappOptInIp = '';
+            contact.whatsappOptInUserAgent = '';
+            contact.whatsappOptInMetadata = {
+                importLineNumber: row.lineNumber || null,
+                importSource: 'csv_import',
+                consentSource: 'landing_page'
+            };
+        }
 
         return {
             lineNumber: row.lineNumber,
-            contact: contact.phone ? contact : null,
+            contact: validPhone ? contact : null,
             status: normalizedStatus,
-            consentText,
-            proofType,
-            willNeedReview: normalizedStatus === 'opted-in' && (!consentText || !proofType),
-            missingFields: [
-                !consentText ? 'consent text' : null,
-                !proofType ? 'proof type' : null
-            ].filter(Boolean)
+            invalidPhone: !validPhone,
+            invalidPhoneMessage: phone
+                ? `Phone number must contain ${MIN_PHONE_DIGITS}-${MAX_PHONE_DIGITS} digits.`
+                : 'Phone number is required.'
         };
     };
 
     const getImportAuditSummary = () => {
-        const rows = importRows.map(mapImportedRow).filter((row) => row.contact?.phone);
+        const rows = importRows.map(mapImportedRow);
+        const invalidRows = rows.filter((row) => row.invalidPhone);
         const optedInRows = rows.filter((row) => row.status === 'opted-in');
-        const reviewRows = rows.filter((row) => row.willNeedReview);
 
         return {
             rows,
-            optedInCount: optedInRows.length,
-            reviewCount: reviewRows.length,
-            safeOptInCount: optedInRows.length - reviewRows.length,
-            reviewRows: reviewRows.slice(0, 5)
+            invalidRows,
+            optedInCount: optedInRows.length
         };
     };
 
     const getMappedContacts = () =>
         importAudit.rows
-            .filter((row) => !row.willNeedReview)
+            .filter((row) => !row.invalidPhone)
             .map((row) => row.contact)
             .filter((contact) => contact?.phone);
 
     const handleImportContacts = async () => {
-        const blockedRows = importAudit.reviewRows;
         const mappedContacts = getMappedContacts();
         
         if (mappedContacts.length === 0) {
-            if (blockedRows.length > 0) {
+            if (importAudit.invalidRows.length > 0) {
                 showNotification(
-                    `Import blocked: ${blockedRows.length} opted-in row${blockedRows.length === 1 ? ' is' : 's are'} missing consent text or proof type.`,
+                    `Import blocked: ${importAudit.invalidRows.length} row${importAudit.invalidRows.length === 1 ? ' has' : 's have'} invalid phone formatting.`,
                     'error'
                 );
             } else {
@@ -816,19 +981,25 @@ const Contacts = () => {
             return;
         }
 
+        if (importAudit.invalidRows.length > 0) {
+            showNotification(
+                `Import blocked: ${importAudit.invalidRows.length} row${importAudit.invalidRows.length === 1 ? ' has' : 's have'} invalid phone formatting. Please fix them before uploading.`,
+                'error'
+            );
+            return;
+        }
+
         try {
             setLoading(true);
-        const result = await apiClient.importContacts(mappedContacts);
+            const result = await apiClient.importContacts(mappedContacts);
         
-        if (result.data.success) {
+            if (result.data.success) {
                 const importErrors = Array.isArray(result.data?.results?.errors) ? result.data.results.errors : [];
-                const blockedSuffix = blockedRows.length
-                    ? ` ${blockedRows.length} opted-in row${blockedRows.length === 1 ? ' was' : 's were'} blocked because consent proof was incomplete.`
-                    : '';
                 const errorSuffix = importErrors.length
                     ? ` ${importErrors.length} row${importErrors.length === 1 ? ' was' : 's were'} rejected by backend validation.`
                     : '';
-                showNotification(`Successfully imported ${mappedContacts.length} contacts!${blockedSuffix}${errorSuffix}`);
+                showNotification(`Successfully imported ${mappedContacts.length} contacts!${errorSuffix}`);
+                clearSidebarPageCache(CONTACTS_CACHE_NAMESPACE, { currentUserId });
                 setShowImportModal(false);
                 setImportFile(null);
                 setImportRows([]);
@@ -848,9 +1019,9 @@ const Contacts = () => {
     };
 
     const downloadSampleCSV = () => {
-        const csvContent = `First Name,Last Name,WhatsApp Number,Email,Status,Consent Text,Proof Type,Proof ID,Consent Scope,List Name,Tags,custom_attribute_1,custom_attribute_2,custom_attribute_3
-John,Doe,+1234567890,john@example.com,Opted-in,"I agree to receive WhatsApp updates from Technovohub.","form_submission","FORM-1001",marketing,Main List,"VIP, Lead",Custom1,Custom2,Custom3
-Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp updates from Technovohub.","paper_form","PAPER-2002",marketing,Secondary List,"Regular, Support",Value1,Value2,Value3`;
+        const csvContent = `First Name,Last Name,WhatsApp Number,Email,Status,Consent Scope,List Name,Tags,custom_attribute_1,custom_attribute_2,custom_attribute_3
+John,Doe,+1234567890,john@example.com,Opted-in,marketing,Main List,"VIP, Lead",Custom1,Custom2,Custom3
+Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regular, Support",Value1,Value2,Value3`;
         
         const blob = new Blob([csvContent], { type: 'text/csv' });
         const url = window.URL.createObjectURL(blob);
@@ -974,8 +1145,19 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
     }, [filteredContacts.length, totalPages]);
 
     useEffect(() => {
-        setCurrentPage(1);
-    }, [searchTerm, lastActiveFilter, sortOption, pageSize]);
+        const nextParams = buildContactsRouteSearchParams({
+            currentPage: safeCurrentPage,
+            pageSize,
+            searchTerm,
+            lastActiveFilter,
+            sortOption
+        });
+        const currentSerialized = searchParams.toString();
+        const nextSerialized = nextParams.toString();
+        if (currentSerialized !== nextSerialized) {
+            setSearchParams(nextParams, { replace: true });
+        }
+    }, [safeCurrentPage, lastActiveFilter, pageSize, searchParams, searchTerm, setSearchParams, sortOption]);
 
     return (
         <div className="contacts-page">
@@ -1035,7 +1217,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                         placeholder="Search contacts..." 
                         aria-label="Search contacts"
                         value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onChange={(e) => handleSearchTermChange(e.target.value)}
                     />
                 </div>
                 <div className="filter-dropdown">
@@ -1061,7 +1243,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                             name="lastActive"
                                             value="all"
                                             checked={lastActiveFilter === 'all'}
-                                            onChange={(e) => setLastActiveFilter(e.target.value)}
+                                            onChange={(e) => handleLastActiveFilterChange(e.target.value)}
                                         />
                                         All Time
                                     </label>
@@ -1071,7 +1253,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                             name="lastActive"
                                             value="1day"
                                             checked={lastActiveFilter === '1day'}
-                                            onChange={(e) => setLastActiveFilter(e.target.value)}
+                                            onChange={(e) => handleLastActiveFilterChange(e.target.value)}
                                         />
                                         Last 1 Day
                                     </label>
@@ -1081,7 +1263,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                             name="lastActive"
                                             value="2days"
                                             checked={lastActiveFilter === '2days'}
-                                            onChange={(e) => setLastActiveFilter(e.target.value)}
+                                            onChange={(e) => handleLastActiveFilterChange(e.target.value)}
                                         />
                                         Last 2 Days
                                     </label>
@@ -1091,7 +1273,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                             name="lastActive"
                                             value="1week"
                                             checked={lastActiveFilter === '1week'}
-                                            onChange={(e) => setLastActiveFilter(e.target.value)}
+                                            onChange={(e) => handleLastActiveFilterChange(e.target.value)}
                                         />
                                         Last 1 Week
                                     </label>
@@ -1101,7 +1283,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                             name="lastActive"
                                             value="1month"
                                             checked={lastActiveFilter === '1month'}
-                                            onChange={(e) => setLastActiveFilter(e.target.value)}
+                                            onChange={(e) => handleLastActiveFilterChange(e.target.value)}
                                         />
                                         Last 1 Month
                                     </label>
@@ -1133,7 +1315,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                             name="sort"
                                             value="name-asc"
                                             checked={sortOption === 'name-asc'}
-                                            onChange={(e) => setSortOption(e.target.value)}
+                                            onChange={(e) => handleSortOptionChange(e.target.value)}
                                         />
                                         Name (A-Z)
                                     </label>
@@ -1143,7 +1325,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                             name="sort"
                                             value="name-desc"
                                             checked={sortOption === 'name-desc'}
-                                            onChange={(e) => setSortOption(e.target.value)}
+                                            onChange={(e) => handleSortOptionChange(e.target.value)}
                                         />
                                         Name (Z-A)
                                     </label>
@@ -1153,7 +1335,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                             name="sort"
                                             value="last-active-asc"
                                             checked={sortOption === 'last-active-asc'}
-                                            onChange={(e) => setSortOption(e.target.value)}
+                                            onChange={(e) => handleSortOptionChange(e.target.value)}
                                         />
                                         Last Active (Oldest First)
                                     </label>
@@ -1163,7 +1345,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                             name="sort"
                                             value="last-active-desc"
                                             checked={sortOption === 'last-active-desc'}
-                                            onChange={(e) => setSortOption(e.target.value)}
+                                            onChange={(e) => handleSortOptionChange(e.target.value)}
                                         />
                                         Last Active (Recent First)
                                     </label>
@@ -1674,13 +1856,13 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                     ? 'Your search or filters are hiding every contact right now.'
                                     : 'Start by adding your first contact to build your database.'}
                             </p>
-                            {(searchTerm || lastActiveFilter !== 'all') && (
+                                    {(searchTerm || lastActiveFilter !== 'all') && (
                                 <button
                                     className="secondary-btn"
                                     onClick={() => {
-                                        setSearchTerm('');
-                                        setLastActiveFilter('all');
-                                        setSortOption('name-asc');
+                                        handleSearchTermChange('');
+                                        handleLastActiveFilterChange('all');
+                                        handleSortOptionChange('name-asc');
                                     }}
                                 >
                                     Reset Filters
@@ -1743,8 +1925,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                 />
                             </div>
                             <div className="contacts-modal-note">
-                                New contacts start with WhatsApp status as <strong>Unknown</strong>. Capture proof with
-                                <strong> Mark Opted In</strong> after consent is collected.
+                                Imported contacts are saved as <strong>Opted-in</strong> with <strong>Landing Page</strong> consent proof.
                             </div>
                         </div>
                         <div className="modal-footer">
@@ -1883,17 +2064,14 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                             <li><strong>Last Name</strong> - Contact's last name</li>
                                             <li><strong>WhatsApp Number</strong> - Phone number with country code</li>
                                             <li><strong>Email</strong> - Email address (optional)</li>
-                                            <li><strong>Opt-in Status</strong> - Opted-in, Opted-out, or Unknown. Opted-in rows must include consent text and proof type.</li>
-                                            <li><strong>Consent Text</strong> - Required if the row is meant to be opted in</li>
-                                            <li><strong>Proof Type</strong> - Required if the row is meant to be opted in</li>
-                                            <li><strong>Proof ID</strong> - Optional proof reference</li>
+                                            <li><strong>Opt-in Status</strong> - CSV imports are automatically saved as opted-in with landing page consent proof.</li>
                                             <li><strong>Consent Scope</strong> - marketing, service, or both</li>
                                             <li><strong>List Name</strong> - Contact list name (optional)</li>
                                             <li><strong>Tags</strong> - Comma-separated tags (optional)</li>
                                             <li><strong>custom_attribute_1,2,3</strong> - Custom fields (optional)</li>
                                         </ul>
                                         <p className="contacts-modal-note">
-                                            Tip: quoted values are supported, so tags like <strong>VIP, Lead</strong> will import correctly. Opted-in rows without consent text and proof type will be blocked.
+                                            Tip: quoted values are supported, so tags like <strong>VIP, Lead</strong> will import correctly. Uploads only need a valid phone number; consent proof is generated automatically during import.
                                         </p>
                                         <button 
                                             className="secondary-btn download-sample-btn" 
@@ -1913,24 +2091,13 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                         <p>Match your CSV columns to our contact fields:</p>
                                     </div>
 
-                                    {importAudit.reviewCount > 0 && (
+                                    {importAudit.optedInCount > 0 && (
                                         <div className="contacts-import-warning" role="status" aria-live="polite">
                                             <strong>
-                                                {importAudit.reviewCount} row{importAudit.reviewCount === 1 ? '' : 's'} marked Opted-in will be blocked unless they include both consent text and proof type.
+                                                {importAudit.optedInCount} row{importAudit.optedInCount === 1 ? '' : 's'} in this file are marked Opted-in.
                                             </strong>
                                             <p>
-                                                {importAudit.optedInCount} row{importAudit.optedInCount === 1 ? '' : 's'} in this file are marked Opted-in.
-                                                {importAudit.safeOptInCount > 0 ? ` ${importAudit.safeOptInCount} already have complete consent proof.` : ''}
-                                            </p>
-                                            <ul>
-                                                {importAudit.reviewRows.map((row) => (
-                                                    <li key={`import-audit-${row.lineNumber}`}>
-                                                        Line {row.lineNumber}: missing {row.missingFields.join(' and ')}.
-                                                    </li>
-                                                ))}
-                                            </ul>
-                                            <p className="contacts-modal-note">
-                                                Tip: add the missing fields now so these contacts can be imported as Opted-in immediately.
+                                                They will be stored as opted-in, with landing-page consent proof generated automatically.
                                             </p>
                                         </div>
                                     )}
@@ -2020,71 +2187,11 @@ Jane,Smith,+9876543210,jane@example.com,Opted-in,"I agree to receive WhatsApp up
                                                     </td>
                                                 </tr>
                                                 <tr>
-                                                    <td>Consent Text</td>
-                                                    <td>
-                                                        <select 
-                                                            value={importMapping.consentText || ''}
-                                                            onChange={(e) => handleMappingChange('consentText', e.target.value)}
-                                                            className="mapping-select"
-                                                        >
-                                                            <option value="">Select column...</option>
-                                                            {getAvailableFields().map(field => (
-                                                                <option key={field} value={field}>{field}</option>
-                                                            ))}
-                                                        </select>
-                                                    </td>
-                                                </tr>
-                                                <tr>
-                                                    <td>Proof Type</td>
-                                                    <td>
-                                                        <select 
-                                                            value={importMapping.proofType || ''}
-                                                            onChange={(e) => handleMappingChange('proofType', e.target.value)}
-                                                            className="mapping-select"
-                                                        >
-                                                            <option value="">Select column...</option>
-                                                            {getAvailableFields().map(field => (
-                                                                <option key={field} value={field}>{field}</option>
-                                                            ))}
-                                                        </select>
-                                                    </td>
-                                                </tr>
-                                                <tr>
-                                                    <td>Proof ID</td>
-                                                    <td>
-                                                        <select 
-                                                            value={importMapping.proofId || ''}
-                                                            onChange={(e) => handleMappingChange('proofId', e.target.value)}
-                                                            className="mapping-select"
-                                                        >
-                                                            <option value="">Select column...</option>
-                                                            {getAvailableFields().map(field => (
-                                                                <option key={field} value={field}>{field}</option>
-                                                            ))}
-                                                        </select>
-                                                    </td>
-                                                </tr>
-                                                <tr>
                                                     <td>Consent Scope</td>
                                                     <td>
                                                         <select 
                                                             value={importMapping.scope || ''}
                                                             onChange={(e) => handleMappingChange('scope', e.target.value)}
-                                                            className="mapping-select"
-                                                        >
-                                                            <option value="">Select column...</option>
-                                                            {getAvailableFields().map(field => (
-                                                                <option key={field} value={field}>{field}</option>
-                                                            ))}
-                                                        </select>
-                                                    </td>
-                                                </tr>
-                                                <tr>
-                                                    <td>Proof URL</td>
-                                                    <td>
-                                                        <select 
-                                                            value={importMapping.proofUrl || ''}
-                                                            onChange={(e) => handleMappingChange('proofUrl', e.target.value)}
                                                             className="mapping-select"
                                                         >
                                                             <option value="">Select column...</option>

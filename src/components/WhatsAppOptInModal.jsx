@@ -115,12 +115,12 @@ const WhatsAppOptInModal = ({
             </label>
 
             <label className="whatsapp-optin-field">
-              <span>Proof ID / Reference</span>
+              <span>Consent Reference</span>
               <input
                 type="text"
                 value={form?.proofId || ''}
                 onChange={(event) => onChange(updateFormField(form, 'proofId', event.target.value))}
-                placeholder="Lead ID, form ID, note ref..."
+                placeholder="Lead ID, form ID, internal ref..."
                 disabled={submitting}
               />
             </label>
