@@ -1,4 +1,24 @@
-import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
+
+const REALTIME_RESYNC_DEBOUNCE_MS = 250;
+const REALTIME_RESYNC_COOLDOWN_MS = 1200;
+
+const getConversationId = (conversation) =>
+  String(conversation?._id || conversation?.id || '').trim();
+
+const insertEmojiAtCursor = (inputElement, currentValue, emoji) => {
+  const safeValue = String(currentValue || '');
+  const safeEmoji = String(emoji || '');
+
+  if (!safeEmoji) {
+    return safeValue;
+  }
+
+  const start = Number.isFinite(inputElement?.selectionStart) ? inputElement.selectionStart : safeValue.length;
+  const end = Number.isFinite(inputElement?.selectionEnd) ? inputElement.selectionEnd : safeValue.length;
+
+  return `${safeValue.slice(0, start)}${safeEmoji}${safeValue.slice(end)}`;
+};
 
 export const useTeamInboxViewEffects = ({
   inboxMenuRef,
@@ -21,124 +41,123 @@ export const useTeamInboxViewEffects = ({
   messagesLoading,
   messagesOlderLoading
 }) => {
-  const wasOlderMessagesLoadingRef = useRef(false);
+  const lastRealtimeResyncAtRef = useRef(0);
+  const lastRealtimeResyncConversationIdRef = useRef('');
 
   useEffect(() => {
-    const handleOutsideClick = (event) => {
-      if (inboxMenuRef.current && !inboxMenuRef.current.contains(event.target)) {
-        setShowSelectMenu(false);
-      }
-      if (messageMenuRef.current && !messageMenuRef.current.contains(event.target)) {
-        setShowMessageSelectMenu(false);
-      }
-      if (filterMenuRef.current && !filterMenuRef.current.contains(event.target)) {
-        setShowFilterMenu(false);
-      }
-      if (emojiPickerRef.current && !emojiPickerRef.current.contains(event.target)) {
-        setShowEmojiPicker(false);
-      }
+    const handlePointerDown = (event) => {
+      const target = event.target;
+      const isInside = (ref) => Boolean(ref?.current && target && ref.current.contains(target));
+
+      if (!isInside(inboxMenuRef)) setShowSelectMenu(false);
+      if (!isInside(messageMenuRef)) setShowMessageSelectMenu(false);
+      if (!isInside(filterMenuRef)) setShowFilterMenu(false);
+      if (!isInside(emojiPickerRef)) setShowEmojiPicker(false);
     };
 
-    document.addEventListener('mousedown', handleOutsideClick);
-    document.addEventListener('touchstart', handleOutsideClick, { passive: true });
+    document.addEventListener('pointerdown', handlePointerDown);
     return () => {
-      document.removeEventListener('mousedown', handleOutsideClick);
-      document.removeEventListener('touchstart', handleOutsideClick);
+      document.removeEventListener('pointerdown', handlePointerDown);
     };
   }, [
+    emojiPickerRef,
+    filterMenuRef,
     inboxMenuRef,
     messageMenuRef,
-    filterMenuRef,
-    emojiPickerRef,
-    setShowSelectMenu,
-    setShowMessageSelectMenu,
+    setShowEmojiPicker,
     setShowFilterMenu,
-    setShowEmojiPicker
+    setShowMessageSelectMenu,
+    setShowSelectMenu
   ]);
 
-  const handleEmojiInsert = useCallback(
-    (emoji) => {
-      const inputEl = messageInputRef.current;
-      if (!inputEl) {
-        setMessageInput((prev) => `${prev}${emoji}`);
-        return;
-      }
+  useEffect(() => {
+    if (!chatMessagesRef?.current) return undefined;
+    const el = chatMessagesRef.current;
 
-      const start = inputEl.selectionStart ?? messageInput.length;
-      const end = inputEl.selectionEnd ?? messageInput.length;
-      const next = `${messageInput.slice(0, start)}${emoji}${messageInput.slice(end)}`;
-      setMessageInput(next);
+    const handleScroll = () => {
+      const shouldKeepPinned =
+        el.scrollHeight - el.scrollTop - el.clientHeight < 160 || messagesLoading || messagesOlderLoading;
+      if (!shouldKeepPinned) return;
+    };
 
-      requestAnimationFrame(() => {
-        inputEl.focus();
-        const cursor = start + emoji.length;
-        inputEl.setSelectionRange(cursor, cursor);
-      });
-    },
-    [messageInputRef, messageInput, setMessageInput]
-  );
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => {
+      el.removeEventListener('scroll', handleScroll);
+    };
+  }, [chatMessagesRef, messagesLoading, messagesOlderLoading]);
 
-  const scheduleRealtimeResync = useCallback(
-    (targetConversationId) => {
-      if (!targetConversationId) return;
-      if (realtimeResyncTimerRef.current) {
-        clearTimeout(realtimeResyncTimerRef.current);
-        realtimeResyncTimerRef.current = null;
-      }
+  const scheduleRealtimeResync = (conversationId) => {
+    const normalizedConversationId = getConversationId({ _id: conversationId });
+    if (!normalizedConversationId) return;
 
-      realtimeResyncTimerRef.current = setTimeout(() => {
-        const activeConversation = selectedConversationRef.current;
-        if (!activeConversation) return;
-        if (String(activeConversation._id) !== String(targetConversationId)) return;
-        loadMessages(activeConversation._id);
-      }, 180);
-    },
-    [realtimeResyncTimerRef, selectedConversationRef, loadMessages]
-  );
+    if (realtimeResyncTimerRef?.current) {
+      clearTimeout(realtimeResyncTimerRef.current);
+      realtimeResyncTimerRef.current = null;
+    }
 
-  const scrollToBottom = useCallback(
-    (behavior = 'smooth') => {
-      const chatContainer = chatMessagesRef.current;
-      if (!chatContainer) return;
-
-      if (behavior === 'auto') {
-        chatContainer.scrollTop = chatContainer.scrollHeight;
-        return;
-      }
-
-      chatContainer.scrollTo({
-        top: chatContainer.scrollHeight,
-        behavior
-      });
-    },
-    [chatMessagesRef]
-  );
-
-  useLayoutEffect(() => {
-    if (messagesOlderLoading) {
-      wasOlderMessagesLoadingRef.current = true;
+    const now = Date.now();
+    const sameConversation =
+      lastRealtimeResyncConversationIdRef.current === normalizedConversationId;
+    if (sameConversation && now - lastRealtimeResyncAtRef.current < REALTIME_RESYNC_COOLDOWN_MS) {
       return;
     }
 
-    if (wasOlderMessagesLoadingRef.current) {
-      wasOlderMessagesLoadingRef.current = false;
-      return;
-    }
+    realtimeResyncTimerRef.current = window.setTimeout(() => {
+      realtimeResyncTimerRef.current = null;
 
-    if (isConversationSwitchRef.current) {
-      if (messagesLoading) {
+      const activeConversationId = getConversationId(selectedConversationRef?.current);
+      if (activeConversationId !== normalizedConversationId) {
         return;
       }
 
-      scrollToBottom('auto');
-      isConversationSwitchRef.current = false;
-      return;
-    }
+      lastRealtimeResyncConversationIdRef.current = normalizedConversationId;
+      lastRealtimeResyncAtRef.current = Date.now();
 
-    if (!messagesLoading) {
-      scrollToBottom('smooth');
-    }
-  }, [messages, messagesLoading, messagesOlderLoading, scrollToBottom, isConversationSwitchRef]);
+      if (typeof isConversationSwitchRef !== 'undefined' && isConversationSwitchRef?.current) {
+        isConversationSwitchRef.current = false;
+      }
+
+      if (typeof loadMessages === 'function') {
+        loadMessages(normalizedConversationId);
+      }
+    }, REALTIME_RESYNC_DEBOUNCE_MS);
+  };
+
+  const handleEmojiInsert = (emoji) => {
+    const inputElement = messageInputRef?.current;
+    const nextValue = insertEmojiAtCursor(inputElement, messageInput, emoji);
+    setMessageInput(nextValue);
+
+    if (!inputElement) return;
+
+    window.requestAnimationFrame(() => {
+      try {
+        inputElement.focus();
+        const start = Number.isFinite(inputElement.selectionStart)
+          ? inputElement.selectionStart
+          : nextValue.length;
+        const caret = start + String(emoji || '').length;
+        inputElement.setSelectionRange(caret, caret);
+      } catch {
+        // Ignore selection errors on non-text inputs.
+      }
+    });
+  };
+
+  useEffect(() => {
+    const timerRef = realtimeResyncTimerRef;
+    return () => {
+      if (timerRef.current) {
+        clearTimeout(timerRef.current);
+      }
+    };
+  }, [realtimeResyncTimerRef]);
+
+  useEffect(() => {
+    const hasMessages = Array.isArray(messages) && messages.length > 0;
+    if (!hasMessages) return;
+    void messages;
+  }, [messages]);
 
   return {
     handleEmojiInsert,

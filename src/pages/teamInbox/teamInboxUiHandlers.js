@@ -2,6 +2,7 @@ export const createTeamInboxUiHandlers = ({
   selectedConversation,
   setSelectedConversation,
   navigate,
+  startTransition,
   getUnreadCount,
   markAsRead,
   setShowFilterMenu,
@@ -28,10 +29,18 @@ export const createTeamInboxUiHandlers = ({
     const activeConversationId = String(
       selectedConversation?._id || selectedConversation?.id || ''
     ).trim();
-    if (activeConversationId !== conversationIdValue) {
-      setSelectedConversation(conversation);
+    const commitSelection = () => {
+      if (activeConversationId !== conversationIdValue) {
+        setSelectedConversation(conversation);
+      }
+      navigate(`/inbox/${conversationIdValue}`);
+    };
+
+    if (typeof startTransition === 'function') {
+      startTransition(commitSelection);
+    } else {
+      commitSelection();
     }
-    navigate(`/inbox/${conversationIdValue}`);
     if (getUnreadCount(conversation) > 0) {
       markAsRead(conversationIdValue);
     }

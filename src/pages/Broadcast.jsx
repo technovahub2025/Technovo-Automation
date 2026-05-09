@@ -1,8 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import Papa from 'papaparse';
 
 import { apiClient } from '../services/whatsappapi';
 import { useBroadcast, useCampaignAutomation } from '../hooks/useBroadcast';
+import { broadcastAPI } from '../services/broadcastAPI';
 import webSocketService from '../services/websocketService';
 
 // Import components
@@ -10,6 +12,7 @@ import BroadcastHeader from '../components/broadcastComponents/BroadcastHeader';
 import DateRangeFilter from '../components/broadcastComponents/DateRangeFilter';
 import OverviewStats from '../components/broadcastComponents/OverviewStats';
 import ReliabilityInsights from '../components/broadcastComponents/ReliabilityInsights';
+import BroadcastQueueHealth from '../components/broadcastComponents/BroadcastQueueHealth';
 
 import { getCachedOverviewStats } from '../utils/stableBroadcastStats';
 import { clearSidebarPageCache, resolveCacheUserId } from '../utils/sidebarPageCache';
@@ -37,6 +40,28 @@ import '../styles/message-preview.css';
 import '../styles/broadcast-list-controls.css';
 import './Broadcast.css';
 
+const normalizeText = (value = '') => String(value || '').trim();
+
+const findPhoneField = (fields = []) => {
+  const normalizedFields = Array.isArray(fields) ? fields : [];
+  const patterns = [
+    /whatsapp\s*number/i,
+    /\bphone\s*number\b/i,
+    /\bmobile\s*number\b/i,
+    /\bwhatsapp\b/i,
+    /\bphone\b/i,
+    /\bmobile\b/i,
+    /\bnumber\b/i
+  ];
+
+  for (const pattern of patterns) {
+    const match = normalizedFields.find((field) => pattern.test(String(field || '').trim()));
+    if (match) return match;
+  }
+
+  return normalizedFields[0] || '';
+};
+
 
 
 const Broadcast = ({ composerMode = false, composerType = null, chooserMode = false }) => {
@@ -44,6 +69,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const location = useLocation();
   const currentPath = stripAppRouteBase(location.pathname);
   const currentUserId = resolveCacheUserId();
+  const queueHealthShareUrl = `${window.location.origin}${location.pathname}#queue-health`;
 
   const {
 
@@ -85,6 +111,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     showDeleteModal, setShowDeleteModal,
 
     selectionMode, setSelectionMode,
+    isExportingCampaigns,
 
     lastUpdated,
 
@@ -148,55 +175,9 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
   } = useBroadcast();
 
-  useEffect(() => {
-    if (composerMode) {
-      setActiveTab('schedule');
-    }
-  }, [composerMode, setActiveTab]);
-
-  useEffect(() => {
-    if (chooserMode) {
-      setShowBroadcastTypeChoice(true);
-      setActiveTab('overview');
-    }
-  }, [chooserMode, setShowBroadcastTypeChoice, setActiveTab]);
-
-  useEffect(() => {
-    if (!composerMode) return;
-    if (composerType === 'template') {
-      setMessageType('template');
-    }
-  }, [composerMode, composerType, setMessageType]);
-
-  useEffect(() => {
-    if (currentPath === '/broadcast') {
-      setActiveTab('overview');
-      setShowBroadcastTypeChoice(false);
-      setShowNewBroadcastPopup(false);
-      setShowContactAudiencePicker(false);
-    }
-  }, [currentPath, setActiveTab, setShowBroadcastTypeChoice, setShowNewBroadcastPopup]);
-
-  useEffect(() => {
-    const handleCrmChanged = () => {
-      void refreshCsvRecipientsFromContacts();
-    };
-
-    webSocketService.on('crm_changed', handleCrmChanged);
-
-    return () => {
-      webSocketService.off('crm_changed', handleCrmChanged);
-    };
-  }, []);
-
-
-
-  // Additional state for pagination
-
+  // Additional state for pagination and broadcast mode
   const [currentPage, setCurrentPage] = useState(1);
-
   const [itemsPerPage] = useState(5);
-
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState(null);
   const [audienceValidationModalOpen, setAudienceValidationModalOpen] = useState(false);
@@ -233,11 +214,63 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     failureCodeBreakdown: {},
     topFailureCode: null
   });
+  const [queueMetrics, setQueueMetrics] = useState(null);
+  const [queueMetricsLoading, setQueueMetricsLoading] = useState(false);
+  const [queueMetricsError, setQueueMetricsError] = useState('');
+  const [queueMetricsUpdatedAt, setQueueMetricsUpdatedAt] = useState(null);
   const broadcastSubmitInFlightRef = useRef(false);
   const csvRecipientRefreshContextRef = useRef({
     recipients: [],
     uploadedFile: null
   });
+
+  useEffect(() => {
+    if (composerMode) {
+      setActiveTab('schedule');
+    }
+  }, [composerMode, setActiveTab]);
+
+  useEffect(() => {
+    if (broadcastMode !== 'whatsapp') return;
+    if (String(location.hash || '').toLowerCase() !== '#queue-health') return;
+    if (activeTab === 'overview') return;
+    setActiveTab('overview');
+  }, [activeTab, broadcastMode, location.hash, setActiveTab]);
+
+  useEffect(() => {
+    if (chooserMode) {
+      setShowBroadcastTypeChoice(true);
+      setActiveTab('overview');
+    }
+  }, [chooserMode, setShowBroadcastTypeChoice, setActiveTab]);
+
+  useEffect(() => {
+    if (!composerMode) return;
+    if (composerType === 'template') {
+      setMessageType('template');
+    }
+  }, [composerMode, composerType, setMessageType]);
+
+  useEffect(() => {
+    if (currentPath === '/broadcast') {
+      setActiveTab('overview');
+      setShowBroadcastTypeChoice(false);
+      setShowNewBroadcastPopup(false);
+      setShowContactAudiencePicker(false);
+    }
+  }, [currentPath, setActiveTab, setShowBroadcastTypeChoice, setShowNewBroadcastPopup]);
+
+  useEffect(() => {
+    const handleCrmChanged = () => {
+      void refreshCsvRecipientsFromContacts();
+    };
+
+    webSocketService.on('crm_changed', handleCrmChanged);
+
+    return () => {
+      webSocketService.off('crm_changed', handleCrmChanged);
+    };
+  }, []);
   const {
     scheduleLoading,
     retryLoading,
@@ -326,6 +359,21 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
   }, [totalPages]);
+
+  useEffect(() => {
+    if (broadcastMode !== 'whatsapp') return;
+    if (activeTab !== 'overview') return;
+    if (String(location.hash || '').toLowerCase() !== '#queue-health') return;
+
+    const frameId = window.requestAnimationFrame(() => {
+      const target = document.getElementById('broadcast-queue-health');
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [activeTab, broadcastMode, location.hash]);
   const stats = getCachedOverviewStats(broadcasts);
   const mergedOverviewStats = {
     ...stats,
@@ -391,6 +439,60 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       isAlive = false;
     };
   }, [broadcasts, statusFilter, startDate, endDate]);
+
+  useEffect(() => {
+    let isAlive = true;
+    let timerId = null;
+
+    const shouldPollQueueMetrics = broadcastMode === 'whatsapp' && activeTab === 'overview';
+
+    const loadQueueMetrics = async () => {
+      if (!shouldPollQueueMetrics) {
+        return;
+      }
+
+      setQueueMetricsLoading(true);
+      try {
+        const response = await broadcastAPI.getQueueMetrics();
+        const payload = response?.data?.data || response?.data || {};
+        if (!isAlive) return;
+
+        setQueueMetrics(payload);
+        setQueueMetricsError('');
+        setQueueMetricsUpdatedAt(Date.now());
+      } catch (error) {
+        if (!isAlive) return;
+        const message =
+          error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          error?.message ||
+          'Unable to load queue metrics.';
+        setQueueMetricsError(message);
+      } finally {
+        if (isAlive) {
+          setQueueMetricsLoading(false);
+        }
+      }
+    };
+
+    if (shouldPollQueueMetrics) {
+      void loadQueueMetrics();
+      timerId = window.setInterval(() => {
+        void loadQueueMetrics();
+      }, 15000);
+    } else {
+      setQueueMetrics(null);
+      setQueueMetricsError('');
+      setQueueMetricsUpdatedAt(null);
+    }
+
+    return () => {
+      isAlive = false;
+      if (timerId) {
+        window.clearInterval(timerId);
+      }
+    };
+  }, [activeTab, broadcastMode]);
 
 
 
@@ -590,35 +692,56 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
 
-  const handleFileUpload = async (event) => {
-
+  const handleFileUpload = (event) => {
     const file = event.target.files?.[0];
-
     if (!file) return;
-
-
 
     setUploadedFile(file);
 
+    const rawRows = [];
+    let detectedFields = [];
 
+    Papa.parse(file, {
+      header: true,
+      worker: true,
+      skipEmptyLines: 'greedy',
+      step: (results) => {
+        const row = results?.data && typeof results.data === 'object' ? results.data : {};
+        if (!detectedFields.length && Array.isArray(results?.meta?.fields)) {
+          detectedFields = results.meta.fields;
+        }
+        rawRows.push(row);
+      },
+      complete: async () => {
+        try {
+          const phoneField = findPhoneField(detectedFields.length ? detectedFields : Object.keys(rawRows[0] || {}));
+          const recipientsWithFullData = rawRows
+            .map((row, index) => {
+              const normalizedRow = row && typeof row === 'object' ? row : {};
+              const phone = normalizeText(
+                normalizedRow?.[phoneField] ||
+                normalizedRow.phone ||
+                normalizedRow.mobile ||
+                normalizedRow.whatsappNumber
+              );
+              if (!phone) return null;
 
-    const reader = new FileReader();
+              const fields = detectedFields.length ? detectedFields : Object.keys(normalizedRow || {});
+              const variables = fields
+                .filter((field) => String(field || '').trim() !== phoneField)
+                .map((field) => normalizeText(normalizedRow?.[field] || ''));
 
-    reader.onload = async (e) => {
+              return {
+                phone,
+                variables,
+                fullData: {
+                  ...normalizedRow,
+                  lineNumber: normalizedRow?.lineNumber || index + 1
+                }
+              };
+            })
+            .filter(Boolean);
 
-      const base64Data = e.target.result.split(',')[1];
-
-
-
-      try {
-
-        const result = await apiClient.uploadCSV({ csvData: base64Data });
-
-
-
-        if (result.data.success) {
-
-          const recipientsWithFullData = result.data.csvData || result.data.recipients || [];
           let enrichedRecipients = recipientsWithFullData;
 
           try {
@@ -792,24 +915,14 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
           }
 
-        } else {
-
-          alert('Failed to process CSV: ' + (result.data.error || result.data.message));
-
+        } catch (error) {
+          alert('Failed to upload CSV: ' + error.message);
         }
-
-      } catch (error) {
-
+      },
+      error: (error) => {
         alert('Failed to upload CSV: ' + error.message);
-
       }
-
-    };
-
-
-
-    reader.readAsDataURL(file);
-
+    });
   };
 
 
@@ -2336,7 +2449,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
             onApplyFilter={() => setCurrentPage(1)}
 
-            onExportCampaigns={() => downloadAllCampaigns(filteredBroadcasts)}
+            onExportCampaigns={() => void downloadAllCampaigns(filteredBroadcasts)}
+            isExportingCampaigns={isExportingCampaigns}
 
           />
 
@@ -2344,6 +2458,15 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
           <OverviewStats stats={mergedOverviewStats} />
           <ReliabilityInsights data={reliabilitySummary} />
+          <div id="broadcast-queue-health">
+            <BroadcastQueueHealth
+              data={queueMetrics}
+              loading={queueMetricsLoading}
+              error={queueMetricsError}
+              updatedAt={queueMetricsUpdatedAt}
+              shareUrl={queueHealthShareUrl}
+            />
+          </div>
 
 
 

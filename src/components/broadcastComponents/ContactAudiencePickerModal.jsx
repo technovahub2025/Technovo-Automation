@@ -1,10 +1,13 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Search, X, Filter, Plus, Minus } from 'lucide-react';
+import { TableVirtuoso } from 'react-virtuoso';
 import { apiClient } from '../../services/whatsappapi';
 import './Modal.css';
 import './ContactAudiencePickerModal.css';
 
 const CONTACT_PAGE_LIMIT = 50;
+const CONTACT_SELECT_ALL_LIMIT = 500;
+const CONTACT_TABLE_HEIGHT = 420;
 
 const normalizeText = (value = '') => String(value || '').trim();
 
@@ -36,6 +39,41 @@ const getContactLabel = (contact = {}, index = 0) => {
   return `Contact ${index + 1}`;
 };
 
+const ContactAudiencePickerTable = React.forwardRef(({ style, className = '', ...props }, ref) => (
+  <table
+    {...props}
+    ref={ref}
+    className={`broadcast-validation-table ${className}`.trim()}
+    style={{
+      ...style,
+      width: '100%',
+      tableLayout: 'fixed'
+    }}
+  />
+));
+ContactAudiencePickerTable.displayName = 'ContactAudiencePickerTable';
+
+const ContactAudiencePickerTableRow = ({ children, item, context, ...props }) => {
+  const toggleContact = context?.toggleContact;
+
+  const handleRowClick = (event) => {
+    if (typeof props?.onClick === 'function') {
+      props.onClick(event);
+    }
+    if (event?.defaultPrevented) return;
+    if (typeof toggleContact === 'function') {
+      toggleContact(item);
+    }
+  };
+
+  return (
+    <tr {...props} onClick={handleRowClick} style={{ ...props.style, cursor: 'pointer' }}>
+      {children}
+    </tr>
+  );
+};
+ContactAudiencePickerTableRow.displayName = 'ContactAudiencePickerTableRow';
+
 const ContactAudiencePickerModal = ({
   open,
   onClose,
@@ -45,30 +83,52 @@ const ContactAudiencePickerModal = ({
   const [contacts, setContacts] = useState([]);
   const [selectedContacts, setSelectedContacts] = useState([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [tagFilter, setTagFilter] = useState('');
   const [optInFilter, setOptInFilter] = useState('all');
   const [sourceTypeFilter, setSourceTypeFilter] = useState('all');
   const [marketingEligibleOnly, setMarketingEligibleOnly] = useState(false);
   const [recentlyInteractedOnly, setRecentlyInteractedOnly] = useState(false);
-  const [page, setPage] = useState(1);
+  const [pageCursor, setPageCursor] = useState('');
+  const [nextCursor, setNextCursor] = useState('');
   const [hasMore, setHasMore] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [selectAllLoading, setSelectAllLoading] = useState(false);
   const [matchedContactsCount, setMatchedContactsCount] = useState(0);
+  const contactsLoadSeqRef = useRef(0);
+  const selectAllSeqRef = useRef(0);
+  const wasOpenRef = useRef(false);
+  const hydratedSelectionSignatureRef = useRef('');
   const querySignature = useMemo(
     () =>
       JSON.stringify({
-        searchTerm: normalizeText(searchTerm),
+        searchTerm: normalizeText(debouncedSearchTerm),
         tagFilter: normalizeText(tagFilter),
         optInFilter,
         sourceTypeFilter,
         marketingEligibleOnly,
         recentlyInteractedOnly
       }),
-    [searchTerm, tagFilter, optInFilter, sourceTypeFilter, marketingEligibleOnly, recentlyInteractedOnly]
+    [debouncedSearchTerm, tagFilter, optInFilter, sourceTypeFilter, marketingEligibleOnly, recentlyInteractedOnly]
+  );
+  const initialSelectedContactsSignature = useMemo(
+    () =>
+      (Array.isArray(initialSelectedContacts) ? initialSelectedContacts : [])
+        .map((contact) => getContactSelectionKey(contact))
+        .filter(Boolean)
+        .join('|'),
+    [initialSelectedContacts]
   );
   const prevQuerySignatureRef = useRef(querySignature);
+
+  useEffect(() => {
+    const timerId = window.setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm);
+    }, normalizeText(searchTerm) ? 250 : 0);
+
+    return () => window.clearTimeout(timerId);
+  }, [searchTerm]);
 
   const normalizeContactToRecipient = (contact = {}) => ({
     _id: getContactSelectionKey(contact),
@@ -85,7 +145,7 @@ const ContactAudiencePickerModal = ({
     fullData: contact
   });
 
-  const buildContactQueryParams = useCallback((includePagination = true) => {
+  const buildContactQueryParams = useCallback((includePagination = true, cursor = pageCursor) => {
     const params = {
       marketingEligible: marketingEligibleOnly ? 'true' : 'false',
       recentlyInteractedOnly: recentlyInteractedOnly ? 'true' : 'false'
@@ -93,20 +153,36 @@ const ContactAudiencePickerModal = ({
 
     if (includePagination) {
       params.limit = CONTACT_PAGE_LIMIT;
-      params.page = page;
+      if (cursor) {
+        params.cursor = cursor;
+      }
     }
 
-    if (normalizeText(searchTerm)) params.search = normalizeText(searchTerm);
+    if (normalizeText(debouncedSearchTerm)) params.search = normalizeText(debouncedSearchTerm);
     if (normalizeText(tagFilter)) params.tags = normalizeText(tagFilter);
     if (optInFilter !== 'all') params.whatsappOptInStatus = optInFilter;
     if (sourceTypeFilter !== 'all') params.sourceType = sourceTypeFilter;
 
     return params;
-  }, [marketingEligibleOnly, recentlyInteractedOnly, page, searchTerm, tagFilter, optInFilter, sourceTypeFilter]);
+  }, [marketingEligibleOnly, recentlyInteractedOnly, pageCursor, debouncedSearchTerm, tagFilter, optInFilter, sourceTypeFilter]);
 
   useEffect(() => {
     if (!open) return;
 
+    const isOpening = !wasOpenRef.current;
+    const shouldHydrateSelection =
+      isOpening || hydratedSelectionSignatureRef.current !== initialSelectedContactsSignature;
+
+    wasOpenRef.current = true;
+
+    if (!shouldHydrateSelection) {
+      return;
+    }
+
+    hydratedSelectionSignatureRef.current = initialSelectedContactsSignature;
+    contactsLoadSeqRef.current += 1;
+    selectAllSeqRef.current += 1;
+    setSelectAllLoading(false);
     setContacts([]);
     setSelectedContacts(
       (Array.isArray(initialSelectedContacts) ? initialSelectedContacts : [])
@@ -114,57 +190,73 @@ const ContactAudiencePickerModal = ({
         .filter((contact) => contact.phone)
     );
     setSearchTerm('');
+    setDebouncedSearchTerm('');
     setTagFilter('');
     setOptInFilter('all');
     setSourceTypeFilter('all');
     setMarketingEligibleOnly(false);
     setRecentlyInteractedOnly(false);
-    setPage(1);
+    setPageCursor('');
+    setNextCursor('');
     setHasMore(true);
     setError('');
     setMatchedContactsCount(0);
-  }, [open, initialSelectedContacts]);
+  }, [open, initialSelectedContactsSignature, initialSelectedContacts]);
 
   useEffect(() => {
     if (!open) return undefined;
 
-    if (prevQuerySignatureRef.current !== querySignature) {
+    const isNewQuery = prevQuerySignatureRef.current !== querySignature;
+    if (isNewQuery) {
       prevQuerySignatureRef.current = querySignature;
+      selectAllSeqRef.current += 1;
+      contactsLoadSeqRef.current += 1;
+      setSelectAllLoading(false);
       setContacts([]);
       setHasMore(true);
-      if (page !== 1) {
-        setPage(1);
+      setNextCursor('');
+      setMatchedContactsCount(0);
+      if (pageCursor) {
+        setPageCursor('');
         return undefined;
       }
     }
 
     let cancelled = false;
+    const requestSeq = ++contactsLoadSeqRef.current;
+    const effectiveCursor = isNewQuery ? '' : pageCursor;
 
     const fetchContacts = async () => {
       setLoading(true);
       setError('');
       try {
-        const params = buildContactQueryParams(true);
+        const params = buildContactQueryParams(true, effectiveCursor);
         const response = await apiClient.getContacts(params);
         const payload = response?.data?.data ?? response?.data ?? [];
         const nextContacts = Array.isArray(payload) ? payload : [];
         const totalCount = Number(response?.headers?.['x-total-count'] || 0);
+        const meta = response?.data?.meta || {};
 
-        if (cancelled) return;
+        if (cancelled || requestSeq !== contactsLoadSeqRef.current) return;
 
         const normalizedContacts = nextContacts
           .map((contact) => normalizeContactToRecipient(contact))
           .filter((contact) => contact.phone);
 
-        setContacts((previous) => (page === 1 ? normalizedContacts : [...previous, ...normalizedContacts]));
-        setHasMore(nextContacts.length >= CONTACT_PAGE_LIMIT);
+        if (cancelled || requestSeq !== contactsLoadSeqRef.current) return;
+
+        setContacts((previous) =>
+          effectiveCursor ? [...previous, ...normalizedContacts] : normalizedContacts
+        );
+        setHasMore(Boolean(meta?.hasMore));
+        setNextCursor(String(meta?.nextCursor || '').trim());
         setMatchedContactsCount(Number.isFinite(totalCount) ? totalCount : normalizedContacts.length);
       } catch (fetchError) {
-        if (!cancelled) {
+        if (!cancelled && requestSeq === contactsLoadSeqRef.current) {
           setError(fetchError?.response?.data?.error || fetchError?.message || 'Failed to load contacts.');
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled && requestSeq === contactsLoadSeqRef.current) setLoading(false);
       }
     };
 
@@ -173,14 +265,23 @@ const ContactAudiencePickerModal = ({
     return () => {
       cancelled = true;
     };
-  }, [open, page, querySignature, buildContactQueryParams]);
+  }, [open, pageCursor, querySignature, buildContactQueryParams]);
+
+  useEffect(() => {
+    if (open) return undefined;
+    wasOpenRef.current = false;
+    contactsLoadSeqRef.current += 1;
+    selectAllSeqRef.current += 1;
+    setSelectAllLoading(false);
+    return undefined;
+  }, [open]);
 
   const selectedIds = useMemo(
     () => new Set(selectedContacts.map((contact) => getContactSelectionKey(contact)).filter(Boolean)),
     [selectedContacts]
   );
 
-  const toggleContact = (contact) => {
+  const toggleContact = useCallback((contact) => {
     const normalized = normalizeContactToRecipient(contact);
     if (!normalized.phone) return;
     setSelectedContacts((previous) => {
@@ -190,20 +291,51 @@ const ContactAudiencePickerModal = ({
       }
       return [...previous, normalized];
     });
-  };
+  }, []);
 
   const selectAllMatching = async () => {
+    const requestId = ++selectAllSeqRef.current;
     setSelectAllLoading(true);
     setError('');
 
     try {
-      const response = await apiClient.getContacts(buildContactQueryParams(false));
-      const payload = response?.data?.data ?? response?.data ?? [];
-      const matchedContacts = Array.isArray(payload) ? payload : [];
-      const totalCount = Number(response?.headers?.['x-total-count'] || matchedContacts.length || 0);
-      const normalizedContacts = matchedContacts
+      const allMatchedContacts = [];
+      let requestCursor = '';
+      let pageToken = '';
+      let keepLoading = true;
+      let totalCount = 0;
+
+      while (keepLoading) {
+        if (requestId !== selectAllSeqRef.current) return;
+        const params = {
+          marketingEligible: marketingEligibleOnly ? 'true' : 'false',
+          recentlyInteractedOnly: recentlyInteractedOnly ? 'true' : 'false',
+          limit: CONTACT_SELECT_ALL_LIMIT
+        };
+        if (requestCursor) {
+          params.cursor = requestCursor;
+        }
+        if (normalizeText(debouncedSearchTerm)) params.search = normalizeText(debouncedSearchTerm);
+        if (normalizeText(tagFilter)) params.tags = normalizeText(tagFilter);
+        if (optInFilter !== 'all') params.whatsappOptInStatus = optInFilter;
+        if (sourceTypeFilter !== 'all') params.sourceType = sourceTypeFilter;
+        const response = await apiClient.getContacts(params);
+        if (requestId !== selectAllSeqRef.current) return;
+        const payload = response?.data?.data ?? response?.data ?? [];
+        const matchedContacts = Array.isArray(payload) ? payload : [];
+        const meta = response?.data?.meta || {};
+        totalCount = Number(response?.headers?.['x-total-count'] || totalCount || matchedContacts.length || 0);
+        allMatchedContacts.push(...matchedContacts);
+        pageToken = String(meta?.nextCursor || '').trim();
+        keepLoading = Boolean(meta?.hasMore) && Boolean(pageToken);
+        requestCursor = pageToken;
+      }
+
+      const normalizedContacts = allMatchedContacts
         .map((contact) => normalizeContactToRecipient(contact))
         .filter((contact) => contact.phone);
+
+      if (requestId !== selectAllSeqRef.current) return;
 
       setSelectedContacts((previous) => {
         const merged = [...previous];
@@ -218,11 +350,19 @@ const ContactAudiencePickerModal = ({
     } catch (selectError) {
       setError(selectError?.response?.data?.error || selectError?.message || 'Failed to select filtered contacts.');
     } finally {
-      setSelectAllLoading(false);
+      if (requestId === selectAllSeqRef.current) {
+        setSelectAllLoading(false);
+      }
     }
   };
 
   const clearSelection = () => setSelectedContacts([]);
+  const tableContext = useMemo(
+    () => ({
+      toggleContact
+    }),
+    [toggleContact]
+  );
 
   const handleConfirm = () => {
     if (typeof onConfirm === 'function') {
@@ -369,27 +509,30 @@ const ContactAudiencePickerModal = ({
           </div>
         ) : null}
 
-        <div className="broadcast-validation-table-wrap" style={{ maxHeight: 420, overflow: 'auto' }}>
-          <table className="broadcast-validation-table">
-            <thead>
-              <tr>
-                <th />
-                <th>Name</th>
-                <th>Phone</th>
-                <th>Opt-in</th>
-                <th>Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {contacts.map((contact, index) => {
+        <div className="broadcast-validation-table-wrap" style={{ height: CONTACT_TABLE_HEIGHT }}>
+          {contacts.length > 0 ? (
+            <TableVirtuoso
+              style={{ height: CONTACT_TABLE_HEIGHT }}
+              data={contacts}
+              context={tableContext}
+              components={{
+                Table: ContactAudiencePickerTable,
+                TableRow: ContactAudiencePickerTableRow
+              }}
+              fixedHeaderContent={() => (
+                <tr>
+                  <th />
+                  <th>Name</th>
+                  <th>Phone</th>
+                  <th>Opt-in</th>
+                  <th>Source</th>
+                </tr>
+              )}
+              itemContent={(index, contact) => {
                 const normalized = contact;
                 const checked = selectedIds.has(normalized._id);
                 return (
-                  <tr
-                    key={normalized._id || `contact-${index}`}
-                    onClick={() => toggleContact(normalized)}
-                    style={{ cursor: 'pointer' }}
-                  >
+                  <>
                     <td>
                       <input
                         type="checkbox"
@@ -403,23 +546,29 @@ const ContactAudiencePickerModal = ({
                     <td>{normalized.phone || '-'}</td>
                     <td>{normalized.whatsappOptInStatus || 'unknown'}</td>
                     <td>{normalized.sourceType || 'manual'}</td>
-                  </tr>
+                  </>
                 );
-              })}
-              {!loading && contacts.length === 0 ? (
-                <tr>
-                  <td colSpan={5} style={{ textAlign: 'center', padding: '20px 12px' }}>
-                    No contacts matched these filters.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
+              }}
+            />
+          ) : !loading ? (
+            <div style={{ textAlign: 'center', padding: '20px 12px' }}>
+              No contacts matched these filters.
+            </div>
+          ) : (
+            <div style={{ textAlign: 'center', padding: '20px 12px' }}>
+              Loading contacts...
+            </div>
+          )}
         </div>
 
         {hasMore ? (
           <div style={{ marginTop: 12, display: 'flex', justifyContent: 'center' }}>
-            <button type="button" className="secondary-btn" onClick={() => setPage((previous) => previous + 1)} disabled={loading}>
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={() => setPageCursor(nextCursor)}
+              disabled={loading}
+            >
               {loading ? 'Loading...' : 'Load More'}
             </button>
           </div>

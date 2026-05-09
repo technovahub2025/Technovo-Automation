@@ -579,8 +579,14 @@ const AttachmentComposerOverlay = ({
         file: item.file,
         caption: String(item.caption || '').trim()
       }));
-      const sentIds = await onSend(payload);
-      const sentIdSet = new Set(Array.isArray(sentIds) ? sentIds : []);
+      const sendResult = await onSend(payload);
+      const sentIds = Array.isArray(sendResult)
+        ? sendResult
+        : Array.isArray(sendResult?.sentIds)
+          ? sendResult.sentIds
+          : [];
+      const sentIdSet = new Set(sentIds);
+      const failureMessage = String(sendResult?.error || '').trim();
 
       if (sentIdSet.size === payload.length) {
         onComplete?.();
@@ -593,9 +599,15 @@ const AttachmentComposerOverlay = ({
         );
         const remainingItems = payload.filter((item) => !sentIdSet.has(item.id));
         setActiveItemId(remainingItems[0]?.id || '');
-        showComposerFeedback('Some attachments were sent. The remaining items are still in preview.');
+        showComposerFeedback(
+          failureMessage
+            ? `${failureMessage} Some attachments were sent. The remaining items are still in preview.`
+            : 'Some attachments were sent. The remaining items are still in preview.'
+        );
       } else {
-        showComposerFeedback('We could not send the selected attachments right now.');
+        showComposerFeedback(
+          failureMessage || 'We could not send the selected attachments right now.'
+        );
       }
     } finally {
       setIsSendingItems(false);
@@ -1054,7 +1066,7 @@ const AttachmentComposerOverlay = ({
               <input
                 ref={addMoreInputRef}
                 type="file"
-                accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+                accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.mp4,.mov,.m4v,.webm,.3gp,.3g2,.mp3,.m4a,.aac,.amr,.ogg,.oga,.wav,.opus"
                 multiple
                 className="attachment-compose-hidden-input"
                 onChange={handleAddMoreFiles}

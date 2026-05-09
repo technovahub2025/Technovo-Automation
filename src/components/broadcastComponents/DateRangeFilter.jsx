@@ -11,7 +11,8 @@ const DateRangeFilter = ({
   onPeriodChange,
   onApplyFilter,
   onExportCampaigns,
-  canExport = true
+  canExport = true,
+  isExportingCampaigns = false
 }) => {
   const formatDateForInput = (date) => {
     if (!date) return '';
@@ -84,9 +85,9 @@ const DateRangeFilter = ({
           <button className="apply-btn" onClick={onApplyFilter}>
             Apply now
           </button>
-          <button className="export-btn" onClick={onExportCampaigns} disabled={!canExport}>
+          <button className="export-btn" onClick={onExportCampaigns} disabled={!canExport || isExportingCampaigns}>
             <Download size={16} />
-            Export
+            {isExportingCampaigns ? 'Exporting...' : 'Export'}
           </button>
         </div>
       </div>

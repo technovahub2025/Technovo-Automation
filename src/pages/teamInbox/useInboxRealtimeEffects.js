@@ -9,8 +9,37 @@ import { publishCrmContactSync } from '../../utils/crmSyncEvents';
 
 const MESSAGE_STATUS_RANK = { sent: 1, delivered: 2, read: 3, failed: 4 };
 
+const isTeamInboxTraceEnabled = () => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return Boolean(import.meta?.env?.DEV) || String(window.localStorage.getItem('debugTeamInbox') || '').trim() === '1';
+  } catch {
+    return Boolean(import.meta?.env?.DEV);
+  }
+};
+
+const traceTeamInbox = (...args) => {
+  if (!isTeamInboxTraceEnabled()) return;
+  console.debug('[TeamInbox:socket]', ...args);
+};
+
+const recordInboxDebugEvent = (setInboxDebugInfo, lastEvent, extra = {}) => {
+  if (typeof setInboxDebugInfo !== 'function') return;
+
+  setInboxDebugInfo({
+    lastEvent: String(lastEvent || 'idle').trim() || 'idle',
+    lastEventAt: new Date().toISOString(),
+    source: String(extra?.source || 'socket').trim() || 'socket',
+    conversationId: String(extra?.conversationId || '').trim(),
+    messageId: String(extra?.messageId || '').trim(),
+    details: String(extra?.details || '').trim()
+  });
+};
+
 export const useInboxRealtimeEffects = ({
   currentUserId,
+  currentCompanyId,
+  activeConversationId,
   notificationMode,
   setWsConnected,
   hasBootstrapCache,
@@ -30,7 +59,11 @@ export const useInboxRealtimeEffects = ({
   setSelectedConversation,
   applyLeadScoreUpdateToConversation,
   setSidebarRefreshing,
-  realtimeResyncTimerRef
+  realtimeResyncTimerRef,
+  setUserPresenceMap,
+  setConversationTypingState,
+  setInboxDebugInfo,
+  notifyActionFeedback
 }) => {
   const getContactIdFromConversationPayload = (conversation = {}) =>
     String(
@@ -54,6 +87,9 @@ export const useInboxRealtimeEffects = ({
   const lastConversationListRefreshAtRef = useRef(0);
   const bootstrapLoadPromiseRef = useRef(null);
   const lastBootstrapLoadAtRef = useRef(0);
+  const typingPruneTimerRef = useRef(null);
+  const lastSyncedCompanyIdRef = useRef('');
+  const lastSyncedConversationIdRef = useRef('');
   const callbacksRef = useRef({
     loadConversations,
     loadContacts,
@@ -67,6 +103,74 @@ export const useInboxRealtimeEffects = ({
     loadMessages,
     applyLeadScoreUpdateToConversation
   });
+
+  const pruneTypingState = (typingState = {}) => {
+    const cutoff = Date.now() - 10000;
+    const nextState = {};
+
+    Object.entries(typingState || {}).forEach(([conversationId, entries]) => {
+      const safeEntries = Array.isArray(entries) ? entries : [];
+      const filteredEntries = safeEntries.filter((entry) => {
+        const updatedAt = new Date(entry?.updatedAt || 0).getTime();
+        return Number.isFinite(updatedAt) && updatedAt >= cutoff;
+      });
+
+      if (filteredEntries.length > 0) {
+        nextState[conversationId] = filteredEntries;
+      }
+    });
+
+    return nextState;
+  };
+
+  const areTypingStateEntriesEqual = (leftEntries = [], rightEntries = []) => {
+    const normalizeEntries = (entries = []) =>
+      [...entries]
+        .map((entry) => ({
+          userId: String(entry?.userId || '').trim(),
+          conversationId: String(entry?.conversationId || '').trim(),
+          displayName: String(entry?.displayName || '').trim(),
+          isTyping: Boolean(entry?.isTyping),
+          updatedAt: String(entry?.updatedAt || '').trim()
+        }))
+        .sort((left, right) => left.userId.localeCompare(right.userId));
+
+    const left = normalizeEntries(leftEntries);
+    const right = normalizeEntries(rightEntries);
+
+    if (left.length !== right.length) return false;
+
+    for (let index = 0; index < left.length; index += 1) {
+      const leftEntry = left[index];
+      const rightEntry = right[index];
+      if (
+        leftEntry.userId !== rightEntry.userId ||
+        leftEntry.conversationId !== rightEntry.conversationId ||
+        leftEntry.displayName !== rightEntry.displayName ||
+        leftEntry.isTyping !== rightEntry.isTyping ||
+        leftEntry.updatedAt !== rightEntry.updatedAt
+      ) {
+        return false;
+      }
+    }
+
+    return true;
+  };
+
+  const areTypingStatesEqual = (leftState = {}, rightState = {}) => {
+    const leftKeys = Object.keys(leftState || {}).sort();
+    const rightKeys = Object.keys(rightState || {}).sort();
+
+    if (leftKeys.length !== rightKeys.length) return false;
+
+    for (let index = 0; index < leftKeys.length; index += 1) {
+      const key = leftKeys[index];
+      if (key !== rightKeys[index]) return false;
+      if (!areTypingStateEntriesEqual(leftState?.[key], rightState?.[key])) return false;
+    }
+
+    return true;
+  };
 
   const bootstrapInboxData = ({
     silentConversations = false,
@@ -127,22 +231,63 @@ export const useInboxRealtimeEffects = ({
   ]);
 
   useEffect(() => {
+    const normalizedCompanyId = String(currentCompanyId || '').trim();
+    if (lastSyncedCompanyIdRef.current === normalizedCompanyId) return;
+
+    lastSyncedCompanyIdRef.current = normalizedCompanyId;
+    webSocketService.setCompanyId(normalizedCompanyId);
+  }, [currentCompanyId]);
+
+  useEffect(() => {
+    const normalizedConversationId = String(activeConversationId || '').trim();
+    if (lastSyncedConversationIdRef.current === normalizedConversationId) return;
+
+    lastSyncedConversationIdRef.current = normalizedConversationId;
+    webSocketService.setActiveConversationId(normalizedConversationId);
+  }, [activeConversationId]);
+
+  useEffect(() => {
     const handleConnect = () => {
       setWsConnected(true);
       bootstrapInboxData({
         silentConversations: true,
         silentContacts: true
       });
-      console.log('? WebSocket connected in TeamInbox');
+      recordInboxDebugEvent(setInboxDebugInfo, 'socket:connected', {
+        source: 'socket',
+        conversationId: String(activeConversationId || '').trim(),
+        details: 'WebSocket connection established'
+      });
+      traceTeamInbox('connected', {
+        currentUserId,
+        currentCompanyId,
+        activeConversationId: String(activeConversationId || '').trim()
+      });
     };
 
     const handleDisconnect = () => {
       setWsConnected(false);
-      console.log('? WebSocket disconnected in TeamInbox');
+      recordInboxDebugEvent(setInboxDebugInfo, 'socket:disconnected', {
+        source: 'socket',
+        conversationId: String(activeConversationId || '').trim(),
+        details: 'WebSocket disconnected'
+      });
+      traceTeamInbox('disconnected');
     };
 
     const handleNewMessage = (data) => {
-      console.log('?? New message received:', data);
+      traceTeamInbox('newMessage', {
+        conversationId: String(data?.conversation?._id || '').trim(),
+        messageId: String(data?.message?._id || data?.message?.whatsappMessageId || '').trim(),
+        sender: String(data?.message?.sender || '').trim(),
+        activeConversationId: String(selectedConversationRef?.current?._id || '').trim()
+      });
+      recordInboxDebugEvent(setInboxDebugInfo, 'socket:newMessage', {
+        source: 'socket',
+        conversationId: String(data?.conversation?._id || '').trim(),
+        messageId: String(data?.message?._id || data?.message?.whatsappMessageId || '').trim(),
+        details: `sender=${String(data?.message?.sender || '').trim() || 'unknown'}`
+      });
 
       const incomingConversationRaw = data?.conversation || {};
       if (
@@ -324,7 +469,16 @@ export const useInboxRealtimeEffects = ({
     };
 
     const handleMessageSent = (data) => {
-      console.log('?? Message sent confirmation:', data);
+      traceTeamInbox('messageSent', {
+        conversationId: String(data?.message?.conversationId || '').trim(),
+        messageId: String(data?.message?._id || data?.message?.whatsappMessageId || '').trim()
+      });
+      recordInboxDebugEvent(setInboxDebugInfo, 'socket:messageSent', {
+        source: 'socket',
+        conversationId: String(data?.message?.conversationId || '').trim(),
+        messageId: String(data?.message?._id || data?.message?.whatsappMessageId || '').trim(),
+        details: 'Outbound message acknowledged'
+      });
 
       const activeConversation = selectedConversationRef.current;
       if (activeConversation && activeConversation._id === data.message.conversationId) {
@@ -374,7 +528,18 @@ export const useInboxRealtimeEffects = ({
     };
 
     const handleMessageStatus = (data) => {
-      console.log('Message status update:', data);
+      traceTeamInbox('messageStatus', {
+        conversationId: String(data?.conversationId || '').trim(),
+        status: String(data?.status || '').trim(),
+        messageId: String(data?.messageId || data?.whatsappMessageId || data?.message?._id || '').trim(),
+        mediaPipelineRequestId: String(data?.mediaPipelineRequestId || '').trim()
+      });
+      recordInboxDebugEvent(setInboxDebugInfo, 'socket:messageStatus', {
+        source: 'socket',
+        conversationId: String(data?.conversationId || '').trim(),
+        messageId: String(data?.messageId || data?.whatsappMessageId || data?.message?._id || '').trim(),
+        details: `status=${String(data?.status || '').trim() || 'unknown'}`
+      });
 
       const incomingStatus = String(data?.status || '').toLowerCase();
       const eventConversationId = String(data?.conversationId || '').trim();
@@ -393,6 +558,7 @@ export const useInboxRealtimeEffects = ({
 
       const statusRank = { sent: 1, delivered: 2, read: 3, failed: 4 };
       let foundMatch = false;
+      const mediaPipelineRequestId = String(data?.mediaPipelineRequestId || '').trim();
 
       setMessages((prev) =>
         (() => {
@@ -475,6 +641,23 @@ export const useInboxRealtimeEffects = ({
           })
         );
 
+        if (mediaPipelineRequestId && typeof notifyActionFeedback === 'function') {
+          const statusLabel =
+            incomingStatus === 'read'
+              ? 'Read'
+              : incomingStatus === 'delivered'
+                ? 'Delivered'
+                : incomingStatus === 'failed'
+                  ? 'Failed'
+                  : incomingStatus === 'sent'
+                    ? 'Sent'
+                    : incomingStatus;
+          notifyActionFeedback(
+            `Media ${statusLabel}${mediaPipelineRequestId ? ` • ${mediaPipelineRequestId}` : ''}`,
+            incomingStatus === 'failed' ? 'error' : 'info'
+          );
+        }
+
         setSelectedConversation((prev) => {
           if (!prev) return prev;
           const eventConversationId = String(data?.conversationId || '').trim();
@@ -509,14 +692,6 @@ export const useInboxRealtimeEffects = ({
 
       const activeConversation = selectedConversationRef.current;
       if (
-        !foundMatch &&
-        activeConversation &&
-        eventConversationId &&
-        String(activeConversation._id) === eventConversationId
-      ) {
-        callbacksRef.current.loadMessages(activeConversation._id);
-      }
-      if (
         activeConversation &&
         eventConversationId &&
         String(activeConversation._id) === eventConversationId
@@ -539,11 +714,100 @@ export const useInboxRealtimeEffects = ({
       );
     };
 
+    const handlePresenceUpdate = (data) => {
+      const userId = String(data?.userId || '').trim();
+      if (!userId) return;
+
+      setUserPresenceMap((prev) => ({
+        ...prev,
+        [userId]: {
+          userId,
+          online: Boolean(data?.online),
+          socketCount: Math.max(0, Number(data?.socketCount || 0) || 0),
+          lastSeen: String(data?.lastSeen || '').trim() || new Date().toISOString(),
+          activeConversationId: String(data?.activeConversationId || '').trim() || null,
+          updatedAt: new Date().toISOString()
+        }
+      }));
+    };
+
+    const handleTypingUpdate = (data) => {
+      const userId = String(data?.userId || '').trim();
+      const conversationId = String(data?.conversationId || '').trim();
+      if (!userId || !conversationId) return;
+
+      const nextEntry = {
+        userId,
+        conversationId,
+        displayName: String(data?.displayName || '').trim() || null,
+        isTyping: Boolean(data?.isTyping),
+        updatedAt: new Date().toISOString()
+      };
+
+      setConversationTypingState((prev) => {
+        const currentEntries = Array.isArray(prev?.[conversationId]) ? prev[conversationId] : [];
+        const remaining = currentEntries.filter((entry) => String(entry?.userId || '').trim() !== userId);
+        if (!nextEntry.isTyping) {
+          const nextState = { ...prev };
+          if (remaining.length > 0) {
+            nextState[conversationId] = remaining;
+          } else {
+            delete nextState[conversationId];
+          }
+          return pruneTypingState(nextState);
+        }
+
+        return pruneTypingState({
+          ...prev,
+          [conversationId]: [...remaining, nextEntry]
+        });
+      });
+    };
+
+    const handleConversationRead = (data) => {
+      const conversationId = String(data?.conversationId || '').trim();
+      if (!conversationId) return;
+
+      setConversations((prev) =>
+        prev.map((conversation) =>
+          String(conversation?._id || '').trim() === conversationId
+            ? { ...conversation, unreadCount: 0 }
+            : conversation
+        )
+      );
+
+      setSelectedConversation((prev) => {
+        if (!prev || String(prev?._id || '').trim() !== conversationId) return prev;
+        return { ...prev, unreadCount: 0 };
+      });
+    };
+
     const handleCrmChanged = () => {
       bootstrapInboxData({
         silentConversations: true,
         silentContacts: true
       });
+    };
+
+    const handleBroadcastMessageBatch = (data = {}) => {
+      const events = Array.isArray(data?.events) ? data.events : [];
+      if (events.length === 0) return;
+
+      const activeConversation = selectedConversationRef.current;
+      const activeConversationId = String(activeConversation?._id || '').trim();
+      const batchTouchesActiveConversation = events.some(
+        (event) => String(event?.conversationId || '').trim() === activeConversationId
+      );
+
+      const now = Date.now();
+      if (now - lastConversationListRefreshAtRef.current > 5000) {
+        lastConversationListRefreshAtRef.current = now;
+        callbacksRef.current.loadConversations({ silent: true });
+      }
+
+      if (batchTouchesActiveConversation && activeConversationId) {
+        callbacksRef.current.scheduleRealtimeResync(activeConversationId);
+      }
     };
 
     webSocketService.connect(currentUserId);
@@ -555,9 +819,13 @@ export const useInboxRealtimeEffects = ({
     webSocketService.on('message_sent', handleMessageSent);
     webSocketService.on('messageStatus', handleMessageStatus);
     webSocketService.on('message_status', handleMessageStatus);
+    webSocketService.on('broadcast_message_batch', handleBroadcastMessageBatch);
     webSocketService.on('lead_score_updated', handleLeadScoreUpdated);
     webSocketService.on('leadScoreUpdated', handleLeadScoreUpdated);
     webSocketService.on('crm_changed', handleCrmChanged);
+    webSocketService.on('presence:update', handlePresenceUpdate);
+    webSocketService.on('typing:update', handleTypingUpdate);
+    webSocketService.on('conversation_read', handleConversationRead);
 
     return () => {
       webSocketService.off('connected', handleConnect);
@@ -568,9 +836,13 @@ export const useInboxRealtimeEffects = ({
       webSocketService.off('message_sent', handleMessageSent);
       webSocketService.off('messageStatus', handleMessageStatus);
       webSocketService.off('message_status', handleMessageStatus);
+      webSocketService.off('broadcast_message_batch', handleBroadcastMessageBatch);
       webSocketService.off('lead_score_updated', handleLeadScoreUpdated);
       webSocketService.off('leadScoreUpdated', handleLeadScoreUpdated);
       webSocketService.off('crm_changed', handleCrmChanged);
+      webSocketService.off('presence:update', handlePresenceUpdate);
+      webSocketService.off('typing:update', handleTypingUpdate);
+      webSocketService.off('conversation_read', handleConversationRead);
     };
   }, [
     currentUserId,
@@ -582,6 +854,26 @@ export const useInboxRealtimeEffects = ({
     setSelectedConversation,
     selectedConversationRef
   ]);
+
+  useEffect(() => {
+    if (typingPruneTimerRef.current) {
+      clearInterval(typingPruneTimerRef.current);
+    }
+
+    typingPruneTimerRef.current = setInterval(() => {
+      setConversationTypingState((current) => {
+        const nextState = pruneTypingState(current);
+        return areTypingStatesEqual(current, nextState) ? current : nextState;
+      });
+    }, 5000);
+
+    return () => {
+      if (typingPruneTimerRef.current) {
+        clearInterval(typingPruneTimerRef.current);
+        typingPruneTimerRef.current = null;
+      }
+    };
+  }, [setConversationTypingState]);
 
   useEffect(() => {
     const timerRef = realtimeResyncTimerRef;

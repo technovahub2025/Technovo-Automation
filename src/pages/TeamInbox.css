@@ -1,3 +1,373 @@
+.team-inbox-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 0;
+}
+
+.team-inbox-broadcast-health {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 16px;
+    border: 1px solid rgba(37, 99, 235, 0.18);
+    border-radius: 14px;
+    background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+}
+
+.team-inbox-broadcast-health--healthy {
+    border-color: rgba(37, 99, 235, 0.14);
+    background: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+}
+
+.team-inbox-broadcast-health--warning {
+    border-color: rgba(245, 158, 11, 0.28);
+    background: linear-gradient(180deg, #fffbeb 0%, #ffffff 100%);
+}
+
+.team-inbox-broadcast-health--critical {
+    border-color: rgba(239, 68, 68, 0.35);
+    background: linear-gradient(180deg, #fef2f2 0%, #ffffff 100%);
+}
+
+.team-inbox-broadcast-health__copy {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+}
+
+.team-inbox-broadcast-health__summary-toggle {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+}
+
+.team-inbox-broadcast-health__summary-toggle:focus-visible {
+    outline: 2px solid rgba(37, 99, 235, 0.35);
+    outline-offset: 4px;
+    border-radius: 10px;
+}
+
+.team-inbox-broadcast-health__summary-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    margin-top: 1px;
+    color: #64748b;
+    transition: transform 0.18s ease, color 0.18s ease;
+}
+
+.team-inbox-broadcast-health__copy strong {
+    color: #0f172a;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.team-inbox-broadcast-health__copy span {
+    color: #64748b;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.team-inbox-broadcast-health__action {
+    align-self: flex-start;
+    margin-top: 4px;
+    padding: 7px 12px;
+    border: 1px solid rgba(37, 99, 235, 0.22);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.9);
+    color: #1d4ed8;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+}
+
+.team-inbox-broadcast-health__action:hover {
+    transform: translateY(-1px);
+    background: #ffffff;
+    box-shadow: 0 8px 18px rgba(29, 78, 216, 0.12);
+}
+
+.team-inbox-broadcast-health--warning .team-inbox-broadcast-health__action {
+    color: #b45309;
+    border-color: rgba(245, 158, 11, 0.28);
+}
+
+.team-inbox-broadcast-health--warning .team-inbox-broadcast-health__action:hover {
+    box-shadow: 0 8px 18px rgba(245, 158, 11, 0.12);
+}
+
+.team-inbox-broadcast-health--critical .team-inbox-broadcast-health__action {
+    color: #b91c1c;
+    border-color: rgba(239, 68, 68, 0.28);
+}
+
+.team-inbox-broadcast-health--critical .team-inbox-broadcast-health__action:hover {
+    box-shadow: 0 8px 18px rgba(239, 68, 68, 0.12);
+}
+
+.team-inbox-broadcast-health--expanded .team-inbox-broadcast-health__summary-icon {
+    transform: rotate(180deg);
+}
+
+.team-inbox-broadcast-health--warning .team-inbox-broadcast-health__summary-icon {
+    color: #b45309;
+}
+
+.team-inbox-broadcast-health--critical .team-inbox-broadcast-health__summary-icon {
+    color: #b91c1c;
+}
+
+.team-inbox-broadcast-health--healthy .team-inbox-broadcast-health__summary-icon {
+    color: #1d4ed8;
+}
+
+.team-inbox-broadcast-health__stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    min-width: 320px;
+}
+
+.team-inbox-broadcast-health__stats div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(226, 232, 240, 0.9);
+}
+
+.team-inbox-broadcast-health__stats span {
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.team-inbox-broadcast-health__stats strong {
+    color: #0f172a;
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.team-inbox-broadcast-health__stats small {
+    color: #64748b;
+    font-size: 11px;
+}
+
+.team-inbox-broadcast-health--healthy .team-inbox-broadcast-health__copy strong {
+    color: #1d4ed8;
+}
+
+.team-inbox-broadcast-health--warning .team-inbox-broadcast-health__copy strong {
+    color: #b45309;
+}
+
+.team-inbox-broadcast-health--critical .team-inbox-broadcast-health__copy strong {
+    color: #b91c1c;
+}
+
+.team-inbox-broadcast-health--warning .team-inbox-broadcast-health__stats div {
+    border-color: rgba(245, 158, 11, 0.18);
+}
+
+.team-inbox-broadcast-health--critical .team-inbox-broadcast-health__stats div {
+    border-color: rgba(239, 68, 68, 0.18);
+}
+
+.inbox-debug-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 12px;
+    padding: 12px 14px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.95) 0%, rgba(30, 41, 59, 0.92) 100%);
+    color: #e2e8f0;
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+}
+
+.inbox-debug-panel__title {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+}
+
+.inbox-debug-panel__title strong {
+    color: #f8fafc;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.inbox-debug-panel__title span {
+    color: #94a3b8;
+    font-size: 11px;
+}
+
+.inbox-debug-panel__grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+}
+
+.inbox-debug-panel__grid > div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    background: rgba(15, 23, 42, 0.35);
+    border: 1px solid rgba(148, 163, 184, 0.16);
+    min-width: 0;
+}
+
+.inbox-debug-panel__grid span {
+    color: #94a3b8;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+.inbox-debug-panel__grid strong {
+    color: #f8fafc;
+    font-size: 12px;
+    font-weight: 700;
+    word-break: break-word;
+}
+
+.inbox-debug-panel small {
+    color: #cbd5e1;
+    font-size: 11px;
+    line-height: 1.4;
+}
+
+@media (max-width: 1024px) {
+    .inbox-debug-panel__grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 768px) {
+    .inbox-debug-panel {
+        margin-bottom: 10px;
+        padding: 10px 12px;
+    }
+
+    .inbox-debug-panel__grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 1024px) {
+    .team-inbox-broadcast-health {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .team-inbox-broadcast-health__stats {
+        width: 100%;
+        min-width: 0;
+    }
+}
+
+@media (max-width: 768px) {
+    .team-inbox-broadcast-health {
+        gap: 12px;
+        padding: 10px 12px;
+    }
+
+    .team-inbox-broadcast-health:not(.team-inbox-broadcast-health--warning):not(.team-inbox-broadcast-health--critical):not(.team-inbox-broadcast-health--expanded) {
+        align-items: center;
+    }
+
+    .team-inbox-broadcast-health__copy {
+        gap: 3px;
+    }
+
+    .team-inbox-broadcast-health:not(.team-inbox-broadcast-health--warning):not(.team-inbox-broadcast-health--critical):not(.team-inbox-broadcast-health--expanded) .team-inbox-broadcast-health__summary-toggle {
+        width: 100%;
+        flex-direction: row;
+        align-items: center;
+        gap: 6px;
+        overflow: hidden;
+        white-space: nowrap;
+    }
+
+    .team-inbox-broadcast-health__summary-toggle strong {
+        font-size: 13px;
+    }
+
+    .team-inbox-broadcast-health:not(.team-inbox-broadcast-health--warning):not(.team-inbox-broadcast-health--critical):not(.team-inbox-broadcast-health--expanded) .team-inbox-broadcast-health__summary-toggle strong {
+        font-size: 12px;
+        flex: 0 0 auto;
+    }
+
+    .team-inbox-broadcast-health__summary-toggle span {
+        font-size: 11px;
+        line-height: 1.4;
+    }
+
+    .team-inbox-broadcast-health:not(.team-inbox-broadcast-health--warning):not(.team-inbox-broadcast-health--critical):not(.team-inbox-broadcast-health--expanded) .team-inbox-broadcast-health__summary-toggle span {
+        min-width: 0;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        flex: 1 1 auto;
+    }
+
+    .team-inbox-broadcast-health__action {
+        margin-top: 2px;
+        padding: 6px 10px;
+        font-size: 11px;
+    }
+
+    .team-inbox-broadcast-health__stats {
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+
+    .team-inbox-broadcast-health:not(.team-inbox-broadcast-health--warning):not(.team-inbox-broadcast-health--critical):not(.team-inbox-broadcast-health--expanded) .team-inbox-broadcast-health__stats,
+    .team-inbox-broadcast-health:not(.team-inbox-broadcast-health--warning):not(.team-inbox-broadcast-health--critical):not(.team-inbox-broadcast-health--expanded) .team-inbox-broadcast-health__action {
+        display: none;
+    }
+
+    .team-inbox-broadcast-health__stats div {
+        padding: 8px 10px;
+    }
+
+    .team-inbox-broadcast-health__stats span {
+        font-size: 10px;
+    }
+
+    .team-inbox-broadcast-health__stats strong {
+        font-size: 14px;
+    }
+
+    .team-inbox-broadcast-health__stats small {
+        font-size: 10px;
+    }
+}
+
 .inbox-container {
     display: flex;
     /* Keep only small bottom breathing space instead of large gap */
@@ -143,12 +513,21 @@
 
     flex: 1;
 
-    overflow-y: auto;
+    overflow: hidden;
 
     min-height: 0;
 
     background-color: var(--color-bg-surface);
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    display: flex;
+    flex-direction: column;
 
+}
+
+.conversation-virtuoso {
+    flex: 1;
+    min-height: 0;
 }
 
 .conversation-empty-state {
@@ -650,6 +1029,22 @@
     margin-top: 3px;
 }
 
+.chat-header-thread-status {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+}
+
+.chat-header-thread-status-timestamp {
+    padding-left: 2px;
+    color: rgba(224, 242, 254, 0.72);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+}
+
 .chat-header-operator-chip {
     display: inline-flex;
     align-items: center;
@@ -675,6 +1070,21 @@
 
 .chat-header-operator-chip--sla.chat-header-operator-chip--healthy {
     background: rgba(22, 101, 52, 0.28);
+    color: #dcfce7;
+}
+
+.chat-header-operator-chip--cache.chat-header-operator-chip--cache-fresh {
+    background: rgba(245, 158, 11, 0.24);
+    color: #fffbeb;
+}
+
+.chat-header-operator-chip--cache.chat-header-operator-chip--cache-stale {
+    background: rgba(239, 68, 68, 0.24);
+    color: #fee2e2;
+}
+
+.chat-header-operator-chip--live {
+    background: rgba(34, 197, 94, 0.24);
     color: #dcfce7;
 }
 
@@ -798,7 +1208,7 @@
 
     padding: 24px;
 
-    overflow-y: auto;
+    overflow: hidden;
 
     display: flex;
 
@@ -847,6 +1257,103 @@
     border-top-color: #0f766e;
     animation: teamInboxSpin 0.9s linear infinite;
     flex-shrink: 0;
+}
+
+.chat-thread-skeleton {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    padding: 8px 0 4px;
+    margin: 0 auto;
+    width: min(100%, 760px);
+    pointer-events: none;
+}
+
+.chat-thread-skeleton-row {
+    display: flex;
+    align-items: flex-end;
+    gap: 10px;
+}
+
+.chat-thread-skeleton-row.is-right {
+    justify-content: flex-end;
+}
+
+.chat-thread-skeleton-row.is-left {
+    justify-content: flex-start;
+}
+
+.chat-thread-skeleton-avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(203, 213, 225, 0.55), rgba(226, 232, 240, 0.95), rgba(203, 213, 225, 0.55));
+    background-size: 200% 100%;
+    animation: teamInboxShimmer 1.25s linear infinite;
+    flex-shrink: 0;
+}
+
+.chat-thread-skeleton-bubble {
+    min-width: 180px;
+    max-width: 66%;
+    padding: 12px 14px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.88);
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.05);
+}
+
+.chat-thread-skeleton-row.is-right .chat-thread-skeleton-bubble {
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(239, 246, 255, 0.92));
+}
+
+.chat-thread-skeleton-line {
+    display: block;
+    height: 10px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, rgba(203, 213, 225, 0.55), rgba(226, 232, 240, 0.95), rgba(203, 213, 225, 0.55));
+    background-size: 200% 100%;
+    animation: teamInboxShimmer 1.25s linear infinite;
+}
+
+.chat-thread-skeleton-line + .chat-thread-skeleton-line {
+    margin-top: 8px;
+}
+
+.chat-thread-skeleton-line.short {
+    width: 42%;
+}
+
+.chat-thread-empty-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 220px;
+    padding: 12px;
+}
+
+.chat-thread-empty-state-card {
+    max-width: 420px;
+    padding: 18px 20px;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.9);
+    border: 1px solid rgba(226, 232, 240, 0.95);
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.06);
+    text-align: center;
+}
+
+.chat-thread-empty-state-card h3 {
+    margin: 0 0 8px;
+    color: #0f172a;
+    font-size: 18px;
+    font-weight: 700;
+}
+
+.chat-thread-empty-state-card p {
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+    line-height: 1.6;
 }
 
 .chat-history-loading-spinner {
@@ -1840,6 +2347,12 @@
     gap: 12px;
     position: relative;
 
+}
+
+.chat-messages-virtuoso {
+    flex: 1;
+    min-height: 0;
+    width: 100%;
 }
 
 .chat-input-row {
@@ -2984,6 +3497,15 @@
 @keyframes teamInboxSpin {
     to {
         transform: rotate(360deg);
+    }
+}
+
+@keyframes teamInboxShimmer {
+    0% {
+        background-position: 0% 50%;
+    }
+    100% {
+        background-position: 200% 50%;
     }
 }
 

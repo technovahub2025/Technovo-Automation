@@ -9,7 +9,21 @@ export const SUPPORTED_ATTACHMENT_COMPOSER_DOCUMENT_EXTENSIONS = new Set([
   'ppt',
   'pptx',
   'txt',
-  'zip'
+  'zip',
+  'mp4',
+  'mov',
+  'm4v',
+  'webm',
+  '3gp',
+  '3g2',
+  'mp3',
+  'm4a',
+  'aac',
+  'amr',
+  'ogg',
+  'oga',
+  'wav',
+  'opus'
 ]);
 
 export const formatDraftAttachmentSize = (bytes) => {
@@ -54,7 +68,8 @@ export const isSupportedAttachmentComposerFile = (file = {}) => {
     .trim()
     .toLowerCase();
   if (mimeType.startsWith('image/')) return true;
-  if (mimeType.startsWith('audio/')) return false;
+  if (mimeType.startsWith('audio/')) return true;
+  if (mimeType.startsWith('video/')) return true;
   return SUPPORTED_ATTACHMENT_COMPOSER_DOCUMENT_EXTENSIONS.has(getDraggedFileExtension(file));
 };
 

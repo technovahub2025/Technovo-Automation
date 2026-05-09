@@ -1,8 +1,18 @@
-import React, { useState, useEffect, useMemo, useRef, useContext } from 'react';
+﻿import React, {
+  useState,
+  useEffect,
+  useMemo,
+  useRef,
+  useContext,
+  useDeferredValue,
+  useCallback
+} from 'react';
+import { ChevronDown } from 'lucide-react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import './TeamInbox.css';
 import { googleCalendarService } from '../services/googleCalendarService';
 import { apiClient } from '../services/whatsappapi';
+import { broadcastAPI } from '../services/broadcastAPI';
 import { crmService } from '../services/crmService';
 import { AuthContext } from './authcontext'
 import TemplateSendModal from './teamInbox/TemplateSendModal';
@@ -81,6 +91,30 @@ const writeTeamInboxDrafts = (currentUserId, draftsByConversation = {}) => {
   }
 };
 
+const isTeamInboxDebugVisible = () => {
+  if (typeof window === 'undefined') {
+    return Boolean(import.meta?.env?.DEV);
+  }
+
+  try {
+    return Boolean(import.meta?.env?.DEV) || String(window.localStorage.getItem('debugTeamInbox') || '').trim() === '1';
+  } catch {
+    return Boolean(import.meta?.env?.DEV);
+  }
+};
+
+const formatInboxDebugTimestamp = (value) => {
+  if (!value) return 'Never';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+
+  return date.toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+};
+
 const TeamInbox = () => {
 
   const location = useLocation();
@@ -89,11 +123,33 @@ const TeamInbox = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useContext(AuthContext);
   const [conversations, setConversations] = useState([]);
+  const [conversationPageMeta, setConversationPageMeta] = useState({
+    limit: 100,
+    hasMore: false,
+    nextCursor: null,
+    loaded: false,
+    querySignature: ''
+  });
+  const [conversationLoadingMore, setConversationLoadingMore] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [messages, setMessages] = useState([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesOlderLoading, setMessagesOlderLoading] = useState(false);
   const [messagesHasMore, setMessagesHasMore] = useState(false);
+  const [threadCacheInfo, setThreadCacheInfo] = useState({
+    source: 'unknown',
+    isStale: false,
+    updatedAt: null,
+    messageCount: 0
+  });
+  const [inboxDebugInfo, setInboxDebugInfo] = useState({
+    lastEvent: 'idle',
+    lastEventAt: null,
+    source: 'ui',
+    conversationId: '',
+    messageId: '',
+    details: ''
+  });
   const [sidebarRefreshing, setSidebarRefreshing] = useState(false);
   const [pendingTemplateTarget, setPendingTemplateTarget] = useState(null);
   const [messageInput, setMessageInput] = useState('');
@@ -101,9 +157,14 @@ const TeamInbox = () => {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [wsConnected, setWsConnected] = useState(false);
+  const [userPresenceMap, setUserPresenceMap] = useState({});
+  const [conversationTypingState, setConversationTypingState] = useState({});
   const [showSelectMenu, setShowSelectMenu] = useState(false);
   const [showFilterMenu, setShowFilterMenu] = useState(false);
-  const [conversationFilter, setConversationFilter] = useState('all');
+  const [conversationFilter, setConversationFilter] = useState(() => {
+    const initialFilter = String(searchParams.get('filter') || 'all').trim().toLowerCase();
+    return ['all', 'unread', 'read'].includes(initialFilter) ? initialFilter : 'all';
+  });
   const [selectedForDeletion, setSelectedForDeletion] = useState([]);
   const [showSelectMode, setShowSelectMode] = useState(false);
   const [showMessageSelectMenu, setShowMessageSelectMenu] = useState(false);
@@ -167,6 +228,10 @@ const TeamInbox = () => {
   const [whatsAppConsentAuditData, setWhatsAppConsentAuditData] = useState(null);
   const [leadScoringSettings, setLeadScoringSettings] = useState(null);
   const [leadScoringSettingsLoading, setLeadScoringSettingsLoading] = useState(false);
+  const [queueMetrics, setQueueMetrics] = useState(null);
+  const [queueMetricsLoading, setQueueMetricsLoading] = useState(false);
+  const [queueMetricsError, setQueueMetricsError] = useState('');
+  const [isBroadcastPressureExpanded, setIsBroadcastPressureExpanded] = useState(false);
   const messagesEndRef = useRef(null);
   const chatMessagesRef = useRef(null);
   const inboxMenuRef = useRef(null);
@@ -184,10 +249,19 @@ const TeamInbox = () => {
   const filteredConversationsRef = useRef([]);
   const draftRestoreConversationIdRef = useRef('');
   const messageLoadRequestIdRef = useRef(0);
+  const conversationLoadRequestIdRef = useRef(0);
   const messageCacheRef = useRef(new Map());
   const messagePaginationCacheRef = useRef(new Map());
   const messageLoadPromiseMapRef = useRef(new Map());
+  const conversationPageMetaRef = useRef({
+    limit: 100,
+    hasMore: false,
+    nextCursor: null,
+    loaded: false,
+    querySignature: ''
+  });
   const restoredBootstrapCacheUserRef = useRef('');
+  const conversationQueryInitializedRef = useRef(false);
   const consumedTemplateOpenNonceRef = useRef('');
   const commonEmojis = [
     '\u{1F44D}',
@@ -208,7 +282,15 @@ const TeamInbox = () => {
   const currentCompanyId = user?.companyId || storedUser?.companyId || localStorage.getItem('companyId') || null;
   const routeOutreachTarget = getWhatsAppOutreachTargetFromLocationState(location.state);
   const requestedConversationFilter = String(searchParams.get('filter') || 'all').trim().toLowerCase();
+  const deferredSearchTerm = useDeferredValue(searchTerm);
+  const normalizedConversationSearchTerm = String(deferredSearchTerm || '').trim();
+  const normalizedConversationFilter = ['all', 'unread', 'read'].includes(
+    String(conversationFilter || 'all').trim().toLowerCase()
+  )
+    ? String(conversationFilter || 'all').trim().toLowerCase()
+    : 'all';
   const activeConversationId = String(selectedConversation?._id || '').trim();
+  const isInboxDebugVisible = isTeamInboxDebugVisible();
   const {
     getUnreadCount,
     normalizeConversation,
@@ -314,14 +396,60 @@ const TeamInbox = () => {
   useEffect(() => {
     if (!activeConversationId) {
       draftRestoreConversationIdRef.current = '';
-      if (messageInput) setMessageInput('');
+      if (messageInput) {
+        setMessageInput((prev) => (prev ? '' : prev));
+      }
       return;
     }
     if (draftRestoreConversationIdRef.current === activeConversationId) return;
     const restoredDraft = String(conversationDrafts?.[activeConversationId] || '');
+    if (restoredDraft === messageInput) {
+      draftRestoreConversationIdRef.current = activeConversationId;
+      return;
+    }
     setMessageInput(restoredDraft);
     draftRestoreConversationIdRef.current = activeConversationId;
   }, [activeConversationId, conversationDrafts, messageInput]);
+
+  useEffect(() => {
+    let isAlive = true;
+    let timerId = null;
+
+    const loadQueueMetrics = async () => {
+      setQueueMetricsLoading(true);
+      try {
+        const response = await broadcastAPI.getQueueMetrics();
+        const payload = response?.data?.data || response?.data || {};
+        if (!isAlive) return;
+        setQueueMetrics(payload);
+        setQueueMetricsError('');
+      } catch (error) {
+        if (!isAlive) return;
+        const message =
+          error?.response?.data?.message ||
+          error?.response?.data?.error ||
+          error?.message ||
+          'Unable to load broadcast queue health.';
+        setQueueMetricsError(message);
+      } finally {
+        if (isAlive) {
+          setQueueMetricsLoading(false);
+        }
+      }
+    };
+
+    void loadQueueMetrics();
+    timerId = window.setInterval(() => {
+      void loadQueueMetrics();
+    }, 20000);
+
+    return () => {
+      isAlive = false;
+      if (timerId) {
+        window.clearInterval(timerId);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!['all', 'unread', 'read'].includes(requestedConversationFilter)) return;
@@ -831,6 +959,20 @@ const TeamInbox = () => {
     setMessagesOlderLoading(false);
     setMessagesLoading(false);
     setMessages([]);
+    setThreadCacheInfo({
+      source: 'unknown',
+      isStale: false,
+      updatedAt: null,
+      messageCount: 0
+    });
+    setInboxDebugInfo({
+      lastEvent: 'selection_cleared',
+      lastEventAt: new Date().toISOString(),
+      source: 'ui',
+      conversationId: '',
+      messageId: '',
+      details: 'No active conversation selected'
+    });
   }, [selectedConversation?._id, selectedConversation?.id]);
 
   useEffect(() => {
@@ -934,12 +1076,64 @@ const TeamInbox = () => {
     messageCacheRef,
     messagePaginationCacheRef,
     messageLoadPromiseMapRef,
+    conversationPageMetaRef,
+    conversationLoadRequestIdRef,
+    setConversationPageMeta,
     setSidebarRefreshing,
     setMessagesOlderLoading,
     setMessagesHasMore,
+    setThreadCacheInfo,
+    setInboxDebugInfo,
     notifyActionFeedback: showTeamInboxActionFeedback,
     confirmAction: confirmTeamInboxAction
   });
+
+  const loadScopedConversations = useCallback(
+    async (options = {}) =>
+      loadConversations({
+        ...options,
+        search: normalizedConversationSearchTerm,
+        filter: normalizedConversationFilter
+      }),
+    [loadConversations, normalizedConversationSearchTerm, normalizedConversationFilter]
+  );
+
+  const loadMoreConversations = useCallback(async () => {
+    if (!conversationPageMeta.hasMore || conversationLoadingMore) {
+      return false;
+    }
+
+    setConversationLoadingMore(true);
+    try {
+      return await loadScopedConversations({ silent: true, append: true });
+    } finally {
+      setConversationLoadingMore(false);
+    }
+  }, [conversationPageMeta.hasMore, conversationLoadingMore, loadScopedConversations]);
+
+  useEffect(() => {
+    const querySignature = `${normalizedConversationSearchTerm.toLowerCase()}::${normalizedConversationFilter}`;
+    if (!conversationQueryInitializedRef.current) {
+      conversationQueryInitializedRef.current = true;
+      conversationPageMetaRef.current = {
+        ...(conversationPageMetaRef.current || {}),
+        querySignature
+      };
+      return;
+    }
+
+    if (String(conversationPageMetaRef.current?.querySignature || '').trim() === querySignature) {
+      return;
+    }
+
+    setConversationLoadingMore(false);
+    void loadScopedConversations({ silent: true, append: false });
+  }, [
+    normalizedConversationSearchTerm,
+    normalizedConversationFilter,
+    loadScopedConversations
+  ]);
+
   const { handleEmojiInsert, scheduleRealtimeResync } = useTeamInboxViewEffects({
     inboxMenuRef,
     messageMenuRef,
@@ -965,7 +1159,7 @@ const TeamInbox = () => {
     locationState: location.state,
     conversations,
     setSelectedConversation,
-    selectedConversation,
+    selectedConversationId: activeConversationId,
     isConversationSwitchRef,
     loadMessages,
     conversationId,
@@ -977,6 +1171,8 @@ const TeamInbox = () => {
 
   useInboxRealtimeEffects({
     currentUserId,
+    currentCompanyId,
+    activeConversationId,
     notificationMode,
     setWsConnected,
     hasBootstrapCache: Boolean(
@@ -985,7 +1181,7 @@ const TeamInbox = () => {
         allowStale: true
       })
     ),
-    loadConversations,
+    loadConversations: loadScopedConversations,
     loadContacts,
     hasRealContactName,
     getMappedContactName,
@@ -1001,7 +1197,11 @@ const TeamInbox = () => {
     setSelectedConversation,
     applyLeadScoreUpdateToConversation,
     setSidebarRefreshing,
-    realtimeResyncTimerRef
+    realtimeResyncTimerRef,
+    setUserPresenceMap,
+    setConversationTypingState,
+    setInboxDebugInfo,
+    notifyActionFeedback: showTeamInboxActionFeedback
   });
   const {
     deleteCurrentConversation,
@@ -1032,12 +1232,12 @@ const TeamInbox = () => {
     () =>
       filterConversations({
         conversations,
-        searchTerm,
+        searchTerm: deferredSearchTerm,
         conversationFilter,
         getUnreadCount,
         getConversationDisplayName
       }),
-    [conversations, searchTerm, conversationFilter, getUnreadCount, getConversationDisplayName]
+    [conversations, deferredSearchTerm, conversationFilter, getUnreadCount, getConversationDisplayName]
   );
 
   const sidebarConversations = useMemo(() => {
@@ -1046,15 +1246,23 @@ const TeamInbox = () => {
       return filteredConversations;
     }
 
-    const latestVisibleMessage = [...messages]
-      .filter((message) => String(message?.sender || '').trim())
-      .slice()
-      .sort((left, right) => {
-        const leftTime = new Date(left?.timestamp || left?.whatsappTimestamp || left?.createdAt || 0).valueOf();
-        const rightTime = new Date(right?.timestamp || right?.whatsappTimestamp || right?.createdAt || 0).valueOf();
-        return leftTime - rightTime;
-      })
-      .at(-1);
+    let latestVisibleMessage = null;
+    let latestVisibleTimestamp = Number.NEGATIVE_INFINITY;
+
+    for (const message of messages) {
+      if (!String(message?.sender || '').trim()) continue;
+
+      const messageTimestamp = new Date(
+        message?.timestamp || message?.whatsappTimestamp || message?.createdAt || 0
+      ).valueOf();
+
+      if (!Number.isFinite(messageTimestamp) || messageTimestamp < latestVisibleTimestamp) {
+        continue;
+      }
+
+      latestVisibleTimestamp = messageTimestamp;
+      latestVisibleMessage = message;
+    }
 
     if (!latestVisibleMessage) {
       return filteredConversations;
@@ -1339,13 +1547,177 @@ const TeamInbox = () => {
     return () => window.removeEventListener('keydown', handleKeyboardShortcut);
   }, [activeConversationId, handleSelectConversation, messageInput, sendMessage, sendingMessage]);
 
+  const queueCounts = queueMetrics?.queues || {};
+  const queueLag = queueMetrics?.lag || {};
+  const sendQueue = queueCounts['broadcast-send'] || queueCounts.broadcastSend || {};
+  const inboxQueue = queueCounts['broadcast-inbox-write'] || queueCounts.broadcastInboxWrite || {};
+  const sendLag = queueLag['broadcast-send'] || queueLag.broadcastSend || {};
+  const inboxLag = queueLag['broadcast-inbox-write'] || queueLag.broadcastInboxWrite || {};
+  const rateLimit = queueMetrics?.rateLimit || null;
+  const limiterActive = Boolean(rateLimit?.enabled && Number(rateLimit?.ttlMs || 0) > 0);
+  const sendWaitingCount = Number(sendQueue.waiting || 0);
+  const inboxWaitingCount = Number(inboxQueue.waiting || 0);
+  const sendOldestAgeMs = Number(sendLag.oldestWaitingAgeMs || sendLag.oldestDelayedAgeMs || 0);
+  const inboxOldestAgeMs = Number(inboxLag.oldestWaitingAgeMs || inboxLag.oldestDelayedAgeMs || 0);
+  const limiterCount = Number(rateLimit?.count || 0);
+  const limiterMax = Number(rateLimit?.max || 0);
+  const limiterUsage = limiterMax > 0 ? limiterCount / limiterMax : 0;
+  const limiterTtlMs = Number(rateLimit?.ttlMs || 0);
+  const pressureLevel =
+    sendWaitingCount >= 100 ||
+    inboxWaitingCount >= 100 ||
+    sendOldestAgeMs >= 120000 ||
+    inboxOldestAgeMs >= 120000 ||
+    (limiterActive && (limiterUsage >= 0.9 || limiterTtlMs <= 10000))
+      ? 'critical'
+      : sendWaitingCount >= 25 ||
+          inboxWaitingCount >= 25 ||
+          sendOldestAgeMs >= 30000 ||
+          inboxOldestAgeMs >= 30000 ||
+          limiterActive
+        ? 'warning'
+          : 'healthy';
+  const showBroadcastPressureStrip =
+    queueMetricsLoading || queueMetricsError || pressureLevel !== 'healthy';
+  const formatQueueCount = (value) => {
+    const parsed = Number(value || 0);
+    return Number.isFinite(parsed) ? parsed.toLocaleString() : '0';
+  };
+  const formatQueueAge = (value) => {
+    const ms = Math.max(0, Number(value || 0));
+    if (!ms) return '0s';
+    if (ms < 1000) return '<1s';
+    const seconds = Math.floor(ms / 1000);
+    if (seconds < 60) return `${seconds}s`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const remainder = minutes % 60;
+    return remainder ? `${hours}h ${remainder}m` : `${hours}h`;
+  };
+  const openBroadcastQueueDashboard = () => {
+    navigate('/broadcast#queue-health');
+  };
+
+  useEffect(() => {
+    if (!showBroadcastPressureStrip) {
+      setIsBroadcastPressureExpanded(false);
+      return;
+    }
+
+    if (queueMetricsLoading || queueMetricsError || pressureLevel !== 'healthy') {
+      setIsBroadcastPressureExpanded(true);
+      return;
+    }
+  }, [pressureLevel, queueMetricsError, queueMetricsLoading, showBroadcastPressureStrip]);
+
+  const handleToggleBroadcastPressureStrip = () => {
+    setIsBroadcastPressureExpanded((prev) => !prev);
+  };
 
   return (
+    <div className="team-inbox-shell">
+      {showBroadcastPressureStrip ? (
+        <div
+          className={`team-inbox-broadcast-health team-inbox-broadcast-health--${pressureLevel} ${isBroadcastPressureExpanded ? 'team-inbox-broadcast-health--expanded' : ''}`}
+        >
+          <div className="team-inbox-broadcast-health__copy">
+            <button
+              type="button"
+              className="team-inbox-broadcast-health__summary-toggle"
+              onClick={handleToggleBroadcastPressureStrip}
+              aria-expanded={isBroadcastPressureExpanded}
+            >
+              <strong>Broadcast pressure</strong>
+              <span>
+                {queueMetricsLoading
+                  ? 'Refreshing queue health...'
+                  : queueMetricsError
+                    ? queueMetricsError
+                    : pressureLevel === 'critical'
+                      ? 'Broadcast backlog is high enough to affect inbox responsiveness if it keeps climbing.'
+                      : 'Broadcast work is elevated. Queue drain and rate limiting are active.'}
+              </span>
+              <span className="team-inbox-broadcast-health__summary-icon" aria-hidden="true">
+                <ChevronDown size={14} />
+              </span>
+            </button>
+            {isBroadcastPressureExpanded && pressureLevel === 'healthy' ? <small>Tap to collapse</small> : null}
+            {pressureLevel !== 'healthy' && !queueMetricsLoading && !queueMetricsError ? (
+              <button
+                type="button"
+                className="team-inbox-broadcast-health__action"
+                onClick={openBroadcastQueueDashboard}
+              >
+                Open Broadcast dashboard
+              </button>
+            ) : null}
+          </div>
+          <div className="team-inbox-broadcast-health__stats">
+            <div>
+              <span>Send waiting</span>
+              <strong>{formatQueueCount(sendWaitingCount)}</strong>
+              <small>Oldest {formatQueueAge(sendOldestAgeMs)}</small>
+            </div>
+            <div>
+              <span>Inbox waiting</span>
+              <strong>{formatQueueCount(inboxWaitingCount)}</strong>
+              <small>Oldest {formatQueueAge(inboxOldestAgeMs)}</small>
+            </div>
+            <div>
+              <span>Limiter</span>
+              <strong>{limiterActive ? `${formatQueueCount(limiterCount)} / ${formatQueueCount(limiterMax)}` : 'Idle'}</strong>
+              <small>{limiterActive ? `Resets in ${formatQueueAge(limiterTtlMs)}` : 'No throttle'}</small>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
-    <div className="inbox-container">
+      {isInboxDebugVisible ? (
+        <div className="inbox-debug-panel">
+          <div className="inbox-debug-panel__title">
+            <strong>Inbox Debug</strong>
+            <span>Dev-only thread and socket state</span>
+          </div>
+          <div className="inbox-debug-panel__grid">
+            <div>
+              <span>Conversation</span>
+              <strong>{activeConversationId || 'None'}</strong>
+            </div>
+            <div>
+              <span>Messages</span>
+              <strong>{Array.isArray(messages) ? messages.length : 0}</strong>
+            </div>
+            <div>
+              <span>Cache</span>
+              <strong>
+                {threadCacheInfo?.source || 'unknown'}
+                {threadCacheInfo?.isStale ? ' (stale)' : ''}
+              </strong>
+            </div>
+            <div>
+              <span>Socket</span>
+              <strong>{wsConnected ? 'Connected' : 'Disconnected'}</strong>
+            </div>
+            <div>
+              <span>Last event</span>
+              <strong>{inboxDebugInfo?.lastEvent || 'idle'}</strong>
+            </div>
+            <div>
+              <span>Updated</span>
+              <strong>{formatInboxDebugTimestamp(inboxDebugInfo?.lastEventAt)}</strong>
+            </div>
+          </div>
+          {inboxDebugInfo?.details ? <small>{inboxDebugInfo.details}</small> : null}
+        </div>
+      ) : null}
+
+      <div className="inbox-container">
       <ConversationSidebar
         wsConnected={wsConnected}
         refreshing={sidebarRefreshing}
+        loadingMoreConversations={conversationLoadingMore}
+        hasMoreConversations={conversationPageMeta.hasMore}
         filterMenuRef={filterMenuRef}
         inboxMenuRef={inboxMenuRef}
         showFilterMenu={showFilterMenu}
@@ -1367,6 +1739,7 @@ const TeamInbox = () => {
         onResolveSelection={handleResolveConversationSelection}
         onConversationClick={handleSelectConversation}
         onToggleSelectForDeletion={toggleSelectForDeletion}
+        onLoadMoreConversations={loadMoreConversations}
         getUnreadCount={getUnreadCount}
         getConversationAvatarText={getConversationAvatarText}
         getConversationDisplayName={getConversationDisplayName}
@@ -1378,6 +1751,7 @@ const TeamInbox = () => {
         messages={messages}
         messagesLoading={messagesLoading}
         hasOlderMessages={messagesHasMore}
+        threadCacheInfo={threadCacheInfo}
         olderMessagesLoading={messagesOlderLoading}
         getConversationAvatarText={getConversationAvatarText}
         getConversationDisplayName={getConversationDisplayName}
@@ -1397,6 +1771,8 @@ const TeamInbox = () => {
         onClearExternalMessageActionFeedback={() => setTeamInboxActionFeedback(null)}
         sendingMessage={sendingMessage}
         whatsappMessagingState={selectedWhatsAppState}
+        typingState={conversationTypingState}
+        userPresenceMap={userPresenceMap}
         onToggleMessageMenu={handleToggleMessageMenu}
         onToggleMessageSelectMode={handleToggleMessageSelectionMode}
         onDeleteConversation={handleDeleteCurrentConversationFromMenu}
@@ -1564,6 +1940,7 @@ const TeamInbox = () => {
         phone={selectedConversation?.contactPhone || ''}
         onRefresh={loadSelectedConversationConsentAudit}
       />
+      </div>
     </div>
   );
 };

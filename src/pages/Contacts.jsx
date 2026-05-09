@@ -8,52 +8,10 @@ import WhatsAppConsentAuditModal from '../components/WhatsAppConsentAuditModal';
 import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
 import { buildPublicWhatsAppOptInDemoUrl, buildWhatsAppOutreachState } from '../utils/whatsappOutreachNavigation';
 import { getWhatsAppConversationState } from '../utils/whatsappContactState';
-import {
-    clearSidebarPageCache,
-    readSidebarPageCache,
-    resolveCacheUserId,
-    writeSidebarPageCache
-} from '../utils/sidebarPageCache';
 import './Contacts.css';
 
 const CONTACTS_LOADING_TIMEOUT_MS = 8000;
-const CONTACTS_CACHE_TTL_MS = 10 * 60 * 1000;
-const CONTACTS_CACHE_NAMESPACE = 'contacts-page:v2';
 const CONTACTS_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
-
-const sanitizeContactForCache = (contact = {}) => ({
-    _id: String(contact?._id || '').trim(),
-    id: String(contact?.id || '').trim(),
-    name: String(contact?.name || '').trim(),
-    phone: String(contact?.phone || '').trim(),
-    email: String(contact?.email || '').trim(),
-    tags: Array.isArray(contact?.tags)
-        ? contact.tags.map((tag) => String(tag || '').trim()).filter(Boolean).slice(0, 20)
-        : [],
-    isBlocked: Boolean(contact?.isBlocked),
-    whatsappOptInStatus: String(contact?.whatsappOptInStatus || '').trim(),
-    whatsappOptInAt: String(contact?.whatsappOptInAt || '').trim(),
-    whatsappOptInSource: String(contact?.whatsappOptInSource || '').trim(),
-    whatsappOptInScope: String(contact?.whatsappOptInScope || '').trim(),
-    whatsappOptInTextSnapshot: String(contact?.whatsappOptInTextSnapshot || '').trim(),
-    whatsappOptInProofType: String(contact?.whatsappOptInProofType || '').trim(),
-    whatsappOptInProofId: String(contact?.whatsappOptInProofId || '').trim(),
-    whatsappOptInProofUrl: String(contact?.whatsappOptInProofUrl || '').trim(),
-    whatsappOptInCapturedBy: String(contact?.whatsappOptInCapturedBy || '').trim(),
-    whatsappOptInPageUrl: String(contact?.whatsappOptInPageUrl || '').trim(),
-    whatsappOptOutAt: String(contact?.whatsappOptOutAt || '').trim(),
-    lastInboundMessageAt: String(contact?.lastInboundMessageAt || '').trim(),
-    serviceWindowClosesAt: String(contact?.serviceWindowClosesAt || '').trim(),
-    sourceType: String(contact?.sourceType || '').trim(),
-    source: String(contact?.source || '').trim(),
-    createdAt: String(contact?.createdAt || '').trim(),
-    lastSeen: String(contact?.lastSeen || '').trim()
-});
-
-const sanitizeContactsCache = (contacts = []) =>
-    (Array.isArray(contacts) ? contacts : []).map(sanitizeContactForCache).filter((contact) => (
-        contact._id || contact.id || contact.phone
-    ));
 
 const createWhatsAppOptInDraft = (contact = {}) => ({
     source: String(contact?.whatsappOptInSource || '').trim() || 'manual',
@@ -152,6 +110,21 @@ const isValidImportedPhone = (value = '') => {
     return digits.length >= MIN_PHONE_DIGITS && digits.length <= MAX_PHONE_DIGITS;
 };
 
+const buildContactsRequestSignature = ({
+    currentPage = 1,
+    pageSize = 10,
+    searchTerm = '',
+    lastActiveFilter = 'all',
+    sortOption = 'name-asc'
+}) =>
+    [
+        Number(currentPage) || 1,
+        Number(pageSize) || 10,
+        String(searchTerm || '').trim().toLowerCase(),
+        String(lastActiveFilter || 'all').trim().toLowerCase() || 'all',
+        String(sortOption || 'name-asc').trim().toLowerCase() || 'name-asc'
+    ].join('|');
+
 const Contacts = () => {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
@@ -160,8 +133,10 @@ const Contacts = () => {
         initialRouteStateRef.current = readContactsRouteState(searchParams);
     }
     const [contacts, setContacts] = useState([]);
+    const [totalContacts, setTotalContacts] = useState(0);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState(initialRouteStateRef.current.searchTerm);
+    const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(initialRouteStateRef.current.searchTerm);
     const [showAddModal, setShowAddModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [editingContact, setEditingContact] = useState(null);
@@ -194,7 +169,8 @@ const Contacts = () => {
     const [currentPage, setCurrentPage] = useState(initialRouteStateRef.current.currentPage);
     const [pageSize, setPageSize] = useState(initialRouteStateRef.current.pageSize);
     const fileInputRef = useRef(null);
-    const currentUserId = resolveCacheUserId();
+    const contactsSkipNextLoadKeyRef = useRef('');
+    const contactsRequestSeqRef = useRef(0);
 
     const showNotification = useCallback((message, type = 'success') => {
         const nextMessage = String(message || '').trim();
@@ -238,66 +214,106 @@ const Contacts = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
-    const persistContactsCache = useCallback((nextContacts) => {
-        writeSidebarPageCache(
-            CONTACTS_CACHE_NAMESPACE,
-            { contacts: sanitizeContactsCache(nextContacts) },
-            {
-                currentUserId,
-                ttlMs: CONTACTS_CACHE_TTL_MS
-            }
-        );
-    }, [currentUserId]);
-
     const loadContacts = useCallback(async ({ silent = false } = {}) => {
-        const releaseLoadingGuard = startLoadingTimeoutGuard(
-            () => {
-                if (!silent) setLoading(false);
-            },
-            CONTACTS_LOADING_TIMEOUT_MS
-        );
-        try {
-            if (!silent) setLoading(true);
-            const result = await apiClient.getContacts();
-            const contactsData = result.data?.data || result.data || [];
-            const nextContacts = Array.isArray(contactsData) ? contactsData : [];
-            setContacts(nextContacts);
-            persistContactsCache(nextContacts);
-        } catch (error) {
-            console.error('Failed to load contacts:', error);
-            if (!silent) {
-                setContacts([]);
-            }
-        } finally {
-            releaseLoadingGuard();
-            if (!silent) setLoading(false);
-        }
-    }, [persistContactsCache]);
-
-    useEffect(() => {
-        const cachedContacts = readSidebarPageCache(CONTACTS_CACHE_NAMESPACE, {
-            currentUserId,
-            allowStale: true
+        const requestSeq = ++contactsRequestSeqRef.current;
+        const requestKey = buildContactsRequestSignature({
+            currentPage,
+            pageSize,
+            searchTerm: debouncedSearchTerm,
+            lastActiveFilter,
+            sortOption
         });
 
-        if (Array.isArray(cachedContacts?.data?.contacts)) {
-            setContacts(cachedContacts.data.contacts);
-            setLoading(false);
-            loadContacts({ silent: true });
+        if (contactsSkipNextLoadKeyRef.current === requestKey) {
+            contactsSkipNextLoadKeyRef.current = '';
             return;
         }
 
+        const releaseLoadingGuard = startLoadingTimeoutGuard(
+            () => {
+                if (!silent && requestSeq === contactsRequestSeqRef.current) setLoading(false);
+            },
+            CONTACTS_LOADING_TIMEOUT_MS
+        );
+
+        try {
+            if (!silent) setLoading(true);
+
+            const response = await apiClient.getContacts({
+                page: currentPage,
+                pageSize,
+                search: debouncedSearchTerm,
+                activeFilter: lastActiveFilter,
+                sort: sortOption
+            });
+            const responseData = response?.data || {};
+            const contactsData = Array.isArray(responseData?.data) ? responseData.data : [];
+            const nextContacts = contactsData;
+            const nextMeta = responseData?.meta || {};
+            const nextTotalCount = Number(
+                nextMeta.totalCount ?? response?.headers?.['x-total-count'] ?? contactsData.length
+            );
+            const resolvedPage = Number(nextMeta.page || currentPage) || currentPage;
+            const resolvedPageSize = Number(nextMeta.pageSize || pageSize) || pageSize;
+
+            if (requestSeq !== contactsRequestSeqRef.current) {
+                return;
+            }
+
+            setContacts(nextContacts);
+            setTotalContacts(Number.isFinite(nextTotalCount) && nextTotalCount >= 0 ? nextTotalCount : nextContacts.length);
+
+            if (resolvedPage !== currentPage) {
+                contactsSkipNextLoadKeyRef.current = buildContactsRequestSignature({
+                    currentPage: resolvedPage,
+                    pageSize: resolvedPageSize,
+                    searchTerm: debouncedSearchTerm,
+                    lastActiveFilter,
+                    sortOption
+                });
+                setCurrentPage(resolvedPage);
+            }
+        } catch (error) {
+            if (requestSeq !== contactsRequestSeqRef.current) {
+                return;
+            }
+            console.error('Failed to load contacts:', error);
+            if (!silent) {
+                setContacts([]);
+                setTotalContacts(0);
+            }
+        } finally {
+            releaseLoadingGuard();
+            if (!silent && requestSeq === contactsRequestSeqRef.current) setLoading(false);
+        }
+    }, [currentPage, debouncedSearchTerm, lastActiveFilter, pageSize, sortOption]);
+
+    useEffect(() => {
         loadContacts();
-    }, [currentUserId, loadContacts]);
+    }, [loadContacts]);
 
     useEffect(() => {
         const routeState = readContactsRouteState(searchParams);
         setCurrentPage(routeState.currentPage);
         setPageSize(routeState.pageSize);
         setSearchTerm(routeState.searchTerm);
+        setDebouncedSearchTerm(routeState.searchTerm);
         setLastActiveFilter(routeState.lastActiveFilter);
         setSortOption(routeState.sortOption);
     }, [searchParams]);
+
+    useEffect(() => {
+        const normalizedSearch = String(searchTerm || '').trim();
+        if (!normalizedSearch) {
+            setDebouncedSearchTerm('');
+            return undefined;
+        }
+
+        const timer = window.setTimeout(() => {
+            setDebouncedSearchTerm(normalizedSearch);
+        }, 250);
+        return () => window.clearTimeout(timer);
+    }, [searchTerm]);
 
     const copyPublicOptInLink = useCallback(async (contact) => {
         const link = buildPublicWhatsAppOptInDemoUrl(contact, {
@@ -496,7 +512,7 @@ const Contacts = () => {
 
     const handleSelectAll = (checked) => {
         if (checked) {
-            const allContactIds = paginatedContacts.map(contact => contact._id);
+            const allContactIds = visibleContacts.map(contact => contact._id);
             setSelectedContacts(new Set(allContactIds));
         } else {
             setSelectedContacts(new Set());
@@ -549,6 +565,10 @@ const Contacts = () => {
     const handlePageSizeChange = (nextSize) => {
         const parsedSize = Number(nextSize);
         if (!Number.isFinite(parsedSize) || parsedSize <= 0) return;
+        const normalizedSearch = String(searchTerm || '').trim();
+        if (normalizedSearch !== debouncedSearchTerm) {
+            setDebouncedSearchTerm(normalizedSearch);
+        }
         setPageSize(parsedSize);
         setCurrentPage(1);
     };
@@ -559,11 +579,19 @@ const Contacts = () => {
     };
 
     const handleLastActiveFilterChange = (value) => {
+        const normalizedSearch = String(searchTerm || '').trim();
+        if (normalizedSearch !== debouncedSearchTerm) {
+            setDebouncedSearchTerm(normalizedSearch);
+        }
         setLastActiveFilter(value);
         setCurrentPage(1);
     };
 
     const handleSortOptionChange = (value) => {
+        const normalizedSearch = String(searchTerm || '').trim();
+        if (normalizedSearch !== debouncedSearchTerm) {
+            setDebouncedSearchTerm(normalizedSearch);
+        }
         setSortOption(value);
         setCurrentPage(1);
     };
@@ -999,7 +1027,6 @@ const Contacts = () => {
                     ? ` ${importErrors.length} row${importErrors.length === 1 ? ' was' : 's were'} rejected by backend validation.`
                     : '';
                 showNotification(`Successfully imported ${mappedContacts.length} contacts!${errorSuffix}`);
-                clearSidebarPageCache(CONTACTS_CACHE_NAMESPACE, { currentUserId });
                 setShowImportModal(false);
                 setImportFile(null);
                 setImportRows([]);
@@ -1049,106 +1076,30 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
 
     const importAudit = useMemo(() => getImportAuditSummary(), [importRows, importMapping]);
 
-    const getAllContacts = () => {
-        // Show only database contacts
-        let allContacts = contacts.map(c => ({
-            ...c,
-            sourceType: normalizeSourceType(c),
-            lastActive: c.lastContactAt || c.lastContact || c.lastInboundMessageAt || c.updatedAt || c.createdAt,
-            whatsappState: getWhatsAppConversationState(c),
-            optInStatus: getWhatsAppOptInStatus(c)
-        }));
-        
-        // Apply search filter
-        if (searchTerm) {
-            allContacts = allContacts.filter(contact =>
-                contact.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                contact.phone?.includes(searchTerm) ||
-                contact.email?.toLowerCase().includes(searchTerm.toLowerCase())
-            );
-        }
+    const visibleContacts = useMemo(() => contacts.map((contact) => ({
+        ...contact,
+        sourceType: normalizeSourceType(contact),
+        lastActive: contact.lastContactAt || contact.lastContact || contact.lastInboundMessageAt || contact.updatedAt || contact.createdAt,
+        whatsappState: getWhatsAppConversationState(contact),
+        optInStatus: getWhatsAppOptInStatus(contact)
+    })), [contacts]);
 
-        // Apply last active filter
-        if (lastActiveFilter !== 'all') {
-            const now = new Date();
-            allContacts = allContacts.filter(contact => {
-                if (!contact.lastActive) return false;
-                
-                const lastActiveDate = new Date(contact.lastActive);
-                const diffMs = now - lastActiveDate;
-                const diffDays = Math.floor(diffMs / 86400000);
-                
-                switch (lastActiveFilter) {
-                    case '1day':
-                        return diffDays <= 1;
-                    case '2days':
-                        return diffDays <= 2;
-                    case '1week':
-                        return diffDays <= 7;
-                    case '1month':
-                        return diffDays <= 30;
-                    default:
-                        return true;
-                }
-            });
-        }
-
-        // Apply sorting
-        switch (sortOption) {
-            case 'name-asc':
-                allContacts.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-                break;
-            case 'name-desc':
-                allContacts.sort((a, b) => (b.name || '').localeCompare(a.name || ''));
-                break;
-            case 'last-active-asc':
-                allContacts.sort((a, b) => {
-                    if (!a.lastActive) return 1;
-                    if (!b.lastActive) return -1;
-                    return new Date(a.lastActive) - new Date(b.lastActive);
-                });
-                break;
-            case 'last-active-desc':
-                allContacts.sort((a, b) => {
-                    if (!a.lastActive) return 1;
-                    if (!b.lastActive) return -1;
-                    return new Date(b.lastActive) - new Date(a.lastActive);
-                });
-                break;
-            default:
-                break;
-        }
-        
-        return allContacts;
-    };
-
-    const filteredContacts = useMemo(() => getAllContacts(), [
-        contacts,
-        searchTerm,
-        lastActiveFilter,
-        sortOption
-    ]);
-
-    const totalPages = Math.max(1, Math.ceil(filteredContacts.length / pageSize));
+    const totalPages = Math.max(1, Math.ceil(totalContacts / pageSize));
     const safeCurrentPage = Math.min(Math.max(currentPage, 1), totalPages);
     const compactPagination = totalPages > 7;
-    const paginatedContacts = useMemo(() => {
-        const startIndex = (safeCurrentPage - 1) * pageSize;
-        return filteredContacts.slice(startIndex, startIndex + pageSize);
-    }, [filteredContacts, safeCurrentPage, pageSize]);
 
     useEffect(() => {
         setCurrentPage((current) => {
-            if (filteredContacts.length === 0) return 1;
+            if (totalContacts === 0) return 1;
             return Math.min(Math.max(current, 1), Math.max(1, totalPages));
         });
-    }, [filteredContacts.length, totalPages]);
+    }, [totalContacts, totalPages]);
 
     useEffect(() => {
         const nextParams = buildContactsRouteSearchParams({
             currentPage: safeCurrentPage,
             pageSize,
-            searchTerm,
+            searchTerm: debouncedSearchTerm,
             lastActiveFilter,
             sortOption
         });
@@ -1157,13 +1108,13 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
         if (currentSerialized !== nextSerialized) {
             setSearchParams(nextParams, { replace: true });
         }
-    }, [safeCurrentPage, lastActiveFilter, pageSize, searchParams, searchTerm, setSearchParams, sortOption]);
+    }, [debouncedSearchTerm, safeCurrentPage, lastActiveFilter, pageSize, searchParams, setSearchParams, sortOption]);
 
     return (
         <div className="contacts-page">
             <div className="page-header">
                 <div>
-                    <h2>Contacts ({loading ? '...' : filteredContacts.length})</h2>
+                    <h2>Contacts ({loading ? '...' : totalContacts})</h2>
                     <p>Manage your customer database</p>
                 </div>
                 <div className="header-actions">
@@ -1376,7 +1327,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                             <div key={`contacts-skeleton-${index}`} className="contacts-skeleton-row" />
                         ))}
                     </div>
-                ) : filteredContacts.length > 0 ? (
+                ) : visibleContacts.length > 0 ? (
                     <>
                     <table className="contacts-table contacts-desktop-table">
                         <thead>
@@ -1385,7 +1336,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                     <th>
                                         <input 
                                             type="checkbox" 
-                                            checked={paginatedContacts.length > 0 && paginatedContacts.every((contact) => selectedContacts.has(contact._id))}
+                                            checked={visibleContacts.length > 0 && visibleContacts.every((contact) => selectedContacts.has(contact._id))}
                                             onChange={(e) => handleSelectAll(e.target.checked)}
                                         />
                                     </th>
@@ -1401,7 +1352,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                             </tr>
                         </thead>
                         <tbody>
-                            {paginatedContacts.map((contact, index) => (
+                            {visibleContacts.map((contact, index) => (
                                 <tr key={contact._id || index}>
                                     {selectionMode && (
                                         <td>
@@ -1585,7 +1536,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                         </tbody>
                     </table>
                     <div className="contacts-mobile-cards">
-                        {paginatedContacts.map((contact, index) => (
+                        {visibleContacts.map((contact, index) => (
                             <div key={`mobile-${contact._id || index}`} className="contact-mobile-card">
                                 <div className="contact-mobile-card__top">
                                     <div className="contact-mobile-card__identity">
@@ -1780,11 +1731,11 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                 <span className="contacts-pagination__range">
                                     {(safeCurrentPage - 1) * pageSize + 1}
                                     -
-                                    {Math.min(safeCurrentPage * pageSize, filteredContacts.length)}
+                                    {Math.min(safeCurrentPage * pageSize, totalContacts)}
                                 </span>{' '}
                                 of{' '}
                                 <span className="contacts-pagination__strong">
-                                    {filteredContacts.length}
+                                    {totalContacts}
                                 </span>
                             </div>
                             <div className="contacts-pagination__controls">

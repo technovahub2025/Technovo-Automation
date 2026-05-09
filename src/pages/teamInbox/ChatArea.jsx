@@ -1,4 +1,5 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { Virtuoso } from 'react-virtuoso';
 import {
   Phone,
   MoreVertical,
@@ -25,6 +26,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import AttachmentComposerOverlay from './AttachmentComposerOverlay';
+import webSocketService from '../../services/websocketService';
 import {
   buildAttachmentComposerItemId,
   inferAttachmentComposerMediaType,
@@ -37,6 +39,7 @@ import {
   resolvePreferredVoiceRecorderMimeType
 } from './voiceRecorderUtils';
 import {
+  resolveConversationAssigneeLabel,
   resolveConversationSlaMeta
 } from './teamInboxDisplayUtils';
 
@@ -45,6 +48,8 @@ const EXTRA_REACTIONS = ['🔥', '👏', '🎉', '🤝', '✅', '💯'];
 const IMAGE_PREVIEW_MIN_ZOOM = 0.75;
 const IMAGE_PREVIEW_MAX_ZOOM = 3;
 const IMAGE_PREVIEW_ZOOM_STEP = 0.25;
+
+const THREAD_SKELETON_ROWS = 6;
 const getStatusIcon = (status) => {
   const normalizedStatus = String(status || '').toLowerCase();
 
@@ -192,12 +197,97 @@ const formatMessageDateTime = (timestamp) => {
   }).format(parsed);
 };
 
+const isMediaPipelineDebugVisible = () => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return (
+      Boolean(import.meta?.env?.DEV) ||
+      String(window.localStorage.getItem('debugMediaPipeline') || '').trim() === '1'
+    );
+  } catch {
+    return Boolean(import.meta?.env?.DEV);
+  }
+};
+
+const getConversationAssigneeUserId = (conversation = {}) => {
+  const directAssignee = conversation?.assignedTo;
+  const owner = conversation?.owner;
+  return String(
+    directAssignee?._id ||
+      directAssignee?.id ||
+      directAssignee?.userId ||
+      owner?._id ||
+      owner?.id ||
+      owner?.userId ||
+      ''
+  ).trim();
+};
+
+const VIRTUAL_MESSAGE_OVERSCAN = 8;
+const VIRTUAL_SEPARATOR_HEIGHT = 36;
+const VIRTUAL_BASE_MESSAGE_HEIGHT = 88;
+const VIRTUAL_MESSAGE_TEXT_UNIT = 18;
+const VIRTUAL_MESSAGE_TEXT_CHARS = 46;
+const VIRTUAL_MESSAGE_TEXT_MAX_EXTRA = 126;
+const VIRTUAL_MESSAGE_MENU_HEADROOM = 38;
+
+const estimateMessageHeight = (item = {}) => {
+  if (item?.type === 'separator') {
+    return VIRTUAL_SEPARATOR_HEIGHT;
+  }
+
+  const message = item?.message || {};
+  const mediaType = String(message?.mediaType || message?.attachment?.fileCategory || '')
+    .trim()
+    .toLowerCase();
+  const hasAttachment = Boolean(
+    message?.mediaUrl ||
+      message?.attachment?.publicId ||
+      message?.attachment?.originalFileName ||
+      message?.attachment?.bytes
+  );
+  const displayText = String(getMessageDisplayText(message) || '').trim();
+  const hasReplyPreview = Boolean(message?.replyTo || message?.whatsappContextMessageId);
+  const lines = displayText ? Math.max(1, Math.ceil(displayText.length / VIRTUAL_MESSAGE_TEXT_CHARS)) : 0;
+
+  let height = VIRTUAL_BASE_MESSAGE_HEIGHT;
+
+  if (lines > 0) {
+    height += Math.min(VIRTUAL_MESSAGE_TEXT_MAX_EXTRA, lines * VIRTUAL_MESSAGE_TEXT_UNIT);
+  }
+
+  if (hasReplyPreview) {
+    height += 34;
+  }
+
+  if (mediaType === 'image') {
+    height += hasAttachment ? 210 : 150;
+  } else if (mediaType === 'video') {
+    height += hasAttachment ? 165 : 120;
+  } else if (mediaType === 'audio') {
+    height += hasAttachment ? 118 : 84;
+  } else if (mediaType === 'document') {
+    height += hasAttachment ? 96 : 72;
+  }
+
+  if (displayText.length > 220) {
+    height += 24;
+  }
+
+  if (String(message?.status || '').trim().toLowerCase() === 'sending') {
+    height += 10;
+  }
+
+  return Math.max(64, Math.min(height + VIRTUAL_MESSAGE_MENU_HEADROOM, 420));
+};
+
 const ChatArea = ({
   selectedConversation,
   messages,
   messagesLoading,
   hasOlderMessages,
   olderMessagesLoading,
+  threadCacheInfo,
   getConversationAvatarText,
   getConversationDisplayName,
   messageMenuRef,
@@ -234,16 +324,22 @@ const ChatArea = ({
   onToggleEmojiPicker,
   onEmojiInsert,
   getMessageKey,
-  formatMessageTime
+  formatMessageTime,
+  typingState = {},
+  userPresenceMap = {}
 }) => {
-  const messageElementRefs = useRef(new Map());
   const highlightTimerRef = useRef(null);
   const feedbackTimerRef = useRef(null);
   const externalFeedbackTimerRef = useRef(null);
   const openMenuRef = useRef(null);
   const reactionPickerRef = useRef(null);
-  const olderMessagesScrollAnchorRef = useRef(0);
-  const olderMessagesLoadPendingRef = useRef(false);
+  const messageListRef = useRef(null);
+  const pendingPrependAnchorKeyRef = useRef('');
+  const selectedConversationScrollKeyRef = useRef('');
+  const canTriggerOlderLoadRef = useRef(false);
+  const setChatMessagesScrollerRef = useCallback((node) => {
+    chatMessagesRef.current = node;
+  }, [chatMessagesRef]);
   const [highlightedMessageKey, setHighlightedMessageKey] = useState('');
   const [activeHoverMenuKey, setActiveHoverMenuKey] = useState('');
   const [activeReactionPickerKey, setActiveReactionPickerKey] = useState('');
@@ -276,19 +372,33 @@ const ChatArea = ({
   const voiceRecorderTimerRef = useRef(null);
   const voiceRecorderStopModeRef = useRef('cancel');
   const attachmentDragDepthRef = useRef(0);
+  const typingStopTimerRef = useRef(null);
+  const isTypingRef = useRef(false);
   const isFreeformBlocked = Boolean(
     selectedConversation && whatsappMessagingState && !whatsappMessagingState.freeformAllowed
   );
+  const freeformBlockedAttachmentMessage = whatsappMessagingState?.optedOut
+    ? 'This contact has opted out of WhatsApp messaging. Update consent before sending attachments.'
+    : 'The 24-hour customer service window is closed. Send an approved template before attaching media.';
   const composerPlaceholder = isFreeformBlocked
     ? whatsappMessagingState?.optedOut
       ? 'WhatsApp outreach is blocked for this contact'
       : 'Send an approved template to continue this chat'
     : 'Type a message...';
+  const resetPlacementIfNeeded = (setter) => {
+    setter((prev) => {
+      if (prev?.horizontal === '' && prev?.vertical === '') {
+        return prev;
+      }
+
+      return { horizontal: '', vertical: '' };
+    });
+  };
 
   useLayoutEffect(() => {
     if (!activeHoverMenuKey || !openMenuRef.current || !chatMessagesRef?.current) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setHoverMenuPlacement({ horizontal: '', vertical: '' });
+      resetPlacementIfNeeded(setHoverMenuPlacement);
       return undefined;
     }
 
@@ -326,7 +436,13 @@ const ChatArea = ({
         vertical = 'open-up';
       }
 
-      setHoverMenuPlacement({ horizontal, vertical });
+      setHoverMenuPlacement((prev) => {
+        if (prev?.horizontal === horizontal && prev?.vertical === vertical) {
+          return prev;
+        }
+
+        return { horizontal, vertical };
+      });
     };
 
     updatePlacement();
@@ -336,7 +452,7 @@ const ChatArea = ({
   useLayoutEffect(() => {
     if ((!activeReactionPickerKey && !activeHoverMenuKey) || !reactionPickerRef.current || !chatMessagesRef?.current) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
-      setReactionBarPlacement({ horizontal: '', vertical: '' });
+      resetPlacementIfNeeded(setReactionBarPlacement);
       return undefined;
     }
 
@@ -373,7 +489,13 @@ const ChatArea = ({
         vertical = 'open-down';
       }
 
-      setReactionBarPlacement({ horizontal, vertical });
+      setReactionBarPlacement((prev) => {
+        if (prev?.horizontal === horizontal && prev?.vertical === vertical) {
+          return prev;
+        }
+
+        return { horizontal, vertical };
+      });
     };
 
     updatePlacement();
@@ -475,8 +597,6 @@ const ChatArea = ({
     setPendingAttachmentComposer(null);
     setIsAttachmentDragActive(false);
     attachmentDragDepthRef.current = 0;
-    olderMessagesScrollAnchorRef.current = 0;
-    olderMessagesLoadPendingRef.current = false;
   }, [selectedConversation?._id, selectedConversation?.id]);
 
   useEffect(
@@ -543,6 +663,71 @@ const ChatArea = ({
     setShowImagePreviewReactions(false);
   }, [activeImagePreview?.messageKey]);
 
+  useEffect(() => {
+    const conversationId = String(selectedConversation?._id || '').trim();
+    if (!conversationId) return undefined;
+
+    const hasContent = String(messageInput || '').trim().length > 0;
+    if (hasContent) {
+      if (!isTypingRef.current) {
+        webSocketService.send({
+          type: 'typing',
+          conversationId,
+          isTyping: true,
+          timestamp: Date.now()
+        });
+        isTypingRef.current = true;
+      }
+
+      if (typingStopTimerRef.current) {
+        window.clearTimeout(typingStopTimerRef.current);
+      }
+
+      typingStopTimerRef.current = window.setTimeout(() => {
+        webSocketService.send({
+          type: 'typing',
+          conversationId,
+          isTyping: false,
+          timestamp: Date.now()
+        });
+        isTypingRef.current = false;
+      }, 1500);
+    } else if (isTypingRef.current) {
+      webSocketService.send({
+        type: 'typing',
+        conversationId,
+        isTyping: false,
+        timestamp: Date.now()
+      });
+      isTypingRef.current = false;
+    }
+
+    return () => {
+      if (typingStopTimerRef.current) {
+        window.clearTimeout(typingStopTimerRef.current);
+        typingStopTimerRef.current = null;
+      }
+    };
+  }, [messageInput, selectedConversation?._id]);
+
+  useEffect(
+    () => () => {
+      const conversationId = String(selectedConversation?._id || '').trim();
+      if (conversationId && isTypingRef.current) {
+        webSocketService.send({
+          type: 'typing',
+          conversationId,
+          isTyping: false,
+          timestamp: Date.now()
+        });
+      }
+      if (typingStopTimerRef.current) {
+        window.clearTimeout(typingStopTimerRef.current);
+      }
+    },
+    [selectedConversation?._id]
+  );
+
   const messageLookup = useMemo(() => {
     const byId = new Map();
     const byWhatsAppId = new Map();
@@ -567,6 +752,76 @@ const ChatArea = ({
 
     return { byId, byWhatsAppId, keyById, keyByWhatsAppId };
   }, [groupedMessages, getMessageKey]);
+
+  const virtualMessageLayout = useMemo(() => {
+    const items = [];
+
+    (Array.isArray(groupedMessages) ? groupedMessages : []).forEach((item, index) => {
+      const virtualKey =
+        item?.type === 'message'
+          ? getMessageKey(item.message, item.index)
+          : String(item?.key || `separator-${index}`).trim();
+      const estimatedHeight = estimateMessageHeight(item);
+
+      items.push({
+        ...item,
+        index,
+        virtualKey,
+        estimatedHeight
+      });
+    });
+
+    return { items };
+  }, [groupedMessages, getMessageKey]);
+
+  const virtualMessageIndexByKey = useMemo(() => {
+    const indexByKey = new Map();
+    virtualMessageLayout.items.forEach((item, index) => {
+      indexByKey.set(String(item?.virtualKey || '').trim(), index);
+    });
+    return indexByKey;
+  }, [virtualMessageLayout.items]);
+
+  useLayoutEffect(() => {
+    const selectedConversationId = String(selectedConversation?._id || '').trim();
+    if (!selectedConversationId) return;
+    if (selectedConversationScrollKeyRef.current === selectedConversationId) return;
+    if (virtualMessageLayout.items.length === 0) return;
+
+    const lastIndex = virtualMessageLayout.items.length - 1;
+    if (lastIndex < 0) return;
+
+    canTriggerOlderLoadRef.current = false;
+    window.requestAnimationFrame(() => {
+      messageListRef.current?.scrollToIndex?.({
+        index: lastIndex,
+        align: 'end',
+        behavior: 'auto'
+      });
+      selectedConversationScrollKeyRef.current = selectedConversationId;
+      canTriggerOlderLoadRef.current = true;
+    });
+  }, [selectedConversation?._id, virtualMessageLayout.items.length]);
+
+  useLayoutEffect(() => {
+    const anchorKey = String(pendingPrependAnchorKeyRef.current || '').trim();
+    if (!anchorKey || olderMessagesLoading) return;
+
+    const anchorIndex = virtualMessageIndexByKey.get(anchorKey);
+    if (typeof anchorIndex !== 'number' || anchorIndex < 0) {
+      pendingPrependAnchorKeyRef.current = '';
+      return;
+    }
+
+    pendingPrependAnchorKeyRef.current = '';
+    window.requestAnimationFrame(() => {
+      messageListRef.current?.scrollToIndex?.({
+        index: anchorIndex,
+        align: 'start',
+        behavior: 'auto'
+      });
+    });
+  }, [olderMessagesLoading, virtualMessageIndexByKey, virtualMessageLayout.items.length]);
 
   const persistedReactionMap = useMemo(() => {
     const latestReactionByMessageKey = new Map();
@@ -606,30 +861,6 @@ const ChatArea = ({
     });
     return nextReactionMap;
   }, [messages, messageLookup]);
-
-  useLayoutEffect(() => {
-    if (!olderMessagesLoadPendingRef.current || olderMessagesLoading) {
-      return;
-    }
-
-    const chatContainer = chatMessagesRef.current;
-    if (!chatContainer) {
-      olderMessagesLoadPendingRef.current = false;
-      olderMessagesScrollAnchorRef.current = 0;
-      return;
-    }
-
-    const previousScrollHeight = Number(olderMessagesScrollAnchorRef.current || 0);
-    if (previousScrollHeight > 0) {
-      const heightDelta = chatContainer.scrollHeight - previousScrollHeight;
-      if (heightDelta > 0) {
-        chatContainer.scrollTop += heightDelta;
-      }
-    }
-
-    olderMessagesLoadPendingRef.current = false;
-    olderMessagesScrollAnchorRef.current = 0;
-  }, [messages, olderMessagesLoading, chatMessagesRef]);
 
   const imagePreviewItems = useMemo(
     () =>
@@ -699,10 +930,18 @@ const ChatArea = ({
   const scrollToReferencedMessage = (targetMessageKey) => {
     const key = String(targetMessageKey || '').trim();
     if (!key) return;
-    const targetElement = messageElementRefs.current.get(key);
-    if (!targetElement) return;
+    const targetIndex = virtualMessageIndexByKey.get(key) ?? -1;
 
-    targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (targetIndex < 0) {
+      return;
+    }
+
+    messageListRef.current?.scrollToIndex?.({
+      index: targetIndex,
+      align: 'center',
+      behavior: 'smooth'
+    });
+
     setHighlightedMessageKey(key);
     if (highlightTimerRef.current) {
       window.clearTimeout(highlightTimerRef.current);
@@ -716,23 +955,16 @@ const ChatArea = ({
     const key = String(targetMessageKey || '').trim();
     if (!key) return;
 
-    const targetElement = messageElementRefs.current.get(key);
-    const chatContainer = chatMessagesRef?.current;
-    if (!targetElement || !chatContainer) return;
-
-    const containerRect = chatContainer.getBoundingClientRect();
-    const targetRect = targetElement.getBoundingClientRect();
-    const relativeTop = targetRect.top - containerRect.top;
-    const desiredTop = Math.max(72, Math.min(118, chatContainer.clientHeight * 0.2));
-    const maxScrollTop = Math.max(chatContainer.scrollHeight - chatContainer.clientHeight, 0);
-    const nextScrollTop = Math.max(
-      0,
-      Math.min(chatContainer.scrollTop + relativeTop - desiredTop, maxScrollTop)
-    );
-
-    if (Math.abs(nextScrollTop - chatContainer.scrollTop) > 1) {
-      chatContainer.scrollTo({ top: nextScrollTop, behavior: 'auto' });
+    const targetIndex = virtualMessageIndexByKey.get(key) ?? -1;
+    if (targetIndex < 0) {
+      return;
     }
+
+    messageListRef.current?.scrollToIndex?.({
+      index: targetIndex,
+      align: 'center',
+      behavior: 'auto'
+    });
   };
 
   const closeMessageActionSurfaces = () => {
@@ -789,15 +1021,20 @@ const ChatArea = ({
     const nextFiles = Array.isArray(filesInput) ? filesInput : [filesInput];
     const supportedFiles = nextFiles.filter((file) => isSupportedAttachmentComposerFile(file));
 
+    if (isFreeformBlocked) {
+      showMessageActionToast(freeformBlockedAttachmentMessage, 'info');
+      return false;
+    }
+
     if (!supportedFiles.length || !onSendAttachment) {
       if (nextFiles.length) {
-        showMessageActionToast('Drop an image or supported document to send it.', 'info');
+        showMessageActionToast('Drop an image, video, audio, or supported document to send it.', 'info');
       }
       return false;
     }
 
     if (nextFiles.length > supportedFiles.length) {
-      showMessageActionToast('Only images and supported documents can be added here.', 'info');
+      showMessageActionToast('Only supported media and documents can be added here.', 'info');
     }
 
     const restoreComposerText = String(messageInput || '');
@@ -872,7 +1109,7 @@ const ChatArea = ({
     const supportedDroppedFiles = droppedFiles.filter((file) => isSupportedAttachmentComposerFile(file));
 
     if (!supportedDroppedFiles.length) {
-      showMessageActionToast('Only images and supported documents can be dropped here.', 'info');
+      showMessageActionToast('Only supported media and documents can be dropped here.', 'info');
       return;
     }
 
@@ -1150,8 +1387,14 @@ const ChatArea = ({
   const handleSendPendingAttachment = async (draftItems = []) => {
     if (!Array.isArray(draftItems) || !draftItems.length || !onSendAttachment) return [];
 
+    if (isFreeformBlocked) {
+      showMessageActionToast(freeformBlockedAttachmentMessage, 'info');
+      return [];
+    }
+
     const replyContext = buildReplyContext();
     const sentIds = [];
+    let failureMessage = '';
 
     for (const draftItem of draftItems) {
       const didSend = await onSendAttachment(draftItem.file, {
@@ -1159,7 +1402,8 @@ const ChatArea = ({
         ...(replyContext ? { replyContext } : {})
       });
 
-      if (didSend === false) {
+      if (didSend === false || didSend?.success === false) {
+        failureMessage = String(didSend?.error || 'Unable to send attachment').trim();
         break;
       }
 
@@ -1171,7 +1415,10 @@ const ChatArea = ({
       clearReplyContext();
     }
 
-    return sentIds.filter(Boolean);
+    return {
+      sentIds: sentIds.filter(Boolean),
+      error: failureMessage
+    };
   };
 
   const getAttachmentInfo = (message = {}) => {
@@ -1180,10 +1427,17 @@ const ChatArea = ({
     const fileCategory = String(attachment?.fileCategory || mediaType || '').toLowerCase();
     const isImage = fileCategory === 'image' || mediaType === 'image';
     const isAudio = fileCategory === 'audio' || mediaType === 'audio';
+    const isVideo = fileCategory === 'video' || mediaType === 'video';
     const fileExtension = getFileExtension(message, attachment);
     const fileName =
       String(attachment?.originalFileName || message?.mediaCaption || '').trim() ||
-      (isImage ? 'Image attachment' : isAudio ? 'Voice message' : 'Document attachment');
+      (isImage
+        ? 'Image attachment'
+        : isAudio
+          ? 'Voice message'
+          : isVideo
+            ? 'Video attachment'
+            : 'Document attachment');
     const fileSizeLabel = formatFileSize(attachment?.bytes);
     const deletedAt = attachment?.deletedAt ? String(attachment.deletedAt) : '';
     const uploadProgressRaw = attachment?.uploadProgress;
@@ -1198,6 +1452,7 @@ const ChatArea = ({
       attachment,
       isImage,
       isAudio,
+      isVideo,
       fileExtension,
       fileName,
       fileSizeLabel,
@@ -1622,6 +1877,7 @@ const ChatArea = ({
     const {
       isImage,
       isAudio,
+      isVideo,
       fileExtension,
       fileName,
       fileSizeLabel,
@@ -1637,14 +1893,14 @@ const ChatArea = ({
       Boolean(attachment?.publicId) ||
       Boolean(attachment?.originalFileName) ||
       Boolean(attachment?.bytes);
-    if (!hasMedia && !hasAttachmentMeta && !isAudio) return null;
+    if (!hasMedia && !hasAttachmentMeta && !isAudio && !isVideo) return null;
     const canOpen = Boolean(onOpenAttachment);
     const isDeleted = Boolean(deletedAt);
     const isUploading = typeof uploadProgress === 'number' && uploadProgress < 1;
     const canRetry = Boolean(onRetryAttachment) && isFailed;
     const openMode = isImage ? 'view' : 'download';
     const attachmentPages = Number(attachment?.pages || 0);
-    const isDownloadButtonHidden = !isImage && !isAudio && Boolean(downloadedDocumentKeys[messageKey]);
+    const isDownloadButtonHidden = !isImage && !isAudio && !isVideo && Boolean(downloadedDocumentKeys[messageKey]);
     const documentMetaLabel = [fileExtension, fileSizeLabel || '']
       .filter(Boolean)
       .join(' • ');
@@ -1655,8 +1911,11 @@ const ChatArea = ({
       .trim()
       .toUpperCase()
       .slice(0, 4) || 'FILE';
+    const mediaPipelineRequestId = String(message?.mediaPipelineRequestId || '').trim();
+    const showMediaPipelineRequestId =
+      Boolean(mediaPipelineRequestId) && isMediaPipelineDebugVisible();
 
-    if (!hasMedia && !message?.attachment && !isAudio) return null;
+    if (!hasMedia && !message?.attachment && !isAudio && !isVideo) return null;
 
     if (isDeleted) {
       return (
@@ -1741,6 +2000,11 @@ const ChatArea = ({
                 {fileSizeLabel && (
                   <span className="message-voice-note-size">{fileSizeLabel}</span>
                 )}
+                {showMediaPipelineRequestId && (
+                  <span className="message-voice-note-size message-voice-note-size--debug">
+                    Request ID: {mediaPipelineRequestId}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -1750,6 +2014,84 @@ const ChatArea = ({
             hasAttachment: canPlayAudio || hasAttachmentMeta,
             variant: 'overlay',
             contextClass: 'audio-card'
+          })}
+          {canRetry && (
+            <div className="attachment-actions-inline">
+              <button
+                type="button"
+                className="attachment-action-btn retry"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onRetryAttachment(message);
+                }}
+              >
+                <RotateCw size={16} />
+                Retry
+              </button>
+            </div>
+          )}
+          {isUploading && (
+            <div className="attachment-progress">
+              <div className="attachment-progress-bar">
+                <div
+                  className="attachment-progress-fill"
+                  style={{ width: `${Math.round(uploadProgress * 100)}%` }}
+                />
+              </div>
+              <span className="attachment-progress-label">
+                Uploading {Math.round(uploadProgress * 100)}%
+              </span>
+              <span className="attachment-spinner" aria-hidden />
+            </div>
+          )}
+          {!isUploading && isFailed && (
+            <div className="attachment-error">
+              {uploadError || 'Upload failed. Click retry to send again.'}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    if (isVideo) {
+      const canPlayVideo = Boolean(hasMedia);
+      return (
+        <div className={`message-video ${isDeleted ? 'is-deleted' : ''}`}>
+          <button
+            type="button"
+            className="message-video-button"
+            disabled={!canOpen || isDeleted || isUploading}
+            onClick={async (event) => {
+              event.stopPropagation();
+              if (canOpen && !isUploading) {
+                await handleAttachmentOpen(message, 'view', messageKey);
+              }
+            }}
+            aria-label="Open video attachment"
+          >
+            {canPlayVideo ? (
+              <video className="message-video-player" controls preload="metadata" src={message.mediaUrl} />
+            ) : (
+              <div className="message-video-player message-video-player--unavailable">
+                <span className="message-video-unavailable-label">Video attachment unavailable</span>
+              </div>
+            )}
+            <div className="message-video-details">
+              <span className="message-video-title">Video attachment</span>
+              {fileSizeLabel && <span className="message-video-size">{fileSizeLabel}</span>}
+              {showMediaPipelineRequestId && (
+                <span className="message-video-size message-video-size--debug">
+                  Request ID: {mediaPipelineRequestId}
+                </span>
+              )}
+            </div>
+          </button>
+          {renderMessageHoverMenu({
+            message,
+            messageKey,
+            hasAttachment: canPlayVideo || hasAttachmentMeta,
+            variant: 'overlay',
+            contextClass: 'video-card'
           })}
           {canRetry && (
             <div className="attachment-actions-inline">
@@ -1815,6 +2157,11 @@ const ChatArea = ({
             {documentSecondaryLabel && (
               <span className="attachment-doc-summary">{documentSecondaryLabel}</span>
             )}
+            {showMediaPipelineRequestId && (
+              <span className="attachment-doc-summary attachment-doc-summary--debug">
+                Request ID: {mediaPipelineRequestId}
+              </span>
+            )}
           </span>
           {!isDownloadButtonHidden && (
             <span className="attachment-download-button" aria-hidden="true">
@@ -1879,36 +2226,33 @@ const ChatArea = ({
     }
   };
 
-  const handleChatScroll = () => {
+  const handleLoadOlderMessages = useCallback(async () => {
     if (
       !onLoadOlderMessages ||
       !hasOlderMessages ||
       olderMessagesLoading ||
-      messagesLoading
+      messagesLoading ||
+      !canTriggerOlderLoadRef.current
     ) {
-      return;
+      return false;
     }
 
-    const chatContainer = chatMessagesRef.current;
-    if (!chatContainer || chatContainer.scrollTop > 48) {
-      return;
+    pendingPrependAnchorKeyRef.current = String(
+      virtualMessageLayout.items[0]?.virtualKey || ''
+    ).trim();
+
+    const didLoad = await onLoadOlderMessages();
+    if (didLoad === false) {
+      pendingPrependAnchorKeyRef.current = '';
     }
-
-    olderMessagesScrollAnchorRef.current = chatContainer.scrollHeight;
-    olderMessagesLoadPendingRef.current = true;
-
-    Promise.resolve()
-      .then(() => onLoadOlderMessages())
-      .then((didLoad) => {
-        if (didLoad !== false) return;
-        olderMessagesLoadPendingRef.current = false;
-        olderMessagesScrollAnchorRef.current = 0;
-      })
-      .catch(() => {
-        olderMessagesLoadPendingRef.current = false;
-        olderMessagesScrollAnchorRef.current = 0;
-      });
-  };
+    return didLoad;
+  }, [
+    hasOlderMessages,
+    messagesLoading,
+    onLoadOlderMessages,
+    olderMessagesLoading,
+    virtualMessageLayout.items
+  ]);
 
   const isVoiceRecordingActive = voiceRecorderState.status === 'recording';
   const isVoiceSending = voiceRecorderState.status === 'sending';
@@ -1916,6 +2260,52 @@ const ChatArea = ({
   const slaMeta = resolveConversationSlaMeta(selectedConversation);
   const whatsappStateLabel = String(whatsappMessagingState?.statusLabel || '').trim();
   const whatsappStateTone = String(whatsappMessagingState?.badgeTone || '').trim() || 'template-only';
+  const selectedTypingConversationId = String(selectedConversation?._id || '').trim();
+  const selectedConversationTypingEntries = Array.isArray(typingState?.[selectedTypingConversationId])
+    ? typingState[selectedTypingConversationId]
+    : [];
+  const activeTypingUsers = selectedConversationTypingEntries.filter((entry) => entry?.isTyping);
+  const typingIndicatorLabel = activeTypingUsers.length
+    ? activeTypingUsers.length === 1
+      ? `${String(activeTypingUsers[0]?.displayName || 'Someone').trim() || 'Someone'} is typing...`
+      : `${activeTypingUsers.length} people are typing...`
+    : '';
+  const selectedConversationAssigneeLabel = resolveConversationAssigneeLabel(selectedConversation);
+  const selectedConversationAssigneeId = getConversationAssigneeUserId(selectedConversation);
+  const selectedConversationAssigneePresence = selectedConversationAssigneeId
+    ? userPresenceMap?.[selectedConversationAssigneeId]
+    : null;
+  const selectedConversationAssigneeIsOnline = Boolean(selectedConversationAssigneePresence?.online);
+  const threadCacheSource = String(threadCacheInfo?.source || '').trim().toLowerCase();
+  const showThreadCacheBadge = threadCacheSource === 'cache';
+  const showThreadFreshBadge = threadCacheSource === 'fresh';
+  const threadCacheUpdatedLabel = threadCacheInfo?.updatedAt
+    ? new Intl.DateTimeFormat(undefined, {
+        dateStyle: 'medium',
+        timeStyle: 'short'
+      }).format(new Date(threadCacheInfo.updatedAt))
+    : '';
+  const threadCacheBadgeLabel = threadCacheInfo?.isStale ? 'Cached thread (stale)' : 'Cached thread';
+  const threadFreshBadgeLabel = 'Synced live';
+  const threadStatusTimestampLabel = threadCacheUpdatedLabel
+    ? `Last updated ${threadCacheUpdatedLabel}`
+    : '';
+  const selectedMessagesForDeletionSet = useMemo(
+    () =>
+      new Set(
+        Array.isArray(selectedMessagesForDeletion)
+          ? selectedMessagesForDeletion.map((id) => String(id || '').trim())
+          : []
+      ),
+    [selectedMessagesForDeletion]
+  );
+  const hasVisibleMessages = Array.isArray(messages) && messages.length > 0;
+  const showInitialThreadLoading = messagesLoading && !hasVisibleMessages;
+  const showEmptyThreadState = !messagesLoading && !olderMessagesLoading && !hasVisibleMessages;
+  const defaultVirtualItemHeight = Math.max(
+    64,
+    Number(virtualMessageLayout.items[0]?.estimatedHeight || 88)
+  );
 
   if (!selectedConversation) {
     return (
@@ -1950,6 +2340,43 @@ const ChatArea = ({
             <span className="name text-white">{getConversationDisplayName(selectedConversation)}</span>
             <span className="status text-white">{selectedConversation.contactPhone}</span>
             <div className="chat-header-operator-meta">
+              {(showThreadCacheBadge || showThreadFreshBadge) && (
+                <div className="chat-header-thread-status">
+                  {showThreadCacheBadge && (
+                    <span
+                      className={`chat-header-operator-chip chat-header-operator-chip--cache ${
+                        threadCacheInfo?.isStale
+                          ? 'chat-header-operator-chip--cache-stale'
+                          : 'chat-header-operator-chip--cache-fresh'
+                      }`}
+                      title={
+                        threadCacheUpdatedLabel
+                          ? `Restored from cached thread at ${threadCacheUpdatedLabel}`
+                          : 'Restored from cached thread'
+                      }
+                    >
+                      {threadCacheBadgeLabel}
+                    </span>
+                  )}
+                  {showThreadFreshBadge && (
+                    <span
+                      className="chat-header-operator-chip chat-header-operator-chip--live"
+                      title={
+                        threadCacheUpdatedLabel
+                          ? `Fetched from the API at ${threadCacheUpdatedLabel}`
+                          : 'Fetched from the API'
+                      }
+                    >
+                      {threadFreshBadgeLabel}
+                    </span>
+                  )}
+                  {threadStatusTimestampLabel && (
+                    <span className="chat-header-thread-status-timestamp">
+                      {threadStatusTimestampLabel}
+                    </span>
+                  )}
+                </div>
+              )}
               {slaMeta.label && (
                 <span
                   className={`chat-header-operator-chip chat-header-operator-chip--sla ${
@@ -1974,6 +2401,28 @@ const ChatArea = ({
                 </span>
               )}
             </div>
+            {typingIndicatorLabel && (
+              <span className="chat-header-typing-indicator" aria-live="polite">
+                {typingIndicatorLabel}
+              </span>
+            )}
+            {selectedConversationAssigneeLabel && selectedConversationAssigneeLabel !== 'Unassigned' && (
+              <span
+                className={`chat-header-operator-chip chat-header-operator-chip--presence ${
+                  selectedConversationAssigneeIsOnline
+                    ? 'chat-header-operator-chip--presence-online'
+                    : 'chat-header-operator-chip--presence-offline'
+                }`}
+                title={
+                  selectedConversationAssigneeIsOnline
+                    ? `${selectedConversationAssigneeLabel} is online`
+                    : `${selectedConversationAssigneeLabel} is offline`
+                }
+              >
+                <span className="chat-header-presence-dot" aria-hidden="true" />
+                {selectedConversationAssigneeLabel}
+              </span>
+            )}
           </div>
 
           <div className="chat-header-actions">
@@ -2026,7 +2475,7 @@ const ChatArea = ({
                   Drop file to send to {getConversationDisplayName(selectedConversation)}
                 </span>
                 <span className="chat-attachment-drop-subtitle">
-                  Images and supported documents will open in preview before sending.
+                  Images, video, audio, and supported documents will open in preview before sending.
                 </span>
               </div>
             </div>
@@ -2233,229 +2682,257 @@ const ChatArea = ({
           </div>
         )}
 
-        <div className="chat-messages" ref={chatMessagesRef} onScroll={handleChatScroll}>
-          {olderMessagesLoading && (
-            <div className="chat-history-loading">
-              <span className="chat-history-loading-spinner" aria-hidden="true" />
-              <span>Loading earlier messages...</span>
-            </div>
-          )}
-
-          {messagesLoading && (
-            <div className="chat-thread-loading">
-              <span className="chat-thread-loading-spinner" aria-hidden="true" />
-              <span>Loading conversation...</span>
-            </div>
-          )}
-
-          {groupedMessages.map((item) => {
-            if (item.type === 'separator') {
-              return (
-                <div key={item.key} className="message-date-separator">
-                  <span>{item.label}</span>
-                </div>
-              );
-            }
-
-            const message = item.message;
-            const messageKey = getMessageKey(message, item.index);
-            const conversationReplyLabel =
-              String(getConversationDisplayName(selectedConversation) || '').trim() || 'Contact';
-            const replySourceMessage = getReplySourceMessage(message);
-            const replySourceMessageKey = getReplySourceMessageKey(message);
-            const hasContextReference = Boolean(String(message?.whatsappContextMessageId || '').trim());
-            const showReplyPreview = Boolean(replySourceMessage || hasContextReference);
-            const replyPreview = replySourceMessage
-              ? getMessagePreviewText(replySourceMessage)
-              : 'Original message';
-            const replyLabel = replySourceMessage
-              ? replySourceMessage?.sender === 'agent'
-                ? 'You'
-                : conversationReplyLabel
-              : 'Quoted message';
-
-            const hasAttachment =
-              Boolean(message?.mediaUrl) ||
-              Boolean(message?.attachment?.publicId) ||
-              Boolean(message?.attachment?.originalFileName);
-            const displayText = getMessageDisplayText(message);
-            const attachmentKind = String(
-              message?.attachment?.fileCategory || message?.mediaType || ''
-            )
-              .trim()
-              .toLowerCase();
-            const hasImageAttachment = attachmentKind === 'image' && Boolean(message?.mediaUrl);
-            const hasAudioAttachment = attachmentKind === 'audio';
-            const hasDocumentAttachment =
-              hasAttachment && !hasImageAttachment && !hasAudioAttachment;
-            const showAttachmentCaption = hasAttachment && Boolean(displayText);
-            const hasDocumentCaption = hasDocumentAttachment && showAttachmentCaption;
-            const useAttachmentCaptionTrailingMeta = showAttachmentCaption;
-            const showInlineMeta = !hasImageAttachment;
-            const useCompactInlineMeta =
-              showInlineMeta &&
-              !hasDocumentAttachment &&
-              Boolean(displayText);
-            const useTrailingCompactMeta =
-              useCompactInlineMeta &&
-              (showReplyPreview || displayText.includes('\n') || displayText.length > 70);
-            const useOverlayCompactHoverMenu = useCompactInlineMeta;
-            const hasActiveMessageActions =
-              activeHoverMenuKey === messageKey || activeReactionPickerKey === messageKey;
-            const hasPersistedReaction = Boolean(
-              String(persistedReactionMap[messageKey] || '').trim()
-            );
-
-            return (
-              <div
-                key={messageKey}
-                ref={(node) => {
-                  if (node) {
-                    messageElementRefs.current.set(messageKey, node);
-                  } else {
-                    messageElementRefs.current.delete(messageKey);
-                  }
-                }}
-                className={`message ${message.sender === 'agent' ? 'outgoing' : 'incoming'} ${
-                  showMessageSelectMode ? 'select-mode' : ''
-                } ${highlightedMessageKey === messageKey ? 'reply-target-highlight' : ''} ${
-                  hasPersistedReaction ? 'has-reaction-chip' : ''
-                } ${
-                  hasActiveMessageActions ? 'has-active-message-actions' : ''
-                }`}
-                onClick={() => {
-                  if (showMessageSelectMode) {
-                    onToggleMessageSelection(messageKey);
-                  }
-                }}
-              >
-                {showMessageSelectMode && (
-                  <div className="message-select-checkbox">
-                    <input
-                      type="checkbox"
-                      checked={selectedMessagesForDeletion.includes(messageKey)}
-                      onChange={() => onToggleMessageSelection(messageKey)}
-                      onClick={(event) => event.stopPropagation()}
-                    />
-                  </div>
-                )}
-
+        <div className="chat-messages">
+          {showInitialThreadLoading && !hasVisibleMessages && (
+            <div className="chat-thread-skeleton" aria-label="Loading conversation">
+              {Array.from({ length: THREAD_SKELETON_ROWS }).map((_, index) => (
                 <div
-                  className={`bubble ${showInlineMeta ? 'has-inline-meta' : ''} ${
-                    useCompactInlineMeta ? 'has-compact-inline-meta' : ''
-                  } ${useTrailingCompactMeta ? 'has-trailing-hover-corner' : ''} ${
-                    hasImageAttachment ? 'has-image-attachment' : ''
-                  } ${
-                    hasAudioAttachment ? 'has-audio-attachment' : ''
-                  } ${
-                    hasDocumentAttachment ? 'has-document-attachment' : ''
-                  } ${
-                    hasDocumentCaption ? 'has-document-caption' : ''
-                  } ${
-                    showReplyPreview ? 'has-reply-preview' : ''
-                  } ${
-                    hasActiveMessageActions ? 'has-active-message-actions' : ''
-                  }`}
+                  key={`thread-skeleton-${index}`}
+                  className={`chat-thread-skeleton-row ${index % 2 === 0 ? 'is-right' : 'is-left'}`}
                 >
-                  {!showMessageSelectMode && renderHoverReactionTrigger(message, messageKey)}
-                  {renderReactionBar(message, messageKey)}
-                  {showReplyPreview && (
-                    <div
-                      className={`message-reply-preview ${replySourceMessageKey ? 'is-clickable' : ''} ${
-                        replySourceMessage?.sender === 'agent'
-                          ? 'is-self-source'
-                          : 'is-contact-source'
-                      }`}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        if (replySourceMessageKey) {
-                          scrollToReferencedMessage(replySourceMessageKey);
-                        }
-                      }}
-                    >
-                      <div className="message-reply-label">
-                        {replyLabel}
-                      </div>
-                      <div className="message-reply-text">{replyPreview}</div>
+                  <div className="chat-thread-skeleton-avatar" />
+                  <div className="chat-thread-skeleton-bubble">
+                    <span className="chat-thread-skeleton-line short" />
+                    <span className="chat-thread-skeleton-line" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {showEmptyThreadState && (
+            <div className="chat-thread-empty-state" role="status" aria-live="polite">
+              <div className="chat-thread-empty-state-card">
+                <h3>No messages yet</h3>
+                <p>This conversation is ready. When messages arrive, they will appear here automatically.</p>
+              </div>
+            </div>
+          )}
+
+          {hasVisibleMessages || showInitialThreadLoading || olderMessagesLoading ? (
+            <Virtuoso
+              ref={messageListRef}
+              scrollerRef={setChatMessagesScrollerRef}
+              className="chat-messages-virtuoso"
+              style={{ height: '100%' }}
+              data={virtualMessageLayout.items}
+              computeItemKey={(_index, item) => String(item?.virtualKey || '').trim()}
+              defaultItemHeight={defaultVirtualItemHeight}
+              increaseViewportBy={{ top: 320, bottom: 520 }}
+              startReached={handleLoadOlderMessages}
+              itemContent={(_index, item) => {
+                if (item?.type === 'separator') {
+                  return (
+                    <div key={item.virtualKey} className="message-date-separator">
+                      <span>{item.label}</span>
                     </div>
+                  );
+                }
+
+                const message = item?.message || {};
+                const messageKey = String(item?.virtualKey || '').trim();
+                const conversationReplyLabel =
+                  String(getConversationDisplayName(selectedConversation) || '').trim() || 'Contact';
+                const replySourceMessage = getReplySourceMessage(message);
+                const replySourceMessageKey = getReplySourceMessageKey(message);
+                const hasContextReference = Boolean(String(message?.whatsappContextMessageId || '').trim());
+                const showReplyPreview = Boolean(replySourceMessage || hasContextReference);
+                const replyPreview = replySourceMessage
+                  ? getMessagePreviewText(replySourceMessage)
+                  : 'Original message';
+                const replyLabel = replySourceMessage
+                  ? replySourceMessage?.sender === 'agent'
+                    ? 'You'
+                    : conversationReplyLabel
+                  : 'Quoted message';
+
+                const hasAttachment =
+                  Boolean(message?.mediaUrl) ||
+                  Boolean(message?.attachment?.publicId) ||
+                  Boolean(message?.attachment?.originalFileName);
+                const displayText = getMessageDisplayText(message);
+                const attachmentKind = String(
+                  message?.attachment?.fileCategory || message?.mediaType || ''
+                )
+                  .trim()
+                  .toLowerCase();
+                const hasImageAttachment = attachmentKind === 'image' && Boolean(message?.mediaUrl);
+                const hasAudioAttachment = attachmentKind === 'audio';
+                const hasDocumentAttachment =
+                  hasAttachment && !hasImageAttachment && !hasAudioAttachment;
+                const showAttachmentCaption = hasAttachment && Boolean(displayText);
+                const hasDocumentCaption = hasDocumentAttachment && showAttachmentCaption;
+                const useAttachmentCaptionTrailingMeta = showAttachmentCaption;
+                const showInlineMeta = !hasImageAttachment;
+                const useCompactInlineMeta =
+                  showInlineMeta &&
+                  !hasDocumentAttachment &&
+                  Boolean(displayText);
+                const useTrailingCompactMeta =
+                  useCompactInlineMeta &&
+                  (showReplyPreview || displayText.includes('\n') || displayText.length > 70);
+                const useOverlayCompactHoverMenu = useCompactInlineMeta;
+                const hasActiveMessageActions =
+                  activeHoverMenuKey === messageKey || activeReactionPickerKey === messageKey;
+                const hasPersistedReaction = Boolean(
+                  String(persistedReactionMap[messageKey] || '').trim()
+                );
+
+                return (
+                  <div
+                    key={messageKey}
+                    className={`message ${message.sender === 'agent' ? 'outgoing' : 'incoming'} ${
+                      showMessageSelectMode ? 'select-mode' : ''
+                    } ${highlightedMessageKey === messageKey ? 'reply-target-highlight' : ''} ${
+                    hasPersistedReaction ? 'has-reaction-chip' : ''
+                  } ${hasActiveMessageActions ? 'has-active-message-actions' : ''}`}
+                  onClick={() => {
+                    if (showMessageSelectMode) {
+                      onToggleMessageSelection(messageKey);
+                    }
+                  }}
+                >
+                    {showMessageSelectMode && (
+                      <div className="message-select-checkbox">
+                        <input
+                          type="checkbox"
+                          checked={selectedMessagesForDeletionSet.has(messageKey)}
+                          onChange={() => onToggleMessageSelection(messageKey)}
+                          onClick={(event) => event.stopPropagation()}
+                        />
+                      </div>
                   )}
-                  {!showAttachmentCaption && !hasImageAttachment && displayText && !useCompactInlineMeta && displayText}
-                  {useCompactInlineMeta && (
-                    <div
-                      className={`message-text-content message-text-content--compact-meta ${
-                        useTrailingCompactMeta ? 'message-text-content--trailing-meta' : ''
-                      }`}
-                    >
-                      {displayText}
-                      <span className="message-inline-meta message-inline-meta--compact">
+
+                  <div
+                    className={`bubble ${showInlineMeta ? 'has-inline-meta' : ''} ${
+                      useCompactInlineMeta ? 'has-compact-inline-meta' : ''
+                    } ${useTrailingCompactMeta ? 'has-trailing-hover-corner' : ''} ${
+                      hasImageAttachment ? 'has-image-attachment' : ''
+                    } ${hasAudioAttachment ? 'has-audio-attachment' : ''} ${
+                      hasDocumentAttachment ? 'has-document-attachment' : ''
+                    } ${hasDocumentCaption ? 'has-document-caption' : ''} ${
+                      showReplyPreview ? 'has-reply-preview' : ''
+                    } ${hasActiveMessageActions ? 'has-active-message-actions' : ''}`}
+                  >
+                    {!showMessageSelectMode && renderHoverReactionTrigger(message, messageKey)}
+                    {renderReactionBar(message, messageKey)}
+                    {showReplyPreview && (
+                      <div
+                        className={`message-reply-preview ${replySourceMessageKey ? 'is-clickable' : ''} ${
+                          replySourceMessage?.sender === 'agent'
+                            ? 'is-self-source'
+                            : 'is-contact-source'
+                        }`}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          if (replySourceMessageKey) {
+                            scrollToReferencedMessage(replySourceMessageKey);
+                          }
+                        }}
+                      >
+                        <div className="message-reply-label">{replyLabel}</div>
+                        <div className="message-reply-text">{replyPreview}</div>
+                      </div>
+                    )}
+                    {!showAttachmentCaption && !hasImageAttachment && displayText && !useCompactInlineMeta && displayText}
+                    {useCompactInlineMeta && (
+                      <div
+                        className={`message-text-content message-text-content--compact-meta ${
+                          useTrailingCompactMeta ? 'message-text-content--trailing-meta' : ''
+                        }`}
+                      >
+                        {displayText}
+                        <span className="message-inline-meta message-inline-meta--compact">
+                          <span className="timestamp">
+                            {formatMessageTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
+                          </span>
+                          {message.sender === 'agent' && getStatusIcon(message.status)}
+                          {!useOverlayCompactHoverMenu &&
+                            renderMessageHoverMenu({
+                              message,
+                              messageKey,
+                              hasAttachment,
+                              variant: 'inline'
+                            })}
+                        </span>
+                      </div>
+                    )}
+                    {useOverlayCompactHoverMenu &&
+                      renderMessageHoverMenu({
+                        message,
+                        messageKey,
+                        hasAttachment,
+                        variant: 'overlay',
+                        contextClass: useTrailingCompactMeta ? 'trailing-text' : 'compact-inline'
+                      })}
+                    {renderAttachment(message, messageKey)}
+                    {showAttachmentCaption && (
+                      <div
+                        className={`message-media-caption ${
+                          useAttachmentCaptionTrailingMeta ? 'message-media-caption--trailing-meta' : ''
+                        }`}
+                      >
+                        <span className="message-media-caption-text">{displayText}</span>
+                        <span className="message-inline-meta message-inline-meta--compact">
+                          <span className="timestamp">
+                            {formatMessageTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
+                          </span>
+                          {message.sender === 'agent' && getStatusIcon(message.status)}
+                        </span>
+                      </div>
+                    )}
+                    {renderReactionChip(messageKey)}
+                    {showInlineMeta && !useCompactInlineMeta && !showAttachmentCaption && (
+                      <div className="message-inline-meta">
                         <span className="timestamp">
                           {formatMessageTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
                         </span>
                         {message.sender === 'agent' && getStatusIcon(message.status)}
-                        {!useOverlayCompactHoverMenu &&
+                        {!hasDocumentAttachment &&
+                          !hasAudioAttachment &&
                           renderMessageHoverMenu({
                             message,
                             messageKey,
                             hasAttachment,
                             variant: 'inline'
                           })}
-                      </span>
-                    </div>
-                  )}
-                  {useOverlayCompactHoverMenu &&
-                    renderMessageHoverMenu({
-                      message,
-                      messageKey,
-                      hasAttachment,
-                      variant: 'overlay',
-                      contextClass: useTrailingCompactMeta ? 'trailing-text' : 'compact-inline'
-                    })}
-                  {renderAttachment(message, messageKey)}
-                  {showAttachmentCaption && (
-                    <div
-                      className={`message-media-caption ${
-                        useAttachmentCaptionTrailingMeta ? 'message-media-caption--trailing-meta' : ''
-                      }`}
-                    >
-                      <span className="message-media-caption-text">{displayText}</span>
-                      <span className="message-inline-meta message-inline-meta--compact">
-                        <span className="timestamp">
-                          {formatMessageTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
-                        </span>
-                        {message.sender === 'agent' && getStatusIcon(message.status)}
-                      </span>
-                    </div>
-                  )}
-                  {renderReactionChip(messageKey)}
-                  {showInlineMeta && !useCompactInlineMeta && !showAttachmentCaption && (
-                    <div className="message-inline-meta">
+                      </div>
+                    )}
+                  </div>
+
+                  {!showInlineMeta && !hasImageAttachment && (
+                    <div className="message-info">
                       <span className="timestamp">
                         {formatMessageTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
                       </span>
                       {message.sender === 'agent' && getStatusIcon(message.status)}
-                      {!hasDocumentAttachment &&
-                        !hasAudioAttachment &&
-                        renderMessageHoverMenu({
-                          message,
-                          messageKey,
-                          hasAttachment,
-                          variant: 'inline'
-                        })}
                     </div>
                   )}
                 </div>
+                );
+              }}
+              components={{
+                Header: () =>
+                  olderMessagesLoading || showInitialThreadLoading ? (
+                    <div className="chat-messages-header">
+                      {olderMessagesLoading && (
+                        <div className="chat-history-loading">
+                          <span className="chat-history-loading-spinner" aria-hidden="true" />
+                          <span>Loading earlier messages...</span>
+                        </div>
+                      )}
 
-                {!showInlineMeta && !hasImageAttachment && (
-                  <div className="message-info">
-                    <span className="timestamp">
-                      {formatMessageTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
-                    </span>
-                    {message.sender === 'agent' && getStatusIcon(message.status)}
-                  </div>
-                )}
-              </div>
-            );
-          })}
+                      {showInitialThreadLoading && (
+                        <div className="chat-thread-loading">
+                          <span className="chat-thread-loading-spinner" aria-hidden="true" />
+                          <span>Loading conversation...</span>
+                        </div>
+                      )}
+                    </div>
+                  ) : null
+              }}
+            />
+          ) : null}
 
           <div ref={messagesEndRef} />
         </div>
@@ -2542,7 +3019,7 @@ const ChatArea = ({
             ref={attachmentInputRef}
             type="file"
             className="attachment-file-input"
-            accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip"
+            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.mp4,.mov,.m4v,.webm,.3gp,.3g2,.mp3,.m4a,.aac,.amr,.ogg,.oga,.wav,.opus"
             multiple
             onChange={handleAttachmentSelect}
           />
@@ -2691,4 +3168,4 @@ const ChatArea = ({
   );
 };
 
-export default ChatArea;
+export default React.memo(ChatArea);

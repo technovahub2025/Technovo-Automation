@@ -26,12 +26,24 @@ class SocketService {
     }
   }
 
+  getCompanyId() {
+    try {
+      const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
+      return (
+        String(storedUser?.companyId || localStorage.getItem('companyId') || '').trim() || ''
+      );
+    } catch {
+      return String(localStorage.getItem('companyId') || '').trim() || '';
+    }
+  }
+
   connect(url) {
     if (url) {
       webSocketService.setWebSocketUrl(url);
     }
 
     const userId = this.getUserId();
+    const companyId = this.getCompanyId();
     const token = this.getToken();
 
     if (this.isDev) {
@@ -47,6 +59,7 @@ class SocketService {
         console.error('Shared websocket connection failed:', error?.message || error);
       }
     });
+    webSocketService.setCompanyId(companyId);
 
     return webSocketService;
   }
@@ -65,6 +78,14 @@ class SocketService {
         ? { type: event, ...data }
         : { type: event, payload: data };
     return webSocketService.send(payload);
+  }
+
+  setActiveConversationId(conversationId) {
+    webSocketService.setActiveConversationId(conversationId);
+  }
+
+  setCompanyId(companyId) {
+    webSocketService.setCompanyId(companyId);
   }
 
   disconnect() {

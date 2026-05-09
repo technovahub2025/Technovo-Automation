@@ -1,11 +1,15 @@
-import { useEffect, useLayoutEffect, useRef } from 'react';
-import { findConversationByContactIdentity } from './teamInboxIdentityUtils.js';
+import { useEffect, useRef } from 'react';
+
+const RELOAD_DEDUP_WINDOW_MS = 1200;
+
+const getConversationId = (conversation) =>
+  String(conversation?._id || conversation?.id || '').trim();
 
 export const useConversationSelectionEffects = ({
   locationState,
   conversations,
   setSelectedConversation,
-  selectedConversation,
+  selectedConversationId,
   isConversationSwitchRef,
   loadMessages,
   conversationId,
@@ -14,94 +18,69 @@ export const useConversationSelectionEffects = ({
   pendingConversationRouteSyncRef,
   getConversationDisplayName
 }) => {
-  const callbacksRef = useRef({
-    loadMessages,
-    getUnreadCount,
-    markAsRead
-  });
-  const preloadedRouteConversationIdRef = useRef('');
-  const selectedConversationId = String(
-    selectedConversation?._id || selectedConversation?.id || ''
-  ).trim();
+  const lastLoadedConversationIdRef = useRef('');
+  const lastLoadedAtRef = useRef(0);
 
   useEffect(() => {
-    callbacksRef.current = {
-      loadMessages,
-      getUnreadCount,
-      markAsRead
-    };
-  }, [loadMessages, getUnreadCount, markAsRead]);
+    void locationState;
+    void getConversationDisplayName;
+  }, [getConversationDisplayName, locationState]);
 
   useEffect(() => {
-    const normalizedConversationId = String(conversationId || '').trim();
-    if (!normalizedConversationId) {
-      preloadedRouteConversationIdRef.current = '';
-      return;
-    }
-    if (selectedConversationId) return;
-    if (preloadedRouteConversationIdRef.current === normalizedConversationId) return;
+    const routeConversationId = String(conversationId || '').trim();
+    if (!routeConversationId) return;
 
-    preloadedRouteConversationIdRef.current = normalizedConversationId;
-    callbacksRef.current.loadMessages(normalizedConversationId);
-  }, [conversationId, selectedConversationId]);
+    const activeConversationId = String(selectedConversationId || '').trim();
+    if (activeConversationId === routeConversationId) return;
 
-  useEffect(() => {
-    if ((locationState?.phoneNumber || locationState?.contactName) && conversations.length > 0) {
-      const isTemplateStartHandoff = Boolean(locationState?.openTemplateSendModal);
-      const targetConversation = findConversationByContactIdentity({
-        conversations,
-        phoneNumber: locationState?.phoneNumber || locationState?.normalizedPhoneNumber,
-        contactName: locationState?.contactName,
-        getConversationDisplayName
-      });
-
-      if (targetConversation) {
-        setSelectedConversation(targetConversation);
-      } else if (!isTemplateStartHandoff) {
-        console.log(
-          'No conversation found for contact handoff:',
-          locationState?.phoneNumber || locationState?.contactName || ''
-        );
-      }
-    }
-  }, [locationState, conversations, setSelectedConversation, getConversationDisplayName]);
-
-  useLayoutEffect(() => {
-    if (!selectedConversationId) return;
-    isConversationSwitchRef.current = true;
-    callbacksRef.current.loadMessages(selectedConversationId);
-  }, [selectedConversationId, isConversationSwitchRef]);
-
-  useEffect(() => {
-    if (!conversationId || !conversations.length) return;
-    const normalizedConversationId = String(conversationId || '').trim();
-    const pendingConversationId = String(
-      pendingConversationRouteSyncRef?.current || ''
-    ).trim();
-
-    if (pendingConversationId && pendingConversationId !== normalizedConversationId) {
-      return;
-    }
-
-    const targetConversation = conversations.find(
-      (conversation) => String(conversation._id) === normalizedConversationId
+    const matchedConversation = (Array.isArray(conversations) ? conversations : []).find(
+      (conversation) => getConversationId(conversation) === routeConversationId
     );
 
-    if (targetConversation && selectedConversationId !== normalizedConversationId) {
-      setSelectedConversation(targetConversation);
-      if (callbacksRef.current.getUnreadCount(targetConversation) > 0) {
-        callbacksRef.current.markAsRead(targetConversation._id);
-      }
+    if (!matchedConversation) return;
+
+    if (pendingConversationRouteSyncRef) {
+      pendingConversationRouteSyncRef.current = routeConversationId;
+    }
+    if (isConversationSwitchRef) {
+      isConversationSwitchRef.current = true;
     }
 
-    if (pendingConversationId && pendingConversationId === normalizedConversationId) {
-      pendingConversationRouteSyncRef.current = '';
+    setSelectedConversation(matchedConversation);
+
+    if (typeof markAsRead === 'function' && getUnreadCount(matchedConversation) > 0) {
+      markAsRead(routeConversationId);
     }
   }, [
     conversationId,
     conversations,
+    getUnreadCount,
+    isConversationSwitchRef,
+    markAsRead,
     pendingConversationRouteSyncRef,
     selectedConversationId,
     setSelectedConversation
   ]);
+
+  useEffect(() => {
+    const activeConversationId = String(selectedConversationId || '').trim();
+    if (!activeConversationId) return;
+
+    const now = Date.now();
+    const sameConversation = lastLoadedConversationIdRef.current === activeConversationId;
+    if (sameConversation && now - lastLoadedAtRef.current < RELOAD_DEDUP_WINDOW_MS) {
+      return;
+    }
+
+    lastLoadedConversationIdRef.current = activeConversationId;
+    lastLoadedAtRef.current = now;
+
+    if (isConversationSwitchRef) {
+      isConversationSwitchRef.current = false;
+    }
+
+    if (typeof loadMessages === 'function') {
+      loadMessages(activeConversationId);
+    }
+  }, [isConversationSwitchRef, loadMessages, selectedConversationId]);
 };

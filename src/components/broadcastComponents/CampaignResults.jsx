@@ -1,8 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useDeferredValue, useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle,
   XCircle,
-  Download, 
+  Download,
   Search,
   RefreshCw,
   Phone,
@@ -14,18 +14,23 @@ import {
   Copy,
   AlertTriangle
 } from 'lucide-react';
+import { TableVirtuoso } from 'react-virtuoso';
 import './CampaignResults.css';
-import { downloadCsv } from '../../utils/csvExport';
+import { downloadCsvAsync } from '../../utils/csvExport';
 import {
   CAMPAIGN_RESULTS_EXPORT_HEADERS,
-  mapCampaignResultsToExportRows
+  mapCampaignResultToExportRow
 } from '../../utils/campaignResultsCsvExport';
+
+const RESULTS_TABLE_HEIGHT = 420;
 
 const CampaignResults = ({ results, broadcastId, onRetry }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [showDetails, setShowDetails] = useState(true);
   const [selectedRows, setSelectedRows] = useState(new Set());
+  const [isExporting, setIsExporting] = useState(false);
+  const deferredSearchTerm = useDeferredValue(searchTerm);
 
   // Calculate advanced metrics
   const metrics = useMemo(() => {
@@ -49,16 +54,26 @@ const CampaignResults = ({ results, broadcastId, onRetry }) => {
   // Filter and search results
   const filteredResults = useMemo(() => {
     if (!results?.results) return [];
+    const normalizedSearchTerm = String(deferredSearchTerm || '').trim().toLowerCase();
     
     return results.results.filter(result => {
-      const matchesSearch = result.phone.includes(searchTerm) || 
-                           (result.response && JSON.stringify(result.response).toLowerCase().includes(searchTerm.toLowerCase()));
+      const phone = String(result?.phone || '').trim();
+      const responseText = result?.response ? JSON.stringify(result.response).toLowerCase() : '';
+      const errorText = String(result?.error || '').trim().toLowerCase();
+      const matchesSearch = !normalizedSearchTerm ||
+        phone.toLowerCase().includes(normalizedSearchTerm) ||
+        responseText.includes(normalizedSearchTerm) ||
+        errorText.includes(normalizedSearchTerm);
       const matchesFilter = statusFilter === 'all' || 
                            (statusFilter === 'success' && result.success) ||
                            (statusFilter === 'failed' && !result.success);
       return matchesSearch && matchesFilter;
     });
-  }, [results, searchTerm, statusFilter]);
+  }, [results, deferredSearchTerm, statusFilter]);
+
+  useEffect(() => {
+    setSelectedRows(new Set());
+  }, [results, deferredSearchTerm, statusFilter]);
 
   const handleSelectAll = () => {
     if (selectedRows.size === filteredResults.length) {
@@ -78,20 +93,31 @@ const CampaignResults = ({ results, broadcastId, onRetry }) => {
     setSelectedRows(newSelected);
   };
 
-  const exportSelected = () => {
+  const exportSelected = async () => {
+    if (isExporting) return;
     const selectedData = filteredResults.filter((_, index) => selectedRows.has(index));
-    const rows = mapCampaignResultsToExportRows(selectedData, {
-      broadcastId: broadcastId || results?.broadcastId || '',
-      fallbackTimestamp: new Date().toISOString()
-    });
+    if (selectedData.length === 0) return;
 
-    downloadCsv({
-      filename: `campaign_results_selected_${Date.now()}.csv`,
-      headers: CAMPAIGN_RESULTS_EXPORT_HEADERS,
-      rows,
-      metadata: [['exportGeneratedAt', new Date().toISOString()]],
-      exportType: 'campaign_results_selected'
-    });
+    const resolvedBroadcastId = broadcastId || results?.broadcastId || '';
+    const exportedAt = new Date().toISOString();
+
+    setIsExporting(true);
+    try {
+      await downloadCsvAsync({
+        filename: `campaign_results_selected_${Date.now()}.csv`,
+        headers: CAMPAIGN_RESULTS_EXPORT_HEADERS,
+        rows: selectedData,
+        rowMapper: (result) =>
+          mapCampaignResultToExportRow(result, {
+            broadcastId: resolvedBroadcastId,
+            fallbackTimestamp: exportedAt
+          }),
+        metadata: [['exportGeneratedAt', exportedAt]],
+        exportType: 'campaign_results_selected'
+      });
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const copyPhoneNumbers = () => {
@@ -240,11 +266,12 @@ const CampaignResults = ({ results, broadcastId, onRetry }) => {
               {selectedRows.size > 0 && (
                 <>
                   <button
-                    onClick={exportSelected}
+                    onClick={() => void exportSelected()}
                     className="btn btn-primary"
+                    disabled={isExporting}
                   >
                     <Download className="w-4 h-4" />
-                    Export Selected ({selectedRows.size})
+                    {isExporting ? 'Exporting...' : `Export Selected (${selectedRows.size})`}
                   </button>
                   <button
                     onClick={copyPhoneNumbers}
@@ -268,25 +295,27 @@ const CampaignResults = ({ results, broadcastId, onRetry }) => {
           {/* Results Table */}
           <div className="results-table">
             <div className="table-container">
-              <table>
-                <thead>
-                  <tr>
-                    <th>
-                      <input
-                        type="checkbox"
-                        checked={selectedRows.size === filteredResults.length && filteredResults.length > 0}
-                        onChange={handleSelectAll}
-                      />
-                    </th>
-                    <th>Phone Number</th>
-                    <th>Status</th>
-                    <th>Response</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredResults.map((result, index) => (
-                    <tr key={index}>
+              {filteredResults.length > 0 ? (
+                <TableVirtuoso
+                  style={{ height: RESULTS_TABLE_HEIGHT }}
+                  data={filteredResults}
+                  fixedHeaderContent={() => (
+                    <tr>
+                      <th>
+                        <input
+                          type="checkbox"
+                          checked={selectedRows.size === filteredResults.length && filteredResults.length > 0}
+                          onChange={handleSelectAll}
+                        />
+                      </th>
+                      <th>Phone Number</th>
+                      <th>Status</th>
+                      <th>Response</th>
+                      <th>Actions</th>
+                    </tr>
+                  )}
+                  itemContent={(index, result) => (
+                    <>
                       <td>
                         <input
                           type="checkbox"
@@ -338,12 +367,10 @@ const CampaignResults = ({ results, broadcastId, onRetry }) => {
                           </button>
                         </div>
                       </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              
-              {filteredResults.length === 0 && (
+                    </>
+                  )}
+                />
+              ) : (
                 <div className="no-results">
                   <AlertTriangle className="w-12 h-12" />
                   <p>No results found</p>

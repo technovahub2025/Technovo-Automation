@@ -259,19 +259,28 @@ export const whatsappService = {
       }
       const replyToMessageId = String(options?.replyToMessageId || '').trim();
       const whatsappContextMessageId = String(options?.whatsappContextMessageId || '').trim();
+      const mediaPipelineRequestId = String(options?.mediaPipelineRequestId || '').trim();
       if (replyToMessageId) {
         formData.append('replyToMessageId', replyToMessageId);
       }
       if (whatsappContextMessageId) {
         formData.append('whatsappContextMessageId', whatsappContextMessageId);
       }
+      if (mediaPipelineRequestId) {
+        formData.append('mediaPipelineRequestId', mediaPipelineRequestId);
+      }
       formData.append('file', file);
+
+      const headers = getAuthHeaders(false);
+      if (mediaPipelineRequestId) {
+        headers['x-request-id'] = mediaPipelineRequestId;
+      }
 
       const response = await axios.post(
         `${API_BASE_URL}/api/messages/send-attachment`,
         formData,
         {
-          headers: getAuthHeaders(false),
+          headers,
           onUploadProgress: (event) => {
             if (typeof onProgress !== 'function') return;
             const total = Number(event?.total || 0);
@@ -285,14 +294,19 @@ export const whatsappService = {
       return response.data;
     } catch (error) {
       console.error('Failed to send attachment message:', error);
+      const backendResponse = error?.response?.data || {};
       const backendError =
-        error?.response?.data?.error ||
-        error?.response?.data?.message ||
+        backendResponse?.error ||
+        backendResponse?.message ||
         error?.message ||
         'Failed to send attachment message';
       return {
         success: false,
-        error: normalizeServiceErrorMessage(backendError, 'Failed to send attachment message')
+        error: normalizeServiceErrorMessage(backendError, 'Failed to send attachment message'),
+        errorCode: backendResponse?.code || backendResponse?.errorCode || null,
+        policy: backendResponse?.policy || null,
+        status: Number(error?.response?.status || 0) || null,
+        mediaPipelineRequestId: String(backendResponse?.mediaPipelineRequestId || '').trim() || null
       };
     }
   },
@@ -395,10 +409,15 @@ export const whatsappService = {
     }
   },
 
-  async deleteAttachmentMessage(messageId) {
+  async deleteAttachmentMessage(messageId, options = {}) {
     try {
+      const mediaPipelineRequestId = String(options?.mediaPipelineRequestId || '').trim();
+      const headers = getAuthHeaders(false);
+      if (mediaPipelineRequestId) {
+        headers['x-request-id'] = mediaPipelineRequestId;
+      }
       const response = await axios.delete(`${API_BASE_URL}/api/messages/attachments/${messageId}`, {
-        headers: getAuthHeaders(false)
+        headers
       });
       return response.data;
     } catch (error) {
@@ -442,6 +461,35 @@ export const whatsappService = {
 
     }
 
+  },
+
+  async getConversationsPage(filters = {}) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/conversations`, {
+        headers: getAuthHeaders(false),
+        params: filters,
+        timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
+      });
+      const data = response.data || {};
+      return {
+        data: Array.isArray(data?.data) ? data.data : [],
+        meta: {
+          limit: Number(data?.meta?.limit || 0) || null,
+          hasMore: Boolean(data?.meta?.hasMore),
+          nextCursor: String(data?.meta?.nextCursor || '').trim() || null
+        }
+      };
+    } catch (error) {
+      console.error('Failed to fetch paged conversations:', error);
+      return {
+        data: [],
+        meta: {
+          limit: null,
+          hasMore: false,
+          nextCursor: null
+        }
+      };
+    }
   },
 
 

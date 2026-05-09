@@ -7,10 +7,10 @@ import {
   resolveCacheUserId,
   writeSidebarPageCache
 } from '../utils/sidebarPageCache';
-import { downloadCsv } from '../utils/csvExport';
+import { downloadCsvAsync } from '../utils/csvExport';
 import {
   BROADCAST_CAMPAIGN_EXPORT_HEADERS,
-  mapBroadcastsToCampaignExportRows
+  mapBroadcastToCampaignExportRow
 } from '../utils/broadcastCsvExport';
 
 const BROADCAST_PAGE_CACHE_NAMESPACE = 'broadcast-page';
@@ -130,6 +130,7 @@ export const useBroadcast = () => {
   const [showDropdown, setShowDropdown] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [selectionMode, setSelectionMode] = useState(false);
+  const [isExportingCampaigns, setIsExportingCampaigns] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(new Date());
   const [wsConnected, setWsConnected] = useState(false);
   const loadRequestSeqRef = useRef(0);
@@ -466,6 +467,7 @@ export const useBroadcast = () => {
         webSocketService.on('broadcast_updated', scheduleBroadcastRefresh);
         webSocketService.on('broadcast_update', scheduleBroadcastRefresh);
         webSocketService.on('message_sent', scheduleBroadcastRefresh);
+        webSocketService.on('broadcast_message_batch', scheduleBroadcastRefresh);
 
         return () => {
           webSocketService.off('connected', handleConnected);
@@ -474,6 +476,7 @@ export const useBroadcast = () => {
           webSocketService.off('broadcast_updated', scheduleBroadcastRefresh);
           webSocketService.off('broadcast_update', scheduleBroadcastRefresh);
           webSocketService.off('message_sent', scheduleBroadcastRefresh);
+          webSocketService.off('broadcast_message_batch', scheduleBroadcastRefresh);
         };
       } catch (error) {
         console.error('Failed to connect WebSocket:', error);
@@ -493,6 +496,7 @@ export const useBroadcast = () => {
       if (cleanupEvents) cleanupEvents();
       webSocketService.off('broadcast_stats_updated', handleBroadcastStatsUpdate);
       webSocketService.off('message_status', handleMessageStatusUpdate);
+      webSocketService.off('broadcast_message_batch', scheduleBroadcastRefresh);
       if (broadcastRefreshTimerRef.current) {
         window.clearTimeout(broadcastRefreshTimerRef.current);
         broadcastRefreshTimerRef.current = null;
@@ -966,18 +970,26 @@ export const useBroadcast = () => {
   };
 
   // Download campaigns as CSV
-  const downloadAllCampaigns = (campaigns = broadcasts) => {
+  const downloadAllCampaigns = useCallback(async (campaigns = broadcasts) => {
     const exportRows = Array.isArray(campaigns) ? campaigns : broadcasts;
-    const csvData = mapBroadcastsToCampaignExportRows(exportRows);
+    if (exportRows.length === 0 || isExportingCampaigns) return;
 
-    downloadCsv({
-      filename: `campaigns_export_${new Date().toISOString().split('T')[0]}.csv`,
-      headers: BROADCAST_CAMPAIGN_EXPORT_HEADERS,
-      rows: csvData,
-      metadata: [['exportGeneratedAt', new Date().toISOString()]],
-      exportType: 'broadcast_campaigns'
-    });
-  };
+    setIsExportingCampaigns(true);
+    try {
+      await downloadCsvAsync({
+        filename: `campaigns_export_${new Date().toISOString().split('T')[0]}.csv`,
+        headers: BROADCAST_CAMPAIGN_EXPORT_HEADERS,
+        rows: exportRows,
+        rowMapper: mapBroadcastToCampaignExportRow,
+        metadata: [['exportGeneratedAt', new Date().toISOString()]],
+        exportType: 'broadcast_campaigns'
+      });
+    } catch (error) {
+      console.error('Failed to export campaigns:', error);
+    } finally {
+      setIsExportingCampaigns(false);
+    }
+  }, [broadcasts, isExportingCampaigns]);
 
   // Return all state and functions
   return {
@@ -1004,6 +1016,7 @@ export const useBroadcast = () => {
     showDropdown, setShowDropdown,
     showDeleteModal, setShowDeleteModal,
     selectionMode, setSelectionMode,
+    isExportingCampaigns,
     lastUpdated, setLastUpdated,
     searchTerm, setSearchTerm,
     statusFilter, setStatusFilter,

@@ -13,12 +13,60 @@ import {
 
 const DEFAULT_MESSAGES_PAGE_LIMIT = 30;
 const CONVERSATION_LIST_LOADING_TIMEOUT_MS = 8000;
+const VALID_CONVERSATION_FILTERS = new Set(['all', 'unread', 'read']);
+
+const isTeamInboxTraceEnabled = () => {
+  if (typeof window === 'undefined') return false;
+  try {
+    return Boolean(import.meta?.env?.DEV) || String(window.localStorage.getItem('debugTeamInbox') || '').trim() === '1';
+  } catch {
+    return Boolean(import.meta?.env?.DEV);
+  }
+};
+
+const traceTeamInbox = (...args) => {
+  if (!isTeamInboxTraceEnabled()) return;
+  console.debug('[TeamInbox]', ...args);
+};
+
+const recordInboxDebugEvent = (setInboxDebugInfo, lastEvent, extra = {}) => {
+  if (typeof setInboxDebugInfo !== 'function') return;
+
+  setInboxDebugInfo({
+    lastEvent: String(lastEvent || 'idle').trim() || 'idle',
+    lastEventAt: new Date().toISOString(),
+    source: String(extra?.source || 'data').trim() || 'data',
+    conversationId: String(extra?.conversationId || '').trim(),
+    messageId: String(extra?.messageId || '').trim(),
+    details: String(extra?.details || '').trim()
+  });
+};
+
+const createMediaPipelineRequestId = () => {
+  const randomPart =
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  return `media-${Date.now()}-${randomPart}`.replace(/[^a-zA-Z0-9_-]/g, '-');
+};
 
 const normalizeMessagePageMeta = (meta = {}, fallbackLimit = DEFAULT_MESSAGES_PAGE_LIMIT) => ({
   limit: Number(meta?.limit || fallbackLimit) || fallbackLimit,
   hasMore: Boolean(meta?.hasMore),
   nextCursor: String(meta?.nextCursor || '').trim() || null
 });
+
+const normalizeConversationListFilter = (value = 'all') => {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+  return VALID_CONVERSATION_FILTERS.has(normalizedValue) ? normalizedValue : 'all';
+};
+
+const buildConversationListQuerySignature = ({ search = '', filter = 'all', limit = 100 }) =>
+  [
+    String(search || '').trim().toLowerCase(),
+    normalizeConversationListFilter(filter),
+    Math.max(1, Math.min(Number(limit || 100) || 100, 200))
+  ].join('::');
 
 export const createInboxDataActions = ({
   currentUserId,
@@ -29,6 +77,8 @@ export const createInboxDataActions = ({
   setMessagesLoading,
   setMessagesOlderLoading,
   setMessagesHasMore,
+  setThreadCacheInfo,
+  setInboxDebugInfo,
   selectedConversation,
   sendingMessage,
   messageInput,
@@ -45,6 +95,9 @@ export const createInboxDataActions = ({
   messageCacheRef,
   messagePaginationCacheRef,
   messageLoadPromiseMapRef,
+  conversationPageMetaRef,
+  conversationLoadRequestIdRef,
+  setConversationPageMeta,
   setSidebarRefreshing,
   notifyActionFeedback,
   confirmAction
@@ -67,72 +120,140 @@ export const createInboxDataActions = ({
     return false;
   };
 
-  const loadConversations = async ({ silent = false } = {}) => {
+  const normalizeConversationPageMeta = (meta = {}, querySignature = '') => {
+    const limit = Number(meta?.limit || conversationPageMetaRef?.current?.limit || 100);
+    return {
+      limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 100,
+      hasMore: Boolean(meta?.hasMore),
+      nextCursor: String(meta?.nextCursor || '').trim() || null,
+      loaded: true,
+      querySignature: String(querySignature || '').trim()
+    };
+  };
+
+  const mergeConversationLists = (base = [], incoming = []) => {
+    const byId = new Map();
+    (Array.isArray(base) ? base : []).forEach((conversation) => {
+      const id = String(conversation?._id || conversation?.id || '').trim();
+      if (id) byId.set(id, conversation);
+    });
+
+    (Array.isArray(incoming) ? incoming : []).forEach((conversation) => {
+      const id = String(conversation?._id || conversation?.id || '').trim();
+      if (!id) return;
+      byId.set(id, conversation);
+    });
+
+    return Array.from(byId.values()).sort(
+      (left, right) =>
+        new Date(right?.lastMessageTime || right?.updatedAt || right?.createdAt || 0).valueOf() -
+        new Date(left?.lastMessageTime || left?.updatedAt || left?.createdAt || 0).valueOf()
+    );
+  };
+
+  const loadConversations = async ({
+    silent = false,
+    append = false,
+    limit,
+    search = '',
+    filter = 'all'
+  } = {}) => {
+    let requestId = 0;
     const releaseLoadingGuard = silent
       ? () => true
       : startLoadingTimeoutGuard(
-          () => setLoading(false),
+          () => {
+            if (Number(conversationLoadRequestIdRef?.current || 0) === requestId) {
+              setLoading(false);
+            }
+          },
           CONVERSATION_LIST_LOADING_TIMEOUT_MS
         );
+    let previousPageMeta = {};
     try {
+      const normalizedSearch = String(search || '').trim();
+      const normalizedFilter = normalizeConversationListFilter(filter);
+      const queryLimit = Number(limit || conversationPageMetaRef?.current?.limit || 100) || 100;
+      const querySignature = buildConversationListQuerySignature({
+        search: normalizedSearch,
+        filter: normalizedFilter,
+        limit: queryLimit
+      });
+      const pageMeta = conversationPageMetaRef?.current || {};
+      previousPageMeta = {
+        ...(pageMeta || {})
+      };
+      const currentQuerySignature = String(pageMeta?.querySignature || '').trim();
+      const isSameQuery = currentQuerySignature === querySignature;
+
+      if (append && !isSameQuery) {
+        return false;
+      }
+
+      if (append && !String(pageMeta.nextCursor || '').trim() && pageMeta.loaded && isSameQuery) {
+        return true;
+      }
+      if (append && (!pageMeta.loaded || !isSameQuery)) {
+        return false;
+      }
+
       if (silent && typeof setSidebarRefreshing === 'function') {
         setSidebarRefreshing(true);
       }
       if (!silent) setLoading(true);
-      const data = await whatsappService.getConversations();
-      const incomingConversations = Array.isArray(data) ? data.map(normalizeConversation) : [];
+      if (!append) {
+        const pendingMeta = {
+          limit: Math.max(1, Math.min(queryLimit, 200)) || 100,
+          hasMore: false,
+          nextCursor: null,
+          loaded: false,
+          querySignature
+        };
+        conversationPageMetaRef.current = pendingMeta;
+        if (typeof setConversationPageMeta === 'function') {
+          setConversationPageMeta(pendingMeta);
+        }
+      }
 
-      const hydratedConversations = await Promise.all(
-        incomingConversations.map(async (conversation) => {
-          const conversationId = String(conversation?._id || conversation?.id || '').trim();
-          if (!conversationId) return conversation;
+      requestId = Number(conversationLoadRequestIdRef?.current || 0) + 1;
+      if (conversationLoadRequestIdRef) {
+        conversationLoadRequestIdRef.current = requestId;
+      }
 
-          try {
-            const latestPage = await whatsappService.getMessagesPage(conversationId, {
-              limit: 1
-            });
-            const latestMessage = Array.isArray(latestPage?.data) ? latestPage.data[0] : null;
-            if (!latestMessage) return conversation;
+      const response = whatsappService.getConversationsPage
+        ? await whatsappService.getConversationsPage({
+            limit: queryLimit,
+            ...(append && String(pageMeta.nextCursor || '').trim() ? { cursor: pageMeta.nextCursor } : {}),
+            ...(normalizedSearch ? { search: normalizedSearch } : {}),
+            ...(normalizedFilter !== 'all' ? { filter: normalizedFilter } : {})
+          })
+        : {
+            data: await whatsappService.getConversations(),
+            meta: {
+              limit: queryLimit,
+              hasMore: false,
+              nextCursor: null
+            }
+          };
 
-            const latestSender = String(latestMessage?.sender || '').trim().toLowerCase();
-            const latestStatus = String(latestMessage?.status || '').trim().toLowerCase();
-            const resolvedStatus =
-              latestSender === 'agent'
-                ? resolvePreferredMessageStatus(conversation?.lastMessageStatus, latestStatus)
-                : conversation?.lastMessageStatus || '';
+      if (Number(conversationLoadRequestIdRef?.current || 0) !== requestId) {
+        return false;
+      }
 
-            return normalizeConversation({
-              ...conversation,
-              lastMessage: String(latestMessage?.text || conversation?.lastMessage || '').trim(),
-              lastMessageTime:
-                latestMessage?.timestamp ||
-                latestMessage?.createdAt ||
-                conversation?.lastMessageTime,
-              lastMessageFrom: latestSender || String(conversation?.lastMessageFrom || '').trim(),
-              lastMessageStatus: resolvedStatus,
-              lastMessageWhatsappMessageId:
-                String(latestMessage?.whatsappMessageId || '').trim() ||
-                String(conversation?.lastMessageWhatsappMessageId || '').trim(),
-              lastMessageMediaType:
-                String(latestMessage?.mediaType || conversation?.lastMessageMediaType || '').trim()
-            });
-          } catch (error) {
-            console.warn('Failed to hydrate conversation summary:', conversationId, error);
-            return conversation;
-          }
-        })
-      );
+      const incomingConversations = Array.isArray(response?.data)
+        ? response.data.map(normalizeConversation)
+        : [];
+      const nextMeta = normalizeConversationPageMeta(response?.meta, querySignature);
 
       setConversations((prev) => {
-        const previousById = new Map(
-          (Array.isArray(prev) ? prev : [])
-            .map((conversation) => [String(conversation?._id || conversation?.id || '').trim(), conversation])
-            .filter(([id]) => Boolean(id))
-        );
+        const previousList = Array.isArray(prev) ? prev : [];
+        const merged = append ? mergeConversationLists(previousList, incomingConversations) : incomingConversations;
 
-        return hydratedConversations.map((conversation) => {
+        return merged.map((conversation) => {
           const conversationId = String(conversation?._id || conversation?.id || '').trim();
-          const previous = conversationId ? previousById.get(conversationId) : null;
+          const previous = previousList.find(
+            (item) => String(item?._id || item?.id || '').trim() === conversationId
+          );
           if (!previous) return conversation;
 
           return {
@@ -150,14 +271,30 @@ export const createInboxDataActions = ({
           };
         });
       });
+
+      conversationPageMetaRef.current = nextMeta;
+      if (typeof setConversationPageMeta === 'function') {
+        setConversationPageMeta(nextMeta);
+      }
     } catch (error) {
       console.error('Failed to load conversations:', error);
+      if (conversationLoadRequestIdRef && !append && Number(conversationLoadRequestIdRef.current || 0) === requestId) {
+        const restoredMeta = {
+          ...(conversationPageMetaRef?.current || {}),
+          ...previousPageMeta
+        };
+        conversationPageMetaRef.current = restoredMeta;
+        if (typeof setConversationPageMeta === 'function') {
+          setConversationPageMeta(restoredMeta);
+        }
+      }
     } finally {
       releaseLoadingGuard();
-      if (silent && typeof setSidebarRefreshing === 'function') {
+      const isCurrentRequest = Number(conversationLoadRequestIdRef?.current || 0) === requestId;
+      if (silent && isCurrentRequest && typeof setSidebarRefreshing === 'function') {
         setSidebarRefreshing(false);
       }
-      if (!silent) setLoading(false);
+      if (!silent && isCurrentRequest) setLoading(false);
     }
   };
 
@@ -170,17 +307,31 @@ export const createInboxDataActions = ({
       : DEFAULT_MESSAGES_PAGE_LIMIT;
 
     if (!normalizedConversationId) {
+      traceTeamInbox('loadMessages:skip', { reason: 'missing_conversation_id' });
+      recordInboxDebugEvent(setInboxDebugInfo, 'loadMessages:skip', {
+        source: 'data',
+        details: 'Missing conversation id'
+      });
       activeMessagesConversationIdRef.current = '';
       messageLoadRequestIdRef.current += 1;
       setMessagesHasMore(false);
       setMessagesOlderLoading(false);
       setMessages([]);
       setMessagesLoading(false);
+      if (typeof setThreadCacheInfo === 'function') {
+        setThreadCacheInfo({
+          source: 'unknown',
+          isStale: false,
+          updatedAt: null,
+          messageCount: 0
+        });
+      }
       return false;
     }
 
     const previousConversationId = String(activeMessagesConversationIdRef.current || '').trim();
     const isConversationSwitch = previousConversationId !== normalizedConversationId;
+    const nextRequestId = Number(messageLoadRequestIdRef.current || 0) + 1;
     const persistentCachedThread = readTeamInboxThreadCache({
       currentUserId,
       conversationId: normalizedConversationId,
@@ -196,15 +347,44 @@ export const createInboxDataActions = ({
       messagePaginationCacheRef?.current?.get(normalizedConversationId) || persistentCachedThread?.meta,
       pageLimit
     );
-    activeMessagesConversationIdRef.current = normalizedConversationId;
-
     if (!Array.isArray(runtimeCachedMessages) && Array.isArray(persistentCachedThread?.messages)) {
       messageCacheRef.current.set(normalizedConversationId, persistentCachedThread.messages);
       messagePaginationCacheRef?.current?.set(normalizedConversationId, cachedMeta);
     }
 
-    if (!loadOlder && isConversationSwitch) {
-      setMessages(Array.isArray(cachedMessages) ? cachedMessages : []);
+    if (typeof setThreadCacheInfo === 'function') {
+      const cachedCount = Array.isArray(cachedMessages) ? cachedMessages.length : 0;
+      setThreadCacheInfo({
+        source: Array.isArray(cachedMessages) ? 'cache' : 'network',
+        isStale: Boolean(persistentCachedThread?.isStale),
+        updatedAt: persistentCachedThread?.updatedAt || null,
+        messageCount: cachedCount
+      });
+    }
+
+    traceTeamInbox('loadMessages:start', {
+      conversationId: normalizedConversationId,
+      loadOlder,
+      requestId: nextRequestId,
+      hasRuntimeCache: Array.isArray(runtimeCachedMessages),
+      cachedCount: Array.isArray(cachedMessages) ? cachedMessages.length : 0,
+      cachedHasMore: Boolean(cachedMeta.hasMore),
+      cachedNextCursor: cachedMeta.nextCursor || null,
+      previousConversationId
+    });
+    recordInboxDebugEvent(
+      setInboxDebugInfo,
+      loadOlder ? 'loadMessages:older:start' : 'loadMessages:start',
+      {
+        source: 'data',
+        conversationId: normalizedConversationId,
+        details: loadOlder ? 'Loading older messages' : 'Loading conversation messages'
+      }
+    );
+
+    if (!loadOlder && isConversationSwitch && Array.isArray(cachedMessages)) {
+      activeMessagesConversationIdRef.current = normalizedConversationId;
+      setMessages(cachedMessages);
     }
 
     if (!loadOlder) {
@@ -246,10 +426,11 @@ export const createInboxDataActions = ({
         ...(loadOlder && cachedMeta.nextCursor ? { cursor: cachedMeta.nextCursor } : {})
       })
       .then((data) => {
-        if (String(activeMessagesConversationIdRef.current || '').trim() !== normalizedConversationId) {
+        const activeConversationId = String(activeMessagesConversationIdRef.current || '').trim();
+        if (!loadOlder && messageLoadRequestIdRef.current !== requestId) {
           return false;
         }
-        if (!loadOlder && messageLoadRequestIdRef.current !== requestId) {
+        if (loadOlder && activeConversationId !== normalizedConversationId) {
           return false;
         }
 
@@ -276,6 +457,25 @@ export const createInboxDataActions = ({
             )
           : fetchedMeta;
 
+        traceTeamInbox('loadMessages:success', {
+          conversationId: normalizedConversationId,
+          loadOlder,
+          requestId,
+          fetchedCount: fetchedMessages.length,
+          mergedCount: nextMessages.length,
+          hasMore: Boolean(nextMeta.hasMore),
+          nextCursor: nextMeta.nextCursor || null
+        });
+        recordInboxDebugEvent(
+          setInboxDebugInfo,
+          loadOlder ? 'loadMessages:older:success' : 'loadMessages:success',
+          {
+            source: 'data',
+            conversationId: normalizedConversationId,
+            details: `${nextMessages.length} messages loaded`
+          }
+        );
+
         messagePaginationCacheRef?.current?.set(normalizedConversationId, nextMeta);
         messageCacheRef.current.set(normalizedConversationId, nextMessages);
         writeTeamInboxThreadCache({
@@ -284,8 +484,17 @@ export const createInboxDataActions = ({
           messages: nextMessages,
           meta: nextMeta
         });
+        activeMessagesConversationIdRef.current = normalizedConversationId;
         setMessages(nextMessages);
         setMessagesHasMore(Boolean(nextMeta.hasMore));
+        if (typeof setThreadCacheInfo === 'function') {
+          setThreadCacheInfo({
+            source: 'fresh',
+            isStale: false,
+            updatedAt: Date.now(),
+            messageCount: nextMessages.length
+          });
+        }
         return true;
       })
       .catch((error) => {
@@ -295,6 +504,21 @@ export const createInboxDataActions = ({
         ) {
           console.error('Failed to load messages:', error);
         }
+        traceTeamInbox('loadMessages:error', {
+          conversationId: normalizedConversationId,
+          loadOlder,
+          requestId,
+          message: String(error?.message || error || 'Unknown error')
+        });
+        recordInboxDebugEvent(
+          setInboxDebugInfo,
+          loadOlder ? 'loadMessages:older:error' : 'loadMessages:error',
+          {
+            source: 'data',
+            conversationId: normalizedConversationId,
+            details: String(error?.message || error || 'Unknown error')
+          }
+        );
         return false;
       })
       .finally(() => {
@@ -361,6 +585,7 @@ export const createInboxDataActions = ({
     const normalizedMimeType = String(file?.type || '').trim().toLowerCase();
     if (normalizedMimeType.startsWith('image/')) return 'image';
     if (normalizedMimeType.startsWith('audio/')) return 'audio';
+    if (normalizedMimeType.startsWith('video/')) return 'video';
     return 'document';
   };
 
@@ -606,7 +831,9 @@ export const createInboxDataActions = ({
   };
 
   const sendAttachment = async (file, options = {}) => {
-    if (!file || !selectedConversation || sendingMessage) return false;
+    if (!file || !selectedConversation || sendingMessage) {
+      return { success: false, error: 'Attachment send is not available right now.' };
+    }
 
     let optimisticId = null;
     let localPreviewUrl = '';
@@ -621,8 +848,16 @@ export const createInboxDataActions = ({
     const mediaType = resolveOutgoingMediaType(file);
     const optimisticText =
       caption ||
-      (mediaType === 'image' ? '[Image]' : mediaType === 'audio' ? '[Audio]' : '[Document]');
+      (mediaType === 'image'
+        ? '[Image]'
+        : mediaType === 'audio'
+          ? '[Audio]'
+          : mediaType === 'video'
+            ? '[Video]'
+            : '[Document]');
     const replyMetadata = buildReplyMetadata(options?.replyContext);
+    const mediaPipelineRequestId =
+      String(options?.mediaPipelineRequestId || '').trim() || createMediaPipelineRequestId();
     const updateUploadProgress = (progressValue) => {
       setMessages((prev) =>
         prev.map((message) =>
@@ -656,6 +891,7 @@ export const createInboxDataActions = ({
         conversationId: activeConversationId,
         mediaType,
         mediaUrl: localPreviewUrl,
+        mediaPipelineRequestId,
         ...replyMetadata,
         attachment: {
           originalFileName: file.name,
@@ -705,7 +941,10 @@ export const createInboxDataActions = ({
         file,
         caption,
         updateUploadProgress,
-        replyMetadata
+        {
+          ...replyMetadata,
+          mediaPipelineRequestId
+        }
       );
 
       if (!result?.success) {
@@ -770,6 +1009,10 @@ export const createInboxDataActions = ({
                     sentMessage?.whatsappContextMessageId ||
                     message?.whatsappContextMessageId ||
                     '',
+                  mediaPipelineRequestId:
+                    sentMessage?.mediaPipelineRequestId ||
+                    message?.mediaPipelineRequestId ||
+                    mediaPipelineRequestId,
                   attachment: {
                     ...(sentMessage?.attachment || {}),
                     uploadProgress: null,
@@ -785,7 +1028,9 @@ export const createInboxDataActions = ({
               ...next,
               {
                 ...sentMessage,
-                ...replyMetadata
+                ...replyMetadata,
+                mediaPipelineRequestId:
+                  sentMessage?.mediaPipelineRequestId || mediaPipelineRequestId
               }
             ];
           }
@@ -800,7 +1045,7 @@ export const createInboxDataActions = ({
           });
         });
       }
-      return true;
+      return { success: true };
     } catch (error) {
       if (optimisticId) {
         setMessages((prev) =>
@@ -824,8 +1069,14 @@ export const createInboxDataActions = ({
         setMessageInput((prev) => prev || caption);
       }
       console.error('Error sending attachment:', error);
-      notify(error?.message || 'Unable to send attachment', 'error');
-      return false;
+      const failureMessage = String(error?.message || 'Unable to send attachment').trim();
+      const requestIdSuffix = mediaPipelineRequestId ? ` (ref: ${mediaPipelineRequestId})` : '';
+      notify(`${failureMessage}${requestIdSuffix}`, 'error');
+      return {
+        success: false,
+        error: failureMessage,
+        mediaPipelineRequestId
+      };
     } finally {
       if (!replaceMessageId && localPreviewUrl && shouldRevokeLocalPreview) {
         URL.revokeObjectURL(localPreviewUrl);
@@ -999,6 +1250,7 @@ export const createInboxDataActions = ({
   const deleteAttachment = async (message) => {
     const messageId = String(message?._id || '').trim();
     if (!messageId) return;
+    const mediaPipelineRequestId = String(message?.mediaPipelineRequestId || '').trim();
 
     if (messageId.startsWith('temp-')) {
       setMessages((prev) => prev.filter((item) => String(item?._id || '') !== messageId));
@@ -1008,10 +1260,18 @@ export const createInboxDataActions = ({
     const confirmed = await confirmWithFallback('Delete this attachment from this chat?');
     if (!confirmed) return;
 
-    const result = await whatsappService.deleteAttachmentMessage(messageId);
+    const result = await whatsappService.deleteAttachmentMessage(messageId, {
+      mediaPipelineRequestId
+    });
     if (!result?.success) {
-      notify(result?.error || 'Failed to delete attachment', 'error');
+      const failureMessage = String(result?.error || 'Failed to delete attachment').trim();
+      const requestIdSuffix = mediaPipelineRequestId ? ` (ref: ${mediaPipelineRequestId})` : '';
+      notify(`${failureMessage}${requestIdSuffix}`, 'error');
       return;
+    }
+
+    if (mediaPipelineRequestId) {
+      notify(`Attachment deleted (ref: ${mediaPipelineRequestId})`, 'info');
     }
 
     setMessages((prev) =>
@@ -1067,8 +1327,14 @@ export const createInboxDataActions = ({
   const retryAttachment = async (message) => {
     if (!message) return;
     const localFile = message?.attachment?._localFile;
+    const mediaPipelineRequestId = String(message?.mediaPipelineRequestId || '').trim();
     if (!localFile) {
-      notify('Attachment file is no longer available to retry.', 'info');
+      notify(
+        mediaPipelineRequestId
+          ? `Attachment file is no longer available to retry (ref: ${mediaPipelineRequestId}).`
+          : 'Attachment file is no longer available to retry.',
+        'info'
+      );
       return;
     }
     const rawText = String(message?.text || '').trim();
@@ -1076,7 +1342,8 @@ export const createInboxDataActions = ({
     const captionOverride = isPlaceholder ? '' : rawText;
     await sendAttachment(localFile, {
       captionOverride,
-      replaceMessageId: message?._id
+      replaceMessageId: message?._id,
+      mediaPipelineRequestId: mediaPipelineRequestId || undefined
     });
   };
 

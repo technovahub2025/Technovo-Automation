@@ -12,6 +12,31 @@ const ADMIN_API_BASE_URL =
 const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 30000);
 const LONG_TIMEOUT_MS = Number(import.meta.env.VITE_API_LONG_TIMEOUT_MS || 300000);
 
+const getStoredAuthToken = () => {
+  const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
+  return (
+    localStorage.getItem(tokenKey) ||
+    localStorage.getItem('authToken') ||
+    localStorage.getItem('token') ||
+    ''
+  );
+};
+
+const buildAuthHeaders = (includeJsonContentType = true) => {
+  const headers = {};
+  const token = getStoredAuthToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+  if (includeJsonContentType) {
+    headers['Content-Type'] = 'application/json';
+  }
+  return headers;
+};
+
+const isBlobLike = (value) =>
+  typeof Blob !== 'undefined' && value instanceof Blob;
+
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
   timeout: DEFAULT_TIMEOUT_MS,
@@ -284,7 +309,27 @@ export const apiClient = {
    * Upload CSV file for bulk messaging
    * @param {Object} data - CSV data object with csvData field
    */
-  uploadCSV: (data) => api.post('/bulk/upload', data, { timeout: LONG_TIMEOUT_MS }),
+  uploadCSV: (data, options = {}) => {
+    if (isBlobLike(data)) {
+      const formData = new FormData();
+      formData.append('csv_file', data);
+
+      return axios
+        .post(`${API_BASE_URL}/api/bulk/imports`, formData, {
+        timeout: LONG_TIMEOUT_MS,
+        withCredentials: true,
+        headers: buildAuthHeaders(false),
+        onUploadProgress: options.onUploadProgress
+        })
+        .then((response) => response.data);
+    }
+
+    return api.post('/bulk/upload', data, { timeout: LONG_TIMEOUT_MS });
+  },
+
+  getCsvImportJob: (id) => api.get(`/bulk/imports/${id}`, { timeout: LONG_TIMEOUT_MS }),
+
+  getCsvImportJobs: (params = {}) => api.get('/bulk/imports', { params, timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Send bulk messages
@@ -441,6 +486,7 @@ export const apiService = {
   createAudienceSegment: apiClient.createAudienceSegment,
   deleteAudienceSegment: apiClient.deleteAudienceSegment,
   uploadCSV: apiClient.uploadCSV,
+  getCsvImportJob: apiClient.getCsvImportJob,
   sendBulkMessages: apiClient.sendBulkMessages,
   getConversationContacts: apiClient.getConversationContacts,
   getBroadcasts: apiClient.getBroadcasts,
