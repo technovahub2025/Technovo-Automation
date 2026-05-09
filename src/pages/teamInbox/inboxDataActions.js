@@ -263,7 +263,9 @@ export const createInboxDataActions = ({
           const previousList = Array.isArray(prev) ? prev : [];
           const merged = append
             ? mergeConversationLists(previousList, incomingConversations)
-            : incomingConversations;
+            : previousList.length && isSameQuery
+              ? mergeConversationLists(previousList, incomingConversations)
+              : incomingConversations;
 
           return merged.map((conversation) => {
             const conversationId = String(conversation?._id || conversation?.id || '').trim();
@@ -331,6 +333,7 @@ export const createInboxDataActions = ({
   const loadMessages = async (targetConversationId, options = {}) => {
     const normalizedConversationId = String(targetConversationId || '').trim();
     const loadOlder = Boolean(options?.loadOlder);
+    const forceRefresh = Boolean(options?.forceRefresh);
     const parsedPageLimit = Number(options?.limit);
     const pageLimit = Number.isFinite(parsedPageLimit)
       ? Math.max(20, Math.min(parsedPageLimit, 80))
@@ -362,22 +365,31 @@ export const createInboxDataActions = ({
     const previousConversationId = String(activeMessagesConversationIdRef.current || '').trim();
     const isConversationSwitch = previousConversationId !== normalizedConversationId;
     const nextRequestId = Number(messageLoadRequestIdRef.current || 0) + 1;
-    const persistentCachedThread = readTeamInboxThreadCache({
-      currentUserId,
-      conversationId: normalizedConversationId,
-      allowStale: true
-    });
-    const runtimeCachedMessages = messageCacheRef.current.get(normalizedConversationId);
+    const persistentCachedThread = forceRefresh
+      ? null
+      : readTeamInboxThreadCache({
+          currentUserId,
+          conversationId: normalizedConversationId,
+          allowStale: true
+        });
+    const runtimeCachedMessages = forceRefresh
+      ? null
+      : messageCacheRef.current.get(normalizedConversationId);
     const cachedMessages = Array.isArray(runtimeCachedMessages)
       ? runtimeCachedMessages
       : Array.isArray(persistentCachedThread?.messages)
         ? persistentCachedThread.messages
         : null;
     const cachedMeta = normalizeMessagePageMeta(
-      messagePaginationCacheRef?.current?.get(normalizedConversationId) || persistentCachedThread?.meta,
+      (forceRefresh ? null : messagePaginationCacheRef?.current?.get(normalizedConversationId)) ||
+        persistentCachedThread?.meta,
       pageLimit
     );
-    if (!Array.isArray(runtimeCachedMessages) && Array.isArray(persistentCachedThread?.messages)) {
+    if (
+      !forceRefresh &&
+      !Array.isArray(runtimeCachedMessages) &&
+      Array.isArray(persistentCachedThread?.messages)
+    ) {
       messageCacheRef.current.set(normalizedConversationId, persistentCachedThread.messages);
       messagePaginationCacheRef?.current?.set(normalizedConversationId, cachedMeta);
     }
@@ -395,6 +407,7 @@ export const createInboxDataActions = ({
     traceTeamInbox('loadMessages:start', {
       conversationId: normalizedConversationId,
       loadOlder,
+      forceRefresh,
       requestId: nextRequestId,
       hasRuntimeCache: Array.isArray(runtimeCachedMessages),
       cachedCount: Array.isArray(cachedMessages) ? cachedMessages.length : 0,
@@ -457,9 +470,6 @@ export const createInboxDataActions = ({
       })
       .then((data) => {
         const activeConversationId = String(activeMessagesConversationIdRef.current || '').trim();
-        if (!loadOlder && messageLoadRequestIdRef.current !== requestId) {
-          return false;
-        }
         if (loadOlder && activeConversationId !== normalizedConversationId) {
           return false;
         }
@@ -471,14 +481,24 @@ export const createInboxDataActions = ({
         )
           ? messageCacheRef.current.get(normalizedConversationId)
           : [];
+        const isStaleInitialResponse =
+          !loadOlder && messageLoadRequestIdRef.current !== requestId;
+        const shouldPreserveExistingMessages =
+          !loadOlder && fetchedMessages.length === 0 && currentCachedMessages.length > 0;
+
+        if (isStaleInitialResponse && !shouldPreserveExistingMessages && fetchedMessages.length === 0) {
+          return false;
+        }
 
         const nextMessages = loadOlder
           ? mergeOrderedMessagesPreservingReplyContext(fetchedMessages, currentCachedMessages)
-          : mergeOrderedMessagesPreservingReplyContext(currentCachedMessages, fetchedMessages);
+          : shouldPreserveExistingMessages
+            ? currentCachedMessages
+            : mergeOrderedMessagesPreservingReplyContext(currentCachedMessages, fetchedMessages);
 
         const shouldPreserveExistingPagination =
           !loadOlder &&
-          currentCachedMessages.length > fetchedMessages.length &&
+          (currentCachedMessages.length > fetchedMessages.length || shouldPreserveExistingMessages) &&
           messagePaginationCacheRef?.current?.has(normalizedConversationId);
         const nextMeta = shouldPreserveExistingPagination
           ? normalizeMessagePageMeta(

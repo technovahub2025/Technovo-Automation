@@ -14,10 +14,25 @@ const LONG_TIMEOUT_MS = Number(import.meta.env.VITE_API_LONG_TIMEOUT_MS || 30000
 
 const getStoredAuthToken = () => {
   const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
+  const sessionTokenKey = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(tokenKey) : null;
+  const sessionAuthToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('authToken') : null;
+  const sessionLegacyToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('token') : null;
+  const storedUser = (() => {
+    try {
+      const sessionUser = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('user') : null;
+      return JSON.parse(localStorage.getItem('user') || sessionUser || 'null');
+    } catch {
+      return null;
+    }
+  })();
   return (
     localStorage.getItem(tokenKey) ||
     localStorage.getItem('authToken') ||
     localStorage.getItem('token') ||
+    sessionTokenKey ||
+    sessionAuthToken ||
+    sessionLegacyToken ||
+    String(storedUser?.token || storedUser?.accessToken || '').trim() ||
     ''
   );
 };
@@ -50,10 +65,25 @@ const api = axios.create({
 api.interceptors.request.use(
   (config) => {
     const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
+    const sessionTokenKey = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(tokenKey) : null;
+    const sessionAuthToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem("authToken") : null;
+    const sessionLegacyToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem("token") : null;
+    const storedUser = (() => {
+      try {
+        const sessionUser = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('user') : null;
+        return JSON.parse(localStorage.getItem('user') || sessionUser || 'null');
+      } catch {
+        return null;
+      }
+    })();
     const token =
       localStorage.getItem(tokenKey) ||
       localStorage.getItem("authToken") ||
-      localStorage.getItem("token");
+      localStorage.getItem("token") ||
+      sessionTokenKey ||
+      sessionAuthToken ||
+      sessionLegacyToken ||
+      String(storedUser?.token || storedUser?.accessToken || '').trim();
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -170,10 +200,25 @@ export const apiClient = {
 
     uploadApi.interceptors.request.use((config) => {
       const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
+      const sessionTokenKey = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(tokenKey) : null;
+      const sessionAuthToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('authToken') : null;
+      const sessionLegacyToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('token') : null;
+      const storedUser = (() => {
+        try {
+          const sessionUser = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem('user') : null;
+          return JSON.parse(localStorage.getItem('user') || sessionUser || 'null');
+        } catch {
+          return null;
+        }
+      })();
       const token =
         localStorage.getItem(tokenKey) ||
         localStorage.getItem('authToken') ||
-        localStorage.getItem('token');
+        localStorage.getItem('token') ||
+        sessionTokenKey ||
+        sessionAuthToken ||
+        sessionLegacyToken ||
+        String(storedUser?.token || storedUser?.accessToken || '').trim();
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
       }

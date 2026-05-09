@@ -173,7 +173,7 @@ export const useTemplateSendModal = ({
         setTemplateModalMessageTone('error');
       } else if (!contactMarketingTemplateAllowed) {
         setTemplateModalMessage(
-          'Marketing templates are hidden because this contact does not have marketing opt-in.'
+          'Marketing templates are hidden because this contact is not eligible for marketing sends.'
         );
         setTemplateModalMessageTone('info');
       }
@@ -277,7 +277,7 @@ export const useTemplateSendModal = ({
       const selectedCategory = selectedTemplate ? getTemplateCategory(selectedTemplate) : 'utility';
       if (selectedCategory === 'marketing' && !contactMarketingTemplateAllowed) {
         throw new Error(
-          'This contact does not have marketing opt-in. Choose a service template instead.'
+          'This contact is not eligible for marketing sends. Choose a service template instead.'
         );
       }
 

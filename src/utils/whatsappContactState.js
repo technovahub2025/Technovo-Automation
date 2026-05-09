@@ -107,7 +107,8 @@ export const getWhatsAppConversationState = (contact = {}) => {
     optedOut,
     normalizedOptInScope,
     marketingTemplateAllowed:
-      !optedOut && normalizedOptInStatus === 'opted_in' && marketingScopeAllowed,
+      !optedOut &&
+      (normalizedOptInStatus === 'opted_in' || hasOptInEvidence(contact) || serviceWindowOpen),
     marketingRateLimited,
     marketingRateRemaining: marketingRemaining,
     marketingNextAllowedAt: marketingWindowExpiresAt,

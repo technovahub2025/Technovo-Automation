@@ -29,7 +29,25 @@ let leadScoringEndpointState = 'unknown'; // unknown | available | missing
 
 const getAuthHeaders = (includeJson = true) => {
   const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
-  const token = localStorage.getItem(tokenKey) || localStorage.getItem("authToken");
+  const sessionTokenKey = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem(tokenKey) : null;
+  const sessionAuthToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem("authToken") : null;
+  const sessionLegacyToken = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem("token") : null;
+  const storedUser = (() => {
+    try {
+      const sessionUser = typeof sessionStorage !== 'undefined' ? sessionStorage.getItem("user") : null;
+      return JSON.parse(localStorage.getItem("user") || sessionUser || "null");
+    } catch {
+      return null;
+    }
+  })();
+  const token =
+    localStorage.getItem(tokenKey) ||
+    localStorage.getItem("authToken") ||
+    localStorage.getItem("token") ||
+    sessionTokenKey ||
+    sessionAuthToken ||
+    sessionLegacyToken ||
+    String(storedUser?.token || storedUser?.accessToken || '').trim();
   const headers = {};
   if (includeJson) headers['Content-Type'] = 'application/json';
   if (token) headers.Authorization = `Bearer ${token}`;
@@ -705,6 +723,15 @@ export const whatsappService = {
     const parsedLimit = Number(options?.limit);
     const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 80)) : 30;
     const cursor = String(options?.cursor || '').trim();
+    const shouldTryCompatFallback = !cursor;
+    const buildEmptyPage = () => ({
+      data: [],
+      meta: {
+        limit,
+        hasMore: false,
+        nextCursor: null
+      }
+    });
 
     try {
       const response = await axios.get(
@@ -731,7 +758,7 @@ export const whatsappService = {
         };
       }
 
-      return {
+      const primaryPage = {
         data: Array.isArray(payload?.data) ? payload.data : [],
         meta: {
           limit: Number(payload?.meta?.limit || limit) || limit,
@@ -739,17 +766,78 @@ export const whatsappService = {
           nextCursor: String(payload?.meta?.nextCursor || '').trim() || null
         }
       };
+
+      if (
+        shouldTryCompatFallback &&
+        Array.isArray(primaryPage.data) &&
+        primaryPage.data.length === 0
+      ) {
+        try {
+          const fallbackResponse = await runFallbackSequence({
+            steps: [
+              {
+                name: "paged-messages-conversation-compat",
+                run: async () =>
+                  axios.get(
+                    `${API_BASE_URL}/api/messages/conversation/${encodeURIComponent(normalizedConversationId)}`,
+                    {
+                      headers: getAuthHeaders(false),
+                      timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
+                      params: { limit }
+                    }
+                  )
+              },
+              {
+                name: "paged-messages-attachments-compat",
+                run: async () =>
+                  axios.get(`${API_BASE_URL}/api/messages/attachments`, {
+                    headers: getAuthHeaders(false),
+                    timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
+                    params: {
+                      conversationId: normalizedConversationId,
+                      limit
+                    }
+                  })
+              }
+            ],
+            isRetryable: isNotFoundError,
+            onStepFailure: ({ name, retryable }) => {
+              if (retryable) {
+                console.warn(`${name} failed, trying next compatibility fallback.`);
+              }
+            }
+          });
+          const fallbackPayload = fallbackResponse?.data;
+          if (Array.isArray(fallbackPayload)) {
+            return {
+              data: fallbackPayload,
+              meta: {
+                limit,
+                hasMore: false,
+                nextCursor: null
+              }
+            };
+          }
+          if (Array.isArray(fallbackPayload?.data) && fallbackPayload.data.length > 0) {
+            return {
+              data: fallbackPayload.data,
+              meta: {
+                limit: Number(fallbackPayload?.meta?.limit || limit) || limit,
+                hasMore: Boolean(fallbackPayload?.meta?.hasMore),
+                nextCursor: String(fallbackPayload?.meta?.nextCursor || '').trim() || null
+              }
+            };
+          }
+        } catch {
+          console.warn('Compatibility fallback returned no messages after empty primary page.');
+        }
+      }
+
+      return primaryPage;
     } catch (error) {
       if (!isNotFoundError(error)) {
         console.error('Failed to fetch paged messages:', error);
-        return {
-          data: [],
-          meta: {
-            limit,
-            hasMore: false,
-            nextCursor: null
-          }
-        };
+        return buildEmptyPage();
       }
 
       try {
@@ -810,18 +898,11 @@ export const whatsappService = {
             nextCursor: String(fallbackPayload?.meta?.nextCursor || '').trim() || null
           }
         };
-      } catch {
+        } catch {
         console.warn('All compatibility fallbacks failed while fetching paged messages.');
       }
 
-      return {
-        data: [],
-        meta: {
-          limit,
-          hasMore: false,
-          nextCursor: null
-        }
-      };
+      return buildEmptyPage();
     }
   },
   // Delete selected messages

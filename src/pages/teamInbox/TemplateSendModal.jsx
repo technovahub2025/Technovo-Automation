@@ -214,14 +214,14 @@ const TemplateSendModal = ({
 
             {!canSendMarketingTemplate && !selectedTemplateIsMarketing ? (
               <div className="template-send-feedback template-send-feedback--info">
-                Marketing templates are hidden because this contact does not have marketing opt-in.
+                Marketing templates are hidden because this contact is not eligible for marketing sends.
                 Service templates can still be sent.
               </div>
             ) : null}
 
             {selectedTemplateIsMarketing && !canSendMarketingTemplate ? (
               <div className="template-send-feedback template-send-feedback--error">
-                This contact does not have marketing opt-in. Choose a service template instead.
+                This contact is not eligible for marketing sends. Choose a service template instead.
               </div>
             ) : null}
 
