@@ -281,7 +281,11 @@ const BroadcastMonitor = ({ broadcastId, onBroadcastUpdated }) => {
   }, [broadcastId, selectedStatus, callPagination.page, callPagination.limit, fetchBroadcastCalls]);
 
   useEffect(() => {
-    const socket = socketService.connect();
+    const socketBaseUrl =
+      import.meta.env.VITE_VOICE_API_URL ||
+      import.meta.env.VITE_API_URL ||
+      'http://localhost:5000';
+    const socket = socketService.connect(socketBaseUrl);
     if (!socket || typeof socket.on !== 'function') {
       setConnectionStatus('error');
       return undefined;

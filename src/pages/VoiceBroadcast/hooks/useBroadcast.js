@@ -230,7 +230,11 @@ export const useBroadcast = () => {
   }, [query]);
 
   useEffect(() => {
-    const socket = socketService.connect();
+    const socketBaseUrl =
+      import.meta.env.VITE_VOICE_API_URL ||
+      import.meta.env.VITE_API_URL ||
+      'http://localhost:5000';
+    const socket = socketService.connect(socketBaseUrl);
     const handleBroadcastUpdate = (data = {}) => {
       upsertBroadcast(data.broadcast || {
         _id: data.broadcastId,

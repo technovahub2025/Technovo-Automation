@@ -46,8 +46,14 @@ class SocketService {
   }
 
   resolveUrl(url) {
-    const configuredApi = import.meta.env.VITE_API_URL || '';
-    const configuredSocket = import.meta.env.VITE_SOCKET_URL || '';
+    const configuredSocket =
+      import.meta.env.VITE_WS_URL ||
+      import.meta.env.VITE_SOCKET_URL ||
+      '';
+    const configuredApi =
+      import.meta.env.VITE_VOICE_API_URL ||
+      import.meta.env.VITE_API_URL ||
+      '';
 
     return (
       url ||

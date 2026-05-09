@@ -9,7 +9,10 @@ import axios from "axios";
 import socketService from "./socketService";
 
 // Base URL from environment variable
-const API_BASE_URL = import.meta.env.VITE_API_URL || "";
+const API_BASE_URL =
+  String(import.meta.env.VITE_VOICE_API_URL || import.meta.env.VITE_API_URL || "").trim();
+const AI_SERVICE_BASE_URL =
+  String(import.meta.env.VITE_AI_SERVICE_URL || import.meta.env.VITE_PYTHON_AI_URL || "").trim();
 const ADMIN_API_BASE_URL = import.meta.env.VITE_API_ADMIN_URL || API_BASE_URL;
 const USE_CREDENTIALS = String(import.meta.env.VITE_API_WITH_CREDENTIALS || "false").toLowerCase() === "true";
 
@@ -186,9 +189,13 @@ apiService.getScheduledCalls = () =>
 
 // Health Checks
 apiService.checkBackendHealth = () =>
-  apiService.get("/", { skipAuthRedirect: true });
+  apiService.get("/health/basic", { skipAuthRedirect: true });
 apiService.checkAIHealth = () =>
-  apiService.get("/ai/health", { skipAuthRedirect: true });
+  (AI_SERVICE_BASE_URL
+    ? axios.get(`${AI_SERVICE_BASE_URL.replace(/\/+$/, "")}/health`, {
+        skipAuthRedirect: true
+      })
+    : apiService.get("/ai/health", { skipAuthRedirect: true }));
 
 // Inbound and IVR methods
 const fetchInboundAnalyticsHttp = (period = 'today', params = {}) => {

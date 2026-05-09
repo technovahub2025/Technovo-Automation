@@ -17,6 +17,11 @@ const renderMessage = (value, fallback = 'Something went wrong') => {
   return fallback;
 };
 
+const isHealthyStatus = (status) => {
+  const normalized = String(status || '').trim().toLowerCase();
+  return ['healthy', 'online', 'ready', 'ok', 'degraded'].includes(normalized);
+};
+
 const VoiceBroadcast = () => {
 
   const [activeTab, setActiveTab] = useState('create');
@@ -64,8 +69,8 @@ const VoiceBroadcast = () => {
         ]);
 
         setHealthStatus({
-          backend: backendHealth?.data?.status === 'online',
-          ai: aiHealth?.data?.status === 'healthy'
+          backend: isHealthyStatus(backendHealth?.data?.status),
+          ai: isHealthyStatus(aiHealth?.data?.status)
         });
       } catch (err) {
         console.error('Failed to fetch voice service health', err);
@@ -74,7 +79,11 @@ const VoiceBroadcast = () => {
 
     checkHealth();
 
-    const socket = socketService.connect();
+    const voiceSocketBaseUrl =
+      import.meta.env.VITE_VOICE_API_URL ||
+      import.meta.env.VITE_API_URL ||
+      'http://localhost:5000';
+    const socket = socketService.connect(voiceSocketBaseUrl);
 
     const handleConnect = () => {
       console.log('Connected to dashboard socket');
