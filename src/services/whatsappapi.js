@@ -10,7 +10,7 @@ const API_BASE_URL = resolveApiBaseUrl();
 const ADMIN_API_BASE_URL =
   String(import.meta.env.VITE_API_ADMIN_URL || '').trim().replace(/\/+$/, '');
 const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 30000);
-const LONG_TIMEOUT_MS = Number(import.meta.env.VITE_API_LONG_TIMEOUT_MS || 60000);
+const LONG_TIMEOUT_MS = Number(import.meta.env.VITE_API_LONG_TIMEOUT_MS || 300000);
 
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
@@ -181,6 +181,13 @@ export const apiClient = {
    * @param {Object} params - Query parameters (search, tags)
    */
   getContacts: (params = {}) => api.get('/contacts', { params, timeout: LONG_TIMEOUT_MS }),
+
+  /**
+   * Lookup CRM contacts by phone numbers
+   * @param {Array<string>} phones - Phone numbers to resolve
+   */
+  lookupContactsByPhones: (phones = []) =>
+    api.post('/contacts/lookup', { phones }, { timeout: LONG_TIMEOUT_MS }),
   
   /**
    * Create new contact
@@ -414,6 +421,7 @@ export const apiService = {
   getMessages: apiClient.getMessages,
   sendMessage: apiClient.sendMessage,
   getContacts: apiClient.getContacts,
+  lookupContactsByPhones: apiClient.lookupContactsByPhones,
   createContact: apiClient.createContact,
   importContacts: apiClient.importContacts,
   updateContact: apiClient.updateContact,

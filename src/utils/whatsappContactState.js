@@ -23,11 +23,16 @@ const hasOptInEvidence = (contact = {}) =>
       toTrimmedString(contact?.whatsappOptInProofUrl) ||
       toTrimmedString(contact?.whatsappOptInPageUrl) ||
       toTrimmedString(contact?.whatsappOptInCapturedBy) ||
-      toTrimmedString(contact?.whatsappOptInMetadata)
+      toTrimmedString(contact?.whatsappOptInMetadata) ||
+      ['landing_page', 'public_opt_in', 'website_form'].includes(
+        toTrimmedString(contact?.whatsappOptInSource || contact?.source).toLowerCase()
+      )
   );
 
 export const normalizeWhatsappOptInStatus = (contact = {}) => {
-  const normalized = toTrimmedString(contact?.whatsappOptInStatus).toLowerCase();
+  const normalized = toTrimmedString(contact?.whatsappOptInStatus)
+    .toLowerCase()
+    .replace(/[-\s]+/g, '_');
   if (normalized === 'opted_in') return 'opted_in';
   if (normalized === 'opted_out') return 'opted_out';
   if (hasOptInEvidence(contact)) return 'opted_in';

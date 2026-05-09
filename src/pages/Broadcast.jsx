@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 
 import { apiClient } from '../services/whatsappapi';
 import { useBroadcast, useCampaignAutomation } from '../hooks/useBroadcast';
+import webSocketService from '../services/websocketService';
 
 // Import components
 import BroadcastHeader from '../components/broadcastComponents/BroadcastHeader';
@@ -11,6 +12,7 @@ import OverviewStats from '../components/broadcastComponents/OverviewStats';
 import ReliabilityInsights from '../components/broadcastComponents/ReliabilityInsights';
 
 import { getCachedOverviewStats } from '../utils/stableBroadcastStats';
+import { clearSidebarPageCache, resolveCacheUserId } from '../utils/sidebarPageCache';
 
 import BroadcastListControls from '../components/broadcastComponents/BroadcastListControls';
 import BroadcastTable from '../components/broadcastComponents/BroadcastTable';
@@ -23,8 +25,6 @@ import NewBroadcastPopup from '../components/broadcastComponents/NewBroadcastPop
 import AllCampaignsPopup from '../components/broadcastComponents/AllCampaignsPopup';
 
 // Import existing components
-import CampaignResultsModal from '../components/broadcastComponents/CampaignResultsModal';
-import BroadcastResultsPopup from '../components/broadcastComponents/BroadcastResultsPopup';
 import BroadcastAnalyticsModal from '../components/broadcastComponents/BroadcastAnalyticsModal';
 import BroadcastAudienceValidationModal from '../components/broadcastComponents/BroadcastAudienceValidationModal';
 import ContactAudiencePickerModal from '../components/broadcastComponents/ContactAudiencePickerModal';
@@ -43,6 +43,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = stripAppRouteBase(location.pathname);
+  const currentUserId = resolveCacheUserId();
 
   const {
 
@@ -176,6 +177,18 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     }
   }, [currentPath, setActiveTab, setShowBroadcastTypeChoice, setShowNewBroadcastPopup]);
 
+  useEffect(() => {
+    const handleCrmChanged = () => {
+      void refreshCsvRecipientsFromContacts();
+    };
+
+    webSocketService.on('crm_changed', handleCrmChanged);
+
+    return () => {
+      webSocketService.off('crm_changed', handleCrmChanged);
+    };
+  }, []);
+
 
 
   // Additional state for pagination
@@ -204,6 +217,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const [quietHoursTimezone, setQuietHoursTimezone] = useState('Asia/Kolkata');
   const [quietHoursAction, setQuietHoursAction] = useState('defer');
   const [deliveryBatchSize, setDeliveryBatchSize] = useState(50);
+  const [deliveryBatchDelaySeconds, setDeliveryBatchDelaySeconds] = useState(5);
   const [retryPolicyEnabled, setRetryPolicyEnabled] = useState(true);
   const [retryMaxAttempts, setRetryMaxAttempts] = useState(3);
   const [retryBackoffSeconds, setRetryBackoffSeconds] = useState(45);
@@ -220,6 +234,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     topFailureCode: null
   });
   const broadcastSubmitInFlightRef = useRef(false);
+  const csvRecipientRefreshContextRef = useRef({
+    recipients: [],
+    uploadedFile: null
+  });
   const {
     scheduleLoading,
     retryLoading,
@@ -601,18 +619,36 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         if (result.data.success) {
 
           const recipientsWithFullData = result.data.csvData || result.data.recipients || [];
+          let enrichedRecipients = recipientsWithFullData;
 
-          const csvRows = recipientsWithFullData.map((recipient) => {
+          try {
+            const lookupPhones = Array.from(
+              new Set(
+                recipientsWithFullData
+                  .map((recipient) => normalizePhoneForLookup(
+                    recipient?.phone ||
+                    recipient?.fullData?.phone ||
+                    recipient?.data?.phone ||
+                    ''
+                  ))
+                  .filter(Boolean)
+              )
+            );
+
+            if (lookupPhones.length > 0) {
+              const lookupResult = await apiClient.lookupContactsByPhones(lookupPhones);
+              const matchedContacts = lookupResult?.data?.data || lookupResult?.data || [];
+              enrichedRecipients = mergeCsvRecipientsWithContacts(recipientsWithFullData, matchedContacts);
+            }
+          } catch (lookupError) {
+            console.warn('CRM contact lookup for CSV recipients failed, continuing with CSV data only:', lookupError);
+          }
+
+          const csvRows = enrichedRecipients.map((recipient, index) => {
             const row = recipient?.fullData || recipient?.data || recipient || {};
             const rawTags = Array.isArray(row?.tags)
               ? row.tags
               : String(row?.tags || '').split(',').map((tag) => tag.trim()).filter(Boolean);
-            const normalizedStatus = String(
-              row?.whatsappOptInStatus ||
-              row?.optInStatus ||
-              row?.status ||
-              ''
-            ).trim().toLowerCase();
             const consentText = String(
               row?.whatsappOptInTextSnapshot ||
               row?.consentText ||
@@ -644,8 +680,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
               row?.consentScope ||
               ''
             ).trim();
-            const hasConsentEvidence =
-              Boolean(consentText || proofType || proofId || proofUrl || scope);
+
+            const importedConsentReferenceId = `landing-page-import-${String(row?.lineNumber || index + 1).trim()}-${String(recipient?.phone || row?.phone || '').replace(/\D/g, '').slice(-4) || 'contact'}-${Date.now().toString(36)}`;
 
             return {
               name: String(row?.name || row?.contactName || recipient?.name || '').trim(),
@@ -653,25 +689,73 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
               email: String(row?.email || row?.emailAddress || '').trim(),
               tags: rawTags,
               sourceType: String(row?.sourceType || 'imported').trim() || 'imported',
-              ...(normalizedStatus === 'opted-in' || hasConsentEvidence
-                ? {
-                    whatsappOptInStatus: 'opted_in',
-                    whatsappOptInScope: scope || 'marketing',
-                    whatsappOptInTextSnapshot: consentText || 'CSV import consent',
-                    whatsappOptInProofType: proofType || 'csv',
-                    whatsappOptInProofId: proofId,
-                    whatsappOptInProofUrl: proofUrl,
-                    whatsappOptInSource: String(row?.whatsappOptInSource || 'csv_import').trim() || 'csv_import'
-                  }
-                : {}),
-              ...(normalizedStatus === 'opted-out'
-                ? {
-                    whatsappOptInStatus: 'opted_out',
-                    whatsappOptInSource: String(row?.whatsappOptInSource || 'csv_import').trim() || 'csv_import'
-                  }
-                : {})
+              whatsappOptInStatus: 'opted_in',
+              whatsappOptInScope: scope || 'marketing',
+              whatsappOptInTextSnapshot:
+                consentText || 'Consent captured via website landing page during CSV import.',
+              whatsappOptInProofType: proofType || 'import_record',
+              whatsappOptInProofId: proofId || importedConsentReferenceId,
+              whatsappOptInProofUrl: proofUrl,
+              whatsappOptInSource: String(row?.whatsappOptInSource || 'landing_page').trim() || 'landing_page',
+              whatsappOptInCapturedBy: String(row?.whatsappOptInCapturedBy || 'csv_import').trim() || 'csv_import',
+              whatsappOptInPageUrl: String(row?.whatsappOptInPageUrl || '').trim(),
+              whatsappOptInIp: String(row?.whatsappOptInIp || '').trim(),
+              whatsappOptInUserAgent: String(row?.whatsappOptInUserAgent || '').trim(),
+              whatsappOptInMetadata: {
+                importLineNumber: row?.lineNumber || index + 1,
+                importSource: 'csv_import',
+                consentSource: 'landing_page'
+              }
             };
           }).filter((contact) => String(contact.phone || '').trim());
+
+          if (csvRows.length > 0) {
+            const importedConsentLookup = buildContactLookupMap(csvRows);
+            enrichedRecipients = enrichedRecipients.map((recipient) => {
+              const raw = recipient?.data && typeof recipient.data === 'object' ? recipient.data : recipient;
+              const fullData = raw?.fullData && typeof raw.fullData === 'object' ? raw.fullData : raw;
+              const phoneDigits = normalizePhoneForLookup(
+                recipient?.phone ||
+                raw?.phone ||
+                fullData?.phone ||
+                fullData?.mobile ||
+                fullData?.whatsappNumber ||
+                ''
+              );
+              const importedConsent =
+                importedConsentLookup.get(phoneDigits) ||
+                importedConsentLookup.get(phoneDigits.slice(-10)) ||
+                null;
+
+              if (!importedConsent) {
+                return recipient;
+              }
+
+              const mergedFullData = {
+                ...fullData,
+                ...importedConsent
+              };
+
+              return {
+                ...recipient,
+                data: mergedFullData,
+                fullData: mergedFullData,
+                whatsappOptInStatus: importedConsent.whatsappOptInStatus || recipient.whatsappOptInStatus || 'opted_in',
+                whatsappOptInScope: importedConsent.whatsappOptInScope || recipient.whatsappOptInScope || 'marketing',
+                whatsappOptInTextSnapshot:
+                  importedConsent.whatsappOptInTextSnapshot || recipient.whatsappOptInTextSnapshot,
+                whatsappOptInProofType: importedConsent.whatsappOptInProofType || recipient.whatsappOptInProofType,
+                whatsappOptInProofId: importedConsent.whatsappOptInProofId || recipient.whatsappOptInProofId,
+                whatsappOptInProofUrl: importedConsent.whatsappOptInProofUrl || recipient.whatsappOptInProofUrl,
+                whatsappOptInSource: importedConsent.whatsappOptInSource || recipient.whatsappOptInSource,
+                whatsappOptInCapturedBy: importedConsent.whatsappOptInCapturedBy || recipient.whatsappOptInCapturedBy,
+                whatsappOptInPageUrl: importedConsent.whatsappOptInPageUrl || recipient.whatsappOptInPageUrl,
+                whatsappOptInIp: importedConsent.whatsappOptInIp || recipient.whatsappOptInIp,
+                whatsappOptInUserAgent: importedConsent.whatsappOptInUserAgent || recipient.whatsappOptInUserAgent,
+                whatsappOptInAt: importedConsent.whatsappOptInAt || recipient.whatsappOptInAt
+              };
+            });
+          }
 
           if (csvRows.length > 0) {
             try {
@@ -679,22 +763,23 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
               if (!importResult?.data?.success && importResult?.data?.error) {
                 console.warn('CSV contact import returned a non-success response:', importResult.data);
               }
+              clearSidebarPageCache('contacts-page:v2', { currentUserId });
             } catch (importError) {
               console.warn('CSV contact import failed, continuing with parsed recipients:', importError);
             }
           }
 
-          setRecipients(recipientsWithFullData);
+          setRecipients(enrichedRecipients);
 
 
 
-          if (recipientsWithFullData.length > 0) {
+          if (enrichedRecipients.length > 0) {
 
-            const firstRecipient = recipientsWithFullData[0];
+            const firstRecipient = enrichedRecipients[0];
 
             const fileVarKeys = Object.keys(firstRecipient).filter(
 
-              (key) => key.toLowerCase().startsWith('var') && firstRecipient[key] != null
+              (key) => /^var\d+$/i.test(String(key || '').trim()) && firstRecipient[key] != null
 
             );
 
@@ -758,6 +843,151 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     const scheduleFileInput = document.getElementById('broadcast-csv-upload');
     if (scheduleFileInput) {
       scheduleFileInput.value = '';
+    }
+  };
+
+  useEffect(() => {
+    csvRecipientRefreshContextRef.current = {
+      recipients,
+      uploadedFile
+    };
+  }, [recipients, uploadedFile]);
+
+  const normalizePhoneForLookup = (value = '') => String(value || '').replace(/\D/g, '');
+
+  const buildContactLookupMap = (contacts = []) => {
+    const map = new Map();
+    (Array.isArray(contacts) ? contacts : []).forEach((contact) => {
+      const phoneDigits = normalizePhoneForLookup(
+        contact?.phone || contact?.mobile || contact?.phoneNumber || contact?.whatsappNumber || ''
+      );
+      if (!phoneDigits) return;
+      if (!map.has(phoneDigits)) {
+        map.set(phoneDigits, contact);
+      }
+      const lastTen = phoneDigits.length > 10 ? phoneDigits.slice(-10) : phoneDigits;
+      if (lastTen && !map.has(lastTen)) {
+        map.set(lastTen, contact);
+      }
+    });
+    return map;
+  };
+
+  const mergeCsvRecipientsWithContacts = (recipients = [], contacts = []) => {
+    const contactLookup = buildContactLookupMap(contacts);
+
+    return (Array.isArray(recipients) ? recipients : []).map((recipient) => {
+      const raw = recipient?.data && typeof recipient.data === 'object' ? recipient.data : recipient;
+      const fullData = raw?.fullData && typeof raw.fullData === 'object' ? raw.fullData : raw;
+      const phoneDigits = normalizePhoneForLookup(
+        recipient?.phone ||
+        raw?.phone ||
+        fullData?.phone ||
+        fullData?.mobile ||
+        fullData?.whatsappNumber ||
+        ''
+      );
+      const matchedContact =
+        contactLookup.get(phoneDigits) ||
+        contactLookup.get(phoneDigits.slice(-10)) ||
+        null;
+
+      if (!matchedContact) {
+        return recipient;
+      }
+
+      const mergedFullData = {
+        ...fullData,
+        ...matchedContact
+      };
+
+      const mergedRecipient = {
+        ...recipient,
+        contactId: matchedContact._id || recipient.contactId,
+        name: matchedContact.name || recipient.name,
+        phone: matchedContact.phone || recipient.phone,
+        email: matchedContact.email || recipient.email,
+        tags: Array.isArray(matchedContact.tags) ? matchedContact.tags : recipient.tags,
+        sourceType: matchedContact.sourceType || recipient.sourceType,
+        data: mergedFullData,
+        fullData: mergedFullData
+      };
+
+      const optInStatus = String(
+        matchedContact.whatsappOptInStatus ||
+        fullData.whatsappOptInStatus ||
+        recipient.whatsappOptInStatus ||
+        ''
+      ).trim();
+
+      if (optInStatus) {
+        mergedRecipient.whatsappOptInStatus = optInStatus;
+        mergedRecipient.whatsappOptInScope = matchedContact.whatsappOptInScope || recipient.whatsappOptInScope;
+        mergedRecipient.whatsappOptInTextSnapshot =
+          matchedContact.whatsappOptInTextSnapshot || recipient.whatsappOptInTextSnapshot;
+        mergedRecipient.whatsappOptInProofType = matchedContact.whatsappOptInProofType || recipient.whatsappOptInProofType;
+        mergedRecipient.whatsappOptInProofId = matchedContact.whatsappOptInProofId || recipient.whatsappOptInProofId;
+        mergedRecipient.whatsappOptInProofUrl = matchedContact.whatsappOptInProofUrl || recipient.whatsappOptInProofUrl;
+        mergedRecipient.whatsappOptInSource = matchedContact.whatsappOptInSource || recipient.whatsappOptInSource;
+      }
+
+      if (matchedContact.lastInboundMessageAt) {
+        mergedRecipient.lastInboundMessageAt = matchedContact.lastInboundMessageAt;
+        mergedFullData.lastInboundMessageAt = matchedContact.lastInboundMessageAt;
+      }
+      if (matchedContact.serviceWindowClosesAt) {
+        mergedRecipient.serviceWindowClosesAt = matchedContact.serviceWindowClosesAt;
+        mergedFullData.serviceWindowClosesAt = matchedContact.serviceWindowClosesAt;
+      }
+      if (matchedContact.whatsappOptOutAt) {
+        mergedRecipient.whatsappOptOutAt = matchedContact.whatsappOptOutAt;
+        mergedFullData.whatsappOptOutAt = matchedContact.whatsappOptOutAt;
+      }
+
+      return mergedRecipient;
+    });
+  };
+
+  const refreshCsvRecipientsFromContacts = async () => {
+    const { recipients: currentRecipients, uploadedFile: currentUploadedFile } =
+      csvRecipientRefreshContextRef.current || {};
+
+    if (!currentUploadedFile || !Array.isArray(currentRecipients) || currentRecipients.length === 0) {
+      return;
+    }
+
+    const lookupPhones = Array.from(
+      new Set(
+        currentRecipients
+          .map((recipient) => normalizePhoneForLookup(
+            recipient?.phone ||
+            recipient?.fullData?.phone ||
+            recipient?.data?.phone ||
+            ''
+          ))
+          .filter(Boolean)
+      )
+    );
+
+    if (!lookupPhones.length) {
+      return;
+    }
+
+    try {
+      const lookupResult = await apiClient.lookupContactsByPhones(lookupPhones);
+      const matchedContacts = lookupResult?.data?.data || lookupResult?.data || [];
+      const refreshedRecipients = mergeCsvRecipientsWithContacts(currentRecipients, matchedContacts);
+      setRecipients(refreshedRecipients);
+
+      if (refreshedRecipients.length > 0) {
+        const firstRecipient = refreshedRecipients[0];
+        const fileVarKeys = Object.keys(firstRecipient).filter(
+          (key) => /^var\d+$/i.test(String(key || '').trim()) && firstRecipient[key] != null
+        );
+        setFileVariables(fileVarKeys);
+      }
+    } catch (error) {
+      console.warn('Failed to refresh CSV recipients after CRM change:', error);
     }
   };
 
@@ -860,7 +1090,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           endHour: parseIntegerInRange(quietHoursEndHour, { min: 0, max: 23, fallback: 9 }),
           timezone: String(quietHoursTimezone || '').trim() || 'Asia/Kolkata',
           action: String(quietHoursAction || '').toLowerCase() === 'skip' ? 'skip' : 'defer',
-          batchSize: parseIntegerInRange(deliveryBatchSize, { min: 1, max: 500, fallback: 50 })
+          batchSize: parseIntegerInRange(deliveryBatchSize, { min: 1, max: 50, fallback: 50 }),
+          batchDelaySeconds: parseIntegerInRange(deliveryBatchDelaySeconds, { min: 0, max: 3600, fallback: 5 })
         }
       },
       retryPolicy: {
@@ -1190,6 +1421,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     try {
       broadcastSubmitInFlightRef.current = true;
       setIsSending(true);
+      await new Promise((resolve) => window.requestAnimationFrame(resolve));
       const recipientPreparation = prepareRecipientsForDelivery();
       if (!validatePreparedRecipients(recipientPreparation)) {
         return;
@@ -1201,9 +1433,17 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       if (!audienceValidation) {
         return;
       }
-      if (!audienceValidation.validation?.canProceed || Number(audienceValidation.validation?.summary?.invalid || 0) > 0) {
+      const audienceSummary = audienceValidation.validation?.summary || {};
+      const eligibleCount = Number(audienceSummary.eligible || 0);
+      const invalidCount = Number(audienceSummary.invalid || 0);
+      if (eligibleCount <= 0) {
         openAudienceValidationModal(audienceValidation);
         return;
+      }
+      if (invalidCount > 0) {
+        console.warn(
+          `Audience validation found ${invalidCount} invalid recipient(s), but continuing with ${eligibleCount} eligible recipient(s).`
+        );
       }
 
       const payload = {
@@ -1225,15 +1465,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           templateContent,
           templateCategory: selectedTemplateCategory || audienceValidation.templateCategory || 'utility',
           mediaUrl: String(templateHeaderMediaUrl || '').trim(),
-          mediaType: String(templateHeaderMediaUrl || '').trim() ? 'image' : '',
-
-          templateParameters: templateVariables.map((variable, index) => ({
-
-            type: 'text',
-
-            text: `Parameter ${index + 1}` // Default value, should be replaced with actual data
-
-          }))
+          mediaType: String(templateHeaderMediaUrl || '').trim() ? 'image' : ''
 
         } : { customMessage }),
 
@@ -1255,8 +1487,12 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
       if (result.data.success) {
-
-        alert(scheduledTime ? 'Broadcast scheduled successfully!' : 'Broadcast created successfully!');
+        const queued = Boolean(result.data.queued);
+        alert(
+          queued
+            ? (result.data.message || 'Broadcast queued. Sending will continue in the background.')
+            : (scheduledTime ? 'Broadcast scheduled successfully!' : 'Broadcast created successfully!')
+        );
 
         await loadBroadcasts();
 
@@ -1287,16 +1523,11 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         setRetryBackoffSeconds(45);
         setRespectOptOut(true);
         setSuppressionListRaw('');
+        setDeliveryBatchDelaySeconds(5);
 
 
 
         setShowNewBroadcastPopup(false);
-
-        if (composerMode) {
-          navigate('/broadcast');
-        } else {
-          setActiveTab('overview');
-        }
 
       } else {
 
@@ -1417,6 +1648,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
     broadcastSubmitInFlightRef.current = true;
     setIsSending(true);
+    await new Promise((resolve) => window.requestAnimationFrame(resolve));
 
 
 
@@ -1432,9 +1664,17 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       if (!audienceValidation) {
         return;
       }
-      if (!audienceValidation.validation?.canProceed || Number(audienceValidation.validation?.summary?.invalid || 0) > 0) {
+      const audienceSummary = audienceValidation.validation?.summary || {};
+      const eligibleCount = Number(audienceSummary.eligible || 0);
+      const invalidCount = Number(audienceSummary.invalid || 0);
+      if (eligibleCount <= 0) {
         openAudienceValidationModal(audienceValidation);
         return;
+      }
+      if (invalidCount > 0) {
+        console.warn(
+          `Audience validation found ${invalidCount} invalid recipient(s), but continuing with ${eligibleCount} eligible recipient(s).`
+        );
       }
 
 
@@ -1472,10 +1712,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
       if (result.data.success) {
-
-        setSendResults(result.data);
-
-        setShowResultsPopup(true);
+        const queued = Boolean(result.data.queued);
+        if (queued) {
+          setShowResultsPopup(false);
+        }
 
         await loadBroadcasts();
 
@@ -1506,10 +1746,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         setRetryBackoffSeconds(45);
         setRespectOptOut(true);
         setSuppressionListRaw('');
-
-        if (composerMode) {
-          navigate('/broadcast');
-        }
+        setDeliveryBatchDelaySeconds(5);
 
       } else {
 
@@ -1619,10 +1856,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
     setShowResultsPopup(false);
 
-    setActiveTab('overview');
-
-    window.location.reload();
-
   };
 
 
@@ -1698,6 +1931,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     setRetryBackoffSeconds(45);
     setRespectOptOut(true);
     setSuppressionListRaw('');
+    setDeliveryBatchDelaySeconds(5);
   };
 
   const buildBroadcastPayloadFromValidation = ({
@@ -1726,15 +1960,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
             templateName,
             language,
             templateContent: selectedTemplate ? extractTemplateBody(selectedTemplate) : '',
-            templateCategory,
-            ...(mode === 'create'
-              ? {
-                  templateParameters: templateVariables.map((variable, index) => ({
-                    type: 'text',
-                    text: `Parameter ${index + 1}`
-                  }))
-                }
-              : {})
+            templateCategory
           }
         : mode === 'send'
           ? { customMessage }
@@ -1790,8 +2016,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           await loadBroadcasts();
           resetComposerForm();
           setShowNewBroadcastPopup(false);
-          if (composerMode) navigate('/broadcast');
-          else setActiveTab('overview');
           return;
         }
         alert('Failed: ' + (result.data.error || result.data.message));
@@ -1801,11 +2025,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       const result = await apiClient.sendBulkMessages(payload);
       setSendResults(result.data);
       if (result.data.success) {
-        setShowResultsPopup(true);
+        setShowResultsPopup(false);
         await loadBroadcasts();
         setShowNewBroadcastPopup(false);
         resetComposerForm();
-        if (composerMode) navigate('/broadcast');
         return;
       }
       alert('Failed to send: ' + (result.data.error || result.data.message));
@@ -1960,6 +2183,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           onRetryBackoffSecondsChange={setRetryBackoffSeconds}
           deliveryBatchSize={deliveryBatchSize}
           onDeliveryBatchSizeChange={setDeliveryBatchSize}
+          deliveryBatchDelaySeconds={deliveryBatchDelaySeconds}
+          onDeliveryBatchDelaySecondsChange={setDeliveryBatchDelaySeconds}
           respectOptOut={respectOptOut}
           onRespectOptOutChange={setRespectOptOut}
           suppressionListRaw={suppressionListRaw}
@@ -2077,6 +2302,17 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         onShowBroadcastTypeChoice={() => navigate('/broadcast/new/template')}
 
       />
+
+      {(isSending || sendResults?.queued) && (
+        <div className="broadcast-validation-banner broadcast-validation-banner--success broadcast-send-banner">
+          <strong>{isSending ? 'Sending broadcast...' : 'Broadcast queued'}</strong>
+          <span>
+            {isSending
+              ? 'We are sending this campaign in the background. You can stay on this page and watch the broadcast list update.'
+              : 'The campaign is running in the background. You can stay here and watch the progress update.'}
+          </span>
+        </div>
+      )}
 
 
 
@@ -2332,22 +2568,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
 
-      <BroadcastResultsPopup
-
-        isOpen={showResultsPopup}
-
-        onClose={handleResultsPopupClose}
-
-        results={sendResults}
-
-        broadcastName={broadcastName}
-
-        isSending={false}
-
-      />
-
-
-
       <BroadcastTypeChoice
 
         showBroadcastTypeChoice={showBroadcastTypeChoice}
@@ -2382,6 +2602,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         uploadedFile={uploadedFile}
 
         recipients={recipients}
+        fileVariables={fileVariables}
 
         onFileUpload={handleFileUpload}
 
@@ -2438,6 +2659,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         onRetryBackoffSecondsChange={setRetryBackoffSeconds}
         deliveryBatchSize={deliveryBatchSize}
         onDeliveryBatchSizeChange={setDeliveryBatchSize}
+        deliveryBatchDelaySeconds={deliveryBatchDelaySeconds}
+        onDeliveryBatchDelaySecondsChange={setDeliveryBatchDelaySeconds}
         respectOptOut={respectOptOut}
         onRespectOptOutChange={setRespectOptOut}
         suppressionListRaw={suppressionListRaw}

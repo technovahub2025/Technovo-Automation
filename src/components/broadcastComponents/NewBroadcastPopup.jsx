@@ -1,6 +1,7 @@
 import React from 'react';
-import { X, Upload, Calendar, Send, Clock, ArrowLeft, RefreshCw, Trash2, Users } from 'lucide-react';
+import { X, Upload, Calendar, Send, Clock, ArrowLeft, RefreshCw, Trash2, Users, Download } from 'lucide-react';
 import MessagePreview from './MessagePreview';
+import { downloadCsv } from '../../utils/csvExport';
 import './Modal.css';
 
 const NewBroadcastPopup = ({
@@ -13,6 +14,7 @@ const NewBroadcastPopup = ({
   officialTemplates,
   uploadedFile,
   recipients,
+  fileVariables = [],
   onFileUpload,
   onClearUpload,
   templateHeaderMediaUrl,
@@ -51,6 +53,8 @@ const NewBroadcastPopup = ({
   onRetryBackoffSecondsChange,
   deliveryBatchSize = 50,
   onDeliveryBatchSizeChange = () => {},
+  deliveryBatchDelaySeconds = 5,
+  onDeliveryBatchDelaySecondsChange = () => {},
   respectOptOut,
   onRespectOptOutChange,
   suppressionListRaw,
@@ -93,6 +97,73 @@ const NewBroadcastPopup = ({
     ''
   ).trim();
   const templateHeaderUploadInputId = 'new-broadcast-template-header-upload';
+
+  const extractTemplateBody = (template) => {
+    if (!template || typeof template !== 'object') return '';
+
+    if (typeof template.templateContent === 'string' && template.templateContent.trim()) {
+      return template.templateContent.trim();
+    }
+
+    if (typeof template.content === 'string' && template.content.trim()) {
+      return template.content.trim();
+    }
+
+    if (template.content && typeof template.content === 'object') {
+      if (typeof template.content.body === 'string' && template.content.body.trim()) {
+        return template.content.body.trim();
+      }
+      if (typeof template.content.text === 'string' && template.content.text.trim()) {
+        return template.content.text.trim();
+      }
+    }
+
+    if (Array.isArray(template.components)) {
+      const bodyComponent = template.components.find((component) => String(component?.type || '').toUpperCase() === 'BODY');
+      if (typeof bodyComponent?.text === 'string' && bodyComponent.text.trim()) {
+        return bodyComponent.text.trim();
+      }
+    }
+
+    return '';
+  };
+
+  const getTemplateVariableCount = React.useCallback((template) => {
+    const bodyText = extractTemplateBody(template);
+    if (!bodyText) return 0;
+
+    const matches = bodyText.match(/\{\{(\d+)\}\}/g) || [];
+    const numbers = matches
+      .map((token) => Number(token.replace(/[{}]/g, '')))
+      .filter((value) => Number.isFinite(value) && value > 0);
+
+    return numbers.length > 0 ? Math.max(...numbers) : 0;
+  }, []);
+
+  const downloadSampleCsv = () => {
+    const variableCount = messageType === 'template' ? getTemplateVariableCount(selectedTemplate) : 0;
+    const headers = ['phone'];
+    for (let i = 1; i <= variableCount; i += 1) {
+      headers.push(`var${i}`);
+    }
+
+    const emptyRow = headers.map(() => '');
+    downloadCsv({
+      filename: 'broadcast_contacts_sample.csv',
+      headers,
+      rows: [emptyRow, emptyRow],
+      exportType: 'broadcast_contacts_sample'
+    });
+  };
+
+  const selectedTemplateVariableCount = messageType === 'template' ? getTemplateVariableCount(selectedTemplate) : 0;
+  const missingTemplateVariables = Boolean(
+    uploadedFile &&
+    messageType === 'template' &&
+    selectedTemplate &&
+    selectedTemplateVariableCount > 0 &&
+    fileVariables.length === 0
+  );
 
   const handleTemplateHeaderUploadClick = () => {
     const input = document.getElementById(templateHeaderUploadInputId);
@@ -390,9 +461,30 @@ const NewBroadcastPopup = ({
                       </span>
                     </label>
                   </div>
+
+                  <button
+                    type="button"
+                    className="replace-upload-btn"
+                    onClick={downloadSampleCsv}
+                  >
+                    <Download size={16} />
+                    Download Sample CSV
+                  </button>
                 </>
               )}
             </div>
+
+            {uploadedFile && fileVariables.length > 0 ? (
+              <div className="variable-file-info">
+                Variables detected: {fileVariables.join(', ')}
+              </div>
+            ) : null}
+
+            {missingTemplateVariables ? (
+              <div className="submit-block-warning" style={{ marginTop: 12 }}>
+                <strong>CSV needs template variables:</strong> this template requires {selectedTemplateVariableCount} variable column(s) like <code>var1</code>, <code>var2</code>. Your CSV does not include them yet.
+              </div>
+            ) : null}
 
             {uploadedFile && (
               <div className="file-action-buttons">
@@ -539,12 +631,25 @@ const NewBroadcastPopup = ({
               <input
                 type="number"
                 min="1"
-                max="500"
+                max="50"
                 value={deliveryBatchSize}
                 onChange={(event) => onDeliveryBatchSizeChange(event.target.value)}
                 className="form-input"
               />
               <small>How many recipients to process before moving to the next batch.</small>
+            </div>
+
+            <div className="policy-field">
+              <span>Wait between batches (seconds)</span>
+              <input
+                type="number"
+                min="0"
+                max="3600"
+                value={deliveryBatchDelaySeconds}
+                onChange={(event) => onDeliveryBatchDelaySecondsChange(event.target.value)}
+                className="form-input"
+              />
+              <small>How long the backend waits before sending the next batch.</small>
             </div>
 
             <div className="policy-toggle">

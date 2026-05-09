@@ -83,6 +83,8 @@ const ScheduleForm = ({
   onRetryBackoffSecondsChange = () => {},
   deliveryBatchSize = 50,
   onDeliveryBatchSizeChange = () => {},
+  deliveryBatchDelaySeconds = 5,
+  onDeliveryBatchDelaySecondsChange = () => {},
   respectOptOut = true,
   onRespectOptOutChange = () => {},
   suppressionListRaw = '',
@@ -621,9 +623,34 @@ const ScheduleForm = ({
         raw.serviceWindowClosesAt ||
         fullData.serviceWindowClosesAt
       );
+      const hasCrmMatch = Boolean(String(
+        recipient?.contactId ||
+        raw?.contactId ||
+        raw?._id ||
+        fullData?._id ||
+        raw?.crmContactId ||
+        fullData?.crmContactId ||
+        ''
+      ).trim());
       const isMarketingTemplate = String(selectedTemplateCategory || '').trim().toLowerCase() === 'marketing';
       const hasMarketingEligibility = hasOptIn || recentlyInteracted;
       const missingOptIn = messageType === 'template' && isMarketingTemplate && !hasMarketingEligibility;
+      const eligibilityLabel = isMissingPhone
+        ? 'N/A'
+        : !isMarketingTemplate
+          ? 'Template eligible'
+          : hasMarketingEligibility
+            ? 'Marketing eligible'
+            : recentlyInteracted
+              ? 'Service only'
+              : 'Opt-in missing';
+      const eligibilityTone = isMissingPhone
+        ? 'muted'
+        : eligibilityLabel === 'Marketing eligible' || eligibilityLabel === 'Template eligible'
+          ? 'ok'
+          : eligibilityLabel === 'Service only'
+            ? 'info'
+            : 'issue';
 
       return {
         index,
@@ -643,7 +670,11 @@ const ScheduleForm = ({
           ? 'muted'
           : missingOptIn
             ? 'issue'
-            : 'ok'
+            : 'ok',
+        crmMatchLabel: hasCrmMatch ? 'CRM matched' : 'CRM not matched',
+        crmMatchTone: hasCrmMatch ? 'ok' : 'issue',
+        eligibilityLabel,
+        eligibilityTone
       };
     });
 
@@ -764,8 +795,13 @@ const ScheduleForm = ({
     }
 
     const batchSize = toInteger(deliveryBatchSize);
-    if (Number.isNaN(batchSize) || batchSize < 1 || batchSize > 500) {
-      return { isInvalid: true, reason: 'Delivery batch size must be between 1 and 500.' };
+    if (Number.isNaN(batchSize) || batchSize < 1 || batchSize > 50) {
+      return { isInvalid: true, reason: 'Delivery batch size must be between 1 and 50.' };
+    }
+
+    const batchDelay = toInteger(deliveryBatchDelaySeconds);
+    if (Number.isNaN(batchDelay) || batchDelay < 0 || batchDelay > 3600) {
+      return { isInvalid: true, reason: 'Batch delay must be between 0 and 3600 seconds.' };
     }
 
     if (suppressionListMeta.invalidEntries.length > 0) {
@@ -787,6 +823,7 @@ const ScheduleForm = ({
     retryMaxAttempts,
     retryBackoffSeconds,
     deliveryBatchSize,
+    deliveryBatchDelaySeconds,
     suppressionListMeta
   ]);
 
@@ -1461,9 +1498,17 @@ const ScheduleForm = ({
                             <td>{row.name}</td>
                             {audienceSourceMode === 'csv' ? (
                               <td>
-                                <span className={`phone-quality-badge ${row.optInTone}`}>
-                                  {row.optInLabel}
-                                </span>
+                                <div className="status-badge-stack">
+                                  <span className={`phone-quality-badge ${row.optInTone}`}>
+                                    {row.optInLabel}
+                                  </span>
+                                  <span className={`phone-quality-badge ${row.crmMatchTone}`}>
+                                    {row.crmMatchLabel}
+                                  </span>
+                                  <span className={`phone-quality-badge ${row.eligibilityTone}`}>
+                                    {row.eligibilityLabel}
+                                  </span>
+                                </div>
                               </td>
                             ) : null}
                             <td>
@@ -1641,12 +1686,25 @@ const ScheduleForm = ({
                   <input
                     type="number"
                     min="1"
-                    max="500"
+                    max="50"
                     value={deliveryBatchSize}
                     onChange={(event) => onDeliveryBatchSizeChange(event.target.value)}
-                    onBlur={() => onDeliveryBatchSizeChange(String(Math.min(500, Math.max(1, Number(deliveryBatchSize) || 50))))}
+                    onBlur={() => onDeliveryBatchSizeChange(String(Math.min(50, Math.max(1, Number(deliveryBatchSize) || 50))))}
                   />
                   <small>Controls how many recipients the backend processes before moving to the next batch.</small>
+                </div>
+
+                <div className="policy-field">
+                  <span>Wait between batches (seconds)</span>
+                  <input
+                    type="number"
+                    min="0"
+                    max="3600"
+                    value={deliveryBatchDelaySeconds}
+                    onChange={(event) => onDeliveryBatchDelaySecondsChange(event.target.value)}
+                    onBlur={() => onDeliveryBatchDelaySecondsChange(String(Math.min(3600, Math.max(0, Number(deliveryBatchDelaySeconds) || 0))))}
+                  />
+                  <small>How long the backend waits before sending the next batch.</small>
                 </div>
 
                 <label className="policy-checkbox-row">
@@ -1690,6 +1748,12 @@ const ScheduleForm = ({
               Variables detected: {fileVariables.join(', ')}
             </div>
           )}
+
+          {uploadedFile && messageType === 'template' && selectedTemplate && getTemplateVariableCount(selectedTemplate) > 0 && fileVariables.length === 0 ? (
+            <div className="submit-block-warning" style={{ marginTop: 12 }}>
+              <strong>CSV needs template variables:</strong> this template requires {getTemplateVariableCount(selectedTemplate)} variable column(s) like <code>var1</code>, <code>var2</code>. Your CSV does not include them yet.
+            </div>
+          ) : null}
 
           <div className="form-actions">
             {hasStoredDraft ? (

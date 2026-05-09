@@ -575,6 +575,22 @@
   color: #92400e;
 }
 
+.phone-quality-badge.info {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.phone-quality-badge.muted {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.status-badge-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
 .contact-row-issue td {
   background: #fffbeb;
 }
