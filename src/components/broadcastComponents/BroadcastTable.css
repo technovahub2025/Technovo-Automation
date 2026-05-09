@@ -594,6 +594,11 @@
     color: #b91c1c;
 }
 
+.badge.warning {
+    background: #fffbeb;
+    color: #b45309;
+}
+
 /* Action Buttons Container */
 .action-buttons {
     display: flex !important;

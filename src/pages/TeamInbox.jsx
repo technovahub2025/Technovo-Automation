@@ -36,8 +36,7 @@ import { useTeamInboxBoundUtils } from './teamInbox/useTeamInboxBoundUtils';
 import useCrmRealtimeRefresh from '../hooks/useCrmRealtimeRefresh';
 import {
   readTeamInboxBootstrapCache,
-  writeTeamInboxBootstrapCache,
-  writeTeamInboxThreadCache
+  writeTeamInboxBootstrapCache
 } from './teamInbox/teamInboxSessionCache';
 import {
   requestTeamInboxNotificationPermission,
@@ -989,15 +988,7 @@ const TeamInbox = () => {
       activeMessagesConversationId,
       Array.isArray(messages) ? messages : []
     );
-
-    const nextMeta = messagePaginationCacheRef.current.get(activeMessagesConversationId);
-    writeTeamInboxThreadCache({
-      currentUserId,
-      conversationId: activeMessagesConversationId,
-      messages,
-      meta: nextMeta
-    });
-  }, [currentUserId, messages]);
+  }, [messages]);
 
   useEffect(() => {
     if (!String(currentUserId || '').trim()) return;

@@ -116,14 +116,15 @@ const AllCampaignsPopup = ({
       }
       return acc;
     },
-    { all: 0, scheduled: 0, sending: 0, completed: 0 }
+    { all: 0, scheduled: 0, sending: 0, completed: 0, completed_with_errors: 0 }
   );
 
   const statusQuickFilters = [
     { key: 'all', label: 'All' },
     { key: 'scheduled', label: 'Scheduled' },
     { key: 'sending', label: 'Sending' },
-    { key: 'completed', label: 'Completed' }
+    { key: 'completed', label: 'Completed' },
+    { key: 'completed_with_errors', label: 'Partial' }
   ];
 
   const setSearchValue = (value) => {
@@ -317,7 +318,7 @@ const AllCampaignsPopup = ({
                   <div className="filter-section">
                     <h4>Status</h4>
                     <div className="filter-options">
-                      {['all', 'scheduled', 'sending', 'completed'].map((status) => (
+                      {['all', 'scheduled', 'sending', 'completed', 'completed_with_errors'].map((status) => (
                         <label className="filter-option" key={status}>
                           <input
                             type="radio"

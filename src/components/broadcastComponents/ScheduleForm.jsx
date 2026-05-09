@@ -1836,7 +1836,7 @@ const ScheduleForm = ({
                 <div className="stat">
                   <span className="label">Failed:</span>
                   <span className="value failed">
-                    {(sendResults.total_sent || 0) - (sendResults.successful || 0)}
+                    {sendResults.failed ?? ((sendResults.total_sent || 0) - (sendResults.successful || 0))}
                   </span>
                 </div>
               </div>

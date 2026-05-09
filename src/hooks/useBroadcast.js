@@ -687,6 +687,7 @@ export const useBroadcast = () => {
         replied: acc.replied + replied,
         sending: acc.sending + (broadcast.status === 'sending' ? broadcast.recipientCount || 0 : 0),
         failed: acc.failed + failed,
+        partial: acc.partial + (broadcast.status === 'completed_with_errors' ? 1 : 0),
         processing: acc.processing + (broadcast.status === 'processing' ? 1 : 0),
         queued: acc.queued + (broadcast.status === 'scheduled' ? 1 : 0),
       };
@@ -697,6 +698,7 @@ export const useBroadcast = () => {
       replied: 0,
       sending: 0,
       failed: 0,
+      partial: 0,
       processing: 0,
       queued: 0,
     });
@@ -737,6 +739,8 @@ export const useBroadcast = () => {
         return 'ongoing';
       case 'completed':
         return 'success';
+      case 'completed_with_errors':
+        return 'warning';
       case 'paused':
         return 'paused';
       case 'cancelled':
