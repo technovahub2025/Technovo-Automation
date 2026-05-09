@@ -95,6 +95,7 @@ class WebSocketService extends EventEmitter {
     this.lastPongAt = 0;
     this.lastCloseCode = null;
     this.offlineListenerAttached = false;
+    this.connectionTimeoutMs = Number(import.meta.env.VITE_WS_CONNECTION_TIMEOUT_MS || 25000);
 
     this.handleOpen = this.handleOpen.bind(this);
     this.handleMessage = this.handleMessage.bind(this);
@@ -205,7 +206,7 @@ class WebSocketService extends EventEmitter {
           if (!this.connecting) return;
           this.connecting = false;
           reject(new Error('WebSocket connection timeout'));
-        }, 10000);
+        }, this.connectionTimeoutMs);
       } catch (error) {
         this.connecting = false;
         reject(error);

@@ -42,6 +42,31 @@ import './Broadcast.css';
 
 const normalizeText = (value = '') => String(value || '').trim();
 
+const getBroadcastErrorMessage = (error, fallback = 'Failed to send campaign. Please try again.') => {
+  const status = Number(error?.response?.status || 0);
+  const backendMessage = String(error?.response?.data?.error || error?.response?.data?.message || error?.message || '').trim();
+  const normalized = backendMessage.toLowerCase();
+
+  if (
+    normalized.includes('redis is not configured') ||
+    normalized.includes('redis is disabled by environment configuration') ||
+    normalized.includes('broadcast queue is disabled') ||
+    normalized.includes('broadcast inbox queue is disabled')
+  ) {
+    return 'Broadcast sending is currently unavailable because the live backend is missing Redis. Please try again later or contact support.';
+  }
+
+  if (status === 403) {
+    return backendMessage || 'Broadcast is blocked for this workspace until activation.';
+  }
+
+  if (!backendMessage) {
+    return fallback;
+  }
+
+  return backendMessage;
+};
+
 const findPhoneField = (fields = []) => {
   const normalizedFields = Array.isArray(fields) ? fields : [];
   const patterns = [
@@ -1870,13 +1895,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     } catch (error) {
 
       console.error('Broadcast send error:', error);
-      const status = Number(error?.response?.status || 0);
-      const backendMessage = String(error?.response?.data?.error || error?.message || '').trim();
-      if (status === 403) {
-        alert(backendMessage || 'Broadcast is blocked for this workspace until activation.');
-      } else {
-        alert('Failed to send campaign: ' + (backendMessage || 'Unknown error'));
-      }
+      alert(getBroadcastErrorMessage(error));
 
     } finally {
 
@@ -2147,13 +2166,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       alert('Failed to send: ' + (result.data.error || result.data.message));
     } catch (error) {
       console.error('Broadcast continue after validation error:', error);
-      const status = Number(error?.response?.status || 0);
-      const backendMessage = String(error?.response?.data?.error || error?.message || '').trim();
-      if (status === 403) {
-        alert(backendMessage || 'Broadcast is blocked for this workspace until activation.');
-      } else {
-        alert('Failed to continue broadcast: ' + (backendMessage || 'Unknown error'));
-      }
+      alert(getBroadcastErrorMessage(error, 'Failed to continue broadcast. Please try again.'));
     } finally {
       broadcastSubmitInFlightRef.current = false;
       setIsSending(false);
