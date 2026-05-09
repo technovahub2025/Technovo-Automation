@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { Upload, X, Download, Users, AlertCircle } from 'lucide-react';
+import { Upload, X, Download, Users } from 'lucide-react';
 import Papa from 'papaparse';
 import './ContactUploader.css';
 
@@ -115,7 +115,6 @@ const ContactUploader = ({
       throw new Error('CSV file is empty');
     }
 
-    // Check required columns
     const firstRow = data[0];
     if (!firstRow.phone && !firstRow.mobile && !firstRow.number) {
       throw new Error('CSV must have a "phone", "mobile", or "number" column');
@@ -191,14 +190,14 @@ const ContactUploader = ({
   };
 
   return (
-    <div className="contact-uploader">
-      <label className="form-label">
+    <div className="contact-uploader voice-broadcast__contact-uploader">
+      <label className="form-label voice-broadcast__label">
         <Users size={18} />
         Upload Contacts
       </label>
 
       {contacts.length === 0 ? (
-        <div className="upload-area">
+        <div className="upload-area voice-broadcast__upload-area">
           <input
             ref={fileInputRef}
             type="file"
@@ -209,7 +208,7 @@ const ContactUploader = ({
           />
 
           <div
-            className={`upload-dropzone ${isDragOver ? 'drag-over' : ''}`}
+            className={`upload-dropzone voice-broadcast__upload-dropzone ${isDragOver ? 'drag-over' : ''}`}
             onClick={() => fileInputRef.current?.click()}
             onDragOver={(event) => {
               event.preventDefault();
@@ -222,8 +221,8 @@ const ContactUploader = ({
             onDrop={handleDrop}
           >
             {uploading ? (
-              <div className="uploading-state">
-                <div className="spinner" />
+              <div className="uploading-state voice-broadcast__uploading-state">
+                <div className="spinner voice-broadcast__spinner" />
                 <p>Parsing CSV...</p>
               </div>
             ) : (
@@ -238,7 +237,7 @@ const ContactUploader = ({
 
           <button
             type="button"
-            className="btn-link"
+            className="btn-link voice-broadcast__button voice-broadcast__button--link"
             onClick={downloadSampleCSV}
             disabled={disabled || uploading}
           >
@@ -247,80 +246,72 @@ const ContactUploader = ({
           </button>
         </div>
       ) : (
-        <div className="contacts-preview">
-          <div className="preview-header">
-            <div className="preview-info">
+        <div className="contacts-preview voice-broadcast__contacts-preview">
+          <div className="preview-header voice-broadcast__preview-header">
+            <div className="preview-info voice-broadcast__preview-info">
               <Users size={20} />
               <span>{contacts.length} {previewTitle}</span>
             </div>
             <button
               type="button"
-              className="btn-icon"
+              className="btn-icon voice-broadcast__button voice-broadcast__button--icon"
               onClick={handleClearContacts}
               disabled={disabled}
+              aria-label="Clear contacts"
               title="Clear contacts"
             >
-              <X size={18} />
+              <X size={16} />
             </button>
           </div>
 
-          <div className="preview-table">
+          <div className="preview-table voice-broadcast__preview-table">
             <table>
               <thead>
                 <tr>
-                  <th>#</th>
-                  <th>Phone</th>
                   <th>Name</th>
+                  <th>Phone</th>
                   <th>Custom Fields</th>
                 </tr>
               </thead>
               <tbody>
-                {contacts.slice(0, 5).map((contact, index) => (
+                {contacts.slice(0, 3).map((contact, index) => (
                   <tr key={index}>
-                    <td>{index + 1}</td>
-                    <td className="phone">{contact.phone}</td>
                     <td>{contact.name}</td>
+                    <td className="phone">{contact.phone}</td>
                     <td>
-                      {Object.keys(contact.customFields || {}).length > 0 ? (
-                        <span className="badge">
-                          {Object.keys(contact.customFields).length} fields
-                        </span>
-                      ) : (
-                        <span className="text-muted">None</span>
-                      )}
+                      {Object.keys(contact.customFields || {}).length > 0
+                        ? `${Object.keys(contact.customFields).length} fields`
+                        : 'None'}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
 
-            {contacts.length > 5 && (
-              <p className="preview-more">
-                ... and {contacts.length - 5} more contacts
-              </p>
+            {contacts.length > 3 && (
+              <div className="preview-more voice-broadcast__preview-more">
+                + {contacts.length - 3} more contacts
+              </div>
             )}
           </div>
-
-          <button
-            type="button"
-            className="btn-secondary btn-small"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled}
-          >
-            <Upload size={16} />
-            Replace CSV
-          </button>
         </div>
       )}
 
-      {(parseError || error) && (
-        <div className="error-message">
+      {error && (
+        <div className="error-message voice-broadcast__error-message" role="alert">
           <AlertCircle size={16} />
-          {parseError || error}
+          {error}
         </div>
       )}
 
-      <div className="upload-info">
+      {parseError && (
+        <div className="error-message voice-broadcast__error-message" role="alert">
+          <AlertCircle size={16} />
+          {parseError}
+        </div>
+      )}
+
+      <div className="upload-info voice-broadcast__upload-info">
         <small>
           <strong>Supported format:</strong> {supportedColumnsHelp}
         </small>

@@ -386,8 +386,8 @@ const BroadcastMonitor = ({ broadcastId, onBroadcastUpdated }) => {
 
   if (statusLoading && !broadcast) {
     return (
-      <div className="monitor-loading">
-        <div className="spinner-large" />
+      <div className="monitor-loading voice-broadcast__loading">
+        <div className="spinner-large voice-broadcast__spinner voice-broadcast__spinner--large" />
         <p>Loading broadcast data...</p>
       </div>
     );
@@ -395,7 +395,7 @@ const BroadcastMonitor = ({ broadcastId, onBroadcastUpdated }) => {
 
   if (statusError && !broadcast) {
     return (
-      <div className="monitor-error">
+      <div className="monitor-error voice-broadcast__error-state">
         <XCircle size={42} />
         <h3>{statusError}</h3>
       </div>
@@ -404,7 +404,7 @@ const BroadcastMonitor = ({ broadcastId, onBroadcastUpdated }) => {
 
   if (!broadcast) {
     return (
-      <div className="monitor-error">
+      <div className="monitor-error voice-broadcast__error-state">
         <XCircle size={42} />
         <h3>Broadcast not found</h3>
       </div>
@@ -412,18 +412,18 @@ const BroadcastMonitor = ({ broadcastId, onBroadcastUpdated }) => {
   }
 
   return (
-    <div className="broadcast-monitor">
-      <div className="monitor-header">
-        <div className="header-info">
-          <div className="monitor-title-row">
+    <div className="voice-broadcast__monitor">
+      <div className="monitor-header voice-broadcast__monitor-header">
+        <div className="header-info voice-broadcast__monitor-info">
+          <div className="monitor-title-row voice-broadcast__monitor-title-row">
             <Radio size={22} aria-hidden="true" />
             <h2>{broadcast.name}</h2>
           </div>
-          <div className="header-badges">
-            <span className={`status-badge status-${broadcast.status}`}>
+          <div className="header-badges voice-broadcast__monitor-badges">
+            <span className={`status-badge status-${broadcast.status} voice-broadcast__status-pill voice-broadcast__status-pill--${broadcast.status}`}>
               {String(broadcast.status || '').replace('_', ' ')}
             </span>
-            <div className={`connection-status ${connectionStatus}`}>
+            <div className={`connection-status voice-broadcast__connection-status ${connectionStatus}`}>
               {connectionStatus === 'connected' ? <Wifi size={15} /> : <WifiOff size={15} />}
               <span>
                 {connectionStatus === 'connected'
@@ -436,45 +436,45 @@ const BroadcastMonitor = ({ broadcastId, onBroadcastUpdated }) => {
           </div>
         </div>
 
-        <div className="monitor-actions">
+        <div className="monitor-actions voice-broadcast__monitor-actions">
           {broadcast.status === 'in_progress' && (
-            <button type="button" className="btn btn-danger" onClick={handleCancelBroadcast}>
+            <button type="button" className="btn btn-danger voice-broadcast__button voice-broadcast__button--danger" onClick={handleCancelBroadcast}>
               Cancel Broadcast
             </button>
           )}
         </div>
       </div>
 
-      <div className="progress-section">
-        <div className="progress-meta">
+      <div className="progress-section voice-broadcast__progress-section">
+        <div className="progress-meta voice-broadcast__progress-meta">
           <span>{Math.round(progress)}% complete</span>
           <span>{stats.completed} completed - {stats.failed} failed - {remaining} remaining</span>
         </div>
-        <div className="progress-bar" aria-label="Broadcast progress">
-          <div className="progress-fill" style={{ width: `${progress}%` }} />
+        <div className="progress-bar voice-broadcast__progress-bar" aria-label="Broadcast progress">
+          <div className="progress-fill voice-broadcast__progress-fill" style={{ width: `${progress}%` }} />
         </div>
       </div>
 
-      <div className="stats-grid-voice">
+      <div className="stats-grid-voice voice-broadcast__stats-grid">
         {statCards.map((card) => (
-          <div className={`stat-card stat-card-${card.key}`} key={card.key}>
-            <div className={`stat-icon-broadcast icon-${card.key}`}>
+          <div className={`stat-card stat-card-${card.key} voice-broadcast__stat-card voice-broadcast__stat-card--${card.key}`} key={card.key}>
+            <div className={`stat-icon-broadcast icon-${card.key} voice-broadcast__stat-icon voice-broadcast__stat-icon--${card.key}`}>
               {React.createElement(card.icon, { size: 22 })}
             </div>
-            <div className="stat-content">
-              <span className="stat-value">{card.value}</span>
-              <span className="stat-label">{card.label}</span>
+            <div className="stat-content voice-broadcast__stat-content">
+              <span className="stat-value voice-broadcast__stat-value">{card.value}</span>
+              <span className="stat-label voice-broadcast__stat-label">{card.label}</span>
             </div>
           </div>
         ))}
       </div>
 
-      <div className="filter-tabs">
+      <div className="filter-tabs voice-broadcast__filter-tabs">
         {STATUS_FILTERS.map((filter) => (
           <button
             type="button"
             key={filter.key}
-            className={`filter-tab ${selectedStatus === filter.key ? 'active' : ''}`}
+            className={`filter-tab voice-broadcast__filter-tab ${selectedStatus === filter.key ? 'active' : ''}`}
             onClick={() => handleStatusChange(filter.key)}
           >
             {filter.label} ({stats[filter.stat] || 0})

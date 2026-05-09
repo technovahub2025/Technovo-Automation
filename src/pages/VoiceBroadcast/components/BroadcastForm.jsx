@@ -173,17 +173,17 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
   };
 
   return (
-    <div className="broadcast-form">
+    <div className="broadcast-form voice-broadcast__form">
       <form onSubmit={handleSubmit}>
-        <div className="broadcast-form-primary">
-          <div className="form-section broadcast-field-card">
-            <label className="form-label">
+        <div className="broadcast-form-primary voice-broadcast__form-main">
+          <div className="broadcast-field-card voice-broadcast__field-card">
+            <label className="form-label voice-broadcast__label">
               <FileText size={18} />
               Campaign Name
             </label>
             <input
               type="text"
-              className="form-input"
+              className="form-input voice-broadcast__input"
               placeholder="Diwali Offer 2024"
               value={formData.name}
               onChange={(e) => handleInputChange('name', e.target.value)}
@@ -194,7 +194,7 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
             )}
           </div>
 
-          <div className="broadcast-field-card">
+          <div className="broadcast-field-card voice-broadcast__field-card">
             <MessageTemplateEditor
               value={formData.messageTemplate}
               onChange={(value) => handleInputChange('messageTemplate', value)}
@@ -206,8 +206,8 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
           </div>
         </div>
 
-        <div className="broadcast-form-side">
-          <div className="broadcast-side-panel">
+        <div className="broadcast-form-side voice-broadcast__form-side">
+          <div className="broadcast-side-panel voice-broadcast__panel">
             <VoiceSelector
               selected={formData.voice}
               onChange={handleVoiceChange}
@@ -215,7 +215,7 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
             />
           </div>
 
-          <div className="broadcast-side-panel">
+          <div className="broadcast-side-panel voice-broadcast__panel">
             <ContactUploader
               contacts={formData.contacts}
               onContactsUploaded={handleContactsUploaded}
@@ -224,21 +224,21 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
             />
           </div>
 
-          <div className="broadcast-side-panel broadcast-settings-panel">
-            <div className="form-section collapsible">
+          <div className="broadcast-side-panel broadcast-settings-panel voice-broadcast__panel voice-broadcast__settings-panel">
+            <div className="form-section collapsible voice-broadcast__section voice-broadcast__section--collapsible">
               <details>
                 <summary>
-                  <span className="settings-summary-title">
+                  <span className="settings-summary-title voice-broadcast__settings-summary-title">
                     <Settings size={18} />
                     Advanced Settings
                   </span>
-                  <span className="settings-summary-meta">
+                  <span className="settings-summary-meta voice-broadcast__settings-summary-meta">
                     {formData.maxConcurrent} concurrent / {formData.batchSize} batch
                   </span>
                 </summary>
 
-                <div className="settings-grid">
-                  <div className="setting-item">
+                <div className="settings-grid voice-broadcast__settings-grid">
+                  <div className="setting-item voice-broadcast__setting">
                     <label>Max Concurrent Calls</label>
                     <input
                       type="number"
@@ -260,7 +260,7 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
                     )}
                   </div>
 
-                  <div className="setting-item">
+                  <div className="setting-item voice-broadcast__setting">
                     <label>Batch Size</label>
                     <input
                       type="number"
@@ -272,11 +272,11 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
                     />
                     <small>Calls claimed per dispatch batch</small>
                     {validationErrors.batchSize && (
-                      <small className="error-text">{validationErrors.batchSize}</small>
+                      <small className="error-text voice-broadcast__error-text">{validationErrors.batchSize}</small>
                     )}
                   </div>
 
-                  <div className="setting-item">
+                  <div className="setting-item voice-broadcast__setting">
                     <label>Dispatch Interval</label>
                     <input
                       type="number"
@@ -289,11 +289,11 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
                     />
                     <small>Delay between batches in milliseconds</small>
                     {validationErrors.dispatchIntervalMs && (
-                      <small className="error-text">{validationErrors.dispatchIntervalMs}</small>
+                      <small className="error-text voice-broadcast__error-text">{validationErrors.dispatchIntervalMs}</small>
                     )}
                   </div>
 
-                  <div className="setting-item">
+                  <div className="setting-item voice-broadcast__setting">
                     <label>Max Retries</label>
                     <input
                       type="number"
@@ -306,7 +306,7 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
                     <small>Retry failed calls (0-5)</small>
                   </div>
 
-                  <div className="setting-item full">
+                  <div className="setting-item full voice-broadcast__setting voice-broadcast__setting--full">
                     <label>Compliance Disclaimer</label>
                     <input
                       type="text"
@@ -320,7 +320,7 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
                     <small>Played before main message</small>
                   </div>
 
-                  <div className="setting-item checkbox">
+                  <div className="setting-item checkbox voice-broadcast__setting voice-broadcast__setting--checkbox">
                     <label>
                       <input
                         type="checkbox"
@@ -335,7 +335,7 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
                     </label>
                   </div>
 
-                  <div className="setting-item checkbox">
+                  <div className="setting-item checkbox voice-broadcast__setting voice-broadcast__setting--checkbox">
                     <label>
                       <input
                         type="checkbox"
@@ -355,18 +355,18 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
           </div>
         </div>
 
-        <div className="broadcast-form-footer">
+        <div className="broadcast-form-footer voice-broadcast__form-footer">
           {submitResult && (
-            <div className={`submit-result ${submitResult.success ? 'success' : 'error'}`}>
+            <div className={`submit-result voice-broadcast__result ${submitResult.success ? 'success' : 'error'}`}>
               {submitResult.success ? <CheckCircle size={20} /> : <AlertCircle size={20} />}
               <span>{submitResult.message}</span>
             </div>
           )}
 
-          <div className="form-actions">
+          <div className="form-actions voice-broadcast__actions">
             <button
               type="button"
-              className="btn btn-secondary"
+              className="btn btn-secondary voice-broadcast__button voice-broadcast__button--secondary"
               onClick={resetForm}
               disabled={isSubmitting}
             >
@@ -375,12 +375,12 @@ const BroadcastForm = ({ onBroadcastCreated }) => {
 
             <button
               type="submit"
-              className="btn btn-primary"
+              className="btn btn-primary voice-broadcast__button voice-broadcast__button--primary"
               disabled={isSubmitting || formData.contacts.length === 0}
             >
               {isSubmitting ? (
                 <>
-                  <div className="spinner-small" />
+                  <div className="spinner-small voice-broadcast__spinner voice-broadcast__spinner--small" />
                   Starting...
                 </>
               ) : (

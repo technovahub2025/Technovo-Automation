@@ -69,25 +69,25 @@ const getStatusMeta = (status) => {
 };
 
 const SummaryBar = memo(({ summary = {} }) => (
-  <div className="campaign-summary-bar">
-    <div className="campaign-summary-item">
-      <span className="campaign-summary-label">Active</span>
+  <div className="campaign-summary-bar voice-broadcast__summary-bar">
+    <div className="campaign-summary-item voice-broadcast__summary-item">
+      <span className="campaign-summary-label voice-broadcast__summary-label">Active</span>
       <strong>{numberFormat.format(summary.active || 0)}</strong>
     </div>
-    <div className="campaign-summary-item">
-      <span className="campaign-summary-label">Completed</span>
+    <div className="campaign-summary-item voice-broadcast__summary-item">
+      <span className="campaign-summary-label voice-broadcast__summary-label">Completed</span>
       <strong>{numberFormat.format(summary.completed || 0)}</strong>
     </div>
-    <div className="campaign-summary-item">
-      <span className="campaign-summary-label">Failed</span>
+    <div className="campaign-summary-item voice-broadcast__summary-item">
+      <span className="campaign-summary-label voice-broadcast__summary-label">Failed</span>
       <strong>{numberFormat.format(summary.failed || 0)}</strong>
     </div>
-    <div className="campaign-summary-item">
-      <span className="campaign-summary-label">Avg Success</span>
+    <div className="campaign-summary-item voice-broadcast__summary-item">
+      <span className="campaign-summary-label voice-broadcast__summary-label">Avg Success</span>
       <strong>{Math.round(summary.avgSuccessRate || 0)}%</strong>
     </div>
-    <div className="campaign-summary-item">
-      <span className="campaign-summary-label">Running Now</span>
+    <div className="campaign-summary-item voice-broadcast__summary-item">
+      <span className="campaign-summary-label voice-broadcast__summary-label">Running Now</span>
       <strong>{numberFormat.format(summary.runningNow || 0)}</strong>
     </div>
   </div>
@@ -178,8 +178,8 @@ const CampaignRow = memo(({
   };
 
   return (
-    <tr className={`campaign-row status-${statusMeta.className} ${selected ? 'is-selected' : ''}`}>
-      <td className="campaign-select-cell">
+    <tr className={`campaign-row voice-broadcast__campaign-row status-${statusMeta.className} ${selected ? 'is-selected' : ''}`}>
+      <td className="campaign-select-cell voice-broadcast__select-cell">
         <input
           type="checkbox"
           checked={selected}
@@ -187,19 +187,19 @@ const CampaignRow = memo(({
           aria-label={`Select ${campaign.name}`}
         />
       </td>
-      <td className="campaign-name-cell sticky-name">
+      <td className="campaign-name-cell voice-broadcast__name-cell voice-broadcast__sticky-name">
         <span title={campaign.name}>{campaign.name}</span>
       </td>
       <td>
-        <span className={`campaign-status-pill ${statusMeta.className}`}>
+        <span className={`campaign-status-pill voice-broadcast__status-pill ${statusMeta.className}`}>
           <StatusIcon size={14} />
           {statusMeta.label}
         </span>
       </td>
       <td>{numberFormat.format(stats.total)}</td>
-      <td className="campaign-progress-cell">
-        <div className="campaign-progress-track" aria-label={`${progress}% progress`}>
-          <div className="campaign-progress-fill" style={{ width: `${progress}%` }} />
+      <td className="campaign-progress-cell voice-broadcast__progress-cell">
+        <div className="campaign-progress-track voice-broadcast__progress-track" aria-label={`${progress}% progress`}>
+          <div className="campaign-progress-fill voice-broadcast__progress-fill" style={{ width: `${progress}%` }} />
         </div>
         <span>{progress}%</span>
       </td>
@@ -208,11 +208,11 @@ const CampaignRow = memo(({
       <td>{numberFormat.format(pending)}</td>
       <td>{successRate}%</td>
       <td>{formatDate(campaign.createdAt)}</td>
-      <td className="campaign-actions-cell">
-        <div className="campaign-action-menu" ref={menuRef}>
+      <td className="campaign-actions-cell voice-broadcast__actions-cell">
+        <div className="campaign-action-menu voice-broadcast__action-menu" ref={menuRef}>
           <button
             type="button"
-            className="campaign-action-trigger"
+            className="campaign-action-trigger voice-broadcast__action-trigger"
             ref={triggerRef}
             onClick={toggleMenu}
             aria-label={`${campaign.name} actions`}
@@ -223,7 +223,7 @@ const CampaignRow = memo(({
           </button>
           {menuOpen && createPortal(
             <div
-              className="campaign-action-dropdown"
+              className="campaign-action-dropdown voice-broadcast__action-dropdown"
               ref={dropdownRef}
               style={{ top: `${menuPosition.top}px`, left: `${menuPosition.left}px` }}
             >
@@ -307,12 +307,12 @@ const BroadcastList = ({
   };
 
   return (
-    <div className="broadcast-list outbound-history-surface">
-      <div className="broadcast-history-card">
-        <div className="broadcast-history-content">
-          <div className="broadcast-history-header">
-            <div className="broadcast-history-title">
-              <div className="broadcast-history-icon">
+    <div className="broadcast-list voice-broadcast__list">
+      <div className="broadcast-history-card voice-broadcast__history-card">
+        <div className="broadcast-history-content voice-broadcast__history-content">
+          <div className="broadcast-history-header voice-broadcast__history-header">
+            <div className="broadcast-history-title voice-broadcast__history-title">
+              <div className="broadcast-history-icon voice-broadcast__history-icon">
                 <History size={20} strokeWidth={1.8} />
               </div>
               <div>
@@ -324,10 +324,10 @@ const BroadcastList = ({
 
           <SummaryBar summary={summary} />
 
-          <div className="campaign-toolbar" role="region" aria-label="Campaign filters">
-            <label className="history-filter-field campaign-search-field">
-              <span className="filter-label-with-icon"><Search size={15} /> Search</span>
-              <div className="campaign-search">
+          <div className="campaign-toolbar voice-broadcast__toolbar" role="region" aria-label="Campaign filters">
+            <label className="history-filter-field campaign-search-field voice-broadcast__filter-field voice-broadcast__search-field">
+              <span className="filter-label-with-icon voice-broadcast__filter-label-with-icon"><Search size={15} /> Search</span>
+              <div className="campaign-search voice-broadcast__search">
                 <Search size={14} />
                 <input
                   type="search"
@@ -340,7 +340,7 @@ const BroadcastList = ({
             </label>
             <button
               type="button"
-              className={`filter-toggle-btn ${showFilters ? 'active' : ''}`}
+              className={`filter-toggle-btn voice-broadcast__filter-toggle-btn ${showFilters ? 'active' : ''}`}
               onClick={() => setShowFilters((prev) => !prev)}
               aria-label={showFilters ? 'Hide campaign filters' : 'Show campaign filters'}
               title={showFilters ? 'Hide campaign filters' : 'Show campaign filters'}
@@ -351,9 +351,9 @@ const BroadcastList = ({
           </div>
 
           {showFilters && (
-            <div className="filter-panel campaign-filter-panel">
-              <label className="history-filter-field campaign-status-filter">
-                <span className="filter-label-with-icon"><ListFilter size={15} /> Status</span>
+            <div className="filter-panel campaign-filter-panel voice-broadcast__filter-panel voice-broadcast__campaign-filter-panel">
+              <label className="history-filter-field campaign-status-filter voice-broadcast__filter-field voice-broadcast__status-filter">
+                <span className="filter-label-with-icon voice-broadcast__filter-label-with-icon"><ListFilter size={15} /> Status</span>
                 <select value={query?.status || 'all'} onChange={(event) => onQueryChange?.({ status: event.target.value, page: 1 })} aria-label="Filter by status">
                   <option value="all">All</option>
                   <option value="active">Active</option>
@@ -362,8 +362,8 @@ const BroadcastList = ({
                   <option value="pending">Pending</option>
                 </select>
               </label>
-              <label className="history-filter-field campaign-sort-filter">
-                <span className="filter-label-with-icon"><ArrowUpDown size={15} /> Sort</span>
+              <label className="history-filter-field campaign-sort-filter voice-broadcast__filter-field voice-broadcast__sort-filter">
+                <span className="filter-label-with-icon voice-broadcast__filter-label-with-icon"><ArrowUpDown size={15} /> Sort</span>
                 <select value={query?.sort || 'newest'} onChange={(event) => onQueryChange?.({ sort: event.target.value, page: 1 })} aria-label="Sort campaigns">
                   <option value="newest">Newest</option>
                   <option value="oldest">Oldest</option>
@@ -371,17 +371,17 @@ const BroadcastList = ({
                   <option value="progress">Progress</option>
                 </select>
               </label>
-              <label className="history-filter-field campaign-rows-filter">
-                <span className="filter-label-with-icon"><Rows3 size={15} /> Rows</span>
+              <label className="history-filter-field campaign-rows-filter voice-broadcast__filter-field voice-broadcast__rows-filter">
+                <span className="filter-label-with-icon voice-broadcast__filter-label-with-icon"><Rows3 size={15} /> Rows</span>
                 <select value={query?.limit || 25} onChange={(event) => onQueryChange?.({ limit: Number(event.target.value), page: 1 })} aria-label="Page size">
                   <option value={25}>25</option>
                   <option value={50}>50</option>
                   <option value={100}>100</option>
                 </select>
               </label>
-              <div className="history-filter-field filter-actions">
-                <span className="filter-label-with-icon"><CheckSquare size={15} /> Select</span>
-                <button type="button" className="filter-action-btn" onClick={() => handleToggleAllVisible(!allVisibleSelected)}>
+              <div className="history-filter-field filter-actions voice-broadcast__filter-field voice-broadcast__filter-actions">
+                <span className="filter-label-with-icon voice-broadcast__filter-label-with-icon"><CheckSquare size={15} /> Select</span>
+                <button type="button" className="filter-action-btn voice-broadcast__filter-action-btn" onClick={() => handleToggleAllVisible(!allVisibleSelected)}>
                   {allVisibleSelected ? 'Clear All Visible' : 'Select All Visible'}
                 </button>
               </div>
@@ -389,18 +389,18 @@ const BroadcastList = ({
           )}
 
           {selectedCount > 0 && (
-            <div className="campaign-bulk-bar">
+            <div className="campaign-bulk-bar voice-broadcast__bulk-bar">
               <strong>{selectedCount} selected</strong>
-              <div className="campaign-bulk-actions">
-                <button type="button" className="filter-action-btn" onClick={handleBulkStop}>
+              <div className="campaign-bulk-actions voice-broadcast__bulk-actions">
+                <button type="button" className="filter-action-btn voice-broadcast__filter-action-btn" onClick={handleBulkStop}>
                   <PauseCircle size={16} />
                   Stop selected
                 </button>
-                <button type="button" className="filter-action-btn danger" onClick={handleBulkDelete}>
+                <button type="button" className="filter-action-btn danger voice-broadcast__filter-action-btn" onClick={handleBulkDelete}>
                   <Trash2 size={16} />
                   Delete selected
                 </button>
-                <button type="button" className="filter-action-btn" onClick={handleClearSelection}>
+                <button type="button" className="filter-action-btn voice-broadcast__filter-action-btn" onClick={handleClearSelection}>
                   Clear
                 </button>
               </div>
@@ -408,16 +408,16 @@ const BroadcastList = ({
           )}
 
           {loading && broadcasts.length === 0 ? (
-            <div className="history-empty-state campaign-loading-state">
-              <div className="spinner-large" />
+            <div className="history-empty-state campaign-loading-state voice-broadcast__empty-state voice-broadcast__loading-state">
+              <div className="spinner-large voice-broadcast__spinner voice-broadcast__spinner--large" />
               <p>Loading campaigns...</p>
             </div>
           ) : broadcasts.length === 0 ? (
-            <div className="history-empty-state campaign-empty-state">
+            <div className="history-empty-state campaign-empty-state voice-broadcast__empty-state voice-broadcast__campaign-empty-state">
               <Activity size={40} strokeWidth={1.5} />
               <h3>{hasFilters ? 'No campaigns match your filters.' : 'No campaigns yet. Create your first broadcast.'}</h3>
               {hasFilters ? (
-                <button type="button" className="filter-action-btn" onClick={onResetFilters}>
+                <button type="button" className="filter-action-btn voice-broadcast__filter-action-btn" onClick={onResetFilters}>
                   <RotateCcw size={16} />
                   Reset filters
                 </button>
@@ -427,25 +427,25 @@ const BroadcastList = ({
             </div>
           ) : (
             <>
-              <div className="campaign-table-shell">
-                <table className={`campaign-table ${selectedCount > 0 ? 'selection-mode' : ''}`}>
+              <div className="campaign-table-shell voice-broadcast__table-shell">
+                <table className={`campaign-table voice-broadcast__table ${selectedCount > 0 ? 'selection-mode' : ''}`}>
                   <colgroup>
-                    <col className="campaign-col-select" />
-                    <col className="campaign-col-name" />
-                    <col className="campaign-col-status" />
-                    <col className="campaign-col-contacts" />
-                    <col className="campaign-col-progress" />
-                    <col className="campaign-col-completed" />
-                    <col className="campaign-col-failed" />
-                    <col className="campaign-col-pending" />
-                    <col className="campaign-col-success" />
-                    <col className="campaign-col-created" />
-                    <col className="campaign-col-actions" />
+                    <col className="campaign-col-select voice-broadcast__col-select" />
+                    <col className="campaign-col-name voice-broadcast__col-name" />
+                    <col className="campaign-col-status voice-broadcast__col-status" />
+                    <col className="campaign-col-contacts voice-broadcast__col-contacts" />
+                    <col className="campaign-col-progress voice-broadcast__col-progress" />
+                    <col className="campaign-col-completed voice-broadcast__col-completed" />
+                    <col className="campaign-col-failed voice-broadcast__col-failed" />
+                    <col className="campaign-col-pending voice-broadcast__col-pending" />
+                    <col className="campaign-col-success voice-broadcast__col-success" />
+                    <col className="campaign-col-created voice-broadcast__col-created" />
+                    <col className="campaign-col-actions voice-broadcast__col-actions" />
                   </colgroup>
                   <thead>
                     <tr>
-                      <th className="campaign-select-cell" aria-hidden="true" />
-                      <th className="sticky-name">Campaign Name</th>
+                      <th className="campaign-select-cell voice-broadcast__select-cell" aria-hidden="true" />
+                      <th className="sticky-name voice-broadcast__sticky-name">Campaign Name</th>
                       <th>Status</th>
                       <th>Contacts</th>
                       <th>Progress</th>
@@ -476,12 +476,12 @@ const BroadcastList = ({
                 </table>
               </div>
 
-              <div className="history-toolbar campaign-history-toolbar">
-                <div className="history-pagination-bar">
+          <div className="history-toolbar campaign-history-toolbar voice-broadcast__history-toolbar">
+                <div className="history-pagination-bar voice-broadcast__pagination-bar">
                   <span>
                     Showing {numberFormat.format(start)}-{numberFormat.format(end)} of {numberFormat.format(pagination?.total || 0)}
                   </span>
-                  <div className="history-pager">
+                  <div className="history-pager voice-broadcast__pager">
                     <button
                       type="button"
                       disabled={pagination?.page <= 1}

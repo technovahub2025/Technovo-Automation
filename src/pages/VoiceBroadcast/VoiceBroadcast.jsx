@@ -21,7 +21,6 @@ const VoiceBroadcast = () => {
 
   const [activeTab, setActiveTab] = useState('create');
   const [activeBroadcastId, setActiveBroadcastId] = useState(null);
-  const [realtimeStats, setRealtimeStats] = useState({ total: 0, active: 0 });
   const [healthStatus, setHealthStatus] = useState({
     backend: false,
     ai: false
@@ -81,13 +80,6 @@ const VoiceBroadcast = () => {
       console.log('Connected to dashboard socket');
     };
 
-    const handleStatsUpdate = (data) => {
-      setRealtimeStats({
-        total: data.totalCampaigns,
-        active: data.activeCampaigns
-      });
-    };
-
     const handleBroadcastListUpdate = () => {
       if (refreshBroadcasts) refreshBroadcasts();
     };
@@ -100,14 +92,12 @@ const VoiceBroadcast = () => {
     };
 
     socket.on('connect', handleConnect);
-    socket.on('stats_update', handleStatsUpdate);
     socket.on('broadcast_list_update', handleBroadcastListUpdate);
     socket.on('health_update', handleHealthUpdate);
 
     // Cleanup on unmount - only remove listeners, keep socket connected
     return () => {
       socket.off('connect', handleConnect);
-      socket.off('stats_update', handleStatsUpdate);
       socket.off('broadcast_list_update', handleBroadcastListUpdate);
       socket.off('health_update', handleHealthUpdate);
     };
@@ -148,8 +138,8 @@ const VoiceBroadcast = () => {
   }, [refreshBroadcasts]);
 
   // Calculate stats from actual broadcast data
-  const totalCampaigns = realtimeStats.total || pagination?.total || broadcasts.length;
-  const activeCampaigns = realtimeStats.active || summary?.active || broadcasts.filter(b => b.status === 'in_progress').length;
+  const totalCampaigns = pagination?.total ?? broadcasts.length;
+  const activeCampaigns = summary?.active ?? broadcasts.filter(b => ['queued', 'in_progress'].includes(b.status)).length;
 
   const handleRefresh = useCallback(() => {
     refreshBroadcasts();
@@ -157,38 +147,38 @@ const VoiceBroadcast = () => {
   return (
     <div className="voice-broadcast">
       {/* Header */}
-      <div className="broadcast-header">
-        <div className="header-content">
+      <div className="broadcast-header voice-broadcast__header">
+        <div className="header-content voice-broadcast__header-content">
           <h1>Voice Broadcast</h1>
-          <p className="subtitle">
+          <p className="subtitle voice-broadcast__subtitle">
             Send automated voice messages to multiple contacts
           </p>
-          <div className="voice-health-status">
-            <div className={`voice-status-badge ${healthStatus.backend ? 'online' : 'offline'}`}>
-              <span className="voice-pulse-dot" aria-hidden="true" />
+          <div className="voice-health-status voice-broadcast__health">
+            <div className={`voice-status-badge voice-broadcast__status-badge ${healthStatus.backend ? 'online' : 'offline'}`}>
+              <span className="voice-pulse-dot voice-broadcast__pulse-dot" aria-hidden="true" />
               Backend: {healthStatus.backend ? 'Online' : 'Offline'}
             </div>
-            <div className={`voice-status-badge ${healthStatus.ai ? 'online' : 'offline'}`}>
-              <span className="voice-pulse-dot" aria-hidden="true" />
+            <div className={`voice-status-badge voice-broadcast__status-badge ${healthStatus.ai ? 'online' : 'offline'}`}>
+              <span className="voice-pulse-dot voice-broadcast__pulse-dot" aria-hidden="true" />
               AI Service: {healthStatus.ai ? 'Healthy' : 'Unhealthy'}
             </div>
           </div>
         </div>
 
-        <div className="header-stats">
-          <div className="stat-card">
-            <span className="stat-value-voice">{totalCampaigns}</span>
-            <span className="stat-label">Total Campaigns</span>
+        <div className="header-stats voice-broadcast__stats">
+          <div className="stat-card voice-broadcast__stat-card">
+            <span className="stat-value-voice voice-broadcast__stat-value">{totalCampaigns}</span>
+            <span className="stat-label voice-broadcast__stat-label">Total Campaigns</span>
           </div>
-          <div className="stat-card">
-            <span className="stat-value-voice">{activeCampaigns}</span>
-            <span className="stat-label">Active</span>
+          <div className="stat-card voice-broadcast__stat-card">
+            <span className="stat-value-voice voice-broadcast__stat-value">{activeCampaigns}</span>
+            <span className="stat-label voice-broadcast__stat-label">Active</span>
           </div>
         </div>
       </div>
 
       {/* Compliance Notice */}
-      <div className="compliance-notice" role="alert">
+      <div className="compliance-notice voice-broadcast__compliance" role="alert">
         <AlertCircle size={20} aria-hidden="true" />
         <div>
           <strong>Compliance Requirements:</strong>
@@ -200,9 +190,9 @@ const VoiceBroadcast = () => {
       </div>
 
       {/* Tab Navigation */}
-      <div className="broadcast-tabs" role="tablist" aria-label="Broadcast tabs">
+      <div className="broadcast-tabs voice-broadcast__tabs" role="tablist" aria-label="Broadcast tabs">
         <button
-          className={`tab ${activeTab === 'create' ? 'active' : ''}`}
+          className={`tab voice-broadcast__tab ${activeTab === 'create' ? 'active' : ''}`}
           onClick={() => setActiveTab('create')}
           role="tab"
           aria-selected={activeTab === 'create'}
@@ -212,7 +202,7 @@ const VoiceBroadcast = () => {
         </button>
 
         <button
-          className={`tab ${activeTab === 'list' ? 'active' : ''}`}
+          className={`tab voice-broadcast__tab ${activeTab === 'list' ? 'active' : ''}`}
           onClick={() => setActiveTab('list')}
           role="tab"
           aria-selected={activeTab === 'list'}
@@ -223,7 +213,7 @@ const VoiceBroadcast = () => {
 
         {activeBroadcastId && (
           <button
-            className={`tab ${activeTab === 'monitor' ? 'active' : ''}`}
+            className={`tab voice-broadcast__tab ${activeTab === 'monitor' ? 'active' : ''}`}
             onClick={() => setActiveTab('monitor')}
             role="tab"
             aria-selected={activeTab === 'monitor'}
@@ -235,7 +225,7 @@ const VoiceBroadcast = () => {
       </div>
 
       {/* Tab Content */}
-      <div className={`broadcast-content ${activeTab === 'monitor' ? 'monitor-content' : ''}`}>
+      <div className={`broadcast-content voice-broadcast__content ${activeTab === 'monitor' ? 'monitor-content voice-broadcast__content--monitor' : ''}`}>
         {activeTab === 'create' && (
           <BroadcastForm onBroadcastCreated={handleBroadcastCreated} />
         )}
@@ -277,7 +267,7 @@ const VoiceBroadcast = () => {
 
       {/* Error */}
       {error && (
-        <div className="error-message" role="alert">
+        <div className="error-message voice-broadcast__error" role="alert">
           <AlertCircle size={18} aria-hidden="true" />
           {renderMessage(error, 'Failed to load broadcasts')}
         </div>

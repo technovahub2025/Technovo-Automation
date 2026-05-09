@@ -10,7 +10,7 @@ const VoiceSelector = ({ selected, onChange, disabled }) => {
   ];
 
   const handleVoiceChange = (voiceId) => {
-    const voice = voices.find(v => v.id === voiceId);
+    const voice = voices.find((v) => v.id === voiceId);
     onChange({
       provider: 'edge',
       voiceId: voice.id,
@@ -19,36 +19,36 @@ const VoiceSelector = ({ selected, onChange, disabled }) => {
   };
 
   return (
-    <div className="form-section">
-      <label className="form-label">
+    <div className="form-section voice-broadcast__section">
+      <label className="form-label voice-broadcast__label">
         <Mic size={18} />
         Voice Selection
       </label>
 
-      <div className="voice-selector">
+      <div className="voice-selector voice-broadcast__voice-selector">
         <select
-          className="form-input"
+          className="form-input voice-broadcast__input"
           value={selected.voiceId}
           onChange={(e) => handleVoiceChange(e.target.value)}
           disabled={disabled}
         >
-          {voices.map(voice => (
+          {voices.map((voice) => (
             <option key={voice.id} value={voice.id}>
               {voice.name}
             </option>
           ))}
         </select>
 
-        <div className="voice-preview">
+        <div className="voice-preview voice-broadcast__voice-preview">
           <Volume2 size={16} />
           <span>
-            {voices.find(v => v.id === selected.voiceId)?.gender} voice • 
-            {' '}{selected.language} language
+            {voices.find((v) => v.id === selected.voiceId)?.gender} voice • {' '}
+            {selected.language} language
           </span>
         </div>
       </div>
 
-      <div className="voice-info">
+      <div className="voice-info voice-broadcast__voice-info">
         <small>
           <strong>Tip:</strong> Select a voice that matches your audience's language and preference.
         </small>

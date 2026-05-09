@@ -1250,7 +1250,7 @@ const OutboundCall = () => {
       <div className="outbound-header">
         <div className="outbound-header-content">
           <h1>Outbound Call Management</h1>
-          <p>Manage outbound calls, scheduling, and voice broadcasts</p>
+          <p>Manage outbound calls, scheduling, and broadcast</p>
           <div className="outbound-connection-status">
             <span className="outbound-status-connected">
               <span className="outbound-status-dot" aria-hidden="true" />
