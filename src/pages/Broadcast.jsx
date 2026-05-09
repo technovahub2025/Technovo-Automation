@@ -53,7 +53,7 @@ const getBroadcastErrorMessage = (error, fallback = 'Failed to send campaign. Pl
     normalized.includes('broadcast queue is disabled') ||
     normalized.includes('broadcast inbox queue is disabled')
   ) {
-    return 'Broadcast sending is currently unavailable because the live backend is missing Redis. Please try again later or contact support.';
+    return 'Broadcast sending is temporarily unavailable in this deployment. Please try again later or contact support.';
   }
 
   if (status === 403) {

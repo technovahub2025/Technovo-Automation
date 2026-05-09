@@ -95,6 +95,7 @@ export const createInboxDataActions = ({
   messageCacheRef,
   messagePaginationCacheRef,
   messageLoadPromiseMapRef,
+  conversationLoadPromiseMapRef,
   conversationPageMetaRef,
   conversationLoadRequestIdRef,
   setConversationPageMeta,
@@ -159,6 +160,8 @@ export const createInboxDataActions = ({
     filter = 'all'
   } = {}) => {
     let requestId = 0;
+    let requestKey = '';
+    let ownsConversationLoadPromise = false;
     const releaseLoadingGuard = silent
       ? () => true
       : startLoadingTimeoutGuard(
@@ -185,6 +188,16 @@ export const createInboxDataActions = ({
       };
       const currentQuerySignature = String(pageMeta?.querySignature || '').trim();
       const isSameQuery = currentQuerySignature === querySignature;
+      requestKey = `${querySignature}::append:${append ? '1' : '0'}`;
+      const existingLoadPromise = conversationLoadPromiseMapRef?.current?.get(requestKey);
+
+      if (existingLoadPromise) {
+        if (silent && typeof setSidebarRefreshing === 'function') {
+          setSidebarRefreshing(true);
+        }
+        if (!silent) setLoading(true);
+        return existingLoadPromise;
+      }
 
       if (append && !isSameQuery) {
         return false;
@@ -220,62 +233,75 @@ export const createInboxDataActions = ({
         conversationLoadRequestIdRef.current = requestId;
       }
 
-      const response = whatsappService.getConversationsPage
-        ? await whatsappService.getConversationsPage({
-            limit: queryLimit,
-            ...(append && String(pageMeta.nextCursor || '').trim() ? { cursor: pageMeta.nextCursor } : {}),
-            ...(normalizedSearch ? { search: normalizedSearch } : {}),
-            ...(normalizedFilter !== 'all' ? { filter: normalizedFilter } : {})
-          })
-        : {
-            data: await whatsappService.getConversations(),
-            meta: {
+      const loadPromise = (async () => {
+        const response = whatsappService.getConversationsPage
+          ? await whatsappService.getConversationsPage({
               limit: queryLimit,
-              hasMore: false,
-              nextCursor: null
-            }
-          };
+              ...(append && String(pageMeta.nextCursor || '').trim() ? { cursor: pageMeta.nextCursor } : {}),
+              ...(normalizedSearch ? { search: normalizedSearch } : {}),
+              ...(normalizedFilter !== 'all' ? { filter: normalizedFilter } : {})
+            })
+          : {
+              data: await whatsappService.getConversations(),
+              meta: {
+                limit: queryLimit,
+                hasMore: false,
+                nextCursor: null
+              }
+            };
 
-      if (Number(conversationLoadRequestIdRef?.current || 0) !== requestId) {
-        return false;
-      }
+        if (Number(conversationLoadRequestIdRef?.current || 0) !== requestId) {
+          return false;
+        }
 
-      const incomingConversations = Array.isArray(response?.data)
-        ? response.data.map(normalizeConversation)
-        : [];
-      const nextMeta = normalizeConversationPageMeta(response?.meta, querySignature);
+        const incomingConversations = Array.isArray(response?.data)
+          ? response.data.map(normalizeConversation)
+          : [];
+        const nextMeta = normalizeConversationPageMeta(response?.meta, querySignature);
 
-      setConversations((prev) => {
-        const previousList = Array.isArray(prev) ? prev : [];
-        const merged = append ? mergeConversationLists(previousList, incomingConversations) : incomingConversations;
+        setConversations((prev) => {
+          const previousList = Array.isArray(prev) ? prev : [];
+          const merged = append
+            ? mergeConversationLists(previousList, incomingConversations)
+            : incomingConversations;
 
-        return merged.map((conversation) => {
-          const conversationId = String(conversation?._id || conversation?.id || '').trim();
-          const previous = previousList.find(
-            (item) => String(item?._id || item?.id || '').trim() === conversationId
-          );
-          if (!previous) return conversation;
+          return merged.map((conversation) => {
+            const conversationId = String(conversation?._id || conversation?.id || '').trim();
+            const previous = previousList.find(
+              (item) => String(item?._id || item?.id || '').trim() === conversationId
+            );
+            if (!previous) return conversation;
 
-          return {
-            ...conversation,
-            lastMessageStatus: resolvePreferredMessageStatus(
-              previous?.lastMessageStatus,
-              conversation?.lastMessageStatus
-            ),
-            lastMessageFrom:
-              String(conversation?.lastMessageFrom || '').trim() ||
-              String(previous?.lastMessageFrom || '').trim(),
-            lastMessageWhatsappMessageId:
-              String(conversation?.lastMessageWhatsappMessageId || '').trim() ||
-              String(previous?.lastMessageWhatsappMessageId || '').trim()
-          };
+            return {
+              ...conversation,
+              lastMessageStatus: resolvePreferredMessageStatus(
+                previous?.lastMessageStatus,
+                conversation?.lastMessageStatus
+              ),
+              lastMessageFrom:
+                String(conversation?.lastMessageFrom || '').trim() ||
+                String(previous?.lastMessageFrom || '').trim(),
+              lastMessageWhatsappMessageId:
+                String(conversation?.lastMessageWhatsappMessageId || '').trim() ||
+                String(previous?.lastMessageWhatsappMessageId || '').trim()
+            };
+          });
         });
-      });
 
-      conversationPageMetaRef.current = nextMeta;
-      if (typeof setConversationPageMeta === 'function') {
-        setConversationPageMeta(nextMeta);
+        conversationPageMetaRef.current = nextMeta;
+        if (typeof setConversationPageMeta === 'function') {
+          setConversationPageMeta(nextMeta);
+        }
+
+        return true;
+      })();
+
+      if (conversationLoadPromiseMapRef?.current) {
+        conversationLoadPromiseMapRef.current.set(requestKey, loadPromise);
+        ownsConversationLoadPromise = true;
       }
+
+      return await loadPromise;
     } catch (error) {
       console.error('Failed to load conversations:', error);
       if (conversationLoadRequestIdRef && !append && Number(conversationLoadRequestIdRef.current || 0) === requestId) {
@@ -288,7 +314,11 @@ export const createInboxDataActions = ({
           setConversationPageMeta(restoredMeta);
         }
       }
+      return false;
     } finally {
+      if (ownsConversationLoadPromise && conversationLoadPromiseMapRef?.current) {
+        conversationLoadPromiseMapRef.current.delete(requestKey);
+      }
       releaseLoadingGuard();
       const isCurrentRequest = Number(conversationLoadRequestIdRef?.current || 0) === requestId;
       if (silent && isCurrentRequest && typeof setSidebarRefreshing === 'function') {

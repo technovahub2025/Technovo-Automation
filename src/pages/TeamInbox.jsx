@@ -253,6 +253,7 @@ const TeamInbox = () => {
   const messageCacheRef = useRef(new Map());
   const messagePaginationCacheRef = useRef(new Map());
   const messageLoadPromiseMapRef = useRef(new Map());
+  const conversationLoadPromiseMapRef = useRef(new Map());
   const conversationPageMetaRef = useRef({
     limit: 100,
     hasMore: false,
@@ -1076,6 +1077,7 @@ const TeamInbox = () => {
     messageCacheRef,
     messagePaginationCacheRef,
     messageLoadPromiseMapRef,
+    conversationLoadPromiseMapRef,
     conversationPageMetaRef,
     conversationLoadRequestIdRef,
     setConversationPageMeta,
