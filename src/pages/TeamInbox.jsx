@@ -247,7 +247,6 @@ const TeamInbox = () => {
   const messagePaginationCacheRef = useRef(new Map());
   const messageLoadPromiseMapRef = useRef(new Map());
   const conversationLoadPromiseMapRef = useRef(new Map());
-  const threadAutoLoadAttemptRef = useRef('');
   const conversationPageMetaRef = useRef({
     limit: 100,
     hasMore: false,
@@ -1048,7 +1047,6 @@ const TeamInbox = () => {
 
     const cachedThreadCount = Number(threadCacheInfo?.messageCount || 0);
     if (cachedThreadCount > 0) return;
-    if (threadAutoLoadAttemptRef.current === activeId) return;
 
     const timer = window.setTimeout(() => {
       if (String(selectedConversationRef.current?._id || '').trim() !== activeId) return;
@@ -1056,7 +1054,6 @@ const TeamInbox = () => {
       if (Array.isArray(cachedMessages) && cachedMessages.length > 0) {
         return;
       }
-      threadAutoLoadAttemptRef.current = activeId;
       void loadMessages(activeId, { forceRefresh: true });
     }, 0);
 
@@ -1069,18 +1066,6 @@ const TeamInbox = () => {
     selectedConversation?._id,
     threadCacheInfo?.messageCount
   ]);
-
-  useEffect(() => {
-    const activeId = String(selectedConversation?._id || '').trim();
-    if (!activeId) {
-      threadAutoLoadAttemptRef.current = '';
-      return;
-    }
-
-    if (Array.isArray(messages) && messages.length > 0) {
-      threadAutoLoadAttemptRef.current = '';
-    }
-  }, [messages, selectedConversation?._id]);
 
   const loadScopedConversations = useCallback(
     async (options = {}) =>

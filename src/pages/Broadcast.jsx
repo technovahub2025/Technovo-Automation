@@ -429,10 +429,7 @@ const Broadcast = () => {
                                 </button>
                             </div>
 
-                            {/*
-                              Campaign results UI temporarily hidden.
-                              Keeping the logic/state for future reuse.
-                              {sendResults && (
+                            {sendResults && (
                                 <div className="results-section">
                                     <h4>Campaign Results</h4>
                                     <div className="result-stats">
@@ -450,8 +447,7 @@ const Broadcast = () => {
                                         </div>
                                     </div>
                                 </div>
-                              )}
-                            */}
+                            )}
                         </div>
 
                         <div className="preview-section">
