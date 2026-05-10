@@ -237,6 +237,7 @@ export const createInboxDataActions = ({
         const response = whatsappService.getConversationsPage
           ? await whatsappService.getConversationsPage({
               limit: queryLimit,
+              scope: 'team',
               ...(append && String(pageMeta.nextCursor || '').trim() ? { cursor: pageMeta.nextCursor } : {}),
               ...(normalizedSearch ? { search: normalizedSearch } : {}),
               ...(normalizedFilter !== 'all' ? { filter: normalizedFilter } : {})
@@ -463,9 +464,10 @@ export const createInboxDataActions = ({
       setMessagesOlderLoading(true);
     }
 
-    const loadPromise = whatsappService
+      const loadPromise = whatsappService
       .getMessagesPage(normalizedConversationId, {
         limit: pageLimit,
+        scope: 'team',
         ...(loadOlder && cachedMeta.nextCursor ? { cursor: cachedMeta.nextCursor } : {})
       })
       .then((data) => {

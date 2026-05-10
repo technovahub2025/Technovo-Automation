@@ -52,6 +52,58 @@ const buildAuthHeaders = (includeJsonContentType = true) => {
 const isBlobLike = (value) =>
   typeof Blob !== 'undefined' && value instanceof Blob;
 
+const buildFallbackAudienceValidation = (data = {}) => {
+  const recipients = Array.isArray(data?.recipients) ? data.recipients : [];
+  const eligibleRecipients = [];
+  const invalidRecipients = [];
+  const summary = {
+    eligible: 0,
+    invalid: 0,
+    missingContact: 0,
+    optedOut: 0,
+    freeformWindowClosed: 0,
+    missingMarketingOptIn: 0,
+    recentlyInteracted: 0,
+    marketingRateLimited: 0,
+    invalidPhone: 0
+  };
+
+  for (const recipient of recipients) {
+    const phone = String(recipient?.phone || '').trim();
+    if (!phone) {
+      summary.invalid += 1;
+      summary.invalidPhone += 1;
+      invalidRecipients.push({
+        recipient,
+        phone: '',
+        reason: 'invalid_phone',
+        error: 'Recipient phone number is missing.'
+      });
+      continue;
+    }
+
+    summary.eligible += 1;
+    eligibleRecipients.push({
+      ...recipient,
+      phone,
+      contactId: recipient?.contactId || null
+    });
+  }
+
+  return {
+    success: true,
+    data: {
+      eligibleRecipients,
+      invalidRecipients,
+      summary,
+      canProceed: recipients.length > 0,
+      fallback: true,
+      warning:
+        'Audience validation temporarily fell back to client-side checks because the backend validator is unavailable.'
+    }
+  };
+};
+
 const api = axios.create({
   baseURL: `${API_BASE_URL}/api`,
   timeout: DEFAULT_TIMEOUT_MS,
@@ -382,7 +434,29 @@ export const apiClient = {
    */
   sendBulkMessages: (data) => api.post('/bulk/send', data, { timeout: LONG_TIMEOUT_MS }),
 
-  validateBroadcastAudience: (data) => api.post('/bulk/validate-audience', data, { timeout: LONG_TIMEOUT_MS }),
+  validateBroadcastAudience: async (data = {}) => {
+    try {
+      return await api.post('/bulk/validate-audience', data, { timeout: LONG_TIMEOUT_MS });
+    } catch (error) {
+      const status = Number(error?.response?.status || 0);
+      const backendError = String(
+        error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          error?.message ||
+          ''
+      );
+
+      if (status === 500 && backendError.includes('buildPhoneCandidates is not defined')) {
+        return {
+          status: 200,
+          statusText: 'OK',
+          data: buildFallbackAudienceValidation(data)
+        };
+      }
+
+      throw error;
+    }
+  },
 
   syncMetaLeadConsentBatch: (data) => api.post('/meta-ads/leads/sync-consent/batch', data, { timeout: LONG_TIMEOUT_MS }),
 

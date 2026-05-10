@@ -125,6 +125,31 @@ const postWith404Retry = async (url, data, config = {}, { retryOn404 = true } = 
   }
 };
 
+const parseCsvRecipients = async (file) => {
+  if (!file || typeof file.text !== 'function') {
+    throw new Error('A CSV file is required');
+  }
+
+  const text = String(await file.text() || '').trim();
+  if (!text) {
+    return [];
+  }
+
+  const lines = text.split(/\r?\n/).map((line) => String(line || '').trim()).filter(Boolean);
+  if (lines.length === 0) return [];
+
+  const rows = lines[0].toLowerCase().includes('phone') ? lines.slice(1) : lines;
+  return rows.map((row) => {
+    const parts = String(row || '')
+      .split(',')
+      .map((part) => String(part || '').trim());
+    return {
+      phone: parts[0] || '',
+      variables: parts.slice(1).filter(Boolean)
+    };
+  }).filter((recipient) => Boolean(recipient.phone));
+};
+
 
 
 export const whatsappService = {
@@ -741,6 +766,7 @@ export const whatsappService = {
           timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
           params: {
             limit,
+            ...(String(options?.scope || '').trim() ? { scope: String(options.scope).trim() } : {}),
             ...(cursor ? { cursor } : {})
           }
         }
@@ -1092,6 +1118,20 @@ export const whatsappService = {
       return response.data;
 
     } catch (error) {
+      if (Number(error?.response?.status || 0) === 404 || !error?.response) {
+        try {
+          const recipients = await parseCsvRecipients(file);
+          return {
+            success: true,
+            recipients,
+            message: recipients.length
+              ? 'CSV parsed locally because the backend upload endpoint is unavailable.'
+              : 'CSV file did not contain any valid recipients.'
+          };
+        } catch (fallbackError) {
+          console.error('Local CSV fallback failed:', fallbackError);
+        }
+      }
 
       console.error('Failed to upload CSV:', error);
 
