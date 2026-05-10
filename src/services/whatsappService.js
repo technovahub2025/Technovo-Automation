@@ -514,7 +514,20 @@ export const whatsappService = {
         timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
       });
       const data = response.data || {};
+      if (data?.success === false) {
+        return {
+          ok: false,
+          error: normalizeServiceErrorMessage(data?.error || data?.message, 'Failed to fetch conversations'),
+          data: [],
+          meta: {
+            limit: Number(data?.meta?.limit || 0) || null,
+            hasMore: false,
+            nextCursor: null
+          }
+        };
+      }
       return {
+        ok: true,
         data: Array.isArray(data?.data) ? data.data : [],
         meta: {
           limit: Number(data?.meta?.limit || 0) || null,
@@ -525,6 +538,11 @@ export const whatsappService = {
     } catch (error) {
       console.error('Failed to fetch paged conversations:', error);
       return {
+        ok: false,
+        error: normalizeServiceErrorMessage(
+          error?.response?.data?.error || error?.message,
+          'Failed to fetch conversations'
+        ),
         data: [],
         meta: {
           limit: null,
@@ -736,6 +754,8 @@ export const whatsappService = {
     const normalizedConversationId = String(conversationId || '').trim();
     if (!normalizedConversationId) {
       return {
+        ok: false,
+        error: 'conversationId is required',
         data: [],
         meta: {
           limit: 0,
@@ -773,8 +793,21 @@ export const whatsappService = {
       );
 
       const payload = response.data;
+      if (payload?.success === false) {
+        return {
+          ok: false,
+          error: normalizeServiceErrorMessage(payload?.error || payload?.message, 'Failed to fetch messages'),
+          data: [],
+          meta: {
+            limit,
+            hasMore: false,
+            nextCursor: null
+          }
+        };
+      }
       if (Array.isArray(payload)) {
         return {
+          ok: true,
           data: payload,
           meta: {
             limit,
@@ -785,6 +818,7 @@ export const whatsappService = {
       }
 
       const primaryPage = {
+        ok: true,
         data: Array.isArray(payload?.data) ? payload.data : [],
         meta: {
           limit: Number(payload?.meta?.limit || limit) || limit,
@@ -836,6 +870,7 @@ export const whatsappService = {
           const fallbackPayload = fallbackResponse?.data;
           if (Array.isArray(fallbackPayload)) {
             return {
+              ok: true,
               data: fallbackPayload,
               meta: {
                 limit,
@@ -846,6 +881,7 @@ export const whatsappService = {
           }
           if (Array.isArray(fallbackPayload?.data) && fallbackPayload.data.length > 0) {
             return {
+              ok: true,
               data: fallbackPayload.data,
               meta: {
                 limit: Number(fallbackPayload?.meta?.limit || limit) || limit,
@@ -863,7 +899,14 @@ export const whatsappService = {
     } catch (error) {
       if (!isNotFoundError(error)) {
         console.error('Failed to fetch paged messages:', error);
-        return buildEmptyPage();
+        return {
+          ...buildEmptyPage(),
+          ok: false,
+          error: normalizeServiceErrorMessage(
+            error?.response?.data?.error || error?.message,
+            'Failed to fetch messages'
+          )
+        };
       }
 
       try {
@@ -908,6 +951,7 @@ export const whatsappService = {
         const fallbackPayload = fallbackResponse?.data;
         if (Array.isArray(fallbackPayload)) {
           return {
+            ok: true,
             data: fallbackPayload,
             meta: {
               limit,
@@ -917,6 +961,7 @@ export const whatsappService = {
           };
         }
         return {
+          ok: true,
           data: Array.isArray(fallbackPayload?.data) ? fallbackPayload.data : [],
           meta: {
             limit: Number(fallbackPayload?.meta?.limit || limit) || limit,
@@ -924,11 +969,15 @@ export const whatsappService = {
             nextCursor: String(fallbackPayload?.meta?.nextCursor || '').trim() || null
           }
         };
-        } catch {
+      } catch {
         console.warn('All compatibility fallbacks failed while fetching paged messages.');
       }
 
-      return buildEmptyPage();
+      return {
+        ...buildEmptyPage(),
+        ok: false,
+        error: normalizeServiceErrorMessage(error?.response?.data?.error || error?.message, 'Failed to fetch messages')
+      };
     }
   },
   // Delete selected messages

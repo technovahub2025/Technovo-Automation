@@ -259,9 +259,27 @@ export const createInboxDataActions = ({
           ? response.data.map(normalizeConversation)
           : [];
         const nextMeta = normalizeConversationPageMeta(response?.meta, querySignature);
+        let shouldRestorePreviousMeta = false;
 
         setConversations((prev) => {
           const previousList = Array.isArray(prev) ? prev : [];
+          const shouldPreservePreviousList =
+            !append &&
+            previousList.length > 0 &&
+            (!response?.ok || incomingConversations.length === 0) &&
+            isSameQuery;
+
+          if (shouldPreservePreviousList) {
+            shouldRestorePreviousMeta = true;
+            console.warn('Team Inbox conversation refresh returned no rows; keeping the current list.', {
+              querySignature,
+              previousCount: previousList.length,
+              responseOk: response?.ok !== false,
+              responseError: response?.error || null
+            });
+            return previousList;
+          }
+
           const merged = append
             ? mergeConversationLists(previousList, incomingConversations)
             : previousList.length && isSameQuery
@@ -291,9 +309,17 @@ export const createInboxDataActions = ({
           });
         });
 
-        conversationPageMetaRef.current = nextMeta;
+        const effectiveMeta = shouldRestorePreviousMeta ? previousPageMeta : nextMeta;
+        conversationPageMetaRef.current = effectiveMeta;
         if (typeof setConversationPageMeta === 'function') {
-          setConversationPageMeta(nextMeta);
+          setConversationPageMeta(effectiveMeta);
+        }
+
+        if (!response?.ok) {
+          console.warn('Team Inbox conversations loaded with a degraded response.', {
+            querySignature,
+            error: response?.error || 'unknown'
+          });
         }
 
         return true;
@@ -476,6 +502,7 @@ export const createInboxDataActions = ({
           return false;
         }
 
+        const responseOk = Boolean(data?.ok !== false);
         const fetchedMessages = Array.isArray(data?.data) ? data.data : [];
         const fetchedMeta = normalizeMessagePageMeta(data?.meta, pageLimit);
         const currentCachedMessages = Array.isArray(
@@ -486,7 +513,9 @@ export const createInboxDataActions = ({
         const isStaleInitialResponse =
           !loadOlder && messageLoadRequestIdRef.current !== requestId;
         const shouldPreserveExistingMessages =
-          !loadOlder && fetchedMessages.length === 0 && currentCachedMessages.length > 0;
+          !loadOlder &&
+          currentCachedMessages.length > 0 &&
+          (!responseOk || fetchedMessages.length === 0);
 
         if (isStaleInitialResponse && !shouldPreserveExistingMessages && fetchedMessages.length === 0) {
           return false;
@@ -500,7 +529,9 @@ export const createInboxDataActions = ({
 
         const shouldPreserveExistingPagination =
           !loadOlder &&
-          (currentCachedMessages.length > fetchedMessages.length || shouldPreserveExistingMessages) &&
+          (currentCachedMessages.length > fetchedMessages.length ||
+            shouldPreserveExistingMessages ||
+            !responseOk) &&
           messagePaginationCacheRef?.current?.has(normalizedConversationId);
         const nextMeta = shouldPreserveExistingPagination
           ? normalizeMessagePageMeta(
@@ -515,6 +546,7 @@ export const createInboxDataActions = ({
           requestId,
           fetchedCount: fetchedMessages.length,
           mergedCount: nextMessages.length,
+          responseOk,
           hasMore: Boolean(nextMeta.hasMore),
           nextCursor: nextMeta.nextCursor || null
         });
@@ -524,27 +556,40 @@ export const createInboxDataActions = ({
           {
             source: 'data',
             conversationId: normalizedConversationId,
-            details: `${nextMessages.length} messages loaded`
+            details: responseOk
+              ? `${nextMessages.length} messages loaded`
+              : 'Message fetch failed; preserved cached thread if available'
           }
         );
 
         messagePaginationCacheRef?.current?.set(normalizedConversationId, nextMeta);
-        messageCacheRef.current.set(normalizedConversationId, nextMessages);
-        writeTeamInboxThreadCache({
-          currentUserId,
-          conversationId: normalizedConversationId,
-          messages: nextMessages,
-          meta: nextMeta
-        });
+        if (responseOk || nextMessages.length > 0 || currentCachedMessages.length > 0) {
+          messageCacheRef.current.set(normalizedConversationId, nextMessages);
+          writeTeamInboxThreadCache({
+            currentUserId,
+            conversationId: normalizedConversationId,
+            messages: nextMessages,
+            meta: nextMeta
+          });
+        }
         activeMessagesConversationIdRef.current = normalizedConversationId;
         setMessages(nextMessages);
         setMessagesHasMore(Boolean(nextMeta.hasMore));
         if (typeof setThreadCacheInfo === 'function') {
           setThreadCacheInfo({
-            source: 'fresh',
-            isStale: false,
-            updatedAt: Date.now(),
+            source: responseOk ? 'fresh' : 'cache',
+            isStale: !responseOk,
+            updatedAt: responseOk ? Date.now() : Date.now(),
             messageCount: nextMessages.length
+          });
+        }
+        if (!responseOk) {
+          console.warn('Team Inbox message refresh returned a degraded response.', {
+            conversationId: normalizedConversationId,
+            requestId,
+            cachedCount: currentCachedMessages.length,
+            fetchedCount: fetchedMessages.length,
+            error: data?.error || null
           });
         }
         return true;

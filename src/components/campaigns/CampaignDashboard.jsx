@@ -262,6 +262,7 @@ const CampaignDashboard = ({ campaignId }) => {
       </div>
 
       {/* Statistics Grid */}
+      {/* Successful/Failed counts depend on delivery-status sync and may stay at 0 until updates arrive. */}
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-icon active">
