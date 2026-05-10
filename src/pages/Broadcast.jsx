@@ -195,6 +195,7 @@ const Broadcast = () => {
 
             {activeTab === 'overview' ? (
                 <>
+                    {/*
                     <div className="broadcast-stats">
                         <div className="stat-box">
                             <span className="label">Total Reached</span>
@@ -209,6 +210,7 @@ const Broadcast = () => {
                             <span className="value">5,600</span>
                         </div>
                     </div>
+                    */}
 
                     <div className="history-section">
                         <h3>History</h3>
