@@ -82,11 +82,19 @@ class WebSocketService extends EventEmitter {
     this.currentUserId = null;
     this.currentCompanyId = null;
     this.activeConversationId = '';
-    this.wsUrl = resolveWebSocketUrl();
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 10;
-    this.reconnectInterval = 2000; // Start with 2 seconds
-    this.maxReconnectInterval = 30000; // Max 30 seconds
+    this.baseReconnectDelay = 2000;
+    this.maxReconnectDelay = 30000;
+    this.reconnectJitterMs = 1000;
+    this.connectionTimeoutMs = 20000;
+    this.reconnectTimer = null;
+    this.heartbeatTimer = null;
+    this.pongTimeout = null;
+    this.circuitOpenUntil = 0;
+    this.lastCloseCode = null;
+    this.lastPongAt = null;
+    this.offlineListenerAttached = false;
     this.heartbeatInterval = null;
     this.connecting = false;
     this.connectionPromise = null;
@@ -101,11 +109,11 @@ class WebSocketService extends EventEmitter {
     const legacyApiBaseForFallback = import.meta.env.VITE_API_URL || '';
 
     this.wsUrl =
-      deriveWsUrlFromApiBase(explicitWhatsAppWsUrl) ||
-      deriveWsUrlFromApiBase(whatsappApiBaseForFallback) ||
-      deriveWsUrlFromApiBase(legacyWsUrl) ||
-      deriveWsUrlFromApiBase(legacyApiBaseForFallback) ||
-      'ws://localhost:3001';
+      deriveWsUrl(explicitWhatsAppWsUrl) ||
+      deriveWsUrl(whatsappApiBaseForFallback) ||
+      deriveWsUrl(legacyWsUrl) ||
+      deriveWsUrl(legacyApiBaseForFallback) ||
+      resolveWebSocketUrl();
     console.log('🔌 WebSocket URL:', this.wsUrl);
     
     // Bind methods to maintain context
