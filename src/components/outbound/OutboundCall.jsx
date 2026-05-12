@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import {
   BarChart3,
   CalendarClock,
@@ -168,6 +169,7 @@ const OutboundCall = () => {
   const [selectedScheduleIds, setSelectedScheduleIds] = useState([]);
   const [scheduleSelectionMode, setScheduleSelectionMode] = useState(false);
   const [openActionMenu, setOpenActionMenu] = useState(null);
+  const [actionMenuPosition, setActionMenuPosition] = useState({ top: 0, left: 0 });
   const [scheduleDrawerItem, setScheduleDrawerItem] = useState(null);
   const [monitorRowsByKey, setMonitorRowsByKey] = useState({});
   const [selectedMonitorKey, setSelectedMonitorKey] = useState('');
@@ -182,6 +184,7 @@ const OutboundCall = () => {
   const scheduleRequestSeqRef = useRef(0);
   const historyFiltersRef = useRef(debouncedHistoryFilters);
   const historyPaginationRef = useRef(historyPagination);
+  const actionDropdownRef = useRef(null);
 
   useExotelOutbound();
 
@@ -621,6 +624,38 @@ const OutboundCall = () => {
     localStorage.setItem('outboundCallSettings', JSON.stringify(callSettings));
   }, [callSettings]);
 
+  useEffect(() => {
+    if (!openActionMenu) return undefined;
+
+    const closeOnOutside = (event) => {
+      if (
+        actionDropdownRef.current?.contains(event.target) ||
+        event.target?.closest?.('.row-action-trigger')
+      ) {
+        return;
+      }
+      setOpenActionMenu(null);
+    };
+
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setOpenActionMenu(null);
+    };
+
+    const closeMenu = () => setOpenActionMenu(null);
+
+    document.addEventListener('mousedown', closeOnOutside);
+    document.addEventListener('keydown', closeOnEscape);
+    window.addEventListener('scroll', closeMenu, true);
+    window.addEventListener('resize', closeMenu);
+
+    return () => {
+      document.removeEventListener('mousedown', closeOnOutside);
+      document.removeEventListener('keydown', closeOnEscape);
+      window.removeEventListener('scroll', closeMenu, true);
+      window.removeEventListener('resize', closeMenu);
+    };
+  }, [openActionMenu]);
+
   const handleEndCall = async (callSid) => {
     const existingMonitor = Object.values(monitorRowsByKey).find((item) => item.callSid === callSid);
     const endedAt = new Date().toISOString();
@@ -797,7 +832,17 @@ const OutboundCall = () => {
     }
   };
 
-  const toggleActionMenu = (menuKey) => {
+  const toggleActionMenu = (menuKey, event, menuHeight = 80) => {
+    if (openActionMenu !== menuKey && event?.currentTarget) {
+      const rect = event.currentTarget.getBoundingClientRect();
+      const menuWidth = 152;
+      const top = rect.bottom + menuHeight + 10 > window.innerHeight
+        ? Math.max(8, rect.top - menuHeight - 6)
+        : rect.bottom + 6;
+      const left = Math.max(8, Math.min(rect.right - menuWidth, window.innerWidth - menuWidth - 8));
+      setActionMenuPosition({ top, left });
+    }
+
     setOpenActionMenu((prev) => (prev === menuKey ? null : menuKey));
   };
 
@@ -1005,21 +1050,44 @@ const OutboundCall = () => {
                     <button
                       type="button"
                       className="row-action-trigger"
-                      onClick={() => toggleActionMenu(`history:${item._id || item.callSid}`)}
+                      onClick={(event) => toggleActionMenu(`history:${item._id || item.callSid}`, event, 80)}
+                      aria-expanded={openActionMenu === `history:${item._id || item.callSid}`}
                       aria-label="Call actions"
                       title="Call actions"
                     >
                       <MoreVertical size={16} />
                     </button>
-                    {openActionMenu === `history:${item._id || item.callSid}` && (
-                      <div className="row-action-dropdown">
-                        <button type="button" onClick={() => openMonitorFromHistory(item)} title="View monitor">
+                    {openActionMenu === `history:${item._id || item.callSid}` && createPortal(
+                      <div
+                        className="row-action-dropdown"
+                        ref={actionDropdownRef}
+                        style={{ top: `${actionMenuPosition.top}px`, left: `${actionMenuPosition.left}px` }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOpenActionMenu(null);
+                            openMonitorFromHistory(item);
+                          }}
+                          title="View monitor"
+                        >
                           <Eye size={14} />
+                          View monitor
                         </button>
-                        <button type="button" className="danger" onClick={() => handleDeleteHistoryItem(item.callSid)} title="Delete call log">
+                        <button
+                          type="button"
+                          className="danger"
+                          onClick={() => {
+                            setOpenActionMenu(null);
+                            handleDeleteHistoryItem(item.callSid);
+                          }}
+                          title="Delete call log"
+                        >
                           <Trash2 size={14} />
+                          Delete
                         </button>
-                      </div>
+                      </div>,
+                      document.body
                     )}
                   </div>
                 </span>
@@ -1151,21 +1219,30 @@ const OutboundCall = () => {
                         <button
                           type="button"
                           className="row-action-trigger"
-                          onClick={() => toggleActionMenu(`schedule:${itemId}`)}
+                          onClick={(event) => toggleActionMenu(`schedule:${itemId}`, event, 116)}
+                          aria-expanded={openActionMenu === `schedule:${itemId}`}
                           aria-label="Schedule actions"
                           title="Schedule actions"
                         >
                           <MoreVertical size={16} />
                         </button>
-                        {openActionMenu === `schedule:${itemId}` && (
-                          <div className="row-action-dropdown">
+                        {openActionMenu === `schedule:${itemId}` && createPortal(
+                          <div
+                            className="row-action-dropdown"
+                            ref={actionDropdownRef}
+                            style={{ top: `${actionMenuPosition.top}px`, left: `${actionMenuPosition.left}px` }}
+                          >
                             <button
                               type="button"
                               disabled={isTerminalSchedule}
-                              onClick={() => handleScheduleStatusChange(itemId, status === 'paused' ? 'resume' : 'pause')}
+                              onClick={() => {
+                                setOpenActionMenu(null);
+                                handleScheduleStatusChange(itemId, status === 'paused' ? 'resume' : 'pause');
+                              }}
                               title={status === 'paused' ? 'Resume schedule' : 'Pause schedule'}
                             >
                               {status === 'paused' ? <Play size={14} /> : <Pause size={14} />}
+                              {status === 'paused' ? 'Resume' : 'Pause'}
                             </button>
                             <button
                               type="button"
@@ -1176,11 +1253,22 @@ const OutboundCall = () => {
                               title="View details"
                             >
                               <Eye size={14} />
+                              View details
                             </button>
-                            <button type="button" className="danger" onClick={() => handleDeleteScheduleItem(itemId)} title="Delete schedule">
+                            <button
+                              type="button"
+                              className="danger"
+                              onClick={() => {
+                                setOpenActionMenu(null);
+                                handleDeleteScheduleItem(itemId);
+                              }}
+                              title="Delete schedule"
+                            >
                               <Trash2 size={14} />
+                              Delete
                             </button>
-                          </div>
+                          </div>,
+                          document.body
                         )}
                       </div>
                     </span>
