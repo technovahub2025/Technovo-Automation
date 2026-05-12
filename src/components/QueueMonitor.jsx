@@ -3,6 +3,9 @@ import { Users, Clock, Phone, AlertCircle } from 'lucide-react';
 import { normalizeQueueStatus } from '../utils/inboundNormalizers';
 import './QueueMonitor.css';
 
+const EMPTY_QUEUES = {};
+const EMPTY_ANALYTICS_QUEUE_STATS = {};
+
 const toTimestamp = (value) => {
   if (!value) return null;
   const parsed = Date.parse(value);
@@ -32,7 +35,11 @@ const formatQueueName = (queueName) =>
     .trim()
     .replace(/\b\w/g, (char) => char.toUpperCase());
 
-const QueueMonitor = ({ queues: inboundQueues = {}, analyticsQueueStats: inboundAnalyticsQueueStats = {}, loading = false }) => {
+const QueueMonitor = ({
+  queues: inboundQueues = EMPTY_QUEUES,
+  analyticsQueueStats: inboundAnalyticsQueueStats = EMPTY_ANALYTICS_QUEUE_STATS,
+  loading = false
+}) => {
   const [queues, setQueues] = useState({});
   const [selectedQueue, setSelectedQueue] = useState(null);
   const [analyticsQueueStats, setAnalyticsQueueStats] = useState({

@@ -203,6 +203,11 @@ const fetchInboundAnalyticsHttp = (period = 'today', params = {}) => {
   return apiService.get(`/api/analytics/inbound?${queryParams}`);
 };
 apiService.getInboundAnalytics = async (period = 'today', params = {}) => {
+  if (params?.skipSocket) {
+    const { skipSocket, ...httpParams } = params;
+    return fetchInboundAnalyticsHttp(period, httpParams);
+  }
+
   const socket = socketService.connect();
   const socketTimeoutMs = Number(import.meta.env.VITE_ANALYTICS_SOCKET_TIMEOUT_MS || 7000);
   const payload = {

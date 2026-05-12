@@ -41,7 +41,7 @@ const normalizeInboundSnapshot = (payload = {}) => ({
 
 const fetchInboundFallback = async (period) => {
   const [analyticsRes, queueRes] = await Promise.allSettled([
-    apiService.getInboundAnalytics(period),
+    apiService.getInboundAnalytics(period, { skipSocket: true }),
     apiService.getQueueStatus()
   ]);
 
@@ -102,6 +102,8 @@ export const useInbound = (period = 'today') => {
       if (!mountedRef.current || requestSeq !== requestSeqRef.current) return;
       setAnalytics(fallback.analytics);
       setQueueStatus(fallback.queueStatus);
+      setRoutingRules(fallback.routingRules);
+      setLeadsSummary(fallback.leadsSummary);
       setError(fallback.error || null);
       setLoading(false);
       return;
@@ -115,6 +117,8 @@ export const useInbound = (period = 'today') => {
       if (!mountedRef.current || requestSeq !== requestSeqRef.current) return;
       setAnalytics(fallback.analytics);
       setQueueStatus(fallback.queueStatus);
+      setRoutingRules(fallback.routingRules);
+      setLeadsSummary(fallback.leadsSummary);
       setError(message || fallback.error || null);
       setLoading(false);
     };

@@ -84,19 +84,31 @@ class WebSocketService extends EventEmitter {
     this.activeConversationId = '';
     this.wsUrl = resolveWebSocketUrl();
     this.reconnectAttempts = 0;
-    this.maxReconnectAttempts = 12;
-    this.baseReconnectDelay = 1000;
-    this.maxReconnectDelay = 30000;
-    this.reconnectJitterMs = 500;
-    this.circuitOpenUntil = 0;
-    this.reconnectTimer = null;
-    this.heartbeatTimer = null;
-    this.pongTimeout = null;
-    this.lastPongAt = 0;
-    this.lastCloseCode = null;
-    this.offlineListenerAttached = false;
-    this.connectionTimeoutMs = Number(import.meta.env.VITE_WS_CONNECTION_TIMEOUT_MS || 25000);
+    this.maxReconnectAttempts = 10;
+    this.reconnectInterval = 2000; // Start with 2 seconds
+    this.maxReconnectInterval = 30000; // Max 30 seconds
+    this.heartbeatInterval = null;
+    this.connecting = false;
+    this.connectionPromise = null;
+    
+    // WhatsApp/CRM realtime uses the raw WebSocket backend, not the voice Socket.IO backend.
+    const explicitWhatsAppWsUrl = import.meta.env.VITE_WHATSAPP_WS_URL || '';
+    const whatsappApiBaseForFallback = import.meta.env.VITE_API_BASE_URL || '';
+    const legacyWsUrl =
+      import.meta.env.VITE_WS_URL ||
+      import.meta.env.VITE_SOCKET_URL ||
+      '';
+    const legacyApiBaseForFallback = import.meta.env.VITE_API_URL || '';
 
+    this.wsUrl =
+      deriveWsUrlFromApiBase(explicitWhatsAppWsUrl) ||
+      deriveWsUrlFromApiBase(whatsappApiBaseForFallback) ||
+      deriveWsUrlFromApiBase(legacyWsUrl) ||
+      deriveWsUrlFromApiBase(legacyApiBaseForFallback) ||
+      'ws://localhost:3001';
+    console.log('🔌 WebSocket URL:', this.wsUrl);
+    
+    // Bind methods to maintain context
     this.handleOpen = this.handleOpen.bind(this);
     this.handleMessage = this.handleMessage.bind(this);
     this.handleError = this.handleError.bind(this);

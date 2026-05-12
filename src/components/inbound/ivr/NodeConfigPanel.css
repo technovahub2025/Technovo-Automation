@@ -122,6 +122,45 @@
   background: #ffffff;
 }
 
+.node-config-panel .form-group .radio-label,
+.node-config-panel .form-group .checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  width: fit-content;
+  margin-bottom: 0;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.35;
+  color: #374151;
+  cursor: pointer;
+}
+
+.node-config-panel .form-group .checkbox-label {
+  font-weight: 400;
+  padding: 4px 0;
+}
+
+.node-config-panel .form-group .radio-label input[type="radio"],
+.node-config-panel .form-group .checkbox-label input[type="checkbox"] {
+  box-sizing: border-box;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #9ca3af;
+  border-radius: 50%;
+  flex: 0 0 16px;
+  accent-color: #3b82f6;
+  cursor: pointer;
+}
+
+.node-config-panel .form-group .checkbox-label input[type="checkbox"] {
+  border-radius: 4px;
+}
+
 .node-config-panel .form-group input:focus,
 .node-config-panel .form-group select:focus,
 .node-config-panel .form-group textarea:focus {

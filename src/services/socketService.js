@@ -46,19 +46,22 @@ class SocketService {
   }
 
   resolveUrl(url) {
-    const configuredSocket =
+    const configuredVoiceSocket = import.meta.env.VITE_VOICE_SOCKET_URL || '';
+    const configuredVoiceApi = import.meta.env.VITE_VOICE_API_URL || '';
+    const legacySocket =
       import.meta.env.VITE_WS_URL ||
       import.meta.env.VITE_SOCKET_URL ||
       '';
-    const configuredApi =
-      import.meta.env.VITE_VOICE_API_URL ||
-      import.meta.env.VITE_API_URL ||
-      '';
+    const legacyApi = import.meta.env.VITE_API_URL || '';
+    const withoutApiSuffix = (value) => String(value || '').replace(/\/api\/?$/, '');
 
     return (
       url ||
-      configuredSocket ||
-      (configuredApi ? configuredApi.replace(/\/api\/?$/, '') : window.location.origin)
+      withoutApiSuffix(configuredVoiceSocket) ||
+      withoutApiSuffix(configuredVoiceApi) ||
+      withoutApiSuffix(legacySocket) ||
+      withoutApiSuffix(legacyApi) ||
+      window.location.origin
     );
   }
 
@@ -84,7 +87,7 @@ class SocketService {
 
     this.socket = io(resolvedUrl, {
       auth: token ? { token } : undefined,
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'],
       withCredentials: this.useCredentials,
       reconnection: true,
       reconnectionAttempts: 10,
