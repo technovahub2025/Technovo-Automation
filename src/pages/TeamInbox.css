@@ -991,7 +991,7 @@
 
 
 
-.chat-header {
+.team-inbox-shell .chat-header {
     padding: 12px 20px;
     background: linear-gradient(135deg, #0a6b5f 0%, #0f766e 100%);
     border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -1152,17 +1152,17 @@
 }
 
 @media (max-width: 768px) {
-    .chat-header {
+    .team-inbox-shell .chat-header {
         padding: 10px 12px;
     }
 
-    .chat-header .avatar {
+    .team-inbox-shell .chat-header .avatar {
         width: 32px;
         height: 32px;
         font-size: 13px;
     }
 
-    .chat-header .icon-btn {
+    .team-inbox-shell .chat-header .icon-btn {
         width: 30px;
         height: 30px;
     }
