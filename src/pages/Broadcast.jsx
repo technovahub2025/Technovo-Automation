@@ -4,7 +4,6 @@ import Papa from 'papaparse';
 
 import { apiClient } from '../services/whatsappapi';
 import { useBroadcast, useCampaignAutomation } from '../hooks/useBroadcast';
-import { broadcastAPI } from '../services/broadcastAPI';
 import webSocketService from '../services/websocketService';
 
 // Import components
@@ -12,7 +11,6 @@ import BroadcastHeader from '../components/broadcastComponents/BroadcastHeader';
 import DateRangeFilter from '../components/broadcastComponents/DateRangeFilter';
 import OverviewStats from '../components/broadcastComponents/OverviewStats';
 import ReliabilityInsights from '../components/broadcastComponents/ReliabilityInsights';
-import BroadcastQueueHealth from '../components/broadcastComponents/BroadcastQueueHealth';
 
 import { getCachedOverviewStats } from '../utils/stableBroadcastStats';
 import { clearSidebarPageCache, resolveCacheUserId } from '../utils/sidebarPageCache';
@@ -94,7 +92,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const location = useLocation();
   const currentPath = stripAppRouteBase(location.pathname);
   const currentUserId = resolveCacheUserId();
-  const queueHealthShareUrl = `${window.location.origin}${location.pathname}#queue-health`;
 
   const {
 
@@ -239,10 +236,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     failureCodeBreakdown: {},
     topFailureCode: null
   });
-  const [queueMetrics, setQueueMetrics] = useState(null);
-  const [queueMetricsLoading, setQueueMetricsLoading] = useState(false);
-  const [queueMetricsError, setQueueMetricsError] = useState('');
-  const [queueMetricsUpdatedAt, setQueueMetricsUpdatedAt] = useState(null);
   const broadcastSubmitInFlightRef = useRef(false);
   const csvRecipientRefreshContextRef = useRef({
     recipients: [],
@@ -254,13 +247,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       setActiveTab('schedule');
     }
   }, [composerMode, setActiveTab]);
-
-  useEffect(() => {
-    if (broadcastMode !== 'whatsapp') return;
-    if (String(location.hash || '').toLowerCase() !== '#queue-health') return;
-    if (activeTab === 'overview') return;
-    setActiveTab('overview');
-  }, [activeTab, broadcastMode, location.hash, setActiveTab]);
 
   useEffect(() => {
     if (chooserMode) {
@@ -384,21 +370,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
   }, [totalPages]);
-
-  useEffect(() => {
-    if (broadcastMode !== 'whatsapp') return;
-    if (activeTab !== 'overview') return;
-    if (String(location.hash || '').toLowerCase() !== '#queue-health') return;
-
-    const frameId = window.requestAnimationFrame(() => {
-      const target = document.getElementById('broadcast-queue-health');
-      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [activeTab, broadcastMode, location.hash]);
   const stats = getCachedOverviewStats(broadcasts);
   const mergedOverviewStats = {
     ...stats,
@@ -464,60 +435,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       isAlive = false;
     };
   }, [broadcasts, statusFilter, startDate, endDate]);
-
-  useEffect(() => {
-    let isAlive = true;
-    let timerId = null;
-
-    const shouldPollQueueMetrics = broadcastMode === 'whatsapp' && activeTab === 'overview';
-
-    const loadQueueMetrics = async () => {
-      if (!shouldPollQueueMetrics) {
-        return;
-      }
-
-      setQueueMetricsLoading(true);
-      try {
-        const response = await broadcastAPI.getQueueMetrics();
-        const payload = response?.data?.data || response?.data || {};
-        if (!isAlive) return;
-
-        setQueueMetrics(payload);
-        setQueueMetricsError('');
-        setQueueMetricsUpdatedAt(Date.now());
-      } catch (error) {
-        if (!isAlive) return;
-        const message =
-          error?.response?.data?.message ||
-          error?.response?.data?.error ||
-          error?.message ||
-          'Unable to load queue metrics.';
-        setQueueMetricsError(message);
-      } finally {
-        if (isAlive) {
-          setQueueMetricsLoading(false);
-        }
-      }
-    };
-
-    if (shouldPollQueueMetrics) {
-      void loadQueueMetrics();
-      timerId = window.setInterval(() => {
-        void loadQueueMetrics();
-      }, 15000);
-    } else {
-      setQueueMetrics(null);
-      setQueueMetricsError('');
-      setQueueMetricsUpdatedAt(null);
-    }
-
-    return () => {
-      isAlive = false;
-      if (timerId) {
-        window.clearInterval(timerId);
-      }
-    };
-  }, [activeTab, broadcastMode]);
 
 
 
@@ -2508,16 +2425,6 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
           <OverviewStats stats={mergedOverviewStats} />
           <ReliabilityInsights data={reliabilitySummary} />
-          <div id="broadcast-queue-health">
-            <BroadcastQueueHealth
-              data={queueMetrics}
-              loading={queueMetricsLoading}
-              error={queueMetricsError}
-              updatedAt={queueMetricsUpdatedAt}
-              shareUrl={queueHealthShareUrl}
-            />
-          </div>
-
 
 
           <div className="history-section">

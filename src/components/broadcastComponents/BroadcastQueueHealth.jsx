@@ -24,7 +24,7 @@ const formatAge = (value) => {
   return minuteRemainder ? `${hours}h ${minuteRemainder}m` : `${hours}h`;
 };
 
-const QueueCard = ({ title, icon: Icon, data, accentClass }) => {
+const QueueCard = ({ title, icon, data, accentClass }) => {
   const safeData = data || {};
   const waiting = formatCount(safeData.waiting);
   const active = formatCount(safeData.active);
@@ -35,7 +35,7 @@ const QueueCard = ({ title, icon: Icon, data, accentClass }) => {
     <div className={`broadcast-queue-health__queue ${accentClass || ''}`.trim()}>
       <div className="broadcast-queue-health__queue-head">
         <div className="broadcast-queue-health__queue-icon">
-          <Icon size={16} />
+          {icon ? React.createElement(icon, { size: 16 }) : null}
         </div>
         <div>
           <h4>{title}</h4>
@@ -122,9 +122,9 @@ const BroadcastQueueHealth = ({
   }, [copyState]);
 
   useEffect(() => {
-    if (hasPressure) {
-      setIsExpanded(true);
-    }
+    if (!hasPressure) return undefined;
+    const timerId = window.setTimeout(() => setIsExpanded(true), 0);
+    return () => window.clearTimeout(timerId);
   }, [hasPressure]);
 
   useEffect(() => {
@@ -141,7 +141,7 @@ const BroadcastQueueHealth = ({
       await navigator.clipboard.writeText(text);
       setCopyState('idle');
       setToast({ type: 'success', message: 'Queue link copied to clipboard.' });
-    } catch (_error) {
+    } catch {
       setCopyState('error');
       setToast({ type: 'error', message: 'Unable to copy queue link.' });
     }
