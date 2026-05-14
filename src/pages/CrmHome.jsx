@@ -5,7 +5,6 @@ import {
   Briefcase,
   CheckSquare,
   MessageSquare,
-  RefreshCw,
   TrendingUp,
   Users
 } from "lucide-react";
@@ -14,6 +13,7 @@ import CrmPageHeader from "../components/crm/CrmPageHeader";
 import CrmMetricCard from "../components/crm/CrmMetricCard";
 import CrmOnboardingChecklist from "../components/crm/CrmOnboardingChecklist";
 import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
+import CrmRealtimeStatus from "../components/crm/CrmRealtimeStatus";
 import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
 import "./CrmWorkspace.css";
 
@@ -46,7 +46,6 @@ const actionCards = [
 
 const CrmHome = () => {
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [metrics, setMetrics] = useState(null);
   const [taskSummary, setTaskSummary] = useState(null);
@@ -54,8 +53,7 @@ const CrmHome = () => {
 
   const loadHomeData = useCallback(async ({ silent = false } = {}) => {
     try {
-      if (silent) setRefreshing(true);
-      else setLoading(true);
+      if (!silent) setLoading(true);
       setError("");
 
       const [metricsResult, taskSummaryResult, dealMetricsResult] = await Promise.all([
@@ -81,11 +79,10 @@ const CrmHome = () => {
       setError(requestError?.message || "Failed to load CRM home");
     } finally {
       setLoading(false);
-      setRefreshing(false);
     }
   }, []);
 
-  useCrmRealtimeRefresh({
+  const crmRealtime = useCrmRealtimeRefresh({
     onRefresh: () => loadHomeData({ silent: true })
   });
 
@@ -124,17 +121,7 @@ const CrmHome = () => {
       <CrmPageHeader
         title="CRM Home"
         subtitle="One place to run leads, conversations, tasks, and deals with a clear daily workflow."
-        actions={
-          <button
-            type="button"
-            className="crm-btn crm-btn-secondary"
-            onClick={() => loadHomeData({ silent: true })}
-            disabled={refreshing}
-          >
-            <RefreshCw size={16} className={refreshing ? "spin" : ""} />
-            {refreshing ? "Refreshing..." : "Refresh"}
-          </button>
-        }
+        actions={<CrmRealtimeStatus status={crmRealtime.connectionStatus} />}
       />
 
       {error ? <div className="crm-alert crm-alert-error">{error}</div> : null}

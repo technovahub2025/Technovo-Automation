@@ -4,11 +4,11 @@ import {
   ChevronLeft,
   ChevronRight,
   ExternalLink,
-  RefreshCw,
   Video
 } from "lucide-react";
 import CrmContactDrawer from "../components/crm/CrmContactDrawer";
 import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
+import CrmRealtimeStatus from "../components/crm/CrmRealtimeStatus";
 import CrmToast from "../components/crm/CrmToast";
 import { crmService } from "../services/crmService";
 import { googleCalendarService } from "../services/googleCalendarService";
@@ -103,7 +103,6 @@ const CrmMeetings = () => {
   const [bucket, setBucket] = useState("upcoming");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [selectedContactId, setSelectedContactId] = useState("");
   const [selectedContact, setSelectedContact] = useState(null);
@@ -123,15 +122,13 @@ const CrmMeetings = () => {
     async ({ silent = false } = {}) => {
       const releaseLoadingGuard = startLoadingTimeoutGuard(
         () => {
-          if (silent) setRefreshing(false);
-          else setLoading(false);
+          if (!silent) setLoading(false);
         },
         CRM_MEETINGS_LOADING_TIMEOUT_MS
       );
 
       try {
-        if (silent) setRefreshing(true);
-        else setLoading(true);
+        if (!silent) setLoading(true);
         setError("");
 
         const authStatusResult = await googleCalendarService.getAuthStatus();
@@ -165,7 +162,6 @@ const CrmMeetings = () => {
       } finally {
         releaseLoadingGuard();
         setLoading(false);
-        setRefreshing(false);
       }
     },
     [bucket, searchQuery]
@@ -175,7 +171,7 @@ const CrmMeetings = () => {
     loadMeetings({ silent: true });
   }, [loadMeetings]);
 
-  useCrmRealtimeRefresh({
+  const crmRealtime = useCrmRealtimeRefresh({
     onRefresh: handleRealtimeRefresh
   });
 
@@ -314,18 +310,7 @@ const CrmMeetings = () => {
           <h1>CRM Meetings</h1>
           <p>Track scheduled Google Meet sessions, day-level load, and contact context in one workspace.</p>
         </div>
-        <button
-          type="button"
-          className="crm-btn crm-btn-secondary"
-          onClick={() => {
-            loadMeetings({ silent: true });
-            setToast({ type: "success", message: "Refreshing meeting workspace..." });
-          }}
-          disabled={refreshing}
-        >
-          <RefreshCw size={16} className={refreshing ? "spin" : ""} />
-          {refreshing ? "Refreshing..." : "Refresh"}
-        </button>
+        <CrmRealtimeStatus status={crmRealtime.connectionStatus} />
       </div>
 
       <div className="crm-metric-grid">

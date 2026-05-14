@@ -4,7 +4,6 @@ import { handleUnauthorizedServiceError } from "./serviceAuth";
 
 const API_BASE_URL = resolveApiBaseUrl();
 const CRM_REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_CRM_REQUEST_TIMEOUT_MS || 15000);
-const PIPELINE_VIEWS_AVAILABILITY_KEY = "crmPipelineViewsApiAvailable";
 const PIPELINE_STAGES_AVAILABILITY_KEY = "crmPipelineStagesApiAvailable";
 const DEFAULT_PIPELINE_STAGES = [
   { key: "new", label: "New Lead", color: "#5f8fc3", order: 0 },
@@ -15,36 +14,8 @@ const DEFAULT_PIPELINE_STAGES = [
   { key: "won", label: "Won", color: "#1d9b5e", order: 5 },
   { key: "lost", label: "Lost", color: "#c45a5a", order: 6 }
 ];
-let pipelineViewsApiAvailable = null;
-let pipelineViewsRequestPromise = null;
 let pipelineStagesApiAvailable = null;
 let pipelineStagesRequestPromise = null;
-
-const readPipelineViewsAvailability = () => {
-  try {
-    const stored = localStorage.getItem(PIPELINE_VIEWS_AVAILABILITY_KEY);
-    if (stored === "true") return true;
-    if (stored === "false") {
-      localStorage.removeItem(PIPELINE_VIEWS_AVAILABILITY_KEY);
-    }
-  } catch {
-    // Ignore storage access issues and fall back to probing.
-  }
-  return null;
-};
-
-const writePipelineViewsAvailability = (value) => {
-  pipelineViewsApiAvailable = value;
-  try {
-    if (value === true) {
-      localStorage.setItem(PIPELINE_VIEWS_AVAILABILITY_KEY, "true");
-    } else {
-      localStorage.removeItem(PIPELINE_VIEWS_AVAILABILITY_KEY);
-    }
-  } catch {
-    // Ignore storage access issues.
-  }
-};
 
 const readPipelineStagesAvailability = () => {
   try {
@@ -72,7 +43,6 @@ const writePipelineStagesAvailability = (value) => {
   }
 };
 
-pipelineViewsApiAvailable = readPipelineViewsAvailability();
 pipelineStagesApiAvailable = readPipelineStagesAvailability();
 
 const getAuthHeaders = (includeJson = true) => {
@@ -119,136 +89,36 @@ export const crmService = {
     }
   },
 
-  async getPipelineViews() {
-    if (pipelineViewsApiAvailable === false) {
-      return {
-        success: true,
-        data: {
-          views: [],
-          defaultViewId: ""
-        }
-      };
-    }
-
-    if (pipelineViewsRequestPromise) {
-      return pipelineViewsRequestPromise;
-    }
-
-    pipelineViewsRequestPromise = (async () => {
-      try {
-        const response = await axios.get(`${API_BASE_URL}/api/crm/pipeline-views`, {
-          ...buildRequestConfig(false)
-        });
-        writePipelineViewsAvailability(true);
-        return {
-          ...(response.data || {}),
-          data: {
-            ...((response.data && response.data.data) || {}),
-            apiAvailable: true
-          }
-        };
-      } catch (error) {
-        if (error?.response?.status === 404) {
-          writePipelineViewsAvailability(false);
-          return {
-            success: true,
-            data: {
-              views: [],
-              defaultViewId: "",
-              apiAvailable: false
-            }
-          };
-        }
-        return withServiceError(error, "Failed to fetch CRM pipeline views");
-      } finally {
-        pipelineViewsRequestPromise = null;
-      }
-    })();
-
+  async bulkUpdateContacts(payload = {}) {
     try {
-      return await pipelineViewsRequestPromise;
-    } catch (error) {
-      return withServiceError(error, "Failed to fetch CRM pipeline views");
-    }
-  },
-
-  async createPipelineView(payload = {}) {
-    if (pipelineViewsApiAvailable === false) {
-      return {
-        success: false,
-        error: "Saved lead pipeline views are unavailable in this backend build."
-      };
-    }
-
-    try {
-      const response = await axios.post(`${API_BASE_URL}/api/crm/pipeline-views`, payload, {
+      const response = await axios.post(`${API_BASE_URL}/api/crm/contacts/bulk`, payload, {
         ...buildRequestConfig()
       });
-      writePipelineViewsAvailability(true);
       return response.data;
     } catch (error) {
-      if (error?.response?.status === 404) {
-        writePipelineViewsAvailability(false);
-        return {
-          success: false,
-          error: "Saved lead pipeline views are unavailable in this backend build."
-        };
-      }
-      return withServiceError(error, "Failed to save CRM pipeline view");
+      return withServiceError(error, "Failed to update CRM leads");
     }
   },
 
-  async updatePipelineView(viewId, payload = {}) {
-    if (pipelineViewsApiAvailable === false) {
-      return {
-        success: false,
-        error: "Saved lead pipeline views are unavailable in this backend build."
-      };
-    }
-
+  async getFilterPresets() {
     try {
-      const response = await axios.patch(
-        `${API_BASE_URL}/api/crm/pipeline-views/${viewId}`,
-        payload,
-        buildRequestConfig()
-      );
-      writePipelineViewsAvailability(true);
-      return response.data;
-    } catch (error) {
-      if (error?.response?.status === 404) {
-        writePipelineViewsAvailability(false);
-        return {
-          success: false,
-          error: "Saved lead pipeline views are unavailable in this backend build."
-        };
-      }
-      return withServiceError(error, "Failed to update CRM pipeline view");
-    }
-  },
-
-  async deletePipelineView(viewId) {
-    if (pipelineViewsApiAvailable === false) {
-      return {
-        success: false,
-        error: "Saved lead pipeline views are unavailable in this backend build."
-      };
-    }
-
-    try {
-      const response = await axios.delete(`${API_BASE_URL}/api/crm/pipeline-views/${viewId}`, {
+      const response = await axios.get(`${API_BASE_URL}/api/crm/filter-presets`, {
         ...buildRequestConfig(false)
       });
-      writePipelineViewsAvailability(true);
       return response.data;
     } catch (error) {
-      if (error?.response?.status === 404) {
-        writePipelineViewsAvailability(false);
-        return {
-          success: false,
-          error: "Saved lead pipeline views are unavailable in this backend build."
-        };
-      }
-      return withServiceError(error, "Failed to delete CRM pipeline view");
+      return withServiceError(error, "Failed to fetch CRM filter presets");
+    }
+  },
+
+  async createFilterPreset(payload = {}) {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/crm/filter-presets`, payload, {
+        ...buildRequestConfig()
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to save CRM filter preset");
     }
   },
 

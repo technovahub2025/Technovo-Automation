@@ -153,18 +153,18 @@ const CrmDealDrawer = ({
         onClick={onClose}
         aria-label="Close CRM deal drawer"
       />
-      <aside className="crm-contact-drawer">
-        <div className="crm-contact-drawer-header">
-          <div>
-            <p className="crm-contact-drawer-kicker">Deal Details</p>
-            <h2>{deal?.title || "Untitled Deal"}</h2>
-            <div className="crm-contact-drawer-subtitle">
-              <span>{formatCurrency(deal?.value)}</span>
-              <span>{contact?.name || "Unknown contact"}</span>
-              <span>{contact?.phone || "-"}</span>
+      <aside className="crm-contact-drawer crm-deal-drawer">
+        <div className="crm-create-task__header crm-deal-drawer__header">
+          <div className="crm-create-task__heading">
+            <span className="crm-create-task__icon" aria-hidden="true">
+              <BadgeDollarSign size={16} />
+            </span>
+            <div className="crm-create-task__heading-copy">
+              <h3>{deal?.title || "Untitled Deal"}</h3>
+              <p>Update pipeline status, ownership, and commercial details.</p>
             </div>
           </div>
-          <button type="button" className="crm-icon-btn" onClick={onClose} aria-label="Close deal drawer">
+          <button type="button" className="crm-create-task__close" onClick={onClose} aria-label="Close deal drawer">
             <X size={18} />
           </button>
         </div>
@@ -175,44 +175,43 @@ const CrmDealDrawer = ({
           </div>
         )}
 
-        <div className="crm-contact-drawer-body">
-          <section className="crm-contact-hero">
-            <div className="crm-contact-hero-main">
-              <div className="crm-contact-chip-row">
-                <span className={`crm-status-badge status-${String(deal?.status || "open").toLowerCase()}`}>
-                  {String(deal?.status || "open")}
-                </span>
-                <span className={`crm-temperature-badge crm-temperature-badge--${Number(deal?.probability || 0) >= 75 ? "hot" : Number(deal?.probability || 0) >= 40 ? "warm" : "cold"}`}>
-                  <Target size={13} />
-                  {Number(deal?.probability || 0)}%
-                </span>
+        <div className="crm-create-task__body crm-deal-drawer__body">
+          <section className="crm-deal-drawer-hero">
+            <div className="crm-contact-chip-row">
+              <span className={`crm-status-badge status-${String(deal?.status || "open").toLowerCase()}`}>
+                {String(deal?.status || "open")}
+              </span>
+              <span
+                className={`crm-temperature-badge crm-temperature-badge--${
+                  Number(deal?.probability || 0) >= 75 ? "hot" : Number(deal?.probability || 0) >= 40 ? "warm" : "cold"
+                }`}
+              >
+                <Target size={13} />
+                {Number(deal?.probability || 0)}%
+              </span>
+            </div>
+
+            <div className="crm-contact-stats crm-deal-drawer-stats">
+              <div>
+                <strong>{formatCurrency(deal?.value)}</strong>
+                <span>Deal Value</span>
               </div>
-              <div className="crm-contact-stats">
-                <div>
-                  <strong>{formatCurrency(deal?.value)}</strong>
-                  <span>Deal Value</span>
-                </div>
-                <div>
-                  <strong>{Number(deal?.probability || 0)}%</strong>
-                  <span>Probability</span>
-                </div>
-                <div>
-                  <strong>{deal?.ownerId || "-"}</strong>
-                  <span>Owner</span>
-                </div>
-                <div>
-                  <strong>{deal?.expectedCloseAt ? new Date(deal.expectedCloseAt).toLocaleDateString() : "-"}</strong>
-                  <span>Expected Close</span>
-                </div>
+              <div>
+                <strong>{deal?.ownerId || "-"}</strong>
+                <span>Owner</span>
+              </div>
+              <div>
+                <strong>{deal?.expectedCloseAt ? new Date(deal.expectedCloseAt).toLocaleDateString() : "-"}</strong>
+                <span>Expected Close</span>
+              </div>
+              <div>
+                <strong>{contact?.name || "Unknown"}</strong>
+                <span>Contact</span>
               </div>
             </div>
 
-            <div className="crm-contact-action-grid">
-              <button
-                type="button"
-                className="crm-contact-action-btn"
-                onClick={() => onOpenContact?.(contact)}
-              >
+            <div className="crm-contact-action-grid crm-deal-drawer-actions">
+              <button type="button" className="crm-contact-action-btn" onClick={() => onOpenContact?.(contact)}>
                 <ExternalLink size={14} />
                 Open Contact
               </button>
@@ -244,118 +243,115 @@ const CrmDealDrawer = ({
             </div>
           </section>
 
-          <section className="crm-drawer-card">
-            <div className="crm-drawer-card-header">
-              <h3>
-                <BadgeDollarSign size={16} />
-                Deal Overview
-              </h3>
-            </div>
-
-            <div className="crm-drawer-form-grid">
-              <label className="crm-field crm-field--span-2">
-                <span>Deal Title</span>
-                <input
-                  type="text"
-                  className="crm-input"
-                  value={form.title}
-                  onChange={(event) => setForm((previous) => ({ ...previous, title: event.target.value }))}
-                />
-              </label>
-              <label className="crm-field">
-                <span>Stage</span>
-                <select
-                  className="crm-select"
-                  value={form.stage}
-                  onChange={(event) => setForm((previous) => ({ ...previous, stage: event.target.value }))}
-                >
-                  {DEAL_STAGE_OPTIONS.map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="crm-field">
-                <span>Status</span>
-                <select
-                  className="crm-select"
-                  value={form.status}
-                  onChange={(event) => setForm((previous) => ({ ...previous, status: event.target.value }))}
-                >
-                  {DEAL_STATUS_OPTIONS.map((option) => (
-                    <option key={option.key} value={option.key}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="crm-field">
-                <span>Value</span>
-                <input
-                  type="number"
-                  min="0"
-                  className="crm-input"
-                  value={form.value}
-                  onChange={(event) => setForm((previous) => ({ ...previous, value: event.target.value }))}
-                />
-              </label>
-              <label className="crm-field">
-                <span>Probability</span>
-                <input
-                  type="number"
-                  min="0"
-                  max="100"
-                  className="crm-input"
-                  value={form.probability}
-                  onChange={(event) =>
-                    setForm((previous) => ({ ...previous, probability: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="crm-field">
-                <span>Expected Close</span>
-                <input
-                  type="datetime-local"
-                  className="crm-input"
-                  value={form.expectedCloseAt}
-                  onChange={(event) =>
-                    setForm((previous) => ({ ...previous, expectedCloseAt: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="crm-field">
-                <span>Owner ID</span>
-                <input
-                  type="text"
-                  className="crm-input"
-                  value={form.ownerId}
-                  onChange={(event) => setForm((previous) => ({ ...previous, ownerId: event.target.value }))}
-                />
-              </label>
-              <label className="crm-field">
-                <span>Product / Service</span>
-                <input
-                  type="text"
-                  className="crm-input"
-                  value={form.productName}
-                  onChange={(event) =>
-                    setForm((previous) => ({ ...previous, productName: event.target.value }))
-                  }
-                />
-              </label>
-              <label className="crm-field">
-                <span>Source</span>
-                <input
-                  type="text"
-                  className="crm-input"
-                  value={form.source}
-                  onChange={(event) => setForm((previous) => ({ ...previous, source: event.target.value }))}
-                />
-              </label>
-            </div>
-
+          <section className="crm-create-task-grid crm-create-task-grid--primary crm-deal-drawer-section">
+            <label className="crm-field crm-field--span-2">
+              <span>Deal Title</span>
+              <input
+                type="text"
+                className="crm-input"
+                value={form.title}
+                onChange={(event) => setForm((previous) => ({ ...previous, title: event.target.value }))}
+              />
+            </label>
             <label className="crm-field">
+              <span>Stage</span>
+              <select
+                className="crm-select"
+                value={form.stage}
+                onChange={(event) => setForm((previous) => ({ ...previous, stage: event.target.value }))}
+              >
+                {DEAL_STAGE_OPTIONS.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="crm-field">
+              <span>Status</span>
+              <select
+                className="crm-select"
+                value={form.status}
+                onChange={(event) => setForm((previous) => ({ ...previous, status: event.target.value }))}
+              >
+                {DEAL_STATUS_OPTIONS.map((option) => (
+                  <option key={option.key} value={option.key}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="crm-field">
+              <span>Value</span>
+              <input
+                type="number"
+                min="0"
+                className="crm-input"
+                value={form.value}
+                onChange={(event) => setForm((previous) => ({ ...previous, value: event.target.value }))}
+              />
+            </label>
+            <label className="crm-field">
+              <span>Probability</span>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                className="crm-input"
+                value={form.probability}
+                onChange={(event) =>
+                  setForm((previous) => ({ ...previous, probability: event.target.value }))
+                }
+              />
+            </label>
+            <label className="crm-field">
+              <span>Expected Close</span>
+              <input
+                type="datetime-local"
+                className="crm-input"
+                value={form.expectedCloseAt}
+                onChange={(event) =>
+                  setForm((previous) => ({ ...previous, expectedCloseAt: event.target.value }))
+                }
+              />
+            </label>
+          </section>
+
+          <section className="crm-create-task-grid crm-create-task-grid--schedule crm-deal-drawer-section">
+            <label className="crm-field">
+              <span>Owner ID</span>
+              <input
+                type="text"
+                className="crm-input"
+                list="crm-deal-owner-options"
+                value={form.ownerId}
+                onChange={(event) => setForm((previous) => ({ ...previous, ownerId: event.target.value }))}
+              />
+            </label>
+            <label className="crm-field">
+              <span>Product / Service</span>
+              <input
+                type="text"
+                className="crm-input"
+                value={form.productName}
+                onChange={(event) =>
+                  setForm((previous) => ({ ...previous, productName: event.target.value }))
+                }
+              />
+            </label>
+            <label className="crm-field">
+              <span>Source</span>
+              <input
+                type="text"
+                className="crm-input"
+                value={form.source}
+                onChange={(event) => setForm((previous) => ({ ...previous, source: event.target.value }))}
+              />
+            </label>
+          </section>
+
+          <section className="crm-create-task-grid crm-deal-drawer-section">
+            <label className="crm-field crm-field--span-2">
               <span>Notes</span>
               <textarea
                 className="crm-textarea"
@@ -366,7 +362,7 @@ const CrmDealDrawer = ({
             </label>
 
             {form.status === "lost" && (
-              <label className="crm-field">
+              <label className="crm-field crm-field--span-2">
                 <span>Lost Reason</span>
                 <textarea
                   className="crm-textarea"
@@ -378,18 +374,18 @@ const CrmDealDrawer = ({
                 />
               </label>
             )}
-
-            <div className="crm-drawer-actions">
-              <button type="button" className="crm-btn crm-btn-primary" onClick={handleSave} disabled={saving}>
-                <CalendarClock size={15} />
-                {saving ? "Saving..." : "Save Deal"}
-              </button>
-              <button type="button" className="crm-btn crm-btn-secondary" onClick={handleDelete} disabled={deleting}>
-                <Trash2 size={15} />
-                {deleting ? "Deleting..." : "Delete Deal"}
-              </button>
-            </div>
           </section>
+        </div>
+
+        <div className="crm-create-task__footer crm-deal-drawer__footer">
+          <button type="button" className="crm-btn crm-btn-secondary" onClick={handleDelete} disabled={deleting}>
+            <Trash2 size={15} />
+            {deleting ? "Deleting..." : "Delete Deal"}
+          </button>
+          <button type="button" className="crm-btn crm-btn-primary crm-create-task__submit" onClick={handleSave} disabled={saving}>
+            <CalendarClock size={15} />
+            {saving ? "Saving..." : "Save Deal"}
+          </button>
         </div>
       </aside>
     </div>

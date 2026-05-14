@@ -1,8 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { CalendarDays, ChevronLeft, ChevronRight, RefreshCw } from "lucide-react";
+import { CalendarDays, ChevronLeft, ChevronRight } from "lucide-react";
 import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
+import CrmRealtimeStatus from "../components/crm/CrmRealtimeStatus";
 import { crmService } from "../services/crmService";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
+import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
 import "./CrmWorkspace.css";
 
 const TASK_CALENDAR_LOADING_TIMEOUT_MS = 8000;
@@ -59,7 +61,6 @@ const sanitizeTask = (task = {}) => ({
 const CrmTaskCalendar = () => {
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [monthCursor, setMonthCursor] = useState(() => getMonthStart(new Date()));
   const [selectedDateKey, setSelectedDateKey] = useState("");
@@ -67,15 +68,13 @@ const CrmTaskCalendar = () => {
   const loadTasks = useCallback(async ({ silent = false } = {}) => {
     const releaseLoadingGuard = startLoadingTimeoutGuard(
       () => {
-        if (silent) setRefreshing(false);
-        else setLoading(false);
+        if (!silent) setLoading(false);
       },
       TASK_CALENDAR_LOADING_TIMEOUT_MS
     );
 
     try {
-      if (silent) setRefreshing(true);
-      else setLoading(true);
+      if (!silent) setLoading(true);
       setError("");
       const result = await crmService.getTasks({ limit: 400 });
       if (result?.success === false) {
@@ -88,7 +87,6 @@ const CrmTaskCalendar = () => {
     } finally {
       releaseLoadingGuard();
       setLoading(false);
-      setRefreshing(false);
     }
   }, []);
 
@@ -119,6 +117,10 @@ const CrmTaskCalendar = () => {
   const activeDateKey = selectedDateKey || formatDayKey(new Date());
   const selectedDayTasks = tasksByDay.get(activeDateKey) || [];
 
+  const crmRealtime = useCrmRealtimeRefresh({
+    onRefresh: () => loadTasks({ silent: true })
+  });
+
   useEffect(() => {
     if (selectedDateKey && tasksByDay.has(selectedDateKey)) return;
     const todayKey = formatDayKey(new Date());
@@ -137,15 +139,7 @@ const CrmTaskCalendar = () => {
           <h1>Task Calendar</h1>
           <p>View day-wise scheduled tasks from CRM in one calendar.</p>
         </div>
-        <button
-          type="button"
-          className="crm-btn crm-btn-secondary"
-          onClick={() => loadTasks({ silent: true })}
-          disabled={refreshing}
-        >
-          <RefreshCw size={16} className={refreshing ? "spin" : ""} />
-          {refreshing ? "Refreshing..." : "Refresh"}
-        </button>
+        <CrmRealtimeStatus status={crmRealtime.connectionStatus} />
       </div>
 
       {error && <div className="crm-alert crm-alert-error">{error}</div>}

@@ -84,7 +84,7 @@ class WebSocketService extends EventEmitter {
     this.activeConversationId = '';
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 10;
-    this.baseReconnectDelay = 2000;
+    this.baseReconnectDelay = 1000;
     this.maxReconnectDelay = 30000;
     this.reconnectJitterMs = 1000;
     this.connectionTimeoutMs = 20000;
@@ -96,6 +96,7 @@ class WebSocketService extends EventEmitter {
     this.lastPongAt = null;
     this.offlineListenerAttached = false;
     this.heartbeatInterval = null;
+    this.crmMessageQueue = [];
     this.connecting = false;
     this.connectionPromise = null;
     
@@ -249,6 +250,7 @@ class WebSocketService extends EventEmitter {
     this.clearHeartbeat();
     this.startHeartbeat();
     this.identify();
+    this.flushCrmMessageQueue();
     this.emit('connected', { ws: this.ws, userId: this.currentUserId, event });
     this.emit('connect', { ws: this.ws, userId: this.currentUserId, event });
     if (resolve) resolve(this.ws);
@@ -411,6 +413,27 @@ class WebSocketService extends EventEmitter {
     }
   }
 
+  sendCrm(data) {
+    const payload = {
+      ...(data || {}),
+      scope: 'crm',
+      timestamp: data?.timestamp || Date.now()
+    };
+    if (this.send(payload)) return true;
+    this.crmMessageQueue.push(payload);
+    this.crmMessageQueue = this.crmMessageQueue.slice(-100);
+    return false;
+  }
+
+  flushCrmMessageQueue() {
+    if (!this.isConnected() || this.crmMessageQueue.length === 0) return;
+    const queuedMessages = [...this.crmMessageQueue];
+    this.crmMessageQueue = [];
+    queuedMessages.forEach((message) => {
+      if (!this.send(message)) this.crmMessageQueue.push(message);
+    });
+  }
+
   disconnect() {
     this.manualClose = true;
     this.clearReconnect();
@@ -496,6 +519,7 @@ const webSocketService = new WebSocketService();
 export const connectWebSocket = (userId, onMessage) => webSocketService.connect(userId, onMessage);
 export const disconnectWebSocket = () => webSocketService.disconnect();
 export const sendWebSocketMessage = (data) => webSocketService.send(data);
+export const sendCrmWebSocketMessage = (data) => webSocketService.sendCrm(data);
 export const getWebSocketStats = () => webSocketService.getStats();
 export const isWebSocketConnected = () => webSocketService.isConnected();
 

@@ -11,7 +11,6 @@ import {
   GitBranch,
   MessageSquare,
   NotebookPen,
-  RefreshCw,
   ScrollText,
   Send,
   ShieldCheck,
@@ -36,6 +35,9 @@ import {
   publishCrmContactSync
 } from "../../utils/crmSyncEvents";
 import useCrmRealtimeRefresh from "../../hooks/useCrmRealtimeRefresh";
+import CrmRealtimeStatus from "./CrmRealtimeStatus";
+import { isCrmFeatureEnabled } from "../../utils/crm/features";
+import { crmContactDetailCache } from "../../utils/crm/lruCache";
 import {
   DEFAULT_PIPELINE_STAGE_OPTIONS,
   normalizePipelineStageOption
@@ -176,10 +178,11 @@ const CrmContactDrawer = ({
   onDealMutation,
   onStartWhatsApp
 }) => {
+  const crmPresenceEnabled = isCrmFeatureEnabled("crmPresence", true);
   const fileInputRef = useRef(null);
   const [detail, setDetail] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [presenceUsers, setPresenceUsers] = useState([]);
   const [message, setMessage] = useState("");
   const [messageTone, setMessageTone] = useState("success");
   const [profileForm, setProfileForm] = useState(() => toProfileForm(initialContact));
@@ -198,6 +201,13 @@ const CrmContactDrawer = ({
   const [dealBusyId, setDealBusyId] = useState("");
   const [documentBusyId, setDocumentBusyId] = useState("");
   const [documentUploading, setDocumentUploading] = useState(false);
+  const draftDirtyRef = useRef({
+    profile: false,
+    task: false,
+    deal: false,
+    meeting: false
+  });
+  const hydratedContactIdRef = useRef("");
 
   const currentContact = useMemo(() => detail || initialContact || {}, [detail, initialContact]);
   const normalizedContactId = useMemo(
@@ -209,21 +219,39 @@ const CrmContactDrawer = ({
     [currentContact]
   );
 
-  const syncFormState = useCallback((contact = {}) => {
+  const syncDraftState = useCallback((contact = {}) => {
     setProfileForm(toProfileForm(contact));
     setOwnerDraft(String(contact?.ownerId || "").trim());
+    setQuickTaskForm(toQuickTaskForm());
     setQuickDealForm(toQuickDealForm(contact));
-    setMeetingForm((previous) => ({
-      ...previous,
-      ...toMeetingForm(contact),
-      startAt: previous?.startAt || "",
-      endAt: previous?.endAt || "",
-      createFollowUpTask:
-        previous?.createFollowUpTask === undefined ? true : previous.createFollowUpTask,
-      followUpTitle: previous?.followUpTitle || "",
-      followUpDueAt: previous?.followUpDueAt || "",
-      followUpPriority: previous?.followUpPriority || "medium"
-    }));
+    setMeetingForm(toMeetingForm(contact));
+    draftDirtyRef.current = {
+      profile: false,
+      task: false,
+      deal: false,
+      meeting: false
+    };
+  }, []);
+
+  const hasDirtyDraft = useCallback(() => {
+    const state = draftDirtyRef.current || {};
+    return Boolean(state.profile || state.task || state.deal || state.meeting);
+  }, []);
+
+  const markDraftDirty = useCallback((section) => {
+    if (!section) return;
+    draftDirtyRef.current = {
+      ...draftDirtyRef.current,
+      [section]: true
+    };
+  }, []);
+
+  const clearDraftDirty = useCallback((section) => {
+    if (!section) return;
+    draftDirtyRef.current = {
+      ...draftDirtyRef.current,
+      [section]: false
+    };
   }, []);
 
   const applyContactUpdate = useCallback(
@@ -232,10 +260,6 @@ const CrmContactDrawer = ({
         ...(previous || {}),
         ...updatedContact
       }));
-      syncFormState({
-        ...currentContact,
-        ...updatedContact
-      });
       if (typeof onContactUpdated === "function") {
         onContactUpdated({
           ...currentContact,
@@ -243,15 +267,22 @@ const CrmContactDrawer = ({
         });
       }
     },
-    [currentContact, onContactUpdated, syncFormState]
+    [currentContact, onContactUpdated]
   );
 
   const loadDetail = useCallback(
-    async ({ silent = false } = {}) => {
+    async ({ silent = false, syncDraft = true, useCache = true } = {}) => {
       if (!normalizedContactId) return;
       try {
-        if (silent) setRefreshing(true);
-        else setLoading(true);
+        const cachedDetail = silent && useCache ? crmContactDetailCache.get(normalizedContactId) : null;
+        if (cachedDetail) {
+          setDetail(cachedDetail);
+          if (syncDraft && !hasDirtyDraft()) {
+            syncDraftState(cachedDetail || {});
+          }
+          return;
+        }
+        if (!silent) setLoading(true);
         setMessage("");
 
         const result = await crmService.getContact(normalizedContactId);
@@ -261,22 +292,42 @@ const CrmContactDrawer = ({
 
         const nextDetail = result?.data || null;
         setDetail(nextDetail);
-        syncFormState(nextDetail || {});
+        if (nextDetail) crmContactDetailCache.set(normalizedContactId, nextDetail);
+        if (syncDraft && !hasDirtyDraft()) {
+          syncDraftState(nextDetail || {});
+        }
       } catch (error) {
         setMessage(error?.message || "Failed to load contact details");
         setMessageTone("error");
       } finally {
         setLoading(false);
-        setRefreshing(false);
       }
     },
-    [normalizedContactId, syncFormState]
+    [hasDirtyDraft, normalizedContactId, syncDraftState]
   );
 
   useEffect(() => {
     if (!open || !normalizedContactId) return;
     loadDetail();
   }, [loadDetail, normalizedContactId, open]);
+
+  useEffect(() => {
+    if (!open) {
+      draftDirtyRef.current = {
+        profile: false,
+        task: false,
+        deal: false,
+        meeting: false
+      };
+      hydratedContactIdRef.current = "";
+      return;
+    }
+
+    if (!normalizedContactId) return;
+    if (hydratedContactIdRef.current === normalizedContactId) return;
+    hydratedContactIdRef.current = normalizedContactId;
+    syncDraftState(initialContact || {});
+  }, [initialContact, normalizedContactId, open, syncDraftState]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -302,17 +353,35 @@ const CrmContactDrawer = ({
     };
   }, [open]);
 
-  useCrmRealtimeRefresh({
+  const handleCrmPresence = useCallback(
+    (payload = {}) => {
+      const userId = String(payload?.userId || "").trim();
+      if (!userId || userId === String(currentUserId || "").trim()) return;
+      setPresenceUsers((previous) => {
+        const next = previous.filter((item) => item.userId !== userId);
+        if (payload?.type === "crm_presence_leave") return next;
+        return [
+          ...next,
+          {
+            userId,
+            mode: payload?.type === "crm_presence_editing" ? "editing" : "viewing",
+            seenAt: Date.now()
+          }
+        ].slice(-4);
+      });
+    },
+    [currentUserId]
+  );
+
+  const crmRealtime = useCrmRealtimeRefresh({
     currentUserId,
     contactId: normalizedContactId,
     enabled: open && Boolean(normalizedContactId),
+    crmChannel: normalizedContactId ? `contact:${normalizedContactId}` : "",
+    presenceMode: crmPresenceEnabled ? "viewing" : "",
+    onPresence: handleCrmPresence,
     onRefresh: () => loadDetail({ silent: true })
   });
-
-  useEffect(() => {
-    if (!open) return;
-    syncFormState(currentContact);
-  }, [currentContact, open, syncFormState]);
 
   const showMessage = useCallback((text, tone = "success") => {
     setMessage(String(text || "").trim());
@@ -371,7 +440,9 @@ const CrmContactDrawer = ({
           throw new Error(result?.error || "Failed to update stage");
         }
         applyContactUpdate(result?.data || { stage: nextStage });
-        await loadDetail({ silent: true });
+        crmContactDetailCache.delete(normalizedContactId);
+        clearDraftDirty("profile");
+        await loadDetail({ silent: true, useCache: false });
         publishDetailSync("crm_stage_updated");
         showMessage("Lead stage updated.");
       } catch (error) {
@@ -380,7 +451,7 @@ const CrmContactDrawer = ({
         setStageUpdating(false);
       }
     },
-    [applyContactUpdate, loadDetail, normalizedContactId, publishDetailSync, showMessage]
+    [applyContactUpdate, clearDraftDirty, loadDetail, normalizedContactId, publishDetailSync, showMessage]
   );
 
   const handleSaveProfile = useCallback(async () => {
@@ -408,6 +479,7 @@ const CrmContactDrawer = ({
       }
 
       applyContactUpdate(result?.data || payload);
+      clearDraftDirty("profile");
       await loadDetail({ silent: true });
       publishDetailSync("crm_profile_updated");
       showMessage("Contact profile updated.");
@@ -416,7 +488,7 @@ const CrmContactDrawer = ({
     } finally {
       setSavingProfile(false);
     }
-  }, [applyContactUpdate, loadDetail, normalizedContactId, profileForm, publishDetailSync, showMessage]);
+  }, [applyContactUpdate, clearDraftDirty, loadDetail, normalizedContactId, profileForm, publishDetailSync, showMessage]);
 
   const saveOwner = useCallback(
     async (ownerId) => {
@@ -429,6 +501,7 @@ const CrmContactDrawer = ({
           throw new Error(result?.error || "Failed to update owner");
         }
         applyContactUpdate(result?.data || { ownerId: ownerId || null });
+        clearDraftDirty("profile");
         await loadDetail({ silent: true });
         publishDetailSync("crm_owner_updated");
         showMessage(ownerId ? "Lead owner updated." : "Lead is now unassigned.");
@@ -438,7 +511,7 @@ const CrmContactDrawer = ({
         setSavingOwner(false);
       }
     },
-    [applyContactUpdate, loadDetail, normalizedContactId, publishDetailSync, showMessage]
+    [applyContactUpdate, clearDraftDirty, loadDetail, normalizedContactId, publishDetailSync, showMessage]
   );
 
   const handleCreateTask = useCallback(async () => {
@@ -486,6 +559,7 @@ const CrmContactDrawer = ({
       if (typeof onTaskMutation === "function") {
         onTaskMutation();
       }
+      clearDraftDirty("task");
       publishDetailSync("crm_task_created");
       showMessage("Follow-up task created.");
     } catch (error) {
@@ -493,7 +567,7 @@ const CrmContactDrawer = ({
     } finally {
       setTaskSubmitting(false);
     }
-  }, [currentContact?.ownerId, loadDetail, normalizedContactId, onTaskMutation, ownerDraft, publishDetailSync, quickTaskForm, showMessage]);
+  }, [clearDraftDirty, currentContact?.ownerId, loadDetail, normalizedContactId, onTaskMutation, ownerDraft, publishDetailSync, quickTaskForm, showMessage]);
 
   const handleCreateDeal = useCallback(async () => {
     if (!normalizedContactId) return;
@@ -531,6 +605,7 @@ const CrmContactDrawer = ({
       if (typeof onDealMutation === "function") {
         onDealMutation();
       }
+      clearDraftDirty("deal");
       publishDetailSync("crm_deal_created");
       showMessage("Deal created.");
     } catch (error) {
@@ -538,7 +613,7 @@ const CrmContactDrawer = ({
     } finally {
       setDealSubmitting(false);
     }
-  }, [currentContact, loadDetail, normalizedContactId, onDealMutation, publishDetailSync, quickDealForm, showMessage]);
+  }, [clearDraftDirty, currentContact, loadDetail, normalizedContactId, onDealMutation, publishDetailSync, quickDealForm, showMessage]);
 
   const handleDealStatusChange = useCallback(async (deal, nextStatus) => {
     const normalizedDealId = getEntityId(deal);
@@ -647,6 +722,7 @@ const CrmContactDrawer = ({
       if (typeof onTaskMutation === "function" && result?.data?.followUpTask) {
         onTaskMutation();
       }
+      clearDraftDirty("meeting");
       publishDetailSync("crm_meeting_scheduled");
       showMessage("Meeting scheduled.");
     } catch (error) {
@@ -662,6 +738,7 @@ const CrmContactDrawer = ({
     meetingForm,
     normalizedContactId,
     onTaskMutation,
+    clearDraftDirty,
     publishDetailSync,
     showMessage
   ]);
@@ -822,15 +899,16 @@ const CrmContactDrawer = ({
             </div>
           </div>
           <div className="crm-contact-drawer-header-actions">
-            <button
-              type="button"
-              className="crm-btn crm-btn-secondary"
-              onClick={() => loadDetail({ silent: true })}
-              disabled={refreshing || loading}
-            >
-              <RefreshCw size={15} className={refreshing ? "spin" : ""} />
-              {refreshing ? "Refreshing..." : "Refresh"}
-            </button>
+            {crmPresenceEnabled && presenceUsers.length > 0 ? (
+              <div className="crm-presence-strip" title="Other CRM agents viewing this lead">
+                {presenceUsers.map((presence) => (
+                  <span key={presence.userId} className={`crm-presence-chip crm-presence-chip--${presence.mode}`}>
+                    {presence.mode === "editing" ? "Editing" : "Viewing"} {presence.userId.slice(-4)}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            <CrmRealtimeStatus status={crmRealtime.connectionStatus} />
             <button type="button" className="crm-icon-btn" onClick={onClose} aria-label="Close CRM drawer">
               <X size={18} />
             </button>
@@ -903,7 +981,7 @@ const CrmContactDrawer = ({
             </section>
 
             <div className="crm-contact-drawer-grid">
-              <section className="crm-drawer-card">
+              <section className="crm-drawer-card" onFocusCapture={() => markDraftDirty("profile")}>
                 <div className="crm-drawer-card-header">
                   <h3>
                     <UserRound size={16} />
@@ -1060,7 +1138,7 @@ const CrmContactDrawer = ({
                 </div>
               </section>
 
-              <section className="crm-drawer-card">
+              <section className="crm-drawer-card" onFocusCapture={() => markDraftDirty("task")}>
                 <div className="crm-drawer-card-header">
                   <h3>
                     <CalendarClock size={16} />
@@ -1233,8 +1311,14 @@ const CrmContactDrawer = ({
                   />
                 </label>
 
-                <button type="button" className="crm-btn crm-btn-primary" onClick={handleCreateTask} disabled={taskSubmitting}>
-                  {taskSubmitting ? "Creating..." : "Create Follow-up Task"}
+                <button
+                  type="button"
+                  className="crm-btn crm-btn-primary crm-btn--compact"
+                  onClick={handleCreateTask}
+                  disabled={taskSubmitting}
+                >
+                  <Send size={15} />
+                  {taskSubmitting ? "Creating..." : "Create task"}
                 </button>
 
                 <div className="crm-drawer-list">
@@ -1285,7 +1369,7 @@ const CrmContactDrawer = ({
                 </div>
               </section>
 
-              <section className="crm-drawer-card">
+              <section className="crm-drawer-card" onFocusCapture={() => markDraftDirty("meeting")}>
                 <div className="crm-drawer-card-header">
                   <h3>
                     <CalendarClock size={16} />
@@ -1399,11 +1483,12 @@ const CrmContactDrawer = ({
 
                 <button
                   type="button"
-                  className="crm-btn crm-btn-primary"
+                  className="crm-btn crm-btn-primary crm-btn--compact"
                   onClick={handleCreateMeeting}
                   disabled={meetingSubmitting}
                 >
-                  {meetingSubmitting ? "Scheduling..." : "Schedule Meeting"}
+                  <CalendarClock size={15} />
+                  {meetingSubmitting ? "Scheduling..." : "Schedule meeting"}
                 </button>
 
                 <div className="crm-drawer-list">
@@ -1425,7 +1510,7 @@ const CrmContactDrawer = ({
                 </div>
               </section>
 
-              <section className="crm-drawer-card">
+              <section className="crm-drawer-card" onFocusCapture={() => markDraftDirty("deal")}>
                 <div className="crm-drawer-card-header">
                   <h3>
                     <BadgeDollarSign size={16} />
@@ -1552,11 +1637,12 @@ const CrmContactDrawer = ({
 
                 <button
                   type="button"
-                  className="crm-btn crm-btn-primary"
+                  className="crm-btn crm-btn-primary crm-btn--compact"
                   onClick={handleCreateDeal}
                   disabled={dealSubmitting}
                 >
-                  {dealSubmitting ? "Creating..." : "Create Deal"}
+                  <BadgeDollarSign size={15} />
+                  {dealSubmitting ? "Creating..." : "Create deal"}
                 </button>
 
                 <div className="crm-drawer-list">
@@ -1761,7 +1847,8 @@ const CrmContactDrawer = ({
                   </span>
                 </div>
                 {timelineItems.length > 0 ? (
-                  <ul className="crm-activity-list">
+                  <div className="crm-unified-timeline-scroll">
+                    <ul className="crm-activity-list">
                     {timelineItems.map((entry, index) => {
                       const activityId = getEntityId(entry) || `timeline-${index}`;
                       const payload = entry?.payload || {};
@@ -1787,7 +1874,8 @@ const CrmContactDrawer = ({
                         </li>
                       );
                     })}
-                  </ul>
+                    </ul>
+                  </div>
                 ) : (
                   <p className="crm-activity-empty">No CRM timeline recorded yet.</p>
                 )}

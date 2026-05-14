@@ -15,6 +15,7 @@ import { crmService } from "../services/crmService";
 import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
 import { whatsappService } from "../services/whatsappService";
 import CrmToast from "../components/crm/CrmToast";
+import CrmRealtimeStatus from "../components/crm/CrmRealtimeStatus";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
 import { DEFAULT_PIPELINE_STAGE_OPTIONS, normalizePipelineStageOption } from "../utils/crmPipelineStages";
 import {
@@ -315,7 +316,6 @@ const CrmOps = () => {
   const [leadScoringForm, setLeadScoringForm] = useState(() => buildLeadScoringForm({}));
   const [leadStageOptions, setLeadStageOptions] = useState(DEFAULT_STAGE_OPTIONS);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [previewing, setPreviewing] = useState(false);
   const [running, setRunning] = useState(false);
   const [leadScoringLoading, setLeadScoringLoading] = useState(false);
@@ -432,15 +432,13 @@ const CrmOps = () => {
     async ({ silent = false } = {}) => {
       const releaseLoadingGuard = startLoadingTimeoutGuard(
         () => {
-          if (silent) setRefreshing(false);
-          else setLoading(false);
+          if (!silent) setLoading(false);
         },
         CRM_OPS_LOADING_TIMEOUT_MS
       );
 
       try {
-        if (silent) setRefreshing(true);
-        else setLoading(true);
+        if (!silent) setLoading(true);
         setError("");
 
         const [result, ownerNotificationResult, historyResult] = await Promise.all([
@@ -474,7 +472,6 @@ const CrmOps = () => {
       } finally {
         releaseLoadingGuard();
         setLoading(false);
-        setRefreshing(false);
       }
     },
     [persistCache]
@@ -484,7 +481,7 @@ const CrmOps = () => {
     loadDashboard({ silent: true });
   }, [loadDashboard]);
 
-  useCrmRealtimeRefresh({
+  const crmRealtime = useCrmRealtimeRefresh({
     currentUserId,
     onRefresh: handleRealtimeRefresh
   });
@@ -673,18 +670,7 @@ const CrmOps = () => {
           <h1>CRM Ops</h1>
           <p>Monitor owner queues, response SLA pressure, pipeline automation rules, and lead scoring triggers.</p>
         </div>
-        <button
-          type="button"
-          className="crm-btn crm-btn-secondary"
-          onClick={() => {
-            loadDashboard({ silent: true });
-            loadLeadScoringSettings();
-          }}
-          disabled={refreshing || leadScoringLoading}
-        >
-          <RefreshCw size={16} className={refreshing || leadScoringLoading ? "spin" : ""} />
-          {refreshing || leadScoringLoading ? "Refreshing..." : "Refresh"}
-        </button>
+        <CrmRealtimeStatus status={crmRealtime.connectionStatus} />
       </div>
 
       <div className="crm-metric-grid">

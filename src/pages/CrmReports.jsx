@@ -4,7 +4,6 @@ import {
   BadgeDollarSign,
   BarChart3,
   Clock3,
-  RefreshCw,
   Target,
   Users
 } from "lucide-react";
@@ -13,6 +12,7 @@ import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
 import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
 import CrmFilterBar from "../components/crm/CrmFilterBar";
+import CrmRealtimeStatus from "../components/crm/CrmRealtimeStatus";
 import { getPipelineStageLabel, normalizePipelineStageOption, DEFAULT_PIPELINE_STAGE_OPTIONS } from "../utils/crmPipelineStages";
 import "./CrmWorkspace.css";
 
@@ -53,7 +53,6 @@ const CrmReports = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [report, setReport] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [sourceTypeFilter, setSourceTypeFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
@@ -68,15 +67,13 @@ const CrmReports = () => {
   const loadReport = useCallback(async ({ silent = false } = {}) => {
     const releaseLoadingGuard = startLoadingTimeoutGuard(
       () => {
-        if (silent) setRefreshing(false);
-        else setLoading(false);
+        if (!silent) setLoading(false);
       },
       CRM_REPORTS_LOADING_TIMEOUT_MS
     );
 
     try {
-      if (silent) setRefreshing(true);
-      else setLoading(true);
+      if (!silent) setLoading(true);
       setError("");
 
       const result = await crmService.getReportsSummary();
@@ -97,7 +94,6 @@ const CrmReports = () => {
     } finally {
       releaseLoadingGuard();
       setLoading(false);
-      setRefreshing(false);
     }
   }, []);
 
@@ -105,7 +101,7 @@ const CrmReports = () => {
     loadReport({ silent: true });
   }, [loadReport]);
 
-  useCrmRealtimeRefresh({
+  const crmRealtime = useCrmRealtimeRefresh({
     onRefresh: handleRealtimeRefresh
   });
 
@@ -294,15 +290,7 @@ const CrmReports = () => {
           <h1>CRM Reports</h1>
           <p>Track conversion, source quality, response speed, owner performance, and pipeline health from one place.</p>
         </div>
-        <button
-          type="button"
-          className="crm-btn crm-btn-secondary"
-          onClick={() => loadReport({ silent: true })}
-          disabled={refreshing}
-        >
-          <RefreshCw size={16} className={refreshing ? "spin" : ""} />
-          {refreshing ? "Refreshing..." : "Refresh"}
-        </button>
+        <CrmRealtimeStatus status={crmRealtime.connectionStatus} />
       </div>
 
       <CrmFilterBar>

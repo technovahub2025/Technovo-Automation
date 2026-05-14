@@ -1399,7 +1399,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         onClick={closeMobileMenusAfterNavigate}
                                     >
                                         <Users size={20} />
-                                        <span>Pipeline</span>
+                                        <span>Leads</span>
                                     </NavLink>
                                 )}
                                 {(isSuperAdmin || featureFlags.crmTasks) && (

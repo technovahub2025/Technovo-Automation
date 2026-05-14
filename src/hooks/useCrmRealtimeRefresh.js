@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import webSocketService from "../services/websocketService";
 import {
   addCrmContactSyncListener,
@@ -43,9 +43,18 @@ const useCrmRealtimeRefresh = ({
   contactId = "",
   listenToLocalSync = true,
   listenToWebsocket = true,
+  crmChannel = "",
+  presenceMode = "",
+  onPresence,
   debounceMs = DEFAULT_DEBOUNCE_MS,
   minGapMs = DEFAULT_MIN_GAP_MS
 } = {}) => {
+  const [connectionStatus, setConnectionStatus] = useState(() => {
+    if (!listenToWebsocket) return "disabled";
+    if (webSocketService.isConnected?.()) return "connected";
+    if (webSocketService.isConnecting?.()) return "connecting";
+    return "disconnected";
+  });
   const timerRef = useRef(null);
   const lastRefreshAtRef = useRef(0);
   const onRefreshRef = useRef(onRefresh);
@@ -95,12 +104,47 @@ const useCrmRealtimeRefresh = ({
       }
       scheduleRefresh();
     };
+    const handleConnected = () => setConnectionStatus("connected");
+    const handleDisconnected = () => setConnectionStatus("disconnected");
+    const handleConnectingError = () => setConnectionStatus("offline");
+    const handleOffline = () => setConnectionStatus("offline");
+    const handleOnline = () => {
+      setConnectionStatus(webSocketService.isConnected?.() ? "connected" : "connecting");
+    };
+    const handlePresenceViewing = (payload = {}) => onPresence?.(payload);
+    const handlePresenceEditing = (payload = {}) => onPresence?.(payload);
+    const handlePresenceLeave = (payload = {}) => onPresence?.(payload);
+    const subscribeCrmChannel = () => {
+      const channel = normalizeId(crmChannel || contactIdRef.current);
+      if (!channel) return;
+      webSocketService.sendCrm?.({ type: "crm_subscribe", channel, contactId: contactIdRef.current || undefined });
+      if (presenceMode) {
+        webSocketService.sendCrm?.({
+          type: presenceMode === "editing" ? "crm_presence_editing" : "crm_presence_viewing",
+          channel,
+          contactId: contactIdRef.current || undefined
+        });
+      }
+    };
 
     if (listenToWebsocket) {
+      setConnectionStatus(webSocketService.isConnected?.() ? "connected" : "connecting");
+      webSocketService.on("connected", handleConnected);
+      webSocketService.on("disconnected", handleDisconnected);
+      webSocketService.on("connect_error", handleConnectingError);
+      webSocketService.on("offline", handleOffline);
+      webSocketService.on("online", handleOnline);
+      webSocketService.on("connected", subscribeCrmChannel);
+      webSocketService.on("crm_presence_viewing", handlePresenceViewing);
+      webSocketService.on("crm_presence_editing", handlePresenceEditing);
+      webSocketService.on("crm_presence_leave", handlePresenceLeave);
+
       webSocketService.connect(normalizeId(currentUserId) || "crm-user").catch((error) => {
         console.warn("Failed to connect CRM realtime websocket:", error);
+        setConnectionStatus("offline");
       });
       webSocketService.on("crm_changed", handleRealtimeMessage);
+      subscribeCrmChannel();
     }
 
     const unsubscribeLocalSync = listenToLocalSync ? addCrmContactSyncListener(handleLocalSync) : () => {};
@@ -110,6 +154,24 @@ const useCrmRealtimeRefresh = ({
       unsubscribeLocalSync();
       if (listenToWebsocket) {
         webSocketService.off("crm_changed", handleRealtimeMessage);
+        webSocketService.off("connected", handleConnected);
+        webSocketService.off("disconnected", handleDisconnected);
+        webSocketService.off("connect_error", handleConnectingError);
+        webSocketService.off("offline", handleOffline);
+        webSocketService.off("online", handleOnline);
+        webSocketService.off("connected", subscribeCrmChannel);
+        webSocketService.off("crm_presence_viewing", handlePresenceViewing);
+        webSocketService.off("crm_presence_editing", handlePresenceEditing);
+        webSocketService.off("crm_presence_leave", handlePresenceLeave);
+        const channel = normalizeId(crmChannel || contactIdRef.current);
+        if (channel) {
+          webSocketService.sendCrm?.({
+            type: "crm_presence_leave",
+            channel,
+            contactId: contactIdRef.current || undefined
+          });
+          webSocketService.sendCrm?.({ type: "crm_unsubscribe", channel });
+        }
       }
       if (timerRef.current) {
         window.clearTimeout(timerRef.current);
@@ -118,12 +180,21 @@ const useCrmRealtimeRefresh = ({
     };
   }, [
     currentUserId,
+    crmChannel,
     debounceMs,
     enabled,
     listenToLocalSync,
     listenToWebsocket,
-    minGapMs
+    minGapMs,
+    onPresence,
+    presenceMode
   ]);
+
+  return {
+    connectionStatus,
+    isConnected: connectionStatus === "connected",
+    isConnecting: connectionStatus === "connecting"
+  };
 };
 
 export default useCrmRealtimeRefresh;

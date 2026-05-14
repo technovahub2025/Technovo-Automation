@@ -1,20 +1,27 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Virtuoso } from "react-virtuoso";
 import {
-  ArrowLeftRight,
   ArrowDown,
   ArrowUp,
+  Archive,
   BadgeDollarSign,
+  BadgeCheck,
+  Check,
+  CalendarClock,
   GripVertical,
-  Layers3,
-  LayoutGrid,
-  List,
-  RefreshCw,
+  Flame,
+  MoreVertical,
+  RotateCcw,
   Settings,
   Save,
   Search,
-  Star,
+  SlidersHorizontal,
+  Tags,
   Trash2,
-  UserRound
+  Upload,
+  UserRound,
+  Target,
+  X
 } from "lucide-react";
 import { crmService } from "../services/crmService";
 import { resolveCacheUserId } from "../utils/sidebarPageCache";
@@ -26,6 +33,9 @@ import CrmPageHeader from "../components/crm/CrmPageHeader";
 import CrmMetricCard from "../components/crm/CrmMetricCard";
 import CrmFilterBar from "../components/crm/CrmFilterBar";
 import CrmEmptyState from "../components/crm/CrmEmptyState";
+import CrmRealtimeStatus from "../components/crm/CrmRealtimeStatus";
+import useCrmDebouncedValue from "../hooks/useCrmDebouncedValue";
+import { crmLeadPageCache } from "../utils/crm/lruCache";
 import {
   DEFAULT_PIPELINE_STAGE_OPTIONS,
   normalizePipelineStageOption,
@@ -63,20 +73,18 @@ const CONTACT_QUEUE_OPTIONS = [
   { key: "opted_in", label: "Consent Opted-In" }
 ];
 
-const VIEW_MODE_OPTIONS = [
-  { key: "board", label: "Board", icon: LayoutGrid },
-  { key: "list", label: "List", icon: List }
+const LEADS_SCROLL_PAGE_SIZE = 50;
+
+const LEAD_SORT_OPTIONS = [
+  { key: "newest", label: "Newest" },
+  { key: "oldest", label: "Oldest" }
 ];
 
-const STAGE_HELPER_TEXT = {
-  new: "New inquiries that need first contact.",
-  contacted: "Reached out and waiting for a reply.",
-  nurturing: "Active follow-up and relationship building.",
-  qualified: "Matches the target profile and buying intent.",
-  proposal: "Proposal or quote has been shared.",
-  won: "Converted leads that closed successfully.",
-  lost: "Closed leads that did not convert."
-};
+const LEAD_ARCHIVE_OPTIONS = [
+  { key: "active", label: "Active leads" },
+  { key: "archived", label: "Archived leads" },
+  { key: "all", label: "All leads" }
+];
 
 const DEFAULT_STAGE_COLORS = {
   new: "#5f8fc3",
@@ -107,12 +115,23 @@ const formatDate = (value) => {
 
 const getEntityId = (value) => String(value?._id || value?.id || "").trim();
 
+const normalizeSortOrder = (value) =>
+  LEAD_SORT_OPTIONS.some((option) => option.key === String(value || "").trim().toLowerCase())
+    ? String(value || "").trim().toLowerCase()
+    : "newest";
+
+const normalizeArchiveFilter = (value) =>
+  LEAD_ARCHIVE_OPTIONS.some((option) => option.key === String(value || "").trim().toLowerCase())
+    ? String(value || "").trim().toLowerCase()
+    : "active";
+
 const normalizeContact = (contact = {}) => ({
   _id: String(contact?._id || "").trim(),
   id: String(contact?.id || "").trim(),
   name: String(contact?.name || "").trim(),
   phone: String(contact?.phone || "").trim(),
   email: String(contact?.email || "").trim(),
+  tags: Array.isArray(contact?.tags) ? contact.tags.map((tag) => String(tag || "").trim()).filter(Boolean) : [],
   stage: String(contact?.stage || "").trim().toLowerCase() || "new",
   status: String(contact?.status || "").trim().toLowerCase() || "new",
   leadScore:
@@ -124,6 +143,8 @@ const normalizeContact = (contact = {}) => ({
   temperature: String(contact?.temperature || "").trim(),
   nextFollowUpAt: String(contact?.nextFollowUpAt || "").trim(),
   lastContact: String(contact?.lastContact || "").trim(),
+  archivedAt: String(contact?.archivedAt || "").trim(),
+  archivedBy: String(contact?.archivedBy || "").trim(),
   dealValue:
     Number.isFinite(Number(contact?.dealValue)) && Number(contact?.dealValue) >= 0
       ? Number(contact.dealValue)
@@ -131,7 +152,7 @@ const normalizeContact = (contact = {}) => ({
   notes: String(contact?.notes || "").trim()
 });
 
-const normalizePipelineViewFilters = (filters = {}) => ({
+const normalizeLeadPresetFilters = (filters = {}) => ({
   search: String(filters?.search || "").trim(),
   queue: CONTACT_QUEUE_OPTIONS.some((option) => option.key === String(filters?.queue || "").trim())
     ? String(filters.queue).trim()
@@ -143,14 +164,14 @@ const normalizePipelineViewFilters = (filters = {}) => ({
     String(filters?.owner || "").trim().toLowerCase() === "unassigned"
       ? "all"
       : String(filters?.owner || "").trim() || "all",
-  viewMode: String(filters?.viewMode || "").trim().toLowerCase() === "list" ? "list" : "board"
+  sortOrder: normalizeSortOrder(filters?.sortOrder),
+  archive: normalizeArchiveFilter(filters?.archive)
 });
 
-const normalizePipelineView = (view = {}) => ({
+const normalizeLeadFilterPreset = (view = {}) => ({
   id: String(view?.id || view?._id || "").trim(),
   label: String(view?.label || "").trim(),
-  filters: normalizePipelineViewFilters(view?.filters || {}),
-  isDefault: Boolean(view?.isDefault),
+  filters: normalizeLeadPresetFilters(view?.filters || {}),
   createdAt: view?.createdAt || null,
   updatedAt: view?.updatedAt || null
 });
@@ -170,61 +191,6 @@ const normalizePipelineStage = (stage = {}, index = 0) => {
   };
 };
 
-const makeUniquePipelineViewLabel = (baseLabel, pipelineViews = [], activeViewId = "") => {
-  const normalizedBaseLabel = String(baseLabel || "").trim() || "Lead Pipeline View";
-  const activeId = String(activeViewId || "").trim();
-  const occupiedLabels = new Set(
-    pipelineViews
-      .filter((view) => String(view?.id || "").trim() !== activeId)
-      .map((view) => String(view?.label || "").trim().toLowerCase())
-      .filter(Boolean)
-  );
-
-  const isUnique = (label) => !occupiedLabels.has(String(label || "").trim().toLowerCase());
-  if (isUnique(normalizedBaseLabel)) return normalizedBaseLabel;
-
-  const copyCandidates = [
-    `${normalizedBaseLabel} Copy`,
-    `${normalizedBaseLabel} Copy 2`
-  ];
-
-  for (const candidate of copyCandidates) {
-    if (isUnique(candidate)) return candidate;
-  }
-
-  let copyIndex = 3;
-  while (copyIndex < 1000) {
-    const candidate = `${normalizedBaseLabel} Copy ${copyIndex}`;
-    if (isUnique(candidate)) return candidate;
-    copyIndex += 1;
-  }
-
-  return `${normalizedBaseLabel} Copy`;
-};
-
-const toPipelineViewPayload = ({
-  label,
-  search,
-  queue,
-  status,
-  owner,
-  viewMode,
-  isDefault
-}) => ({
-  label: String(label || "").trim() || "Lead Pipeline View",
-  filters: {
-    search: String(search || "").trim(),
-    queue: String(queue || "all").trim(),
-    status: String(status || "all").trim(),
-    owner:
-      String(owner || "all").trim().toLowerCase() === "unassigned"
-        ? "all"
-        : String(owner || "all").trim(),
-    viewMode: String(viewMode || "board").trim().toLowerCase() === "list" ? "list" : "board"
-  },
-  isDefault: Boolean(isDefault)
-});
-
 const getStatusBadgeClass = (status) => {
   const normalized = String(status || "").trim().toLowerCase();
   if (normalized === "won") return "status-won";
@@ -238,17 +204,6 @@ const formatLeadStatusLabel = (status) => {
   const matchedStage = DEFAULT_LEAD_STAGE_ORDER.find((item) => item.key === normalized);
   if (matchedStage) return matchedStage.label;
   return getPipelineStageLabel(normalized, DEFAULT_LEAD_STAGE_ORDER);
-};
-
-const getStageColumnClass = (stageKey) => `crm-stage-column crm-stage-column--${stageKey}`;
-
-const getStageColumnStyle = (stage) => {
-  const accent = String(stage?.color || "").trim() || DEFAULT_STAGE_COLORS[String(stage?.key || "").trim().toLowerCase()] || "#5f8fc3";
-  return {
-    "--stage-accent": accent,
-    "--stage-tint": `color-mix(in srgb, ${accent} 14%, white)`,
-    "--stage-glow": `color-mix(in srgb, ${accent} 18%, transparent)`
-  };
 };
 
 const moveArrayItem = (items = [], fromIndex = -1, toIndex = -1) => {
@@ -287,37 +242,40 @@ const reorderStagesByIndex = (items = [], sourceId = "", targetIndex = -1) => {
   return nextItems.map((stage, index) => ({ ...stage, order: index }));
 };
 
-const STAGE_BADGE_LABELS = {
-  new: "NEW",
-  contacted: "CONTACTED",
-  nurturing: "NURTURE",
-  qualified: "QUALIFIED",
-  proposal: "PROPOSAL",
-  won: "WON",
-  lost: "LOST"
-};
-
 const CrmPipeline = () => {
-  const [pipelineViews, setPipelineViews] = useState([]);
   const [contacts, setContacts] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [savingView, setSavingView] = useState(false);
   const [savingStage, setSavingStage] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState(null);
-  const [activeViewId, setActiveViewId] = useState("");
-  const [viewLabel, setViewLabel] = useState("Lead Pipeline View");
-  const [saveAsDefault, setSaveAsDefault] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [queueFilter, setQueueFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [ownerFilter, setOwnerFilter] = useState("all");
-  const [viewMode, setViewMode] = useState("board");
+  const [sortOrder, setSortOrder] = useState("newest");
+  const [archiveFilter, setArchiveFilter] = useState("active");
+  const [totalContacts, setTotalContacts] = useState(0);
+  const [nextCursor, setNextCursor] = useState("");
+  const [hasMoreLeads, setHasMoreLeads] = useState(false);
+  const [loadingMoreLeads, setLoadingMoreLeads] = useState(false);
+  const [selectionMode, setSelectionMode] = useState(false);
+  const [selectedLeadIds, setSelectedLeadIds] = useState([]);
+  const [bulkOwnerId, setBulkOwnerId] = useState("");
+  const [bulkTagDraft, setBulkTagDraft] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [filterPresets, setFilterPresets] = useState([]);
+  const [showFilters, setShowFilters] = useState(false);
+  const [filterDraft, setFilterDraft] = useState({
+    queue: "all",
+    status: "all",
+    owner: "all",
+    sortOrder: "newest",
+    archive: "active"
+  });
+  const [openActionMenuId, setOpenActionMenuId] = useState("");
   const [selectedContact, setSelectedContact] = useState(null);
   const [selectedContactId, setSelectedContactId] = useState("");
-  const [pipelineViewsAvailable, setPipelineViewsAvailable] = useState(true);
   const [showPipelineSettings, setShowPipelineSettings] = useState(false);
   const [leadStages, setLeadStages] = useState(DEFAULT_LEAD_STAGE_ORDER);
   const [pipelineStagesAvailable, setPipelineStagesAvailable] = useState(true);
@@ -328,11 +286,11 @@ const CrmPipeline = () => {
   const [draggingStageId, setDraggingStageId] = useState("");
   const [dropTargetStageId, setDropTargetStageId] = useState("");
   const [stageDropIndex, setStageDropIndex] = useState(null);
-  const [draggingContactId, setDraggingContactId] = useState("");
-  const [dropTargetContactStageId, setDropTargetContactStageId] = useState("");
   const currentUserId = resolveCacheUserId();
+  const debouncedSearchQuery = useCrmDebouncedValue(searchQuery, 300);
   const hasInitializedFiltersRef = useRef(false);
-  const pipelineViewsEnabled = pipelineViewsAvailable;
+  const workspaceLoadRequestIdRef = useRef(0);
+  const searchInputRef = useRef(null);
   const pipelineStagesEnabled = pipelineStagesAvailable;
 
   const stageOptions = useMemo(
@@ -351,11 +309,6 @@ const CrmPipeline = () => {
     [stageKeySet, stageOptions]
   );
 
-  const activeView = useMemo(
-    () => pipelineViews.find((view) => view.id === activeViewId) || null,
-    [activeViewId, pipelineViews]
-  );
-
   const openPipelineSettings = useCallback(() => {
     setShowPipelineSettings(true);
   }, []);
@@ -368,82 +321,83 @@ const CrmPipeline = () => {
     setStageDropIndex(null);
   }, []);
 
+  const searchForRequest = debouncedSearchQuery;
+
   const loadWorkspace = useCallback(
-    async ({ silent = false } = {}) => {
+    async ({ silent = false, append = false, cursor = "" } = {}) => {
+      const requestId = ++workspaceLoadRequestIdRef.current;
       try {
-        if (silent) setRefreshing(true);
-        else setLoading(true);
+        if (append) setLoadingMoreLeads(true);
+        else if (!silent) setLoading(true);
         setError("");
-
-        const [viewsResult, metricsResult, stagesResult] = await Promise.all([
-          crmService.getPipelineViews(),
-          crmService.getMetrics(),
-          crmService.getPipelineStages()
-        ]);
-
-        if (viewsResult?.success === false) {
-          throw new Error(viewsResult?.error || "Failed to load pipeline views");
+        if (!append) {
+          setSelectedLeadIds([]);
+          setSelectionMode(false);
         }
+
+        const [metricsResult, stagesResult, presetsResult] = await Promise.all([
+          crmService.getMetrics(),
+          crmService.getPipelineStages(),
+          crmService.getFilterPresets()
+        ]);
+        if (requestId !== workspaceLoadRequestIdRef.current) return;
+
         if (metricsResult?.success === false) {
           throw new Error(metricsResult?.error || "Failed to load CRM metrics");
         }
         if (stagesResult?.success === false) {
-          throw new Error(stagesResult?.error || "Failed to load pipeline stages");
+          throw new Error(stagesResult?.error || "Failed to load lead stages");
+        }
+        if (presetsResult?.success === false) {
+          throw new Error(presetsResult?.error || "Failed to load filter presets");
         }
 
-        const nextViews = Array.isArray(viewsResult?.data?.views)
-          ? viewsResult.data.views.map(normalizePipelineView)
-          : [];
-        const nextDefaultViewId = String(viewsResult?.data?.defaultViewId || "").trim();
-        const nextPipelineViewsAvailable = viewsResult?.data?.apiAvailable !== false;
         const nextPipelineStagesAvailable = stagesResult?.data?.apiAvailable !== false;
+        const nextFilterPresets = Array.isArray(presetsResult?.data)
+          ? presetsResult.data.map(normalizeLeadFilterPreset)
+          : [];
         const nextMetrics = metricsResult?.data || null;
         const nextStages = Array.isArray(stagesResult?.data?.stages) && stagesResult.data.stages.length
           ? stagesResult.data.stages.map(normalizePipelineStage)
           : DEFAULT_LEAD_STAGE_ORDER.map((stage, index) => normalizePipelineStage(stage, index));
-        const activeViewExists = activeViewId
-          ? nextViews.some((view) => view.id === activeViewId)
-          : false;
-        const fallbackView = activeViewExists
-          ? null
-          : nextViews.find((view) => view.id === nextDefaultViewId) || nextViews[0] || null;
-        const effectiveFilters = activeViewExists
-          ? {
-              search: String(searchQuery || "").trim(),
-              queue: String(queueFilter || "all").trim(),
-              status: String(statusFilter || "all").trim(),
-              owner: String(ownerFilter || "all").trim(),
-              viewMode: String(viewMode || "board").trim().toLowerCase() === "list" ? "list" : "board"
-            }
-          : fallbackView
-            ? fallbackView.filters
-            : {
-                search: String(searchQuery || "").trim(),
-                queue: String(queueFilter || "all").trim(),
-                status: String(statusFilter || "all").trim(),
-                owner: String(ownerFilter || "all").trim(),
-                viewMode: String(viewMode || "board").trim().toLowerCase() === "list" ? "list" : "board"
-              };
+        const effectiveFilters = {
+          search: String(searchForRequest || "").trim(),
+          queue: String(queueFilter || "all").trim(),
+          status: String(statusFilter || "all").trim(),
+          owner: String(ownerFilter || "all").trim(),
+          archive: normalizeArchiveFilter(archiveFilter)
+        };
 
-        const contactsResult = await crmService.getContacts({
-          limit: 300,
+        const contactParams = {
+          limit: LEADS_SCROLL_PAGE_SIZE,
+          sortOrder,
+          cursorMode: "true",
+          cursor: cursor || undefined,
+          fields: "list",
           search: effectiveFilters.search || undefined,
           queue: effectiveFilters.queue !== "all" ? effectiveFilters.queue : undefined,
           status: effectiveFilters.status !== "all" ? effectiveFilters.status : undefined,
-          ownerId: effectiveFilters.owner !== "all" ? effectiveFilters.owner : undefined
-        });
+          ownerId: effectiveFilters.owner !== "all" ? effectiveFilters.owner : undefined,
+          archive: effectiveFilters.archive !== "active" ? effectiveFilters.archive : undefined
+        };
+        const cacheKey = JSON.stringify(contactParams);
+        const cachedContactsResult = !append && !silent ? crmLeadPageCache.get(cacheKey) : null;
+        const contactsResult = cachedContactsResult || await crmService.getContacts(contactParams);
+        if (requestId !== workspaceLoadRequestIdRef.current) return;
+        if (!append && !silent && contactsResult?.success !== false) {
+          crmLeadPageCache.set(cacheKey, contactsResult);
+        }
 
         if (contactsResult?.success === false) {
-          throw new Error(contactsResult?.error || "Failed to load pipeline contacts");
+          throw new Error(contactsResult?.error || "Failed to load leads");
         }
 
         const nextContacts = Array.isArray(contactsResult?.data)
           ? contactsResult.data.map(normalizeContact)
           : [];
 
-        setPipelineViews(nextViews);
-        setPipelineViewsAvailable(nextPipelineViewsAvailable);
         setPipelineStagesAvailable(nextPipelineStagesAvailable);
+        setFilterPresets(nextFilterPresets);
         setLeadStages(nextStages);
         setStageDrafts((previous) => {
           const nextDrafts = {};
@@ -456,29 +410,44 @@ const CrmPipeline = () => {
           return nextDrafts;
         });
         setMetrics(nextMetrics);
-        setContacts(nextContacts);
-
-        if (!activeViewExists && fallbackView) {
-          setActiveViewId(fallbackView.id);
-          setViewLabel(fallbackView.label || "Lead Pipeline View");
-          setSaveAsDefault(Boolean(fallbackView.isDefault));
-          setSearchQuery(fallbackView.filters.search || "");
-          setQueueFilter(fallbackView.filters.queue || "all");
-          setStatusFilter(fallbackView.filters.status || "all");
-          setOwnerFilter(fallbackView.filters.owner || "all");
-          setViewMode(fallbackView.filters.viewMode || "board");
-        }
+        setContacts((previous) => {
+          if (!append) return nextContacts;
+          const existingIds = new Set(previous.map(getEntityId));
+          const merged = [...previous];
+          nextContacts.forEach((contact) => {
+            const contactId = getEntityId(contact);
+            if (!contactId || existingIds.has(contactId)) return;
+            existingIds.add(contactId);
+            merged.push(contact);
+          });
+          return merged;
+        });
+        const nextPagination = contactsResult?.pagination || {};
+        const nextTotal = Number(nextPagination.total || contactsResult?.total || nextContacts.length || 0);
+        if (requestId !== workspaceLoadRequestIdRef.current) return;
+        setTotalContacts(nextTotal);
+        setNextCursor(String(contactsResult?.nextCursor || ""));
+        setHasMoreLeads(Boolean(contactsResult?.hasMore));
       } catch (loadError) {
-        setError(loadError?.message || "Failed to load CRM pipeline");
+        if (requestId !== workspaceLoadRequestIdRef.current) return;
+        setError(loadError?.message || "Failed to load CRM leads");
       } finally {
+        if (requestId !== workspaceLoadRequestIdRef.current) return;
         setLoading(false);
-        setRefreshing(false);
+        setLoadingMoreLeads(false);
       }
     },
-    [activeViewId, ownerFilter, queueFilter, searchQuery, statusFilter, viewMode]
+    [
+      ownerFilter,
+      archiveFilter,
+      queueFilter,
+      searchForRequest,
+      sortOrder,
+      statusFilter
+    ]
   );
 
-  useCrmRealtimeRefresh({
+  const crmRealtime = useCrmRealtimeRefresh({
     currentUserId,
     onRefresh: () => loadWorkspace({ silent: true })
   });
@@ -486,31 +455,6 @@ const CrmPipeline = () => {
   useEffect(() => {
     loadWorkspace();
   }, [loadWorkspace]);
-
-  useEffect(() => {
-    if (!activeView) return;
-    setViewLabel(activeView.label || "Lead Pipeline View");
-    setSaveAsDefault(Boolean(activeView.isDefault));
-  }, [activeView]);
-
-  useEffect(() => {
-    if (!pipelineViews.length) return;
-    const selectedView = pipelineViews.find((view) => view.id === activeViewId);
-    if (selectedView) return;
-
-    const fallbackView =
-      pipelineViews.find((view) => view.isDefault) || pipelineViews[0] || null;
-    if (!fallbackView) return;
-
-    setActiveViewId(fallbackView.id);
-    setViewLabel(fallbackView.label || "Lead Pipeline View");
-    setSaveAsDefault(Boolean(fallbackView.isDefault));
-    setSearchQuery(fallbackView.filters.search || "");
-    setQueueFilter(fallbackView.filters.queue || "all");
-    setStatusFilter(fallbackView.filters.status || "all");
-    setOwnerFilter(fallbackView.filters.owner || "all");
-    setViewMode(fallbackView.filters.viewMode || "board");
-  }, [activeViewId, pipelineViews]);
 
   useEffect(() => {
     if (!hasInitializedFiltersRef.current) {
@@ -523,7 +467,7 @@ const CrmPipeline = () => {
     }, 280);
 
     return () => window.clearTimeout(timer);
-  }, [loadWorkspace, ownerFilter, queueFilter, searchQuery, statusFilter, viewMode]);
+  }, [loadWorkspace, archiveFilter, ownerFilter, queueFilter, searchQuery, sortOrder, statusFilter]);
 
   useEffect(() => {
     if (!toast?.message) return undefined;
@@ -543,6 +487,37 @@ const CrmPipeline = () => {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [closePipelineSettings, showPipelineSettings]);
+
+  useEffect(() => {
+    if (!showFilters && !openActionMenuId) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (openActionMenuId && !event.target.closest(".crm-row-menu")) {
+        setOpenActionMenuId("");
+      }
+    };
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        setShowFilters(false);
+        setOpenActionMenuId("");
+      }
+      if (event.key === "/" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const tagName = String(document.activeElement?.tagName || "").toLowerCase();
+        if (!["input", "textarea", "select"].includes(tagName)) {
+          event.preventDefault();
+          searchInputRef.current?.focus();
+        }
+      }
+    };
+
+    document.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openActionMenuId, showFilters]);
 
   const visibleContacts = useMemo(() => {
     return contacts;
@@ -566,85 +541,329 @@ const CrmPipeline = () => {
     return Array.from(options.entries()).map(([key, label]) => ({ key, label }));
   }, [ownerFilter, visibleContacts]);
 
-  const contactsByStage = useMemo(() => {
-    const grouped = stageOptions.reduce((accumulator, stage) => {
-      accumulator[stage.key] = [];
-      return accumulator;
-    }, {});
+  const activeFilterCount = useMemo(
+    () =>
+      [
+        queueFilter !== "all",
+        statusFilter !== "all",
+        ownerFilter !== "all",
+        sortOrder !== "newest",
+        archiveFilter !== "active"
+      ].filter(Boolean).length,
+    [archiveFilter, ownerFilter, queueFilter, sortOrder, statusFilter]
+  );
 
-    visibleContacts.forEach((contact) => {
-      const stageKey = normalizeLeadStage(contact?.stage);
-      grouped[stageKey].push(contact);
+  const openFilters = useCallback(() => {
+    setFilterDraft({
+      queue: queueFilter,
+      status: statusFilter,
+      owner: ownerFilter,
+      sortOrder,
+      archive: archiveFilter
     });
+    setShowFilters((previous) => !previous);
+  }, [archiveFilter, ownerFilter, queueFilter, sortOrder, statusFilter]);
 
-    return grouped;
-  }, [stageOptions, visibleContacts, normalizeLeadStage]);
+  const applyFilters = useCallback(() => {
+    const nextFilters = {
+      queue: filterDraft.queue || "all",
+      status: filterDraft.status || "all",
+      owner: filterDraft.owner || "all",
+      sortOrder: normalizeSortOrder(filterDraft.sortOrder),
+      archive: normalizeArchiveFilter(filterDraft.archive)
+    };
+    setFilterDraft(nextFilters);
+    setQueueFilter(nextFilters.queue);
+    setStatusFilter(nextFilters.status);
+    setOwnerFilter(nextFilters.owner);
+    setSortOrder(nextFilters.sortOrder);
+    setArchiveFilter(nextFilters.archive);
+    setContacts([]);
+    setNextCursor("");
+    setSelectedLeadIds([]);
+    setSelectionMode(false);
+    setShowFilters(false);
+  }, [filterDraft]);
+
+  const applyFilterChange = useCallback(
+    (patch) => {
+      const nextFilters = {
+        queue: patch.queue ?? filterDraft.queue ?? "all",
+        status: patch.status ?? filterDraft.status ?? "all",
+        owner: patch.owner ?? filterDraft.owner ?? "all",
+        sortOrder: normalizeSortOrder(patch.sortOrder ?? filterDraft.sortOrder),
+        archive: normalizeArchiveFilter(patch.archive ?? filterDraft.archive)
+      };
+      setFilterDraft(nextFilters);
+      setQueueFilter(nextFilters.queue);
+      setStatusFilter(nextFilters.status);
+      setOwnerFilter(nextFilters.owner);
+      setSortOrder(nextFilters.sortOrder);
+      setArchiveFilter(nextFilters.archive);
+      setContacts([]);
+      setNextCursor("");
+      setSelectedLeadIds([]);
+      setSelectionMode(false);
+    },
+    [filterDraft]
+  );
+
+  const clearFilters = useCallback(() => {
+    const nextDraft = {
+      queue: "all",
+      status: "all",
+      owner: "all",
+      sortOrder: "newest",
+      archive: "active"
+    };
+    setFilterDraft(nextDraft);
+    setQueueFilter(nextDraft.queue);
+    setStatusFilter(nextDraft.status);
+    setOwnerFilter(nextDraft.owner);
+    setSortOrder(nextDraft.sortOrder);
+    setArchiveFilter(nextDraft.archive);
+    setContacts([]);
+    setNextCursor("");
+    setSelectedLeadIds([]);
+    setSelectionMode(false);
+    setShowFilters(false);
+  }, []);
+
+  const loadMoreLeads = useCallback(() => {
+    if (loadingMoreLeads || !hasMoreLeads || !nextCursor) return;
+    loadWorkspace({ silent: true, append: true, cursor: nextCursor });
+  }, [hasMoreLeads, loadWorkspace, loadingMoreLeads, nextCursor]);
+
+  const clearLeadSelection = useCallback(() => {
+    setSelectedLeadIds([]);
+    setSelectionMode(false);
+  }, []);
+
+  const selectedLeadIdSet = useMemo(() => new Set(selectedLeadIds), [selectedLeadIds]);
+  const selectedLeads = useMemo(
+    () => visibleContacts.filter((contact) => selectedLeadIdSet.has(getEntityId(contact))),
+    [selectedLeadIdSet, visibleContacts]
+  );
+  const selectedLeadTags = useMemo(() => {
+    const tagSet = new Set();
+    selectedLeads.forEach((contact) => {
+      (Array.isArray(contact?.tags) ? contact.tags : []).forEach((tag) => {
+        const normalizedTag = String(tag || "").trim();
+        if (normalizedTag) tagSet.add(normalizedTag);
+      });
+    });
+    return Array.from(tagSet);
+  }, [selectedLeads]);
+  const bulkArchiveAction = archiveFilter === "archived" ? "unarchive" : "archive";
+  const bulkArchiveLabel = bulkArchiveAction === "unarchive" ? "Unarchive" : "Archive";
+  const allLoadedLeadsSelected =
+    visibleContacts.length > 0 && visibleContacts.every((contact) => selectedLeadIdSet.has(getEntityId(contact)));
+  const showLeadSelection = selectionMode || selectedLeadIds.length > 0;
+
+  const toggleLeadSelection = useCallback((contactId) => {
+    const normalizedId = String(contactId || "").trim();
+    if (!normalizedId) return;
+    setSelectedLeadIds((previous) => {
+      const next = previous.includes(normalizedId)
+        ? previous.filter((item) => item !== normalizedId)
+        : [...previous, normalizedId];
+      setSelectionMode(next.length > 0);
+      return next;
+    });
+  }, []);
+
+  const selectAllLoadedLeads = useCallback(() => {
+    const visibleIds = visibleContacts.map(getEntityId).filter(Boolean);
+    if (!visibleIds.length) return;
+    setSelectionMode(true);
+    setSelectedLeadIds((previous) => {
+      const previousSet = new Set(previous);
+      const everySelected = visibleIds.length > 0 && visibleIds.every((id) => previousSet.has(id));
+      if (everySelected) {
+        const next = previous.filter((id) => !visibleIds.includes(id));
+        if (!next.length) setSelectionMode(false);
+        return next;
+      }
+      visibleIds.forEach((id) => previousSet.add(id));
+      return Array.from(previousSet);
+    });
+  }, [visibleContacts]);
+
+  const runBulkContactAction = useCallback(
+    async (action, payload = {}) => {
+      if (!selectedLeadIds.length) return;
+      if (action === "delete") {
+        const confirmed = window.confirm(`Delete ${selectedLeadIds.length} selected lead${selectedLeadIds.length === 1 ? "" : "s"} permanently?`);
+        if (!confirmed) return;
+      }
+      setBulkBusy(true);
+      const previousContacts = contacts;
+      try {
+        if (action === "assign") {
+          const nextOwner = String(payload.ownerId || "").trim();
+          setContacts((items) =>
+            items.map((contact) =>
+              selectedLeadIdSet.has(getEntityId(contact)) ? { ...contact, ownerId: nextOwner } : contact
+            )
+          );
+        } else if (action === "archive" || action === "delete") {
+          setContacts((items) => items.filter((contact) => !selectedLeadIdSet.has(getEntityId(contact))));
+        } else if (action === "unarchive") {
+          setContacts((items) =>
+            archiveFilter === "archived"
+              ? items.filter((contact) => !selectedLeadIdSet.has(getEntityId(contact)))
+              : items.map((contact) =>
+                  selectedLeadIdSet.has(getEntityId(contact)) ? { ...contact, archivedAt: "", archivedBy: "" } : contact
+                )
+          );
+        }
+
+        const result = await crmService.bulkUpdateContacts({
+          action,
+          contactIds: selectedLeadIds,
+          ...payload
+        });
+        if (result?.success === false) {
+          throw new Error(result?.error || "Bulk action failed");
+        }
+        if (action === "export") {
+          const rows = Array.isArray(result?.data?.contacts) ? result.data.contacts : selectedLeads;
+          const header = ["Name", "Phone", "Email", "Stage", "Status", "Owner", "Lead Score"];
+          const csvRows = [
+            header,
+            ...rows.map((contact) => [
+              contact?.name || "",
+              contact?.phone || "",
+              contact?.email || "",
+              contact?.stage || "",
+              contact?.status || "",
+              contact?.ownerId || "",
+              contact?.leadScore || 0
+            ])
+          ].map((row) => row.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","));
+          const blob = new Blob([csvRows.join("\n")], { type: "text/csv;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "crm-leads-export.csv";
+          link.click();
+          URL.revokeObjectURL(url);
+        }
+        setSelectedLeadIds([]);
+        setSelectionMode(false);
+        setBulkTagDraft("");
+        setBulkOwnerId("");
+        const actionCount = result?.data?.count || selectedLeadIds.length;
+        const toastMessage =
+          action === "delete"
+            ? `Deleted ${actionCount} lead(s).`
+            : action === "archive"
+              ? `Archived ${actionCount} lead(s).`
+              : action === "unarchive"
+                ? `Unarchived ${actionCount} lead(s).`
+                : action === "add_tags"
+                  ? `Added tag to ${actionCount} lead(s).`
+                  : action === "remove_tags"
+                    ? `Removed tag from ${actionCount} lead(s).`
+                    : `Updated ${actionCount} lead(s).`;
+        setToast({ type: "success", message: toastMessage });
+        loadWorkspace({ silent: true });
+      } catch (bulkError) {
+        setContacts(previousContacts);
+        setToast({ type: "error", message: bulkError?.message || "Bulk action failed" });
+      } finally {
+        setBulkBusy(false);
+      }
+    },
+    [archiveFilter, contacts, loadWorkspace, selectedLeadIdSet, selectedLeadIds, selectedLeads]
+  );
+
+  const updateLeadArchiveFromRow = useCallback(
+    async (contact, action) => {
+      const contactId = getEntityId(contact);
+      if (!contactId || !["archive", "unarchive"].includes(action)) return;
+      const previousContacts = contacts;
+      setOpenActionMenuId("");
+      setContacts((items) => {
+        if (action === "archive") {
+          return items.filter((item) => getEntityId(item) !== contactId);
+        }
+        if (archiveFilter === "archived") {
+          return items.filter((item) => getEntityId(item) !== contactId);
+        }
+        return items.map((item) =>
+          getEntityId(item) === contactId ? { ...item, archivedAt: "", archivedBy: "" } : item
+        );
+      });
+      try {
+        const result = await crmService.bulkUpdateContacts({
+          action,
+          contactIds: [contactId]
+        });
+        if (result?.success === false) {
+          throw new Error(result?.error || `Failed to ${action} lead`);
+        }
+        setToast({ type: "success", message: action === "archive" ? "Lead archived." : "Lead unarchived." });
+        loadWorkspace({ silent: true });
+      } catch (archiveError) {
+        setContacts(previousContacts);
+        setToast({ type: "error", message: archiveError?.message || `Failed to ${action} lead` });
+      }
+    },
+    [archiveFilter, contacts, loadWorkspace]
+  );
+
+  const deleteLeadFromRow = useCallback(
+    async (contact) => {
+      const contactId = getEntityId(contact);
+      if (!contactId) return;
+      const confirmed = window.confirm(`Delete ${contact?.name || "this lead"} permanently?`);
+      if (!confirmed) return;
+      const previousContacts = contacts;
+      setOpenActionMenuId("");
+      setContacts((items) => items.filter((item) => getEntityId(item) !== contactId));
+      setSelectedLeadIds((previous) => {
+        const next = previous.filter((id) => id !== contactId);
+        if (!next.length) setSelectionMode(false);
+        return next;
+      });
+      try {
+        const result = await crmService.bulkUpdateContacts({
+          action: "delete",
+          contactIds: [contactId]
+        });
+        if (result?.success === false) {
+          throw new Error(result?.error || "Failed to delete lead");
+        }
+        setToast({ type: "success", message: "Lead deleted." });
+        loadWorkspace({ silent: true });
+      } catch (deleteError) {
+        setContacts(previousContacts);
+        setToast({ type: "error", message: deleteError?.message || "Failed to delete lead" });
+      }
+    },
+    [contacts, loadWorkspace]
+  );
 
   const visibleLeadValue = useMemo(
     () => visibleContacts.reduce((sum, contact) => sum + (Number(contact?.dealValue) || 0), 0),
     [visibleContacts]
   );
 
-  const activeViewFilters = useMemo(
-    () => normalizePipelineViewFilters(activeView?.filters || {}),
-    [activeView]
-  );
-
-  const hasUnsavedChanges = useMemo(() => {
-    const currentFilters = normalizePipelineViewFilters({
-      search: searchQuery,
-      queue: queueFilter,
-      status: statusFilter,
-      owner: ownerFilter,
-      viewMode
-    });
-
-    if (!activeView) {
+  const activeViewLabel = useMemo(() => {
+    const activePreset = filterPresets.find((preset) => {
+      const filters = normalizeLeadPresetFilters(preset?.filters || {});
       return (
-        currentFilters.search !== "" ||
-        currentFilters.queue !== "all" ||
-        currentFilters.status !== "all" ||
-        currentFilters.owner !== "all" ||
-        currentFilters.viewMode !== "board"
+        filters.search === String(searchQuery || "").trim() &&
+        filters.queue === queueFilter &&
+        filters.status === statusFilter &&
+        filters.owner === ownerFilter &&
+        filters.sortOrder === sortOrder &&
+        filters.archive === archiveFilter
       );
-    }
-
-    return (
-      currentFilters.search !== activeViewFilters.search ||
-      currentFilters.queue !== activeViewFilters.queue ||
-      currentFilters.status !== activeViewFilters.status ||
-      currentFilters.owner !== activeViewFilters.owner ||
-      currentFilters.viewMode !== activeViewFilters.viewMode ||
-      String(viewLabel || "").trim() !== String(activeView.label || "").trim() ||
-      Boolean(saveAsDefault) !== Boolean(activeView.isDefault)
-    );
-  }, [
-    activeView,
-    activeViewFilters.search,
-    activeViewFilters.queue,
-    activeViewFilters.status,
-    activeViewFilters.owner,
-    activeViewFilters.viewMode,
-    ownerFilter,
-    queueFilter,
-    saveAsDefault,
-    searchQuery,
-    statusFilter,
-    viewLabel,
-    viewMode
-  ]);
-
-  const applyPipelineView = useCallback((view) => {
-    if (!view) return;
-    setActiveViewId(view.id);
-    setViewLabel(view.label || "Pipeline View");
-    setSaveAsDefault(Boolean(view.isDefault));
-    setSearchQuery(view.filters.search || "");
-    setQueueFilter(view.filters.queue || "all");
-    setStatusFilter(view.filters.status || "all");
-    setOwnerFilter(view.filters.owner || "all");
-    setViewMode(view.filters.viewMode || "board");
-  }, []);
+    });
+    return activePreset?.label || "Lead view";
+  }, [archiveFilter, filterPresets, ownerFilter, queueFilter, searchQuery, sortOrder, statusFilter]);
 
   const persistContactStage = useCallback(
     async (contact, nextStage) => {
@@ -689,15 +908,6 @@ const CrmPipeline = () => {
     [persistContactStage, normalizeLeadStage, stageOptions]
   );
 
-  const moveContactToStage = useCallback(
-    async (contact, nextStage) => {
-      const targetStage = normalizeLeadStage(nextStage);
-      if (targetStage === normalizeLeadStage(contact?.stage)) return;
-      await persistContactStage(contact, targetStage);
-    },
-    [persistContactStage, normalizeLeadStage]
-  );
-
   const handleCreateStage = useCallback(async () => {
     const label = String(newStageLabel || "").trim();
     if (!label) {
@@ -713,17 +923,17 @@ const CrmPipeline = () => {
         color: String(newStageColor || "").trim() || "#5f8fc3"
       });
       if (result?.success === false) {
-        throw new Error(result?.error || "Failed to create pipeline stage");
+        throw new Error(result?.error || "Failed to create lead stage");
       }
 
-      setToast({ type: "success", message: `Pipeline stage "${label}" created.` });
+      setToast({ type: "success", message: `Lead stage "${label}" created.` });
       setNewStageLabel("");
       setNewStageColor("#5f8fc3");
       await loadWorkspace({ silent: true });
     } catch (stageError) {
       setToast({
         type: "error",
-        message: stageError?.message || "Failed to create pipeline stage"
+        message: stageError?.message || "Failed to create lead stage"
       });
     } finally {
       setSavingStage(false);
@@ -751,15 +961,15 @@ const CrmPipeline = () => {
           color: nextColor
         });
         if (result?.success === false) {
-          throw new Error(result?.error || "Failed to update pipeline stage");
+          throw new Error(result?.error || "Failed to update lead stage");
         }
 
-        setToast({ type: "success", message: `Pipeline stage "${nextLabel}" updated.` });
+        setToast({ type: "success", message: `Lead stage "${nextLabel}" updated.` });
         await loadWorkspace({ silent: true });
       } catch (stageError) {
         setToast({
           type: "error",
-          message: stageError?.message || "Failed to update pipeline stage"
+          message: stageError?.message || "Failed to update lead stage"
         });
       } finally {
         setSavingStage(false);
@@ -781,18 +991,18 @@ const CrmPipeline = () => {
         setError("");
         const result = await crmService.reorderPipelineStages(stageIds);
         if (result?.success === false) {
-          throw new Error(result?.error || "Failed to reorder pipeline stages");
+          throw new Error(result?.error || "Failed to reorder lead stages");
         }
 
         setToast({
           type: "success",
-          message: "Pipeline stages reordered."
+          message: "Lead stages reordered."
         });
         await loadWorkspace({ silent: true });
       } catch (stageError) {
         setToast({
           type: "error",
-          message: stageError?.message || "Failed to reorder pipeline stages"
+          message: stageError?.message || "Failed to reorder lead stages"
         });
       } finally {
         setSavingStage(false);
@@ -871,51 +1081,6 @@ const CrmPipeline = () => {
     setStageDropIndex(null);
   }, []);
 
-  const handleLeadDragStart = useCallback((event, contactId, stageKey) => {
-    const normalizedContactId = String(contactId || "").trim();
-    const normalizedStageKey = String(stageKey || "").trim().toLowerCase();
-    if (!normalizedContactId) return;
-    setDraggingContactId(normalizedContactId);
-    setDropTargetContactStageId(normalizedStageKey);
-    event.dataTransfer.effectAllowed = "move";
-    event.dataTransfer.setData("text/plain", normalizedContactId);
-    event.dataTransfer.setData("application/x-crm-contact-id", normalizedContactId);
-  }, []);
-
-  const handleLeadDragOver = useCallback((event, stageKey) => {
-    if (!draggingContactId || !pipelineStagesEnabled || savingStage) return;
-    event.preventDefault();
-    event.dataTransfer.dropEffect = "move";
-    setDropTargetContactStageId(String(stageKey || "").trim().toLowerCase());
-  }, [draggingContactId, pipelineStagesEnabled, savingStage]);
-
-  const handleLeadDrop = useCallback(async (event, stageKey) => {
-    event.preventDefault();
-    if (!draggingContactId || !pipelineStagesEnabled || savingStage) return;
-
-    const contactId = String(
-      event.dataTransfer.getData("application/x-crm-contact-id") ||
-        event.dataTransfer.getData("text/plain") ||
-        draggingContactId
-    ).trim();
-    const nextStage = normalizeLeadStage(stageKey);
-
-    setDraggingContactId("");
-    setDropTargetContactStageId("");
-
-    if (!contactId || !nextStage) return;
-
-    const contact = visibleContacts.find((item) => getEntityId(item) === contactId);
-    if (!contact || normalizeLeadStage(contact?.stage) === nextStage) return;
-
-    await persistContactStage(contact, nextStage);
-  }, [draggingContactId, persistContactStage, pipelineStagesEnabled, savingStage, normalizeLeadStage, visibleContacts]);
-
-  const handleLeadDragEnd = useCallback(() => {
-    setDraggingContactId("");
-    setDropTargetContactStageId("");
-  }, []);
-
   const handleDeleteStage = useCallback(
     async (stage, fallbackStageId = "", fallbackStageKey = "") => {
       const stageId = String(stage?.id || "").trim();
@@ -930,7 +1095,7 @@ const CrmPipeline = () => {
         });
 
         if (result?.success === false) {
-          throw new Error(result?.error || "Failed to delete pipeline stage");
+          throw new Error(result?.error || "Failed to delete lead stage");
         }
 
         const movedCount = Number(result?.data?.movedContactCount || 0);
@@ -938,8 +1103,8 @@ const CrmPipeline = () => {
           type: "success",
           message:
             movedCount > 0
-              ? `Pipeline stage deleted and ${movedCount} lead${movedCount === 1 ? "" : "s"} moved.`
-              : "Pipeline stage deleted."
+              ? `Lead stage deleted and ${movedCount} lead${movedCount === 1 ? "" : "s"} moved.`
+              : "Lead stage deleted."
         });
         setStageDeleteTarget(null);
         await loadWorkspace({ silent: true });
@@ -954,7 +1119,7 @@ const CrmPipeline = () => {
         }
         setToast({
           type: "error",
-          message: stageError?.message || "Failed to delete pipeline stage"
+          message: stageError?.message || "Failed to delete lead stage"
         });
       } finally {
         setSavingStage(false);
@@ -962,113 +1127,6 @@ const CrmPipeline = () => {
     },
     [loadWorkspace]
   );
-
-  const handleSaveView = useCallback(
-    async ({ asNew = false } = {}) => {
-      const shouldCreateNewView = asNew || !activeViewId;
-      const nextLabel = shouldCreateNewView
-        ? makeUniquePipelineViewLabel(viewLabel, pipelineViews, activeViewId)
-        : String(viewLabel || "").trim() || "Lead Pipeline View";
-      const payload = toPipelineViewPayload({
-        label: nextLabel,
-        search: searchQuery,
-        queue: queueFilter,
-        status: statusFilter,
-        owner: ownerFilter,
-        viewMode,
-        isDefault: saveAsDefault
-      });
-
-      try {
-        setSavingView(true);
-        setError("");
-
-        const result = activeViewId && !asNew
-          ? await crmService.updatePipelineView(activeViewId, payload)
-          : await crmService.createPipelineView(payload);
-
-        if (result?.success === false) {
-          throw new Error(result?.error || "Failed to save pipeline view");
-        }
-
-        const savedView = normalizePipelineView(result?.data || {});
-        setPipelineViews((previous) => {
-          const remaining = previous.filter((view) => view.id !== savedView.id);
-          return [savedView, ...remaining].sort((left, right) => {
-            if (left.isDefault !== right.isDefault) return left.isDefault ? -1 : 1;
-            return new Date(right.updatedAt || right.createdAt || 0) - new Date(left.updatedAt || left.createdAt || 0);
-          });
-        });
-        setActiveViewId(savedView.id);
-        setViewLabel(savedView.label || "Lead Pipeline View");
-        setSaveAsDefault(Boolean(savedView.isDefault));
-        setToast({
-          type: "success",
-          message: shouldCreateNewView
-            ? "Lead pipeline view saved as a new view."
-            : "Lead pipeline view saved."
-        });
-      } catch (saveError) {
-        const errorMessage = String(saveError?.message || "");
-        setToast({
-          type: "error",
-          message:
-            errorMessage.includes("already exists")
-              ? "A lead pipeline view with that name already exists. Please rename it and try again."
-              : errorMessage || "Failed to save lead pipeline view"
-        });
-      } finally {
-        setSavingView(false);
-      }
-    },
-    [
-      activeViewId,
-      pipelineViews,
-      ownerFilter,
-      queueFilter,
-      saveAsDefault,
-      searchQuery,
-      statusFilter,
-      viewLabel,
-      viewMode
-    ]
-  );
-
-  const handleDeleteView = useCallback(async () => {
-    if (!activeViewId) return;
-    const activeName = String(activeView?.label || "this lead pipeline view").trim();
-    const confirmed = window.confirm(`Delete ${activeName}?`);
-    if (!confirmed) return;
-
-    try {
-      setSavingView(true);
-      setError("");
-      const result = await crmService.deletePipelineView(activeViewId);
-      if (result?.success === false) {
-        throw new Error(result?.error || "Failed to delete lead pipeline view");
-      }
-
-      const nextViews = pipelineViews.filter((view) => view.id !== activeViewId);
-      setPipelineViews(nextViews);
-      const fallbackView = nextViews.find((view) => view.isDefault) || nextViews[0] || null;
-      if (fallbackView) {
-        applyPipelineView(fallbackView);
-      } else {
-        setActiveViewId("");
-        setViewLabel("Lead Pipeline View");
-        setSaveAsDefault(false);
-      }
-
-      setToast({ type: "success", message: "Lead pipeline view deleted." });
-    } catch (deleteError) {
-      setToast({
-        type: "error",
-        message: deleteError?.message || "Failed to delete lead pipeline view"
-      });
-    } finally {
-      setSavingView(false);
-    }
-  }, [activeView, activeViewId, applyPipelineView, pipelineViews]);
 
   const handleContactUpdated = useCallback((updatedContact) => {
     const normalizedContact = normalizeContact(updatedContact);
@@ -1080,19 +1138,138 @@ const CrmPipeline = () => {
     );
   }, []);
 
-  const totalContacts = visibleContacts.length;
   const qualifiedCount = Number(metrics?.contacts?.qualified || 0);
   const averageLeadScore = Number(metrics?.contacts?.averageLeadScore || 0);
   const openTaskCount = Number(metrics?.tasks?.open || 0);
   const dueTodayCount = Number(metrics?.tasks?.dueToday || 0);
+  const renderLeadRow = useCallback(
+    (contact) => {
+      const contactId = getEntityId(contact);
+      const currentStageIndex = stageOptions.findIndex(
+        (item) => item.key === normalizeLeadStage(contact?.stage)
+      );
+      const currentStage = stageOptions[currentStageIndex] || stageOptions[0] || {};
+      const isSelected = selectedLeadIdSet.has(contactId);
+      const isArchived = Boolean(contact?.archivedAt);
+      const archiveAction = isArchived ? "unarchive" : "archive";
+
+      return (
+        <div
+          key={contactId}
+          className={`crm-pipeline-row ${isSelected ? "crm-pipeline-row--selected" : ""} ${isArchived ? "crm-pipeline-row--archived" : ""}`}
+          style={{ "--lead-stage-color": currentStage.color || DEFAULT_STAGE_COLORS[currentStage.key] || "#5f8fc3" }}
+        >
+          {showLeadSelection ? (
+            <label className="crm-lead-select" aria-label={`Select ${contact?.name || "lead"}`}>
+              <input
+                type="checkbox"
+                checked={isSelected}
+                onChange={() => toggleLeadSelection(contactId)}
+              />
+            </label>
+          ) : null}
+          <div className="crm-pipeline-row__primary">
+            <div className="crm-pipeline-row__title">
+              <strong>{contact?.name || "Untitled Lead"}</strong>
+              <span className={`crm-status-badge ${getStatusBadgeClass(contact?.status)}`}>
+                {formatLeadStatusLabel(contact?.status)}
+              </span>
+              {isArchived ? <span className="crm-archive-badge">Archived</span> : null}
+            </div>
+            <div className="crm-pipeline-row__meta">
+              <span>{contact?.phone ? `Phone: ${contact.phone}` : "Phone: -"}</span>
+              <span>{contact?.email ? `Email: ${contact.email}` : "Email: -"}</span>
+            </div>
+          </div>
+
+          <div className="crm-pipeline-row__stage">
+            <span className="crm-pipeline-row__stage-label">Lead stage</span>
+            <span className="crm-stage-chip">{currentStage.label || "New"}</span>
+            <div className="crm-pipeline-row__meta">
+              <span>Next follow-up touch: {formatDate(contact?.nextFollowUpAt)}</span>
+            </div>
+          </div>
+
+          <div className="crm-pipeline-row__signals">
+            <span>Lead score {Number(contact?.leadScore || 0)}</span>
+            <span>Lead value {formatCurrency(contact?.dealValue)}</span>
+            <span>Lead owner {contact?.ownerId || "Unassigned"}</span>
+          </div>
+
+          <div className="crm-pipeline-row__actions">
+            <div className="crm-row-menu">
+              <button
+                type="button"
+                className="crm-row-menu__trigger"
+                onClick={() =>
+                  setOpenActionMenuId((previous) => (previous === contactId ? "" : contactId))
+                }
+                aria-label={`Open actions for ${contact?.name || "lead"}`}
+                aria-expanded={openActionMenuId === contactId}
+              >
+                <MoreVertical size={17} />
+              </button>
+
+              {openActionMenuId === contactId ? (
+                <div className="crm-row-menu__panel">
+                  <button
+                    type="button"
+                    className="crm-row-menu__item crm-row-menu__item--primary"
+                    onClick={() => {
+                      setOpenActionMenuId("");
+                      setSelectedContact(contact);
+                      setSelectedContactId(contactId);
+                    }}
+                  >
+                    <UserRound size={14} />
+                    Open Lead Profile
+                  </button>
+                  <button
+                    type="button"
+                    className="crm-row-menu__item"
+                    onClick={() => updateLeadArchiveFromRow(contact, archiveAction)}
+                  >
+                    <Archive size={14} />
+                    {isArchived ? "Unarchive Lead" : "Archive Lead"}
+                  </button>
+                  <button
+                    type="button"
+                    className="crm-row-menu__item crm-row-menu__item--danger"
+                    onClick={() => {
+                      deleteLeadFromRow(contact);
+                    }}
+                    title="Delete this lead permanently"
+                    aria-label={`Delete ${contact?.name || "lead"}`}
+                  >
+                    <Trash2 size={14} />
+                    Delete Lead
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </div>
+      );
+    },
+    [
+      deleteLeadFromRow,
+      normalizeLeadStage,
+      openActionMenuId,
+      selectedLeadIdSet,
+      showLeadSelection,
+      stageOptions,
+      toggleLeadSelection,
+      updateLeadArchiveFromRow
+    ]
+  );
 
   return (
     <>
       <div className="crm-workspace crm-workspace--pipeline-static">
         <CrmToast toast={toast} />
         <CrmPageHeader
-          title="CRM Pipeline"
-          subtitle="Manage lead flow, lead queues, and saved pipeline views for board or list workflows."
+          title="CRM Leads"
+          subtitle="Manage lead flow, lead queues, and saved lead views."
           actions={
             <div className="crm-page-header__action-group">
               <button
@@ -1101,32 +1278,24 @@ const CrmPipeline = () => {
                 onClick={openPipelineSettings}
               >
                 <Settings size={16} />
-                Pipeline Settings
+                Leads Settings
               </button>
-              <button
-                type="button"
-                className="crm-btn crm-btn-secondary"
-                onClick={() => loadWorkspace({ silent: true })}
-                disabled={refreshing}
-              >
-                <RefreshCw size={16} className={refreshing ? "spin" : ""} />
-                {refreshing ? "Refreshing..." : "Refresh"}
-              </button>
+              <CrmRealtimeStatus status={crmRealtime?.connectionStatus} />
             </div>
           }
         />
 
         <div className="crm-metric-grid">
-          <CrmMetricCard icon={UserRound} value={totalContacts} label="Leads in Pipeline" />
+          <CrmMetricCard icon={UserRound} value={totalContacts} label="Leads" />
           <CrmMetricCard
             icon={BadgeDollarSign}
             value={formatCurrency(visibleLeadValue)}
-            label="Pipeline Value"
+            label="Lead Value"
           />
-          <CrmMetricCard icon={BadgeDollarSign} value={qualifiedCount} label="Qualified Leads" />
-          <CrmMetricCard icon={BadgeDollarSign} value={averageLeadScore} label="Lead Score Avg" />
-          <CrmMetricCard icon={BadgeDollarSign} value={openTaskCount} label="Follow-ups Open" />
-          <CrmMetricCard icon={BadgeDollarSign} value={dueTodayCount} label="Due Today" />
+          <CrmMetricCard icon={BadgeCheck} value={qualifiedCount} label="Qualified Leads" />
+          <CrmMetricCard icon={Target} value={averageLeadScore} label="Lead Score Avg" />
+          <CrmMetricCard icon={CalendarClock} value={openTaskCount} label="Follow-ups Open" />
+          <CrmMetricCard icon={Flame} value={dueTodayCount} label="Due Today" />
         </div>
 
         {showPipelineSettings ? (
@@ -1139,13 +1308,13 @@ const CrmPipeline = () => {
               className="crm-pipeline-settings-modal"
               role="dialog"
               aria-modal="true"
-              aria-label="Pipeline Settings"
+              aria-label="Leads Settings"
               onClick={(event) => event.stopPropagation()}
             >
               <div className="crm-pipeline-settings-modal__header">
                 <div>
-                  <h2 id="crm-pipeline-settings-title">Pipeline Settings</h2>
-                  <p>Manage saved lead pipeline views and the lead stage manager from one place.</p>
+                  <h2 id="crm-pipeline-settings-title">Leads Settings</h2>
+                  <p>Manage saved lead views and the lead stage manager from one place.</p>
                 </div>
                 <button
                   type="button"
@@ -1170,7 +1339,7 @@ const CrmPipeline = () => {
 
                 {!pipelineStagesEnabled ? (
                   <div className="crm-alert crm-alert-warning" style={{ marginBottom: 12 }}>
-                    Stage management is unavailable in this backend build. The board will use the built-in lead stages.
+                    Stage management is unavailable in this backend build. Leads will use the built-in stages.
                   </div>
                 ) : null}
 
@@ -1200,7 +1369,7 @@ const CrmPipeline = () => {
                       disabled={!pipelineStagesEnabled || savingStage}
                       title={
                         pipelineStagesEnabled
-                          ? "Create a new lead pipeline stage"
+                          ? "Create a new lead stage"
                           : "Stage management is unavailable in this backend build"
                       }
                     >
@@ -1433,303 +1602,389 @@ const CrmPipeline = () => {
           <label className="crm-search-input-wrap">
             <Search size={15} />
             <input
+              ref={searchInputRef}
               type="text"
               className="crm-input crm-input--inline"
-              placeholder="Search leads by name, phone, email, source, owner, or stage..."
+              placeholder="Search leads...  /"
               value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
+              onChange={(event) => {
+                setSearchQuery(event.target.value);
+                setContacts([]);
+                setNextCursor("");
+                setSelectedLeadIds([]);
+                setSelectionMode(false);
+              }}
             />
           </label>
 
-          <select
-            className="crm-select"
-            value={queueFilter}
-            onChange={(event) => setQueueFilter(event.target.value)}
-          >
-            {CONTACT_QUEUE_OPTIONS.map((option) => (
-              <option key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <div className="crm-lead-filter-menu">
+            <button
+              type="button"
+              className={`crm-btn crm-btn-secondary crm-lead-filter-trigger ${showFilters ? "active" : ""}`}
+              onClick={openFilters}
+              aria-expanded={showFilters}
+            >
+              <SlidersHorizontal size={15} />
+              Filter{activeFilterCount > 0 ? ` (${activeFilterCount})` : ""}
+            </button>
+          </div>
 
-          <select
-            className="crm-select"
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-          >
-            {CONTACT_STATUS_OPTIONS.map((option) => (
-              <option key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          {showFilters ? (
+            <div className="crm-lead-filter-panel">
+              <label className="crm-lead-filter-field">
+                <span>Lead queue</span>
+                  <select
+                    className="crm-select"
+                    value={filterDraft.queue}
+                    onChange={(event) => applyFilterChange({ queue: event.target.value })}
+                  >
+                  {CONTACT_QUEUE_OPTIONS.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-          <select
-            className="crm-select"
-            value={ownerFilter}
-            onChange={(event) => setOwnerFilter(event.target.value)}
-          >
-            {ownerOptions.map((option) => (
-              <option key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+              <label className="crm-lead-filter-field">
+                <span>Lead status</span>
+                  <select
+                    className="crm-select"
+                    value={filterDraft.status}
+                    onChange={(event) => applyFilterChange({ status: event.target.value })}
+                  >
+                  {CONTACT_STATUS_OPTIONS.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="crm-lead-filter-field">
+                <span>Owner</span>
+                  <select
+                    className="crm-select"
+                    value={filterDraft.owner}
+                    onChange={(event) => applyFilterChange({ owner: event.target.value })}
+                  >
+                  {ownerOptions.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="crm-lead-filter-field">
+                <span>Sort order</span>
+                  <select
+                    className="crm-select"
+                    value={filterDraft.sortOrder}
+                    onChange={(event) => applyFilterChange({ sortOrder: event.target.value })}
+                  >
+                  {LEAD_SORT_OPTIONS.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="crm-lead-filter-field">
+                <span>Archive</span>
+                  <select
+                    className="crm-select"
+                    value={filterDraft.archive}
+                    onChange={(event) => applyFilterChange({ archive: event.target.value })}
+                  >
+                  {LEAD_ARCHIVE_OPTIONS.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="crm-lead-filter-actions">
+                <button
+                  type="button"
+                  className="crm-contact-action-btn"
+                  onClick={selectAllLoadedLeads}
+                  disabled={!visibleContacts.length}
+                  title={allLoadedLeadsSelected ? "Clear loaded lead selection" : "Select all loaded leads"}
+                  aria-label={allLoadedLeadsSelected ? "Clear loaded lead selection" : "Select all loaded leads"}
+                >
+                  {allLoadedLeadsSelected ? "Clear loaded" : "Select all"}
+                </button>
+                <select
+                  className="crm-select"
+                  value=""
+                  onChange={(event) => {
+                    const preset = filterPresets.find((item) => item.id === event.target.value);
+                    if (!preset) return;
+                    const nextFilters = {
+                      queue: preset.filters.queue || "all",
+                      status: preset.filters.status || "all",
+                      owner: preset.filters.owner || "all",
+                      sortOrder: preset.filters.sortOrder || "newest",
+                      archive: preset.filters.archive || "active"
+                    };
+                    setFilterDraft(nextFilters);
+                    setSearchQuery(preset.filters.search || "");
+                    setQueueFilter(nextFilters.queue);
+                    setStatusFilter(nextFilters.status);
+                    setOwnerFilter(nextFilters.owner);
+                    setSortOrder(normalizeSortOrder(nextFilters.sortOrder));
+                    setArchiveFilter(normalizeArchiveFilter(nextFilters.archive));
+                    setContacts([]);
+                    setNextCursor("");
+                    setSelectedLeadIds([]);
+                    setSelectionMode(false);
+                    setShowFilters(false);
+                  }}
+                >
+                  <option value="">Saved presets</option>
+                  {filterPresets.map((preset) => (
+                    <option key={preset.id} value={preset.id}>
+                      {preset.label}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="crm-icon-action-btn"
+                  title="Save filter preset"
+                  aria-label="Save filter preset"
+                  onClick={async () => {
+                    const label = window.prompt("Preset name", activeViewLabel || "Lead filter");
+                    if (!label) return;
+                    const result = await crmService.createFilterPreset({
+                      label,
+                      filters: {
+                        search: searchQuery,
+                        queue: filterDraft.queue,
+                        status: filterDraft.status,
+                        owner: filterDraft.owner,
+                        sortOrder: filterDraft.sortOrder,
+                        archive: filterDraft.archive
+                      }
+                    });
+                    if (result?.success === false) {
+                      setToast({ type: "error", message: result.error || "Failed to save preset" });
+                      return;
+                    }
+                    setFilterPresets((previous) => [normalizeLeadFilterPreset(result.data), ...previous]);
+                    setToast({ type: "success", message: "Filter preset saved." });
+                  }}
+                >
+                  <Save size={17} />
+                </button>
+                <button
+                  type="button"
+                  className="crm-icon-action-btn crm-icon-action-btn--danger"
+                  onClick={() => runBulkContactAction("delete")}
+                  disabled={bulkBusy || !selectedLeadIds.length}
+                  title={selectedLeadIds.length ? "Delete selected leads" : "Select leads to delete"}
+                  aria-label={selectedLeadIds.length ? "Delete selected leads" : "Select leads to delete"}
+                >
+                  <Trash2 size={17} />
+                </button>
+                <button
+                  type="button"
+                  className="crm-icon-action-btn"
+                  onClick={clearFilters}
+                  title="Clear filters"
+                  aria-label="Clear filters"
+                >
+                  <RotateCcw size={17} />
+                </button>
+                <button
+                  type="button"
+                  className="crm-icon-action-btn crm-icon-action-btn--primary"
+                  onClick={applyFilters}
+                  title="Apply filters"
+                  aria-label="Apply filters"
+                >
+                  <Check size={17} />
+                </button>
+              </div>
+            </div>
+          ) : null}
         </CrmFilterBar>
 
         <div className="crm-pipeline-toolbar">
-          <div className="crm-view-toggle">
-            {VIEW_MODE_OPTIONS.map((option) => {
-              const Icon = option.icon;
-              return (
-                <button
-                  key={option.key}
-                  type="button"
-                  className={`crm-view-toggle__btn ${viewMode === option.key ? "active" : ""}`}
-                  onClick={() => setViewMode(option.key)}
-                >
-                  <Icon size={15} />
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-
           <div className="crm-results-summary">
             <strong>{totalContacts} leads</strong>
-            <span>
-              {activeView?.label || "Lead pipeline"} {hasUnsavedChanges ? "(unsaved)" : ""}
-            </span>
+            <span>Scan lead follow-ups, stage position, and next actions in one list.</span>
           </div>
         </div>
 
-        {viewMode === "board" ? (
-          <>
-            <div className="crm-pipeline-board-shell">
-              <div className="crm-pipeline-section-label crm-pipeline-section-label--sticky crm-pipeline-section-label--board">
-                <strong>Lead Pipeline Stages</strong>
-                <span>Move leads across the funnel, or open a lead to update its profile and follow-up plan.</span>
-              </div>
-
-              <div className="crm-pipeline-board-shell__body">
-                {error ? <div className="crm-alert crm-alert-error">{error}</div> : null}
-                {loading ? <CrmPageSkeleton variant="board" /> : null}
-
-                {!loading && visibleContacts.length === 0 ? (
-                  <CrmEmptyState
-                    title="No leads match this pipeline view."
-                    description="Try changing the lead queue, status, owner, or search filters."
-                  />
-                ) : null}
-
-                {!loading && visibleContacts.length > 0 ? (
-                  <div className="crm-pipeline-board">
-                    {stageOptions.map((stage) => (
-                      <section
-                        key={stage.key}
-                        className={`${getStageColumnClass(stage.key)} ${
-                          dropTargetContactStageId === stage.key && draggingContactId ? "crm-stage-column--drop-active" : ""
-                        }`}
-                        style={getStageColumnStyle(stage)}
-                        onDragOver={(event) => handleLeadDragOver(event, stage.key)}
-                        onDrop={(event) => handleLeadDrop(event, stage.key)}
-                      >
-                        <header className="crm-stage-header">
-                          <div>
-                            <div className="crm-stage-header__topline">
-                              <span className="crm-stage-header__badge">
-                                {STAGE_BADGE_LABELS[stage.key] || String(stage.label || stage.key || "Stage")
-                                  .slice(0, 10)
-                                  .toUpperCase()}
-                              </span>
-                              <h3>{stage.label}</h3>
-                            </div>
-                            <p className="crm-stage-header__helper">{STAGE_HELPER_TEXT[stage.key] || "Pipeline activity in this step."}</p>
-                            <p style={{ margin: "4px 0 0", fontSize: "12px", color: "#5a7590" }}>
-                              Lead value {formatCurrency(
-                                (contactsByStage[stage.key] || []).reduce(
-                                  (sum, contact) => sum + (Number(contact?.dealValue) || 0),
-                                  0
-                                )
-                              )}
-                            </p>
-                          </div>
-                          <span>{(contactsByStage[stage.key] || []).length}</span>
-                        </header>
-
-                        <div className="crm-stage-list">
-                          {(contactsByStage[stage.key] || []).map((contact) => {
-                            const contactId = getEntityId(contact);
-                            const currentStage = normalizeLeadStage(contact?.stage);
-                            const isLeadDragging = draggingContactId === contactId;
-                            const isLeadDropTarget = dropTargetContactStageId === stage.key && draggingContactId && !isLeadDragging;
-
-                            return (
-                              <article
-                                key={contactId}
-                                className={`crm-contact-card ${isLeadDragging ? "crm-contact-card--dragging" : ""} ${
-                                  isLeadDropTarget ? "crm-contact-card--drop-target" : ""
-                                }`}
-                                draggable={pipelineStagesEnabled}
-                                onDragStart={(event) => handleLeadDragStart(event, contactId, stage.key)}
-                                onDragEnd={handleLeadDragEnd}
-                                onDragOver={(event) => handleLeadDragOver(event, stage.key)}
-                                onDrop={(event) => handleLeadDrop(event, stage.key)}
-                              >
-                                <div className="crm-contact-card__stage-move">
-                                  <span className="crm-contact-card__move-badge crm-move-badge">
-                                    <GripVertical size={12} />
-                                    Drag to move
-                                  </span>
-                                  <select
-                                    className="crm-select crm-select--inline crm-contact-card__stage-select"
-                                    value={currentStage}
-                                    onChange={(event) => moveContactToStage(contact, event.target.value)}
-                                    aria-label={`Move ${contact?.name || "lead"} to stage`}
-                                  >
-                                    {stageOptions.map((stageOption) => (
-                                      <option key={stageOption.key} value={stageOption.key}>
-                                        {stageOption.label}
-                                      </option>
-                                    ))}
-                                  </select>
-                                </div>
-
-                                <div className="crm-contact-head">
-                                  <strong>{contact?.name || "Untitled Lead"}</strong>
-                                  <span className={`crm-status-badge ${getStatusBadgeClass(contact?.status)}`}>
-                                    {formatLeadStatusLabel(contact?.status)}
-                                  </span>
-                                </div>
-
-                                <div className="crm-contact-meta">
-                                  <span>Phone: {contact?.phone || "-"}</span>
-                                  <span>
-                                    <BadgeDollarSign size={13} />
-                                    Lead value {formatCurrency(contact?.dealValue)}
-                                  </span>
-                                  <span>
-                                    <UserRound size={13} />
-                                    Lead score {Number(contact?.leadScore || 0)}
-                                  </span>
-                                  <span>Lead owner: {contact?.ownerId || "Unassigned"}</span>
-                                  <span>Next follow-up touch: {formatDate(contact?.nextFollowUpAt)}</span>
-                                  <span>Lead source: {contact?.source || "-"}</span>
-                                </div>
-
-                                <button
-                                  type="button"
-                                  className="crm-link-btn"
-                                  onClick={() => {
-                                    setSelectedContact(contact);
-                                    setSelectedContactId(contactId);
-                                  }}
-                                >
-                                  Open Lead Profile
-                                </button>
-                              </article>
-                            );
-                          })}
-                          {(contactsByStage[stage.key] || []).length === 0 && (
-                            <div className="crm-empty-column">This stage has no leads yet.</div>
-                          )}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                ) : null}
+        {selectedLeadIds.length > 0 ? (
+          <div className="crm-bulk-toolbar">
+            <div className="crm-bulk-toolbar__summary">
+              <strong>{selectedLeadIds.length} selected</strong>
+              <button
+                type="button"
+                className="crm-icon-action-btn crm-icon-action-btn--ghost"
+                onClick={clearLeadSelection}
+                title="Clear selection"
+                aria-label="Clear selection"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="crm-bulk-toolbar__controls">
+              <select
+                className="crm-select crm-select--compact"
+                value={bulkOwnerId}
+                onChange={(event) => setBulkOwnerId(event.target.value)}
+              >
+                <option value="">Choose owner</option>
+                {ownerOptions
+                  .filter((option) => option.key !== "all")
+                  .map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))}
+              </select>
+              <div className="crm-bulk-toolbar__tag-field">
+                <input
+                  className="crm-input crm-input--small"
+                  value={bulkTagDraft}
+                  onChange={(event) => setBulkTagDraft(event.target.value)}
+                  placeholder="Tag"
+                  aria-label="Tag to add or remove"
+                />
+                <span className="crm-bulk-toolbar__tag-help">Use a tag chip below to remove an existing tag.</span>
               </div>
             </div>
-          </>
-        ) : null}
-
-        {!loading && visibleContacts.length > 0 && viewMode === "list" ? (
-          <div className="crm-pipeline-section-label crm-pipeline-section-label--list">
-            <strong>Lead Flow List</strong>
-            <span>Use this compact lead-flow list when you want to scan follow-up flow and stage changes quickly.</span>
+            <div className="crm-bulk-toolbar__tags" aria-label="Selected lead tags">
+              {selectedLeadTags.length > 0 ? (
+                selectedLeadTags.map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    className="crm-tag-chip crm-tag-chip--action"
+                    onClick={() => runBulkContactAction("remove_tags", { tags: [tag] })}
+                    disabled={bulkBusy}
+                    title={`Remove tag "${tag}" from selected leads`}
+                    aria-label={`Remove tag ${tag} from selected leads`}
+                  >
+                    <span>{tag}</span>
+                    <X size={12} />
+                  </button>
+                ))
+              ) : (
+                <span className="crm-bulk-toolbar__tag-empty">No tags on selected leads.</span>
+              )}
+            </div>
+            <div className="crm-bulk-toolbar__actions">
+              <button
+                type="button"
+                className="crm-contact-action-btn"
+                disabled={bulkBusy || !bulkOwnerId}
+                onClick={() => runBulkContactAction("assign", { ownerId: bulkOwnerId })}
+                title={bulkOwnerId ? "Assign selected leads" : "Choose an owner to assign"}
+                aria-label={bulkOwnerId ? "Assign selected leads" : "Choose an owner to assign"}
+              >
+                Assign
+              </button>
+              <button
+                type="button"
+                className="crm-contact-action-btn"
+                disabled={bulkBusy || !bulkTagDraft.trim()}
+                onClick={() => runBulkContactAction("add_tags", { tags: [bulkTagDraft.trim()] })}
+                title={bulkTagDraft.trim() ? "Add tag to selected leads" : "Enter a tag to add"}
+                aria-label={bulkTagDraft.trim() ? "Add tag to selected leads" : "Enter a tag to add"}
+              >
+                <Tags size={17} />
+                Add tag
+              </button>
+              <button
+                type="button"
+                className="crm-contact-action-btn"
+                disabled={bulkBusy || !bulkTagDraft.trim()}
+                onClick={() => runBulkContactAction("remove_tags", { tags: [bulkTagDraft.trim()] })}
+                title={bulkTagDraft.trim() ? "Remove tag from selected leads" : "Enter a tag to remove"}
+                aria-label={bulkTagDraft.trim() ? "Remove tag from selected leads" : "Enter a tag to remove"}
+              >
+                Remove tag
+              </button>
+              <button
+                type="button"
+                className="crm-contact-action-btn"
+                disabled={bulkBusy}
+                onClick={() => runBulkContactAction(bulkArchiveAction)}
+                title={`${bulkArchiveLabel} selected leads`}
+                aria-label={`${bulkArchiveLabel} selected leads`}
+              >
+                <Archive size={17} />
+                {bulkArchiveLabel}
+              </button>
+              <button
+                type="button"
+                className="crm-contact-action-btn"
+                disabled={bulkBusy}
+                onClick={() => runBulkContactAction("export")}
+                title="Export selected leads"
+                aria-label="Export selected leads"
+              >
+                <Upload size={17} />
+                Export
+              </button>
+            </div>
           </div>
         ) : null}
 
-        {!loading && visibleContacts.length > 0 && viewMode === "list" ? (
-          <div className="crm-pipeline-list-view">
+        {error ? <div className="crm-alert crm-alert-error">{error}</div> : null}
+        {loading ? <CrmPageSkeleton variant="list" /> : null}
+
+        {!loading && visibleContacts.length === 0 ? (
+          <CrmEmptyState
+            title="No leads match this view."
+            description="Try changing the lead queue, status, owner, or search filters."
+          />
+        ) : null}
+
+        {!loading && visibleContacts.length > 0 ? (
+          <div className={`crm-pipeline-list-view ${showLeadSelection ? "crm-pipeline-list-view--selecting" : ""}`}>
             <div className="crm-pipeline-list-head">
+              {showLeadSelection ? <span className="crm-lead-select-spacer" aria-hidden="true" /> : null}
               <span>Lead</span>
               <span>Lead Stage</span>
               <span>Lead Signals</span>
               <span>Actions</span>
             </div>
-            <div className="crm-pipeline-list-body">
-              {visibleContacts.map((contact) => {
-                const contactId = getEntityId(contact);
-                const currentStageIndex = stageOptions.findIndex(
-                  (item) => item.key === normalizeLeadStage(contact?.stage)
-                );
-                const canMoveLeft = currentStageIndex > 0;
-                const canMoveRight = currentStageIndex < stageOptions.length - 1;
-                return (
-                  <div key={contactId} className="crm-pipeline-row">
-                    <div className="crm-pipeline-row__primary">
-                      <div className="crm-pipeline-row__title">
-                        <strong>{contact?.name || "Untitled Lead"}</strong>
-                        <span className={`crm-status-badge ${getStatusBadgeClass(contact?.status)}`}>
-                          {formatLeadStatusLabel(contact?.status)}
-                        </span>
-                      </div>
-                      <div className="crm-pipeline-row__meta">
-                        <span>{contact?.phone ? `Phone: ${contact.phone}` : "Phone: -"}</span>
-                        <span>{contact?.email ? `Email: ${contact.email}` : "Email: -"}</span>
-                      </div>
-                    </div>
-
-                    <div className="crm-pipeline-row__stage">
-                      <span className="crm-pipeline-row__stage-label">Lead stage</span>
-                      <strong>{stageOptions[currentStageIndex]?.label || "New"}</strong>
-                      <div className="crm-pipeline-row__meta">
-                        <span>Next follow-up touch: {formatDate(contact?.nextFollowUpAt)}</span>
-                      </div>
-                    </div>
-
-                    <div className="crm-pipeline-row__signals">
-                      <span>Lead score {Number(contact?.leadScore || 0)}</span>
-                      <span>Lead value {formatCurrency(contact?.dealValue)}</span>
-                      <span>Lead owner {contact?.ownerId || "Unassigned"}</span>
-                    </div>
-
-                    <div className="crm-pipeline-row__actions">
-                      <button
-                        type="button"
-                        className="crm-inline-action-btn"
-                        onClick={() => moveContactStage(contact, -1)}
-                        disabled={!canMoveLeft}
-                        title="Move to previous stage"
-                      >
-                        <ArrowLeftRight size={14} style={{ transform: "rotate(180deg)" }} />
-                      </button>
-                      <button
-                        type="button"
-                        className="crm-inline-action-btn"
-                        onClick={() => moveContactStage(contact, 1)}
-                        disabled={!canMoveRight}
-                        title="Move to next stage"
-                      >
-                        <ArrowLeftRight size={14} />
-                      </button>
-                      <button
-                        type="button"
-                        className="crm-contact-action-btn"
-                        onClick={() => {
-                          setSelectedContact(contact);
-                          setSelectedContactId(contactId);
-                        }}
-                      >
-                        Open Lead Profile
-                      </button>
-                    </div>
+            <Virtuoso
+              className="crm-pipeline-list-body crm-pipeline-list-body--virtual"
+              data={visibleContacts}
+              style={{ height: "clamp(340px, calc(100vh - 520px), 520px)" }}
+              increaseViewportBy={260}
+              endReached={loadMoreLeads}
+              itemContent={(_, contact) => renderLeadRow(contact)}
+              components={{
+                Item: ({ children, ...props }) => (
+                  <div {...props} className="crm-virtual-row-shell">
+                    {children}
                   </div>
-                );
-              })}
-            </div>
+                ),
+                Footer: () =>
+                  loadingMoreLeads ? (
+                    <div className="crm-virtual-list-footer">Loading more leads...</div>
+                  ) : hasMoreLeads ? (
+                    <div className="crm-virtual-list-footer crm-virtual-list-footer--more">
+                      <span>Scroll to load more</span>
+                      <button type="button" className="crm-pagination__btn" onClick={loadMoreLeads}>
+                        Load more leads
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="crm-virtual-list-footer">End of lead list</div>
+                  )
+              }}
+            />
           </div>
         ) : null}
       </div>

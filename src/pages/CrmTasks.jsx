@@ -1,13 +1,18 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { TableVirtuoso } from "react-virtuoso";
 import {
   CheckCircle2,
+  Pencil,
   MessageSquarePlus,
   Plus,
-  RefreshCw,
+  MoreVertical,
   Search,
-  Trash2
+  SlidersHorizontal,
+  Trash2,
+  X
 } from "lucide-react";
+import apiService from "../services/api";
 import { crmService } from "../services/crmService";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
 import {
@@ -21,12 +26,12 @@ import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
 import CrmToast from "../components/crm/CrmToast";
 import CrmPageHeader from "../components/crm/CrmPageHeader";
 import CrmFilterBar from "../components/crm/CrmFilterBar";
+import CrmRealtimeStatus from "../components/crm/CrmRealtimeStatus";
 import "./CrmWorkspace.css";
 
 const CRM_TASKS_LOADING_TIMEOUT_MS = 8000;
 const CRM_TASKS_CACHE_TTL_MS = 10 * 60 * 1000;
 const CRM_TASKS_CACHE_NAMESPACE = "crm-tasks-page";
-
 const TASK_STATUSES = [
   { key: "pending", label: "Pending" },
   { key: "in_progress", label: "In Progress" },
@@ -66,6 +71,70 @@ const TASK_RECURRENCE_OPTIONS = [
   { key: "monthly", label: "Monthly" }
 ];
 
+const CRM_TASKS_SCROLL_CHUNK_SIZE = 50;
+const CRM_TASK_CONTACT_PAGE_SIZE = 25;
+const CRM_TASK_CONTACT_SEARCH_DEBOUNCE_MS = 250;
+const CRM_TASK_SEARCH_DEBOUNCE_MS = 300;
+
+const normalizeTaskApiList = (value) => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.results)) return value.results;
+  if (Array.isArray(value?.tasks)) return value.tasks;
+  return [];
+};
+
+const normalizeUserApiList = (value) => {
+  if (Array.isArray(value)) return value;
+  if (Array.isArray(value?.data)) return value.data;
+  if (Array.isArray(value?.data?.users)) return value.data.users;
+  if (Array.isArray(value?.users)) return value.users;
+  if (Array.isArray(value?.results)) return value.results;
+  return [];
+};
+
+const getDisplayName = (value = "") => String(value || "").trim();
+
+const getTaskContactLabel = (contact = {}) => {
+  const name = String(contact?.name || contact?.displayName || contact?.contactName || "").trim();
+  const phone = String(contact?.phone || contact?.mobile || contact?.phoneNumber || "").trim();
+  if (name && phone) return `${name} (${phone})`;
+  return name || phone || "Unknown contact";
+};
+
+const getUserDisplayLabel = (user = {}, currentUserId = "") => {
+  const name = String(user?.name || user?.displayName || user?.fullName || "").trim();
+  const email = String(user?.email || "").trim();
+  const id = String(user?._id || user?.id || user?.userId || "").trim();
+  const resolved = name || email || id || "Unknown user";
+  if (currentUserId && id === currentUserId) return `${resolved} (Me)`;
+  return resolved;
+};
+
+const CrmTasksVirtuosoTable = React.forwardRef(({ style, className = "", ...props }, ref) => (
+  <table
+    {...props}
+    ref={ref}
+    className={`crm-task-table crm-task-table--expanded ${className}`.trim()}
+    style={{
+      ...style,
+      width: "100%",
+      tableLayout: "fixed"
+    }}
+  />
+));
+CrmTasksVirtuosoTable.displayName = "CrmTasksVirtuosoTable";
+
+const CrmTasksVirtuosoTableHead = React.forwardRef(({ style, className = "", ...props }, ref) => (
+  <thead {...props} ref={ref} className={className} style={{ ...style }} />
+));
+CrmTasksVirtuosoTableHead.displayName = "CrmTasksVirtuosoTableHead";
+
+const CrmTasksVirtuosoTableBody = React.forwardRef(({ style, className = "", ...props }, ref) => (
+  <tbody {...props} ref={ref} className={className} style={{ ...style }} />
+));
+CrmTasksVirtuosoTableBody.displayName = "CrmTasksVirtuosoTableBody";
+
 const formatDateTime = (value) => {
   if (!value) return "-";
   const parsed = new Date(value);
@@ -74,6 +143,14 @@ const formatDateTime = (value) => {
 };
 
 const getEntityId = (value) => String(value?._id || value?.id || "").trim();
+
+const toLocalDateTimeInputValue = (value) => {
+  if (!value) return "";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "";
+  const adjusted = new Date(parsed.getTime() - parsed.getTimezoneOffset() * 60000);
+  return adjusted.toISOString().slice(0, 16);
+};
 
 const toIsoDateTime = (value) => {
   if (!value) return null;
@@ -149,23 +226,63 @@ const getInitialTaskForm = (currentUserId = "") => ({
   comment: ""
 });
 
+const getTaskFormFromTask = (task = {}, currentUserId = "") => ({
+  contactId: getEntityId(task?.contactId),
+  title: String(task?.title || ""),
+  description: String(task?.description || ""),
+  dueAt: toLocalDateTimeInputValue(task?.dueAt),
+  reminderAt: toLocalDateTimeInputValue(task?.reminderAt),
+  priority: String(task?.priority || "medium"),
+  taskType: String(task?.taskType || "follow_up"),
+  assignedTo: String(task?.assignedTo || "").trim() || String(currentUserId || "").trim(),
+  recurrenceFrequency: String(task?.recurrence?.frequency || "none"),
+  recurrenceInterval: String(task?.recurrence?.interval || "1"),
+  comment: ""
+});
+
 const CrmTasks = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const requestedBucketFilter = String(searchParams.get("bucket") || "all").trim().toLowerCase();
+  const requestedStatusFilter = String(searchParams.get("status") || "all").trim().toLowerCase();
+  const requestedPriorityFilter = String(searchParams.get("priority") || "all").trim().toLowerCase();
+  const requestedTaskTypeFilter = String(searchParams.get("taskType") || "all").trim().toLowerCase();
+  const requestedAssignedToFilter = String(searchParams.get("assignedTo") || "all").trim();
+  const requestedSearchQuery = String(searchParams.get("q") || "").trim();
   const [tasks, setTasks] = useState([]);
-  const [contacts, setContacts] = useState([]);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [busyTaskId, setBusyTaskId] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [error, setError] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [priorityFilter, setPriorityFilter] = useState("all");
-  const [bucketFilter, setBucketFilter] = useState("all");
-  const [taskTypeFilter, setTaskTypeFilter] = useState("all");
-  const [assignedToFilter, setAssignedToFilter] = useState("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState(() =>
+    TASK_STATUSES.some((status) => status.key === requestedStatusFilter)
+      ? requestedStatusFilter
+      : "all"
+  );
+  const [priorityFilter, setPriorityFilter] = useState(() =>
+    TASK_PRIORITIES.some((priority) => priority.key === requestedPriorityFilter)
+      ? requestedPriorityFilter
+      : "all"
+  );
+  const [bucketFilter, setBucketFilter] = useState(() =>
+    TASK_BUCKETS.some((bucket) => bucket.key === requestedBucketFilter)
+      ? requestedBucketFilter
+      : "all"
+  );
+  const [taskTypeFilter, setTaskTypeFilter] = useState(() =>
+    TASK_TYPES.some((taskType) => taskType.key === requestedTaskTypeFilter)
+      ? requestedTaskTypeFilter
+      : "all"
+  );
+  const [assignedToFilter, setAssignedToFilter] = useState(() =>
+    requestedAssignedToFilter ? requestedAssignedToFilter : "all"
+  );
+  const [searchInput, setSearchInput] = useState(requestedSearchQuery);
+  const [searchQuery, setSearchQuery] = useState(requestedSearchQuery);
+  const [nextCursor, setNextCursor] = useState("");
+  const [hasMoreTasks, setHasMoreTasks] = useState(true);
+  const [loadingMoreTasks, setLoadingMoreTasks] = useState(false);
   const [selectedTaskIds, setSelectedTaskIds] = useState([]);
   const [bulkAction, setBulkAction] = useState("complete");
   const [bulkDueAt, setBulkDueAt] = useState("");
@@ -175,14 +292,22 @@ const CrmTasks = () => {
   const [selectedContactId, setSelectedContactId] = useState("");
   const [selectedContact, setSelectedContact] = useState(null);
   const [toast, setToast] = useState(null);
+  const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [editingTaskId, setEditingTaskId] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [activeActionMenuTaskId, setActiveActionMenuTaskId] = useState("");
+  const [actionMenuPosition, setActionMenuPosition] = useState(null);
+  const [taskContactSearch, setTaskContactSearch] = useState("");
+  const [taskContactLoading, setTaskContactLoading] = useState(false);
+  const [taskContactSearchResults, setTaskContactSearchResults] = useState([]);
+  const [users, setUsers] = useState([]);
+  const [usersLoading, setUsersLoading] = useState(false);
+  const [expandedTaskId, setExpandedTaskId] = useState("");
   const hasInitializedFilterEffectRef = useRef(false);
+  const taskContactSearchSeqRef = useRef(0);
+  const taskLoadRequestIdRef = useRef(0);
+  const loadDataRef = useRef(null);
   const currentUserId = resolveCacheUserId();
-  const requestedBucketFilter = String(searchParams.get("bucket") || "all").trim().toLowerCase();
-  const requestedStatusFilter = String(searchParams.get("status") || "all").trim().toLowerCase();
-  const requestedPriorityFilter = String(searchParams.get("priority") || "all").trim().toLowerCase();
-  const requestedTaskTypeFilter = String(searchParams.get("taskType") || "all").trim().toLowerCase();
-  const requestedAssignedToFilter = String(searchParams.get("assignedTo") || "all").trim();
-  const requestedSearchQuery = String(searchParams.get("q") || "").trim();
   const [form, setForm] = useState(() => getInitialTaskForm(currentUserId));
   const isDefaultView =
     statusFilter === "all" &&
@@ -198,89 +323,198 @@ const CrmTasks = () => {
     return () => window.clearTimeout(timer);
   }, [toast]);
 
+  const resetTaskForm = useCallback(() => {
+    setEditingTaskId("");
+    setForm(getInitialTaskForm(currentUserId));
+  }, [currentUserId]);
+
+  const closeTaskModal = useCallback(() => {
+    setCreateTaskOpen(false);
+    resetTaskForm();
+    taskContactSearchSeqRef.current += 1;
+    setTaskContactSearch("");
+    setTaskContactSearchResults([]);
+  }, [resetTaskForm]);
+
+  const openCreateTaskModal = useCallback(() => {
+    resetTaskForm();
+    taskContactSearchSeqRef.current += 1;
+    setTaskContactSearch("");
+    setTaskContactSearchResults([]);
+    setCreateTaskOpen(true);
+  }, [resetTaskForm]);
+
+  const openEditTaskModal = useCallback(
+    (task) => {
+      const taskId = getEntityId(task);
+      if (!taskId) return;
+      setEditingTaskId(taskId);
+      setForm(getTaskFormFromTask(task, currentUserId));
+      taskContactSearchSeqRef.current += 1;
+      const normalizedContact = sanitizeCrmTaskContact(task?.contactId || {});
+      setTaskContactSearch(getTaskContactLabel(normalizedContact));
+      setTaskContactSearchResults(normalizedContact._id || normalizedContact.phone ? [normalizedContact] : []);
+      setCreateTaskOpen(true);
+    },
+    [currentUserId]
+  );
+
+  useEffect(() => {
+    if (!createTaskOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape") {
+        closeTaskModal();
+      }
+    };
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closeTaskModal, createTaskOpen]);
+
+  const closeTaskActionMenu = useCallback(() => {
+    setActiveActionMenuTaskId("");
+    setActionMenuPosition(null);
+  }, []);
+
+  useEffect(() => {
+    if (!activeActionMenuTaskId) return undefined;
+
+    const handleWindowInteract = () => {
+      closeTaskActionMenu();
+    };
+
+    window.addEventListener("click", handleWindowInteract);
+    window.addEventListener("scroll", handleWindowInteract, true);
+    window.addEventListener("resize", handleWindowInteract);
+
+    return () => {
+      window.removeEventListener("click", handleWindowInteract);
+      window.removeEventListener("scroll", handleWindowInteract, true);
+      window.removeEventListener("resize", handleWindowInteract);
+    };
+  }, [activeActionMenuTaskId, closeTaskActionMenu]);
+
   const persistTasksCache = useCallback(
     (nextTasks, nextContacts, nextSummary) => {
       if (!isDefaultView) return;
 
-      writeSidebarPageCache(
-        CRM_TASKS_CACHE_NAMESPACE,
-        {
-          tasks: (Array.isArray(nextTasks) ? nextTasks : [])
-            .map(sanitizeCrmTask)
-            .filter((task) => task._id || task.id || task.title),
-          contacts: (Array.isArray(nextContacts) ? nextContacts : [])
-            .map(sanitizeCrmTaskContact)
-            .filter((contact) => contact._id || contact.id || contact.phone),
-          summary: nextSummary || null
-        },
-        {
-          currentUserId,
-          ttlMs: CRM_TASKS_CACHE_TTL_MS
-        }
-      );
+      const cachePayload = {
+        tasks: (Array.isArray(nextTasks) ? nextTasks : [])
+          .map(sanitizeCrmTask)
+          .filter((task) => task._id || task.id || task.title),
+        summary: nextSummary || null
+      };
+
+      if (Array.isArray(nextContacts)) {
+        cachePayload.contacts = nextContacts
+          .map(sanitizeCrmTaskContact)
+          .filter((contact) => contact._id || contact.id || contact.phone);
+      }
+
+      writeSidebarPageCache(CRM_TASKS_CACHE_NAMESPACE, cachePayload, {
+        currentUserId,
+        ttlMs: CRM_TASKS_CACHE_TTL_MS
+      });
     },
     [currentUserId, isDefaultView]
   );
 
   const loadData = useCallback(
-    async ({ silent = false } = {}) => {
+    async ({ silent = false, append = false, cursor = "" } = {}) => {
+      const requestId = ++taskLoadRequestIdRef.current;
       const releaseLoadingGuard = startLoadingTimeoutGuard(
         () => {
-          if (silent) setRefreshing(false);
-          else setLoading(false);
+          if (!silent && !append) setLoading(false);
         },
         CRM_TASKS_LOADING_TIMEOUT_MS
       );
       try {
-        if (silent) setRefreshing(true);
-        else setLoading(true);
+        if (append) {
+          setLoadingMoreTasks(true);
+        } else if (!silent) {
+          setLoading(true);
+          setTasks([]);
+        }
         setError("");
+        if (!append) {
+          setHasMoreTasks(true);
+          setNextCursor("");
+          setSelectedTaskIds([]);
+          setExpandedTaskId("");
+        }
 
-        const taskParams = { limit: 200 };
+        const normalizedSearch = String(searchQuery || "").trim();
+        const taskParams = {
+          limit: CRM_TASKS_SCROLL_CHUNK_SIZE,
+          cursorMode: "true"
+        };
+        if (normalizedSearch) taskParams.search = normalizedSearch;
         if (statusFilter !== "all") taskParams.status = statusFilter;
         if (priorityFilter !== "all") taskParams.priority = priorityFilter;
         if (bucketFilter !== "all") taskParams.bucket = bucketFilter;
         if (taskTypeFilter !== "all") taskParams.taskType = taskTypeFilter;
         if (assignedToFilter !== "all") taskParams.assignedTo = assignedToFilter;
+        if (append && cursor) taskParams.cursor = cursor;
 
-        const summaryParams = {};
+        const summaryParams = { ...taskParams };
         if (assignedToFilter !== "all") summaryParams.assignedTo = assignedToFilter;
+        delete summaryParams.limit;
+        delete summaryParams.cursor;
+        delete summaryParams.cursorMode;
 
-        const [tasksResult, contactsResult, summaryResult] = await Promise.all([
+        const [tasksResult, summaryResult] = await Promise.all([
           crmService.getTasks(taskParams),
-          crmService.getContacts({ limit: 300 }),
           crmService.getTaskSummary(summaryParams)
         ]);
+        if (requestId !== taskLoadRequestIdRef.current) return;
 
         if (tasksResult?.success === false) {
           throw new Error(tasksResult?.error || "Failed to fetch tasks");
-        }
-        if (contactsResult?.success === false) {
-          throw new Error(contactsResult?.error || "Failed to fetch contacts");
         }
         if (summaryResult?.success === false) {
           throw new Error(summaryResult?.error || "Failed to fetch task summary");
         }
 
-        const nextTasks = Array.isArray(tasksResult?.data) ? tasksResult.data.map(sanitizeCrmTask) : [];
-        const nextContacts = Array.isArray(contactsResult?.data)
-          ? contactsResult.data.map(sanitizeCrmTaskContact)
-          : [];
+        const nextTasks = normalizeTaskApiList(tasksResult?.data).map(sanitizeCrmTask);
         const nextSummary = summaryResult?.data || null;
 
-        setTasks(nextTasks);
-        setContacts(nextContacts);
+        const mergedTasks = append ? [...tasks] : [];
+        if (append) {
+          const existingIds = new Set(mergedTasks.map(getEntityId));
+          nextTasks.forEach((task) => {
+            const taskId = getEntityId(task);
+            if (!taskId || existingIds.has(taskId)) return;
+            existingIds.add(taskId);
+            mergedTasks.push(task);
+          });
+        } else {
+          mergedTasks.push(...nextTasks);
+        }
+        setTasks(mergedTasks);
         setSummary(nextSummary);
+        setHasMoreTasks(Boolean(tasksResult?.hasMore));
+        setNextCursor(String(tasksResult?.nextCursor || ""));
         setSelectedTaskIds((previous) =>
-          previous.filter((taskId) => nextTasks.some((task) => getEntityId(task) === taskId))
+          previous.filter((taskId) => mergedTasks.some((task) => getEntityId(task) === taskId))
         );
-        persistTasksCache(nextTasks, nextContacts, nextSummary);
+        if (!append) {
+          persistTasksCache(mergedTasks, null, nextSummary);
+        }
       } catch (loadError) {
+        if (requestId !== taskLoadRequestIdRef.current) return;
         setError(loadError?.message || "Failed to load CRM tasks");
       } finally {
         releaseLoadingGuard();
+        if (requestId !== taskLoadRequestIdRef.current) return;
         setLoading(false);
-        setRefreshing(false);
+        setLoadingMoreTasks(false);
       }
     },
     [
@@ -288,16 +522,22 @@ const CrmTasks = () => {
       bucketFilter,
       persistTasksCache,
       priorityFilter,
+      searchQuery,
       statusFilter,
-      taskTypeFilter
+      taskTypeFilter,
+      tasks
     ]
   );
+
+  useEffect(() => {
+    loadDataRef.current = loadData;
+  }, [loadData]);
 
   const handleRealtimeRefresh = useCallback(() => {
     loadData({ silent: true });
   }, [loadData]);
 
-  useCrmRealtimeRefresh({
+  const crmRealtime = useCrmRealtimeRefresh({
     currentUserId,
     onRefresh: handleRealtimeRefresh
   });
@@ -305,56 +545,6 @@ const CrmTasks = () => {
   useEffect(() => {
     setForm(getInitialTaskForm(currentUserId));
   }, [currentUserId]);
-
-  useEffect(() => {
-    const isValidBucket = TASK_BUCKETS.some((bucket) => bucket.key === requestedBucketFilter);
-    if (isValidBucket && bucketFilter !== requestedBucketFilter) {
-      setBucketFilter(requestedBucketFilter);
-    }
-
-    const isValidStatus =
-      requestedStatusFilter === "all" ||
-      TASK_STATUSES.some((status) => status.key === requestedStatusFilter);
-    if (isValidStatus && statusFilter !== requestedStatusFilter) {
-      setStatusFilter(requestedStatusFilter);
-    }
-
-    const isValidPriority =
-      requestedPriorityFilter === "all" ||
-      TASK_PRIORITIES.some((priority) => priority.key === requestedPriorityFilter);
-    if (isValidPriority && priorityFilter !== requestedPriorityFilter) {
-      setPriorityFilter(requestedPriorityFilter);
-    }
-
-    const isValidTaskType =
-      requestedTaskTypeFilter === "all" ||
-      TASK_TYPES.some((taskType) => taskType.key === requestedTaskTypeFilter);
-    if (isValidTaskType && taskTypeFilter !== requestedTaskTypeFilter) {
-      setTaskTypeFilter(requestedTaskTypeFilter);
-    }
-
-    const normalizedRequestedAssignedTo = requestedAssignedToFilter || "all";
-    if (assignedToFilter !== normalizedRequestedAssignedTo) {
-      setAssignedToFilter(normalizedRequestedAssignedTo);
-    }
-
-    if (searchQuery !== requestedSearchQuery) {
-      setSearchQuery(requestedSearchQuery);
-    }
-  }, [
-    assignedToFilter,
-    bucketFilter,
-    priorityFilter,
-    requestedAssignedToFilter,
-    requestedBucketFilter,
-    requestedPriorityFilter,
-    requestedSearchQuery,
-    requestedStatusFilter,
-    requestedTaskTypeFilter,
-    searchQuery,
-    statusFilter,
-    taskTypeFilter
-  ]);
 
   useEffect(() => {
     const desiredBucket = String(bucketFilter || "all").trim().toLowerCase();
@@ -400,6 +590,9 @@ const CrmTasks = () => {
     if (!desiredSearch) nextParams.delete("q");
     else nextParams.set("q", desiredSearch);
 
+    nextParams.delete("page");
+    nextParams.delete("limit");
+
     setSearchParams(nextParams, { replace: true });
   }, [
     assignedToFilter,
@@ -418,79 +611,168 @@ const CrmTasks = () => {
       allowStale: true
     });
 
+    const markInitialized = () => {
+      window.setTimeout(() => {
+        hasInitializedFilterEffectRef.current = true;
+      }, 0);
+    };
+
     if (Array.isArray(cachedTasks?.data?.tasks)) {
       setTasks(cachedTasks.data.tasks.map(sanitizeCrmTask));
-      setContacts(
-        Array.isArray(cachedTasks?.data?.contacts)
-          ? cachedTasks.data.contacts.map(sanitizeCrmTaskContact)
-          : []
-      );
       setSummary(cachedTasks?.data?.summary || null);
       setLoading(false);
-      loadData({ silent: true });
+      loadDataRef.current?.({ silent: true });
+      markInitialized();
       return;
     }
 
-    loadData();
-  }, [currentUserId, loadData]);
+    loadDataRef.current?.();
+    markInitialized();
+  }, [currentUserId]);
 
   useEffect(() => {
     if (!hasInitializedFilterEffectRef.current) {
       hasInitializedFilterEffectRef.current = true;
       return undefined;
     }
-    loadData({ silent: true });
-  }, [assignedToFilter, bucketFilter, loadData, priorityFilter, statusFilter, taskTypeFilter]);
+    loadDataRef.current?.({ silent: true });
+    setSelectedTaskIds([]);
+    setExpandedTaskId("");
+  }, [
+    assignedToFilter,
+    bucketFilter,
+    priorityFilter,
+    searchQuery,
+    statusFilter,
+    taskTypeFilter
+  ]);
+
+  useEffect(() => {
+    if (searchInput === searchQuery) return undefined;
+    const timer = window.setTimeout(() => {
+      setSearchQuery(String(searchInput || "").trim());
+      setSelectedTaskIds([]);
+      setExpandedTaskId("");
+    }, CRM_TASK_SEARCH_DEBOUNCE_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [searchInput, searchQuery]);
+
+  useEffect(() => {
+    let mounted = true;
+    const loadUsers = async () => {
+      try {
+        setUsersLoading(true);
+        const result = await apiService.getUsers();
+        if (!mounted) return;
+        const nextUsers = normalizeUserApiList(result?.data || result?.users || result?.results || result);
+        setUsers(nextUsers);
+      } catch (userError) {
+        if (!mounted) return;
+        setUsers([]);
+      } finally {
+        if (mounted) setUsersLoading(false);
+      }
+    };
+
+    loadUsers();
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!createTaskOpen) {
+      setTaskContactSearch("");
+      setTaskContactSearchResults([]);
+      setTaskContactLoading(false);
+      return undefined;
+    }
+
+    const query = String(taskContactSearch || "").trim();
+    const loadContacts = async () => {
+      const requestSeq = taskContactSearchSeqRef.current + 1;
+      taskContactSearchSeqRef.current = requestSeq;
+      try {
+        setTaskContactLoading(true);
+        const result = await crmService.getContacts({
+          search: query,
+          limit: CRM_TASK_CONTACT_PAGE_SIZE,
+          page: 1
+        });
+        if (taskContactSearchSeqRef.current !== requestSeq) return;
+        const nextContacts = normalizeTaskApiList(result?.data).map(sanitizeCrmTaskContact);
+        setTaskContactSearchResults(nextContacts);
+      } catch (contactError) {
+        if (taskContactSearchSeqRef.current !== requestSeq) return;
+        setTaskContactSearchResults([]);
+      } finally {
+        if (taskContactSearchSeqRef.current === requestSeq) {
+          setTaskContactLoading(false);
+        }
+      }
+    };
+
+    const timer = window.setTimeout(loadContacts, CRM_TASK_CONTACT_SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [createTaskOpen, taskContactSearch]);
 
   const contactOptions = useMemo(
     () =>
-      contacts.map((contact) => ({
+      taskContactSearchResults.map((contact) => ({
         id: getEntityId(contact),
-        label: `${contact?.name || "Unknown"} (${contact?.phone || "-"})`
+        label: getTaskContactLabel(contact)
       })),
-    [contacts]
+    [taskContactSearchResults]
   );
 
   const assigneeOptions = useMemo(() => {
-    const uniqueValues = new Set();
-    [currentUserId, bulkAssignedTo, form.assignedTo].forEach((value) => {
-      const normalized = String(value || "").trim();
-      if (normalized) uniqueValues.add(normalized);
-    });
-    contacts.forEach((contact) => {
-      const normalized = String(contact?.ownerId || "").trim();
-      if (normalized) uniqueValues.add(normalized);
-    });
-    tasks.forEach((task) => {
-      const normalized = String(task?.assignedTo || "").trim();
-      if (normalized) uniqueValues.add(normalized);
-    });
-    return Array.from(uniqueValues).map((value) => ({
-      id: value,
-      label: value === currentUserId ? `${value} (Me)` : value
-    }));
-  }, [bulkAssignedTo, contacts, currentUserId, form.assignedTo, tasks]);
+    const uniqueUsers = [];
+    const seen = new Set();
 
-  const filteredTasks = useMemo(() => {
-    const normalizedQuery = String(searchQuery || "").trim().toLowerCase();
-    if (!normalizedQuery) return tasks;
-    return tasks.filter((task) => {
-      const title = String(task?.title || "").toLowerCase();
-      const description = String(task?.description || "").toLowerCase();
-      const contactName = String(task?.contactId?.name || "").toLowerCase();
-      const contactPhone = String(task?.contactId?.phone || "").toLowerCase();
-      const assignedTo = String(task?.assignedTo || "").toLowerCase();
-      return (
-        title.includes(normalizedQuery) ||
-        description.includes(normalizedQuery) ||
-        contactName.includes(normalizedQuery) ||
-        contactPhone.includes(normalizedQuery) ||
-        assignedTo.includes(normalizedQuery)
-      );
-    });
-  }, [searchQuery, tasks]);
+    const addUser = (user, fallbackId = "") => {
+      const userId = String(user?._id || user?.id || user?.userId || fallbackId || "").trim();
+      if (!userId || seen.has(userId)) return;
+      seen.add(userId);
+      uniqueUsers.push({
+        id: userId,
+        label: getUserDisplayLabel(user, currentUserId)
+      });
+    };
+
+    users.forEach((user) => addUser(user));
+    if (currentUserId) {
+      addUser({ _id: currentUserId, name: currentUserId }, currentUserId);
+    }
+    if (bulkAssignedTo) {
+      addUser({ _id: bulkAssignedTo, name: bulkAssignedTo }, bulkAssignedTo);
+    }
+    if (form.assignedTo) {
+      addUser({ _id: form.assignedTo, name: form.assignedTo }, form.assignedTo);
+    }
+
+    return uniqueUsers;
+  }, [bulkAssignedTo, currentUserId, form.assignedTo, users]);
 
   const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
+  const selectionMode = selectedTaskIds.length > 0;
+  const isEditingTask = Boolean(editingTaskId);
+  const activeActionTask = useMemo(
+    () => tasks.find((task) => getEntityId(task) === activeActionMenuTaskId) || null,
+    [activeActionMenuTaskId, tasks]
+  );
+
+  useEffect(() => {
+    setSelectedTaskIds((previous) => {
+      if (!previous.length) return previous;
+      const visibleTaskIds = tasks.map((task) => getEntityId(task)).filter(Boolean);
+      const next = previous.filter((taskId) => visibleTaskIds.includes(taskId));
+      if (next.length === previous.length && next.every((taskId, index) => taskId === previous[index])) {
+        return previous;
+      }
+      return next;
+    });
+  }, [tasks]);
 
   const handleCreateTask = useCallback(
     async (event) => {
@@ -521,29 +803,47 @@ const CrmTasks = () => {
             interval: Math.max(Number(form.recurrenceInterval) || 1, 1)
           };
         }
-        if (String(form.comment || "").trim()) {
-          payload.comment = String(form.comment || "").trim();
+        const commentText = String(form.comment || "").trim();
+
+        if (editingTaskId) {
+          const result = await crmService.updateTask(editingTaskId, payload);
+          if (result?.success === false) {
+            throw new Error(result?.error || "Failed to update task");
+          }
+
+          if (commentText) {
+            try {
+              await crmService.addTaskComment(editingTaskId, commentText);
+            } catch (commentError) {
+              console.error(commentError);
+            }
+          }
+
+          setToast({ type: "success", message: "Task updated successfully." });
+        } else {
+          if (commentText) {
+            payload.comment = commentText;
+          }
+          const result = await crmService.createTask(payload);
+          if (result?.success === false) {
+            throw new Error(result?.error || "Failed to create task");
+          }
+          setToast({ type: "success", message: "Task created successfully." });
         }
 
-        const result = await crmService.createTask(payload);
-        if (result?.success === false) {
-          throw new Error(result?.error || "Failed to create task");
-        }
-
-        setForm(getInitialTaskForm(currentUserId));
         await loadData({ silent: true });
-        setToast({ type: "success", message: "Task created successfully." });
+        closeTaskModal();
       } catch (submitError) {
-        setError(submitError?.message || "Failed to create task");
+        setError(submitError?.message || "Failed to save task");
         setToast({
           type: "error",
-          message: submitError?.message || "Failed to create task"
+          message: submitError?.message || "Failed to save task"
         });
       } finally {
         setSubmitting(false);
       }
     },
-    [currentUserId, form, loadData]
+    [closeTaskModal, editingTaskId, form, loadData]
   );
 
   const handleTaskStatusChange = useCallback(
@@ -691,6 +991,46 @@ const CrmTasks = () => {
     }
   }, [bulkAction, bulkAssignedTo, bulkDueAt, bulkReminderAt, loadData, selectedTaskIds]);
 
+  const handleBulkDeleteSelected = useCallback(async () => {
+    if (!selectedTaskIds.length) {
+      setError("Select at least one task");
+      return;
+    }
+
+    if (!window.confirm(`Delete ${selectedTaskIds.length} selected task(s)?`)) {
+      return;
+    }
+
+    try {
+      setBulkBusy(true);
+      setError("");
+
+      const result = await crmService.bulkUpdateTasks({
+        taskIds: selectedTaskIds,
+        action: "delete"
+      });
+
+      if (result?.success === false) {
+        throw new Error(result?.error || "Failed to delete selected tasks");
+      }
+
+      setSelectedTaskIds([]);
+      await loadData({ silent: true });
+      setToast({
+        type: "success",
+        message: `Deleted ${selectedTaskIds.length} selected task(s).`
+      });
+    } catch (bulkError) {
+      setError(bulkError?.message || "Failed to delete selected tasks");
+      setToast({
+        type: "error",
+        message: bulkError?.message || "Failed to delete selected tasks"
+      });
+    } finally {
+      setBulkBusy(false);
+    }
+  }, [loadData, selectedTaskIds]);
+
   const openContactDrawer = useCallback((contact) => {
     const normalizedId = getEntityId(contact);
     setSelectedContactId(normalizedId);
@@ -702,7 +1042,7 @@ const CrmTasks = () => {
     if (!normalizedId) return;
 
     setSelectedContact(updatedContact);
-    setContacts((previous) =>
+    setTaskContactSearchResults((previous) =>
       previous.map((contact) =>
         getEntityId(contact) === normalizedId ? { ...contact, ...updatedContact } : contact
       )
@@ -727,23 +1067,101 @@ const CrmTasks = () => {
     setSelectedContact(null);
   }, []);
 
+  const resetTaskWindow = useCallback(() => {
+    setSelectedTaskIds([]);
+    setExpandedTaskId("");
+    closeTaskActionMenu();
+  }, []);
+
+  const setBucketFilterAndReset = useCallback((value) => {
+    setBucketFilter(value);
+    resetTaskWindow();
+  }, [resetTaskWindow]);
+
+  const setStatusFilterAndReset = useCallback((value) => {
+    setStatusFilter(value);
+    resetTaskWindow();
+  }, [resetTaskWindow]);
+
+  const setPriorityFilterAndReset = useCallback((value) => {
+    setPriorityFilter(value);
+    resetTaskWindow();
+  }, [resetTaskWindow]);
+
+  const setTaskTypeFilterAndReset = useCallback((value) => {
+    setTaskTypeFilter(value);
+    resetTaskWindow();
+  }, [resetTaskWindow]);
+
+  const setAssignedToFilterAndReset = useCallback((value) => {
+    setAssignedToFilter(value);
+    resetTaskWindow();
+  }, [resetTaskWindow]);
+
+  const toggleSearchInput = useCallback((value) => {
+    setSearchInput(value);
+  }, []);
+
+  const toggleTaskDetails = useCallback((taskId) => {
+    const normalizedTaskId = String(taskId || "").trim();
+    if (!normalizedTaskId) return;
+    setExpandedTaskId((previous) => (previous === normalizedTaskId ? "" : normalizedTaskId));
+  }, []);
+
+  const handleToggleTaskActions = useCallback(
+    (task, event) => {
+      event.stopPropagation();
+      const taskId = getEntityId(task);
+      if (!taskId) return;
+
+      const isCurrentMenu = String(activeActionMenuTaskId || "") === String(taskId || "");
+      if (isCurrentMenu) {
+        closeTaskActionMenu();
+        return;
+      }
+
+      const rect = event.currentTarget.getBoundingClientRect();
+      const menuWidth = 190;
+      const menuHeight = 178;
+      const viewportPadding = 12;
+      const nextLeft = Math.min(
+        Math.max(viewportPadding, rect.right - menuWidth),
+        window.innerWidth - menuWidth - viewportPadding
+      );
+      const nextTop = window.innerHeight - rect.bottom < menuHeight + viewportPadding
+        ? Math.max(viewportPadding, rect.top - menuHeight - 8)
+        : rect.bottom + 8;
+
+      setActionMenuPosition({ top: nextTop, left: nextLeft });
+      setActiveActionMenuTaskId(taskId);
+    },
+    [activeActionMenuTaskId, closeTaskActionMenu]
+  );
+
   const toggleTaskSelection = useCallback((taskId) => {
+    const normalizedTaskId = String(taskId || "").trim();
+    if (!normalizedTaskId) return;
     setSelectedTaskIds((previous) =>
-      previous.includes(taskId)
-        ? previous.filter((value) => value !== taskId)
-        : [...previous, taskId]
+      previous.includes(normalizedTaskId)
+        ? previous.filter((value) => value !== normalizedTaskId)
+        : [...previous, normalizedTaskId]
     );
   }, []);
 
   const toggleSelectAllVisible = useCallback(() => {
-    const visibleTaskIds = filteredTasks.map((task) => getEntityId(task)).filter(Boolean);
+    const visibleTaskIds = tasks.map((task) => getEntityId(task)).filter(Boolean);
     const allSelected = visibleTaskIds.every((taskId) => selectedTaskIdSet.has(taskId));
     setSelectedTaskIds((previous) =>
       allSelected
         ? previous.filter((taskId) => !visibleTaskIds.includes(taskId))
         : Array.from(new Set([...previous, ...visibleTaskIds]))
     );
-  }, [filteredTasks, selectedTaskIdSet]);
+  }, [selectedTaskIdSet, tasks]);
+
+  const loadMoreTasks = useCallback(() => {
+    if (loading || loadingMoreTasks || !hasMoreTasks || !nextCursor) return;
+    loadDataRef.current?.({ silent: true, append: true, cursor: nextCursor });
+  }, [hasMoreTasks, loading, loadingMoreTasks, nextCursor]);
 
   const summaryCards = [
     { key: "open", label: "Open", value: summary?.open ?? 0, interactive: true },
@@ -767,8 +1185,8 @@ const CrmTasks = () => {
   ];
 
   const allVisibleSelected =
-    filteredTasks.length > 0 &&
-    filteredTasks.every((task) => selectedTaskIdSet.has(getEntityId(task)));
+    tasks.length > 0 &&
+    tasks.every((task) => selectedTaskIdSet.has(getEntityId(task)));
 
   return (
     <>
@@ -776,17 +1194,19 @@ const CrmTasks = () => {
         <CrmToast toast={toast} />
         <CrmPageHeader
           title="CRM Tasks"
-          subtitle="Run follow-ups like a control center with assignees, recurring reminders, comments, and bulk actions."
+          subtitle="Track follow-ups with live updates, filters, task actions, reminders, and bulk operations."
           actions={
-            <button
-              type="button"
-              className="crm-btn crm-btn-secondary"
-              onClick={() => loadData({ silent: true })}
-              disabled={refreshing}
-            >
-              <RefreshCw size={16} className={refreshing ? "spin" : ""} />
-              {refreshing ? "Refreshing..." : "Refresh"}
-            </button>
+            <div className="crm-page-header__action-group">
+              <CrmRealtimeStatus status={crmRealtime.connectionStatus} />
+              <button
+                type="button"
+                className="crm-btn crm-btn-primary crm-btn--compact crm-create-task-trigger"
+                onClick={openCreateTaskModal}
+              >
+                <Plus size={16} />
+                Create Task
+              </button>
+            </div>
           }
         />
 
@@ -799,7 +1219,7 @@ const CrmTasks = () => {
                 className={`crm-summary-card crm-summary-card--button ${
                   bucketFilter === card.key ? "crm-summary-card--active" : ""
                 }`}
-                onClick={() => setBucketFilter(card.key)}
+                onClick={() => setBucketFilterAndReset(card.key)}
               >
                 <strong>{card.value}</strong>
                 <span>{card.label}</span>
@@ -813,195 +1233,347 @@ const CrmTasks = () => {
           )}
         </div>
 
-        <form className="crm-create-task" onSubmit={handleCreateTask}>
-          <h3>
-            <Plus size={16} />
-            Create Task
-          </h3>
-          <div className="crm-create-task-grid crm-create-task-grid--dense">
-            <select
-              className="crm-select"
-              value={form.contactId}
-              onChange={(event) => setForm((previous) => ({ ...previous, contactId: event.target.value }))}
-            >
-              <option value="">Select Contact</option>
-              {contactOptions.map((option) => (
-                <option key={option.id} value={option.id}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <input
-              type="text"
-              className="crm-input"
-              placeholder="Task title"
-              value={form.title}
-              onChange={(event) => setForm((previous) => ({ ...previous, title: event.target.value }))}
+        {createTaskOpen && (
+          <div className="crm-create-task-overlay" role="presentation">
+            <button
+              type="button"
+              className="crm-create-task-backdrop"
+              aria-label="Close create task"
+              onClick={closeTaskModal}
             />
-            <select
-              className="crm-select"
-              value={form.taskType}
-              onChange={(event) => setForm((previous) => ({ ...previous, taskType: event.target.value }))}
+            <section
+              className="crm-create-task-shell crm-create-task-shell--overlay"
+              role="dialog"
+              aria-modal="true"
+              aria-label={isEditingTask ? "Edit Task" : "Create Task"}
             >
-              {TASK_TYPES.map((taskType) => (
-                <option key={taskType.key} value={taskType.key}>
-                  {taskType.label}
-                </option>
-              ))}
-            </select>
-            <select
-              className="crm-select"
-              value={form.priority}
-              onChange={(event) => setForm((previous) => ({ ...previous, priority: event.target.value }))}
-            >
-              {TASK_PRIORITIES.map((priority) => (
-                <option key={priority.key} value={priority.key}>
-                  {priority.label}
-                </option>
-              ))}
-            </select>
-            <select
-              className="crm-select"
-              value={form.assignedTo}
-              onChange={(event) => setForm((previous) => ({ ...previous, assignedTo: event.target.value }))}
-            >
-              <option value="">Unassigned</option>
-              {assigneeOptions.map((assignee) => (
-                <option key={assignee.id} value={assignee.id}>
-                  {assignee.label}
-                </option>
-              ))}
-            </select>
-            <input
-              type="datetime-local"
-              className="crm-input"
-              value={form.dueAt}
-              onChange={(event) => setForm((previous) => ({ ...previous, dueAt: event.target.value }))}
-            />
-            <input
-              type="datetime-local"
-              className="crm-input"
-              value={form.reminderAt}
-              onChange={(event) =>
-                setForm((previous) => ({ ...previous, reminderAt: event.target.value }))
-              }
-            />
-            <select
-              className="crm-select"
-              value={form.recurrenceFrequency}
-              onChange={(event) =>
-                setForm((previous) => ({ ...previous, recurrenceFrequency: event.target.value }))
-              }
-            >
-              {TASK_RECURRENCE_OPTIONS.map((option) => (
-                <option key={option.key} value={option.key}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            <input
-              type="number"
-              min="1"
-              className="crm-input"
-              value={form.recurrenceInterval}
-              onChange={(event) =>
-                setForm((previous) => ({ ...previous, recurrenceInterval: event.target.value }))
-              }
-              disabled={form.recurrenceFrequency === "none"}
-              placeholder="Repeat interval"
-            />
-          </div>
-          <textarea
-            className="crm-textarea"
-            placeholder="Task description (optional)"
-            value={form.description}
-            onChange={(event) => setForm((previous) => ({ ...previous, description: event.target.value }))}
-            rows={3}
-          />
-          <textarea
-            className="crm-textarea"
-            placeholder="Initial comment or context note (optional)"
-            value={form.comment}
-            onChange={(event) => setForm((previous) => ({ ...previous, comment: event.target.value }))}
-            rows={2}
-          />
-          <button type="submit" className="crm-btn crm-btn-primary" disabled={submitting}>
-            {submitting ? "Creating..." : "Create Task"}
-          </button>
-        </form>
+              <form className="crm-create-task" onSubmit={handleCreateTask}>
+                <div className="crm-create-task__header">
+                  <div className="crm-create-task__heading">
+                    <span className="crm-create-task__icon" aria-hidden="true">
+                      {isEditingTask ? <Pencil size={16} /> : <Plus size={16} />}
+                    </span>
+                    <div className="crm-create-task__heading-copy">
+                      <h3>{isEditingTask ? "Edit Task" : "Create Task"}</h3>
+                      <p>
+                        {isEditingTask
+                          ? "Update the task details and save the changes without leaving the page."
+                          : "Prepare the task details and save it without leaving the page."}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="crm-create-task__close"
+                    onClick={closeTaskModal}
+                    aria-label={isEditingTask ? "Close edit task" : "Close create task"}
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
 
-        <CrmFilterBar>
-          <label className="crm-search-input-wrap">
-            <Search size={15} />
+                <div className="crm-create-task__body">
+                  <div className="crm-create-task-grid crm-create-task-grid--primary">
+                    <label className="crm-field">
+                      <span>Contact</span>
+                      <input
+                        type="text"
+                        className="crm-input"
+                        placeholder="Search contacts..."
+                        value={taskContactSearch}
+                        onChange={(event) => {
+                          setTaskContactSearch(event.target.value);
+                          setForm((previous) => ({ ...previous, contactId: "" }));
+                        }}
+                      />
+                      <select
+                        className="crm-select"
+                        value={form.contactId}
+                        onChange={(event) =>
+                          setForm((previous) => ({ ...previous, contactId: event.target.value }))
+                        }
+                      >
+                        <option value="">{taskContactLoading ? "Searching..." : "Select Contact"}</option>
+                        {contactOptions.map((option) => (
+                          <option key={option.id} value={option.id}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                      <span className="crm-field__help">
+                        {taskContactLoading
+                          ? "Loading matching contacts..."
+                          : "Search to narrow the contact list before selecting a task contact."}
+                      </span>
+                    </label>
+                    <label className="crm-field">
+                      <span>Task Title</span>
+                      <input
+                        type="text"
+                        className="crm-input"
+                        placeholder="Task title"
+                        value={form.title}
+                        onChange={(event) =>
+                          setForm((previous) => ({ ...previous, title: event.target.value }))
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <div className="crm-create-task-grid crm-create-task-grid--compact">
+                    <label className="crm-field">
+                      <span>Task Type</span>
+                      <select
+                        className="crm-select"
+                        value={form.taskType}
+                        onChange={(event) =>
+                          setForm((previous) => ({ ...previous, taskType: event.target.value }))
+                        }
+                      >
+                        {TASK_TYPES.map((taskType) => (
+                          <option key={taskType.key} value={taskType.key}>
+                            {taskType.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="crm-field">
+                      <span>Priority</span>
+                      <select
+                        className="crm-select"
+                        value={form.priority}
+                        onChange={(event) =>
+                          setForm((previous) => ({ ...previous, priority: event.target.value }))
+                        }
+                      >
+                        {TASK_PRIORITIES.map((priority) => (
+                          <option key={priority.key} value={priority.key}>
+                            {priority.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="crm-field">
+                      <span>Assigned To</span>
+                      <select
+                        className="crm-select"
+                        value={form.assignedTo}
+                        onChange={(event) =>
+                          setForm((previous) => ({ ...previous, assignedTo: event.target.value }))
+                        }
+                        disabled={usersLoading && users.length === 0}
+                      >
+                        <option value="">{usersLoading && users.length === 0 ? "Loading users..." : "Unassigned"}</option>
+                        {assigneeOptions.map((assignee) => (
+                          <option key={assignee.id} value={assignee.id}>
+                            {assignee.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  </div>
+
+                  <div className="crm-create-task-grid crm-create-task-grid--compact crm-create-task-grid--schedule">
+                    <label className="crm-field">
+                      <span>Due At</span>
+                      <input
+                        type="datetime-local"
+                        className="crm-input"
+                        value={form.dueAt}
+                        onChange={(event) =>
+                          setForm((previous) => ({ ...previous, dueAt: event.target.value }))
+                        }
+                      />
+                    </label>
+                    <label className="crm-field">
+                      <span>Reminder</span>
+                      <input
+                        type="datetime-local"
+                        className="crm-input"
+                        value={form.reminderAt}
+                        onChange={(event) =>
+                          setForm((previous) => ({ ...previous, reminderAt: event.target.value }))
+                        }
+                      />
+                    </label>
+                  </div>
+
+                  <div className="crm-create-task-grid crm-create-task-grid--compact crm-create-task-grid--recurrence">
+                    <label className="crm-field">
+                      <span>Repeat</span>
+                      <select
+                        className="crm-select"
+                        value={form.recurrenceFrequency}
+                        onChange={(event) =>
+                          setForm((previous) => ({ ...previous, recurrenceFrequency: event.target.value }))
+                        }
+                      >
+                        {TASK_RECURRENCE_OPTIONS.map((option) => (
+                          <option key={option.key} value={option.key}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="crm-field">
+                      <span>Repeat Every</span>
+                      <input
+                        type="number"
+                        min="1"
+                        className="crm-input"
+                        value={form.recurrenceInterval}
+                        onChange={(event) =>
+                          setForm((previous) => ({ ...previous, recurrenceInterval: event.target.value }))
+                        }
+                        disabled={form.recurrenceFrequency === "none"}
+                        placeholder="Repeat interval"
+                      />
+                    </label>
+                  </div>
+
+                  <label className="crm-field crm-field--span-full crm-create-task__full-row">
+                    <span>Description</span>
+                    <textarea
+                      className="crm-textarea"
+                      placeholder="Task description (optional)"
+                      value={form.description}
+                      onChange={(event) =>
+                        setForm((previous) => ({ ...previous, description: event.target.value }))
+                      }
+                      rows={3}
+                    />
+                  </label>
+
+                    <label className="crm-field crm-field--span-full crm-create-task__full-row">
+                      <span>Initial Comment</span>
+                      <textarea
+                        className="crm-textarea"
+                        placeholder={isEditingTask ? "Add a follow-up note (optional)" : "Initial comment or context note (optional)"}
+                        value={form.comment}
+                        onChange={(event) =>
+                          setForm((previous) => ({ ...previous, comment: event.target.value }))
+                      }
+                      rows={2}
+                    />
+                  </label>
+                </div>
+
+                <div className="crm-create-task__footer">
+                  <button
+                    type="submit"
+                    className="crm-btn crm-btn-primary crm-create-task__submit"
+                    disabled={submitting}
+                  >
+                    {submitting ? (isEditingTask ? "Saving..." : "Creating...") : isEditingTask ? "Save Changes" : "Create Task"}
+                  </button>
+                </div>
+              </form>
+            </section>
+          </div>
+        )}
+
+        <div className="crm-task-controls">
+          <label className="crm-task-search">
+            <Search size={16} className="crm-task-search__icon" />
             <input
               type="text"
               className="crm-input crm-input--inline"
               placeholder="Search tasks, assignees, or contacts..."
-              value={searchQuery}
-              onChange={(event) => setSearchQuery(event.target.value)}
+              value={searchInput}
+              onChange={(event) => toggleSearchInput(event.target.value)}
             />
           </label>
-          <select
-            className="crm-select"
-            value={bucketFilter}
-            onChange={(event) => setBucketFilter(event.target.value)}
+          <button
+            type="button"
+            className={`crm-btn crm-btn-secondary crm-btn--compact crm-task-filter-toggle ${
+              showFilters ? "active" : ""
+            }`}
+            onClick={() => setShowFilters((previous) => !previous)}
+            aria-expanded={showFilters}
+            aria-label="Toggle task filters"
           >
-            {TASK_BUCKETS.map((bucket) => (
-              <option key={bucket.key} value={bucket.key}>
-                {bucket.label}
-              </option>
-            ))}
-          </select>
-          <select
-            className="crm-select"
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.target.value)}
-          >
-            <option value="all">All Statuses</option>
-            {TASK_STATUSES.map((status) => (
-              <option key={status.key} value={status.key}>
-                {status.label}
-              </option>
-            ))}
-          </select>
-          <select
-            className="crm-select"
-            value={priorityFilter}
-            onChange={(event) => setPriorityFilter(event.target.value)}
-          >
-            <option value="all">All Priorities</option>
-            {TASK_PRIORITIES.map((priority) => (
-              <option key={priority.key} value={priority.key}>
-                {priority.label}
-              </option>
-            ))}
-          </select>
-          <select
-            className="crm-select"
-            value={taskTypeFilter}
-            onChange={(event) => setTaskTypeFilter(event.target.value)}
-          >
-            <option value="all">All Task Types</option>
-            {TASK_TYPES.map((taskType) => (
-              <option key={taskType.key} value={taskType.key}>
-                {taskType.label}
-              </option>
-            ))}
-          </select>
-          <select
-            className="crm-select"
-            value={assignedToFilter}
-            onChange={(event) => setAssignedToFilter(event.target.value)}
-          >
-            <option value="all">All Assignees</option>
-            {currentUserId && <option value={currentUserId}>My Tasks</option>}
-            {assigneeOptions.map((assignee) => (
-              <option key={assignee.id} value={assignee.id}>
-                {assignee.label}
-              </option>
-            ))}
-          </select>
-        </CrmFilterBar>
+            <SlidersHorizontal size={16} />
+            Filter
+          </button>
+        </div>
+
+        {showFilters && (
+            <div className="crm-task-filters-panel">
+              <CrmFilterBar>
+                <select
+                  className="crm-select"
+                  value={bucketFilter}
+                onChange={(event) => setBucketFilterAndReset(event.target.value)}
+              >
+                {TASK_BUCKETS.map((bucket) => (
+                  <option key={bucket.key} value={bucket.key}>
+                    {bucket.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="crm-select"
+                value={statusFilter}
+                onChange={(event) => setStatusFilterAndReset(event.target.value)}
+              >
+                <option value="all">All Statuses</option>
+                {TASK_STATUSES.map((status) => (
+                  <option key={status.key} value={status.key}>
+                    {status.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="crm-select"
+                value={priorityFilter}
+                onChange={(event) => setPriorityFilterAndReset(event.target.value)}
+              >
+                <option value="all">All Priorities</option>
+                {TASK_PRIORITIES.map((priority) => (
+                  <option key={priority.key} value={priority.key}>
+                    {priority.label}
+                  </option>
+                ))}
+              </select>
+              <select
+                className="crm-select"
+                value={taskTypeFilter}
+                onChange={(event) => setTaskTypeFilterAndReset(event.target.value)}
+              >
+                <option value="all">All Task Types</option>
+                {TASK_TYPES.map((taskType) => (
+                  <option key={taskType.key} value={taskType.key}>
+                    {taskType.label}
+                  </option>
+                ))}
+              </select>
+                <select
+                  className="crm-select"
+                  value={assignedToFilter}
+                  onChange={(event) => setAssignedToFilterAndReset(event.target.value)}
+                >
+                <option value="all">All Assignees</option>
+                {currentUserId && <option value={currentUserId}>My Tasks</option>}
+                {assigneeOptions.map((assignee) => (
+                  <option key={assignee.id} value={assignee.id}>
+                    {assignee.label}
+                  </option>
+                ))}
+              </select>
+              <div className="crm-task-filter-actions">
+                <button
+                  type="button"
+                  className="crm-btn crm-btn-secondary crm-btn--compact crm-task-select-all-btn"
+                  onClick={toggleSelectAllVisible}
+                  disabled={bulkBusy || tasks.length === 0}
+                  title={selectionMode ? "Clear all visible tasks" : "Select all visible tasks"}
+                >
+                  {selectionMode && allVisibleSelected ? "Clear All Visible" : "Select All Visible"}
+                </button>
+              </div>
+            </CrmFilterBar>
+          </div>
+        )}
 
         {selectedTaskIds.length > 0 && (
           <div className="crm-bulk-bar">
@@ -1015,7 +1587,6 @@ const CrmTasks = () => {
               <option value="cancel">Cancel</option>
               <option value="reschedule">Reschedule</option>
               <option value="assign">Assign</option>
-              <option value="delete">Delete</option>
             </select>
 
             {bulkAction === "assign" && (
@@ -1061,10 +1632,20 @@ const CrmTasks = () => {
             <button
               type="button"
               className="crm-btn crm-btn-secondary"
-              onClick={() => setSelectedTaskIds([])}
+              onClick={resetTaskWindow}
               disabled={bulkBusy}
             >
               Clear
+            </button>
+            <button
+              type="button"
+              className="crm-btn crm-btn-danger crm-btn--compact crm-btn-icon-only"
+              onClick={handleBulkDeleteSelected}
+              disabled={bulkBusy}
+              aria-label="Delete selected tasks"
+              title="Delete selected tasks"
+            >
+              <Trash2 size={16} />
             </button>
           </div>
         )}
@@ -1073,120 +1654,194 @@ const CrmTasks = () => {
         {loading && <CrmPageSkeleton variant="table" />}
 
         {!loading && (
-          <div className="crm-task-table-wrap">
-            <table className="crm-task-table crm-task-table--expanded">
-              <thead>
-                <tr>
-                  <th>
-                    <input
-                      type="checkbox"
-                      checked={allVisibleSelected}
-                      onChange={toggleSelectAllVisible}
-                      aria-label="Select all visible tasks"
-                    />
-                  </th>
-                  <th>Task</th>
-                  <th>Contact</th>
-                  <th>Assignee</th>
-                  <th>Schedule</th>
-                  <th>Status</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredTasks.map((task) => {
-                  const taskId = getEntityId(task);
-                  const contact = task?.contactId || {};
-                  const isBusy = busyTaskId === taskId;
-                  const isCompleted = String(task?.status || "").toLowerCase() === "completed";
-                  const recurrence =
-                    task?.recurrence?.frequency && task.recurrence.frequency !== "none"
-                      ? `${toTaskTypeLabel(task.recurrence.frequency)} x${task.recurrence.interval || 1}`
-                      : "";
-
-                  return (
-                    <tr key={taskId || task.title}>
-                      <td className="crm-task-select-cell">
-                        <input
-                          type="checkbox"
-                          checked={selectedTaskIdSet.has(taskId)}
-                          onChange={() => toggleTaskSelection(taskId)}
-                          aria-label={`Select task ${task?.title || taskId}`}
-                        />
-                      </td>
-                      <td>
-                        <strong>{task?.title || "Untitled"}</strong>
-                        <p>{task?.description || "-"}</p>
-                        <div className="crm-task-chip-row">
-                          <span className="crm-task-chip">{toTaskTypeLabel(task?.taskType)}</span>
-                          <span
-                            className={`crm-priority-badge priority-${String(task?.priority || "medium").toLowerCase()}`}
-                          >
-                            {String(task?.priority || "medium")}
-                          </span>
-                          {recurrence && <span className="crm-task-chip">{recurrence}</span>}
-                        </div>
-                        <div className="crm-task-submeta">
-                          <span>Reminder: {formatDateTime(task?.reminderAt)}</span>
-                          {task?.completedAt && <span>Completed: {formatDateTime(task.completedAt)}</span>}
-                          {task?.completedBy && <span>By: {task.completedBy}</span>}
-                        </div>
-                        {task?.comments?.length > 0 && (
-                          <div className="crm-task-comment-list">
-                            {task.comments.slice(0, 2).map((comment, index) => (
-                              <div key={`${taskId}-comment-${index}`} className="crm-task-comment-item">
-                                <span>{comment.text || "Comment"}</span>
-                                <time>{formatDateTime(comment.createdAt)}</time>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                        <div className="crm-task-comment-composer">
-                          <input
-                            type="text"
-                            className="crm-input crm-input--inline-block"
-                            placeholder="Add internal comment..."
-                            value={commentDrafts?.[taskId] || ""}
-                            onChange={(event) =>
-                              setCommentDrafts((previous) => ({
-                                ...previous,
-                                [taskId]: event.target.value
-                              }))
-                            }
-                          />
-                          <button
-                            type="button"
-                            className="crm-inline-action-btn"
-                            onClick={() => handleAddComment(task)}
-                            disabled={isBusy || !String(commentDrafts?.[taskId] || "").trim()}
-                            title="Add comment"
-                          >
-                            <MessageSquarePlus size={15} />
+          <>
+            <div className="crm-task-table-wrap">
+              {tasks.length === 0 ? (
+                <div className="crm-empty-row crm-empty-row--tasks">
+                  No tasks match this view. Try another bucket, clear filters, or create a new follow-up above.
+                </div>
+              ) : (
+                <TableVirtuoso
+                  style={{ height: "clamp(360px, 56vh, 620px)" }}
+                  data={tasks}
+                  increaseViewportBy={260}
+                  endReached={loadMoreTasks}
+                  components={{
+                    Table: CrmTasksVirtuosoTable,
+                    TableHead: CrmTasksVirtuosoTableHead,
+                    TableBody: CrmTasksVirtuosoTableBody,
+                    Footer: () =>
+                      loadingMoreTasks ? (
+                        <div className="crm-virtual-list-footer">Loading more tasks...</div>
+                      ) : hasMoreTasks ? (
+                        <div className="crm-virtual-list-footer crm-virtual-list-footer--more">
+                          <span>Scroll to load more</span>
+                          <button type="button" className="crm-pagination__btn" onClick={loadMoreTasks}>
+                            Load more tasks
                           </button>
                         </div>
+                      ) : (
+                        <div className="crm-virtual-list-footer">End of task list</div>
+                      )
+                  }}
+                  fixedHeaderContent={() => (
+                    <tr>
+                      {selectionMode && (
+                        <th className="crm-task-col-select">
+                          <input
+                            type="checkbox"
+                            checked={allVisibleSelected}
+                            onChange={toggleSelectAllVisible}
+                            aria-label="Select all visible tasks"
+                          />
+                        </th>
+                      )}
+                      <th className="crm-task-col-task">Task</th>
+                      <th className="crm-task-col-contact">Contact</th>
+                      <th className="crm-task-col-assignee">Assignee</th>
+                      <th className="crm-task-col-schedule">Schedule</th>
+                      <th className="crm-task-col-status">Status</th>
+                      <th className="crm-task-col-actions crm-task-actions-heading">
+                        <span className="crm-task-table-heading">
+                          <MoreVertical size={14} />
+                          Actions
+                        </span>
+                      </th>
+                    </tr>
+                  )}
+                  itemContent={(_, task) => {
+                    const taskId = getEntityId(task);
+                    const contact = task?.contactId || {};
+                    const isBusy = busyTaskId === taskId;
+                    const isCompleted = String(task?.status || "").toLowerCase() === "completed";
+                    const recurrence =
+                      task?.recurrence?.frequency && task.recurrence.frequency !== "none"
+                        ? `${toTaskTypeLabel(task.recurrence.frequency)} x${task.recurrence.interval || 1}`
+                        : "";
+                    const isExpanded = expandedTaskId === taskId;
+
+                    const cells = [];
+                    if (selectionMode) {
+                      cells.push(
+                        <td
+                          key={`${taskId}-select`}
+                          className="crm-task-col-select crm-task-select-cell"
+                          onClick={(event) => event.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selectedTaskIdSet.has(taskId)}
+                            onChange={() => toggleTaskSelection(taskId)}
+                            aria-label={`Select task ${task?.title || taskId}`}
+                          />
+                        </td>
+                      );
+                    }
+
+                    cells.push(
+                      <td key={`${taskId}-task`} className="crm-task-col-task">
+                        <div className="crm-task-primary">
+                          <button
+                            type="button"
+                            className="crm-task-title-toggle"
+                            onClick={() => toggleTaskDetails(taskId)}
+                            title={isExpanded ? "Hide task details" : "Show task details"}
+                          >
+                            <strong className="crm-task-title">{task?.title || "Untitled"}</strong>
+                          </button>
+                          <p className="crm-task-description">{task?.description || "-"}</p>
+                          <div className="crm-task-chip-row">
+                            <span className="crm-task-chip">{toTaskTypeLabel(task?.taskType)}</span>
+                            <span
+                              className={`crm-priority-badge priority-${String(task?.priority || "medium").toLowerCase()}`}
+                            >
+                              {String(task?.priority || "medium")}
+                            </span>
+                            {recurrence && <span className="crm-task-chip">{recurrence}</span>}
+                            {isExpanded && <span className="crm-task-chip crm-task-chip--active">Details open</span>}
+                          </div>
+                          <div className="crm-task-submeta">
+                            <span>Reminder: {formatDateTime(task?.reminderAt)}</span>
+                            {task?.completedAt && <span>Completed: {formatDateTime(task.completedAt)}</span>}
+                            {task?.completedBy && <span>By: {task.completedBy}</span>}
+                          </div>
+                          {isExpanded && (
+                            <div className="crm-task-details-panel">
+                              {task?.comments?.length > 0 && (
+                                <div className="crm-task-comment-list">
+                                  {task.comments.slice(0, 3).map((comment, index) => (
+                                    <div key={`${taskId}-comment-${index}`} className="crm-task-comment-item">
+                                      <span>{comment.text || "Comment"}</span>
+                                      <time>{formatDateTime(comment.createdAt)}</time>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="crm-task-comment-composer">
+                                <input
+                                  type="text"
+                                  className="crm-input crm-input--inline-block"
+                                  placeholder="Add internal comment..."
+                                  value={commentDrafts?.[taskId] || ""}
+                                  onChange={(event) =>
+                                    setCommentDrafts((previous) => ({
+                                      ...previous,
+                                      [taskId]: event.target.value
+                                    }))
+                                  }
+                                />
+                                <button
+                                  type="button"
+                                  className="crm-inline-action-btn"
+                                  onClick={() => handleAddComment(task)}
+                                  disabled={isBusy || !String(commentDrafts?.[taskId] || "").trim()}
+                                  title="Add comment"
+                                >
+                                  <MessageSquarePlus size={15} />
+                                </button>
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       </td>
-                      <td>
+                    );
+
+                    cells.push(
+                      <td key={`${taskId}-contact`} className="crm-task-col-contact">
                         <button
                           type="button"
-                          className="crm-link-btn"
+                          className="crm-link-btn crm-task-contact-name"
                           onClick={() => openContactDrawer(contact)}
                         >
                           {contact?.name || "-"}
                         </button>
-                        <span>{contact?.phone || "-"}</span>
-                        <span>Score: {Number(contact?.leadScore || 0)}</span>
-                        <span>Stage: {toTaskTypeLabel(contact?.stage || "new")}</span>
+                        <span className="crm-task-cell-line">{contact?.phone || "-"}</span>
+                        <span className="crm-task-cell-line">Score: {Number(contact?.leadScore || 0)}</span>
+                        <span className="crm-task-cell-line">Stage: {toTaskTypeLabel(contact?.stage || "new")}</span>
                       </td>
-                      <td>
-                        <strong>{task?.assignedTo || "Unassigned"}</strong>
-                        <span>Owner: {contact?.ownerId || "-"}</span>
+                    );
+
+                    cells.push(
+                      <td key={`${taskId}-assignee`} className="crm-task-col-assignee">
+                        <strong className="crm-task-assignee-value">{task?.assignedTo || "Unassigned"}</strong>
+                        <span className="crm-task-cell-line crm-task-owner-value">
+                          Owner: {contact?.ownerId || "-"}
+                        </span>
                       </td>
-                      <td>
-                        <span>Due: {formatDateTime(task?.dueAt)}</span>
-                        <span>Reminder: {formatDateTime(task?.reminderAt)}</span>
-                        <span>Follow-up: {formatDateTime(contact?.nextFollowUpAt)}</span>
+                    );
+
+                    cells.push(
+                      <td key={`${taskId}-schedule`} className="crm-task-col-schedule">
+                        <span className="crm-task-cell-line">Due: {formatDateTime(task?.dueAt)}</span>
+                        <span className="crm-task-cell-line">Reminder: {formatDateTime(task?.reminderAt)}</span>
+                        <span className="crm-task-cell-line">
+                          Follow-up: {formatDateTime(contact?.nextFollowUpAt)}
+                        </span>
                       </td>
-                      <td>
+                    );
+
+                    cells.push(
+                      <td key={`${taskId}-status`} className="crm-task-col-status">
                         <div className="crm-task-status-cell">
                           <select
                             className="crm-select"
@@ -1205,46 +1860,90 @@ const CrmTasks = () => {
                           )}
                         </div>
                       </td>
-                      <td>
-                        <div className="crm-inline-actions">
+                    );
+
+                    cells.push(
+                      <td key={`${taskId}-actions`} className="crm-task-col-actions crm-task-actions-cell">
+                        <div className="crm-task-row-actions">
                           <button
                             type="button"
-                            className="crm-inline-action-btn"
-                            onClick={() =>
-                              handleTaskStatusChange(
-                                task,
-                                isCompleted ? "pending" : "completed"
-                              )
-                            }
-                            disabled={isBusy}
-                            title="Toggle completed"
+                            className={`crm-task-kebab ${activeActionMenuTaskId === taskId ? "active" : ""}`}
+                            onClick={(event) => handleToggleTaskActions(task, event)}
+                            title="Open task actions"
+                            aria-label="Open task actions"
+                            aria-expanded={activeActionMenuTaskId === taskId}
                           >
-                            <CheckCircle2 size={15} />
+                            <MoreVertical size={18} />
                           </button>
-                          <button
-                            type="button"
-                            className="crm-inline-action-btn crm-inline-action-btn--danger"
-                            onClick={() => handleDeleteTask(task)}
-                            disabled={isBusy}
-                            title="Delete task"
-                          >
-                            <Trash2 size={15} />
-                          </button>
+                          {activeActionMenuTaskId === taskId && activeActionTask && (
+                            <div
+                              className="crm-task-row-actions-menu"
+                              style={actionMenuPosition || undefined}
+                              onClick={(event) => event.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                className="crm-task-row-menu-item open"
+                                onClick={() => {
+                                  closeTaskActionMenu();
+                                  openContactDrawer(contact);
+                                }}
+                              >
+                                <Search size={15} />
+                                <span>Open contact</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="crm-task-row-menu-item edit"
+                                onClick={() => {
+                                  closeTaskActionMenu();
+                                  openEditTaskModal(activeActionTask);
+                                }}
+                                disabled={isBusy}
+                              >
+                                <Pencil size={15} />
+                                <span>Edit</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="crm-task-row-menu-item complete"
+                                onClick={() => {
+                                  closeTaskActionMenu();
+                                  handleTaskStatusChange(
+                                    activeActionTask,
+                                    isCompleted ? "pending" : "completed"
+                                  );
+                                }}
+                                disabled={isBusy}
+                              >
+                                <CheckCircle2 size={15} />
+                                <span>{isCompleted ? "Mark Pending" : "Mark Complete"}</span>
+                              </button>
+                              <button
+                                type="button"
+                                className="crm-task-row-menu-item delete"
+                                onClick={() => {
+                                  closeTaskActionMenu();
+                                  handleDeleteTask(activeActionTask);
+                                }}
+                                disabled={isBusy}
+                              >
+                                <Trash2 size={15} />
+                                <span>Delete</span>
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </td>
-                    </tr>
-                  );
-                })}
-                {filteredTasks.length === 0 && (
-                  <tr>
-                    <td colSpan={7} className="crm-empty-row">
-                      No tasks match this view. Try another bucket, clear filters, or create a new follow-up above.
-                    </td>
-                  </tr>
-                )}
-              </tbody>
-            </table>
-          </div>
+                    );
+
+                    return cells;
+                  }}
+                  computeItemKey={(_, task) => getEntityId(task) || task?.title || "task"}
+                />
+              )}
+            </div>
+          </>
         )}
       </div>
 
