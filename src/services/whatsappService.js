@@ -1,4 +1,4 @@
-// WhatsApp API Service
+﻿// WhatsApp API Service
 import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
 import { registerUnauthorizedAxiosInterceptor } from "./serviceAuth";
@@ -61,6 +61,35 @@ const normalizeServiceErrorMessage = (errorValue, fallback = 'Request failed') =
     return JSON.stringify(errorValue);
   } catch {
     return fallback;
+  }
+};
+
+const toBase64Url = (value = '') => {
+  const normalizedValue = String(value || '');
+  if (typeof btoa === 'function') {
+    return btoa(normalizedValue).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  }
+  if (typeof Buffer !== 'undefined') {
+    return Buffer.from(normalizedValue, 'utf8').toString('base64url');
+  }
+  return '';
+};
+
+const encodeConversationCursor = (conversation = {}) => {
+  const lastMessageTime =
+    conversation?.lastMessageTime || conversation?.updatedAt || conversation?.createdAt || null;
+  const id = String(conversation?._id || conversation?.id || '').trim();
+  if (!lastMessageTime || !id) return '';
+
+  try {
+    return toBase64Url(
+      JSON.stringify({
+        lastMessageTime: new Date(lastMessageTime).toISOString(),
+        id
+      })
+    );
+  } catch {
+    return '';
   }
 };
 
@@ -508,31 +537,58 @@ export const whatsappService = {
 
   async getConversationsPage(filters = {}) {
     try {
+      const requestedLimit = Number(filters?.limit || 0) || null;
       const response = await axios.get(`${API_BASE_URL}/api/conversations`, {
         headers: getAuthHeaders(false),
         params: filters,
         timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
       });
-      const data = response.data || {};
-      if (data?.success === false) {
+      const payload = response.data;
+      const wrappedPayload =
+        payload && !Array.isArray(payload) && typeof payload === 'object' ? payload : null;
+      const conversations = Array.isArray(payload)
+        ? payload
+        : Array.isArray(wrappedPayload?.data)
+          ? wrappedPayload.data
+          : [];
+      const responseMeta =
+        wrappedPayload?.meta && typeof wrappedPayload.meta === 'object' && !Array.isArray(wrappedPayload.meta)
+          ? wrappedPayload.meta
+          : {};
+      const hasMoreFromMeta = typeof responseMeta?.hasMore === 'boolean' ? responseMeta.hasMore : null;
+      const derivedHasMore =
+        hasMoreFromMeta !== null
+          ? hasMoreFromMeta
+          : requestedLimit
+            ? conversations.length >= requestedLimit
+            : conversations.length > 0;
+      const derivedNextCursor =
+        String(responseMeta?.nextCursor || '').trim() ||
+        encodeConversationCursor(conversations[conversations.length - 1]);
+      if (wrappedPayload?.success === false) {
         return {
           ok: false,
-          error: normalizeServiceErrorMessage(data?.error || data?.message, 'Failed to fetch conversations'),
+          error: normalizeServiceErrorMessage(
+            wrappedPayload?.error || wrappedPayload?.message,
+            'Failed to fetch conversations'
+          ),
           data: [],
           meta: {
-            limit: Number(data?.meta?.limit || 0) || null,
+            limit: Number(responseMeta?.limit || requestedLimit || 0) || null,
             hasMore: false,
-            nextCursor: null
+            nextCursor: null,
+            exhausted: false
           }
         };
       }
       return {
         ok: true,
-        data: Array.isArray(data?.data) ? data.data : [],
+        data: conversations,
         meta: {
-          limit: Number(data?.meta?.limit || 0) || null,
-          hasMore: Boolean(data?.meta?.hasMore),
-          nextCursor: String(data?.meta?.nextCursor || '').trim() || null
+          limit: Number(responseMeta?.limit || requestedLimit || 0) || null,
+          hasMore: derivedHasMore,
+          nextCursor: derivedNextCursor || null,
+          exhausted: Boolean(responseMeta?.exhausted) || (!derivedHasMore && !derivedNextCursor)
         }
       };
     } catch (error) {
@@ -547,7 +603,8 @@ export const whatsappService = {
         meta: {
           limit: null,
           hasMore: false,
-          nextCursor: null
+          nextCursor: null,
+          exhausted: false
         }
       };
     }

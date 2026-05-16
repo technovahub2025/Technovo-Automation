@@ -1,11 +1,13 @@
 import { getConversationPreviewMeta } from './teamInboxDisplayUtils.js';
 import {
   getMappedContactName,
+  getConversationPhoneValue,
   getPhoneLookupKeys,
   isRealName,
   normalizePhone
 } from './teamInboxIdentityUtils.js';
 import { DEFAULT_PIPELINE_STAGE_OPTIONS, getPipelineStageLabel } from '../../utils/crmPipelineStages';
+import { resolvePreferredMessageStatus } from './replyMessageMergeUtils.js';
 
 export { normalizePhone, getPhoneLookupKeys, isRealName, getMappedContactName };
 
@@ -25,8 +27,20 @@ export const getUnreadCount = (conversation) => {
 
 export const normalizeConversation = (conversation) => {
   const previewMeta = getConversationPreviewMeta(conversation);
+  const summaryId = String(conversation?.summaryId || conversation?._id || '').trim();
+  const canonicalConversationId = String(
+    conversation?.conversationId ||
+      conversation?.conversation_id ||
+      conversation?.threadConversationId ||
+      conversation?._id ||
+      conversation?.id ||
+      ''
+  ).trim();
   return {
     ...conversation,
+    ...(summaryId ? { summaryId } : {}),
+    _id: canonicalConversationId || String(conversation?._id || '').trim(),
+    id: canonicalConversationId || String(conversation?.id || '').trim() || String(conversation?._id || '').trim(),
     unreadCount: getUnreadCount(conversation),
     lastMessageMediaType:
       previewMeta.mediaType || String(conversation?.lastMessageMediaType || '').trim(),
@@ -45,8 +59,9 @@ export const hasRealContactName = (conversation) => {
 export const getConversationDisplayName = (conversation, contactNameMap = {}) => {
   const name = getContactName(conversation);
   if (hasRealContactName(conversation)) return name;
-  const mappedName = getMappedContactName(conversation?.contactPhone, contactNameMap);
-  return mappedName || conversation?.contactPhone || name || 'Unknown';
+  const phoneValue = getConversationPhoneValue(conversation);
+  const mappedName = getMappedContactName(phoneValue, contactNameMap);
+  return mappedName || phoneValue || name || 'Unknown';
 };
 
 export const getContactIdValue = (conversation) =>
@@ -61,18 +76,18 @@ export const enrichConversationIdentity = (conversation, sources = [], contactNa
   const base = normalizeConversation(conversation || {});
   if (hasRealContactName(base)) return base;
 
-  const basePhone = normalizePhone(base?.contactPhone);
+  const basePhone = normalizePhone(getConversationPhoneValue(base));
   const baseContactId = getContactIdValue(base);
   const candidate = sources.find((item) => {
     if (!item || !hasRealContactName(item)) return false;
-    const itemPhone = normalizePhone(item?.contactPhone);
+    const itemPhone = normalizePhone(getConversationPhoneValue(item));
     const itemContactId = getContactIdValue(item);
     if (basePhone && itemPhone && basePhone === itemPhone) return true;
     if (baseContactId && itemContactId && baseContactId === itemContactId) return true;
     return false;
   });
 
-  const mappedName = getMappedContactName(base?.contactPhone, contactNameMap);
+  const mappedName = getMappedContactName(getConversationPhoneValue(base), contactNameMap);
   if (!candidate) {
     if (!mappedName) return base;
     const mergedContact = {
@@ -97,7 +112,7 @@ export const enrichConversationIdentity = (conversation, sources = [], contactNa
     ...base,
     contactId: mergedContact,
     contactName: getContactName(base) || getContactName(candidate) || mappedName,
-    contactPhone: base?.contactPhone || candidate?.contactPhone
+    contactPhone: getConversationPhoneValue(base) || getConversationPhoneValue(candidate)
   });
 };
 
@@ -117,7 +132,218 @@ export const toSafeNonNegativeNumber = (value, fallback = 0) => {
 };
 
 export const getConversationIdValue = (conversation) =>
-  String(conversation?._id || conversation?.id || '').trim();
+  String(
+    conversation?.conversationId ||
+      conversation?.conversation_id ||
+      conversation?.threadConversationId ||
+      conversation?._id ||
+      conversation?.id ||
+      ''
+  ).trim();
+
+export const getConversationIdentityTokens = (conversation) => {
+  const safeConversation = conversation || {};
+  const tokens = new Set();
+
+  const conversationId = getConversationIdValue(safeConversation);
+  if (conversationId) {
+    tokens.add(`id:${conversationId}`);
+  }
+
+  const contactId = getContactIdValue(safeConversation);
+  if (contactId) {
+    tokens.add(`contact:${contactId}`);
+  }
+
+  getPhoneLookupKeys(getConversationPhoneValue(safeConversation)).forEach((phoneKey) => {
+    if (phoneKey) {
+      tokens.add(`phone:${phoneKey}`);
+    }
+  });
+
+  return tokens;
+};
+
+export const conversationsShareIdentity = (leftConversation, rightConversation) => {
+  if (!leftConversation || !rightConversation) return false;
+
+  const leftTokens = getConversationIdentityTokens(leftConversation);
+  if (leftTokens.size === 0) return false;
+
+  const rightTokens = getConversationIdentityTokens(rightConversation);
+  if (rightTokens.size === 0) return false;
+
+  for (const token of leftTokens) {
+    if (rightTokens.has(token)) {
+      return true;
+    }
+  }
+
+  return false;
+};
+
+const pickPreferredPhoneValue = (existingConversation = {}, incomingConversation = {}) => {
+  const existingPhone = getConversationPhoneValue(existingConversation);
+  const incomingPhone = getConversationPhoneValue(incomingConversation);
+  const existingDigits = normalizePhone(existingPhone);
+  const incomingDigits = normalizePhone(incomingPhone);
+
+  if (!existingPhone) return incomingPhone || '';
+  if (!incomingPhone) return existingPhone;
+  if (incomingDigits.length > existingDigits.length) return incomingPhone;
+  if (existingDigits.length > incomingDigits.length) return existingPhone;
+  return incomingPhone.length >= existingPhone.length ? incomingPhone : existingPhone;
+};
+
+export const mergeConversationRecords = (existingConversation = {}, incomingConversation = {}) => {
+  const existingSafe = existingConversation || {};
+  const incomingSafe = incomingConversation || {};
+  const existingId = getConversationIdValue(existingSafe);
+  const incomingId = getConversationIdValue(incomingSafe);
+  const canonicalId = incomingId || existingId;
+  const existingSummaryId = String(existingSafe?.summaryId || '').trim();
+  const incomingSummaryId = String(incomingSafe?.summaryId || '').trim();
+  const existingPhone = getConversationPhoneValue(existingSafe);
+  const incomingPhone = getConversationPhoneValue(incomingSafe);
+  const mergedContactId =
+    existingSafe?.contactId && typeof existingSafe.contactId === 'object'
+      ? { ...existingSafe.contactId }
+      : {};
+  if (incomingSafe?.contactId && typeof incomingSafe.contactId === 'object') {
+    Object.assign(mergedContactId, incomingSafe.contactId);
+  }
+
+  const preferredPhone = pickPreferredPhoneValue(existingSafe, incomingSafe);
+  const mergedUnreadCount = Math.max(getUnreadCount(existingSafe), getUnreadCount(incomingSafe));
+  const mergedLastMessageStatus = resolvePreferredMessageStatus(
+    existingSafe?.lastMessageStatus,
+    incomingSafe?.lastMessageStatus
+  );
+
+  return normalizeConversation({
+    ...existingSafe,
+    ...incomingSafe,
+    ...(incomingSummaryId || existingSummaryId
+      ? {
+          summaryId:
+            incomingSummaryId ||
+            existingSummaryId ||
+            (existingId && existingId !== canonicalId ? existingId : '')
+        }
+      : {}),
+    _id: canonicalId || existingId || incomingId,
+    id: canonicalId || getConversationIdValue(existingSafe) || getConversationIdValue(incomingSafe),
+    contactPhone: preferredPhone || existingPhone || incomingPhone,
+    contactId:
+      Object.keys(mergedContactId).length > 0
+        ? mergedContactId
+        : incomingSafe?.contactId || existingSafe?.contactId,
+    unreadCount: mergedUnreadCount,
+    lastMessageStatus: mergedLastMessageStatus || existingSafe?.lastMessageStatus || incomingSafe?.lastMessageStatus,
+    lastMessageFrom:
+      String(incomingSafe?.lastMessageFrom || '').trim() || String(existingSafe?.lastMessageFrom || '').trim(),
+    lastMessageWhatsappMessageId:
+      String(incomingSafe?.lastMessageWhatsappMessageId || '').trim() ||
+      String(existingSafe?.lastMessageWhatsappMessageId || '').trim()
+  });
+};
+
+const findConversationMatchIndexes = (conversations = [], incomingConversation = {}) => {
+  const safeConversations = Array.isArray(conversations) ? conversations : [];
+  if (getConversationIdentityTokens(incomingConversation).size === 0) return [];
+
+  const matches = [];
+  safeConversations.forEach((conversation, index) => {
+    if (conversationsShareIdentity(conversation, incomingConversation)) {
+      matches.push(index);
+    }
+  });
+  return matches;
+};
+
+export const getConversationSortTimestamp = (conversation) => {
+  const rawTimestamp =
+    conversation?.lastMessageTime ||
+    conversation?.updatedAt ||
+    conversation?.createdAt ||
+    conversation?.lastActivityAt ||
+    0;
+  const parsedTimestamp = new Date(rawTimestamp);
+  const numericTimestamp = parsedTimestamp.valueOf();
+  return Number.isFinite(numericTimestamp) ? numericTimestamp : 0;
+};
+
+export const upsertConversationInOrderedList = (conversations = [], incomingConversation = {}) => {
+  const safeConversations = Array.isArray(conversations) ? [...conversations] : [];
+  const incomingConversationId = getConversationIdValue(incomingConversation);
+  const incomingIdentityTokens = getConversationIdentityTokens(incomingConversation);
+  if (!incomingConversationId && incomingIdentityTokens.size === 0) return safeConversations;
+
+  const matchedIndexes = findConversationMatchIndexes(safeConversations, incomingConversation);
+  const existingConversation =
+    matchedIndexes.length > 0 ? safeConversations[matchedIndexes[0]] || {} : {};
+  const mergedConversation = mergeConversationRecords(existingConversation, incomingConversation);
+
+  if (matchedIndexes.length > 0) {
+    for (let index = matchedIndexes.length - 1; index >= 0; index -= 1) {
+      safeConversations.splice(matchedIndexes[index], 1);
+    }
+  }
+
+  const incomingTimestamp = getConversationSortTimestamp(mergedConversation);
+  let insertIndex = safeConversations.findIndex(
+    (conversation) => getConversationSortTimestamp(conversation) < incomingTimestamp
+  );
+  if (insertIndex < 0) {
+    insertIndex = safeConversations.length;
+  }
+
+  safeConversations.splice(insertIndex, 0, mergedConversation);
+  return safeConversations;
+};
+
+export const mergeConversationPageIntoOrderedList = (
+  conversations = [],
+  incomingConversations = []
+) => {
+  let nextConversations = Array.isArray(conversations) ? [...conversations] : [];
+  (Array.isArray(incomingConversations) ? incomingConversations : []).forEach((conversation) => {
+    nextConversations = upsertConversationInOrderedList(nextConversations, conversation);
+  });
+  return nextConversations;
+};
+
+export const patchConversationInOrderedList = (
+  conversations = [],
+  conversationId = '',
+  patch = {}
+) => {
+  const normalizedConversationId = String(conversationId || '').trim();
+  if (!normalizedConversationId) return Array.isArray(conversations) ? [...conversations] : [];
+
+  const nextConversations = Array.isArray(conversations) ? [...conversations] : [];
+  const existingIndex = nextConversations.findIndex(
+    (conversation) => getConversationIdValue(conversation) === normalizedConversationId
+  );
+  if (existingIndex < 0) return nextConversations;
+
+  const existingConversation = nextConversations[existingIndex] || {};
+  const nextConversation =
+    typeof patch === 'function'
+      ? patch(existingConversation)
+      : mergeConversationRecords(existingConversation, patch);
+
+  nextConversations[existingIndex] = nextConversation;
+  return nextConversations;
+};
+
+export const dedupeConversationListByIdentity = (conversations = []) => {
+  let nextConversations = [];
+  (Array.isArray(conversations) ? conversations : []).forEach((conversation) => {
+    nextConversations = upsertConversationInOrderedList(nextConversations, conversation);
+  });
+  return nextConversations;
+};
 
 export const leadStageOptions = DEFAULT_PIPELINE_STAGE_OPTIONS.map((stage) => ({
   value: stage.key,

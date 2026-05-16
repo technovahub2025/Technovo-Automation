@@ -23,10 +23,14 @@ const NewBroadcastPopup = ({
   onTemplateHeaderMediaUpload,
   onClearTemplateHeaderMedia,
   onOpenContactAudiencePicker,
+  onOpenCampaignExtraContactsPicker,
+  onOpenCampaignAudiencePicker,
   onClearSelectedAudience,
   audienceSourceMode = 'contacts',
   onAudienceSourceModeChange,
   audienceSourceLabel = '',
+  selectedCampaignAudienceLabel = '',
+  selectedCampaignAudienceCount = 0,
   scheduledTime,
   onScheduledTimeChange,
   isSending,
@@ -202,8 +206,21 @@ const NewBroadcastPopup = ({
       onOpenContactAudiencePicker();
       return;
     }
+    if (audienceSourceMode === 'campaign' && typeof onOpenCampaignAudiencePicker === 'function') {
+      onOpenCampaignAudiencePicker();
+      return;
+    }
     triggerCsvPicker();
   };
+
+  const audienceCountLabel =
+    audienceSourceMode === 'campaign'
+      ? `${Number(selectedCampaignAudienceCount || 0).toLocaleString()} contacts selected`
+      : recipients.length > 0
+        ? audienceSourceLabel
+          ? `${recipients.length} contacts selected`
+          : `${recipients.length} recipients loaded`
+        : '';
 
   if (!showNewBroadcastPopup) return null;
 
@@ -372,6 +389,14 @@ const NewBroadcastPopup = ({
               </button>
               <button
                 type="button"
+                className={`audience-source-toggle__btn${audienceSourceMode === 'campaign' ? ' is-active' : ''}`}
+                onClick={() => typeof onAudienceSourceModeChange === 'function' && onAudienceSourceModeChange('campaign')}
+              >
+                <Calendar size={16} />
+                Campaign first
+              </button>
+              <button
+                type="button"
                 className={`audience-source-toggle__btn${audienceSourceMode === 'csv' ? ' is-active' : ''}`}
                 onClick={() => typeof onAudienceSourceModeChange === 'function' && onAudienceSourceModeChange('csv')}
               >
@@ -382,7 +407,9 @@ const NewBroadcastPopup = ({
             <p className="audience-source-helper">
               {audienceSourceMode === 'contacts'
                 ? 'Audience source: CRM contacts'
-                : 'Audience source: CSV upload'}
+                : audienceSourceMode === 'campaign'
+                  ? 'Audience source: previous campaign'
+                  : 'Audience source: CSV upload'}
             </p>
 
             <div style={{ display: 'grid', gap: 12 }}>
@@ -422,6 +449,46 @@ const NewBroadcastPopup = ({
                         {uploadedFile ? uploadedFile.name : 'Select contacts from CRM'}
                       </span>
                     </label>
+                  </div>
+                </>
+              ) : audienceSourceMode === 'campaign' ? (
+                <>
+                  <div className="campaign-audience-summary-card">
+                    <div className="campaign-audience-summary-card__label">Selected campaign</div>
+                    <div className="campaign-audience-summary-card__title">
+                      {selectedCampaignAudienceLabel || 'Choose a completed campaign'}
+                    </div>
+                    <div className="campaign-audience-summary-card__meta">
+                      {audienceCountLabel || 'Campaign audience will load instantly and can be edited.'}
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    <button
+                      type="button"
+                      className="replace-upload-btn"
+                      onClick={triggerAudienceSelection}
+                    >
+                      <Calendar size={16} />
+                      {selectedCampaignAudienceLabel ? 'Change Campaign' : 'Select from Campaign'}
+                    </button>
+                    <button
+                      type="button"
+                      className="replace-upload-btn"
+                      onClick={() => typeof onOpenCampaignExtraContactsPicker === 'function' && onOpenCampaignExtraContactsPicker()}
+                    >
+                      <Users size={16} />
+                      Add CRM Contacts
+                    </button>
+                    {typeof onClearSelectedAudience === 'function' ? (
+                      <button
+                        type="button"
+                        className="clear-upload-btn"
+                        onClick={onClearSelectedAudience}
+                      >
+                        Clear Selected Campaign
+                      </button>
+                    ) : null}
                   </div>
                 </>
               ) : (
@@ -513,7 +580,13 @@ const NewBroadcastPopup = ({
               </div>
             )}
 
-            {recipients.length > 0 && (
+            {audienceSourceMode === 'campaign' ? (
+              <p className="recipients-count">
+                {selectedCampaignAudienceLabel
+                  ? `${Number(selectedCampaignAudienceCount || 0).toLocaleString()} contacts selected from campaign`
+                  : 'Select a campaign to reuse its audience'}
+              </p>
+            ) : recipients.length > 0 && (
               <p className="recipients-count">
                 {audienceSourceLabel ? `${recipients.length} contacts selected` : `${recipients.length} recipients loaded`}
               </p>

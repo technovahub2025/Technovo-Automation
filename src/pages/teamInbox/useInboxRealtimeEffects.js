@@ -4,6 +4,10 @@ import {
   mergeMessagePreservingReplyContext,
   resolvePreferredMessageStatus
 } from './replyMessageMergeUtils';
+import {
+  patchConversationInOrderedList,
+  upsertConversationInOrderedList
+} from './teamInboxUtils';
 import { showIncomingMessageSystemNotification } from './teamInboxNotificationUtils';
 import { publishCrmContactSync } from '../../utils/crmSyncEvents';
 
@@ -63,7 +67,8 @@ export const useInboxRealtimeEffects = ({
   setUserPresenceMap,
   setConversationTypingState,
   setInboxDebugInfo,
-  notifyActionFeedback
+  notifyActionFeedback,
+  threadFreshSyncAtRef
 }) => {
   const getContactIdFromConversationPayload = (conversation = {}) =>
     String(
@@ -103,6 +108,11 @@ export const useInboxRealtimeEffects = ({
     loadMessages,
     applyLeadScoreUpdateToConversation
   });
+
+  const shouldAllowSelectedConversationResync = () => {
+    const lastFreshSyncAt = Number(threadFreshSyncAtRef?.current || 0) || 0;
+    return !lastFreshSyncAt;
+  };
 
   const pruneTypingState = (typingState = {}) => {
     const cutoff = Date.now() - 10000;
@@ -310,64 +320,41 @@ export const useInboxRealtimeEffects = ({
         const isSelectedConversation =
           activeConversation && activeConversation._id === incomingConversation._id;
         const isIncomingContactMessage = data?.message?.sender === 'contact';
+        const previousConversation = Array.isArray(prev)
+          ? prev.find((conversation) => conversation._id === incomingConversation._id)
+          : null;
 
-        let found = false;
-        const updated = prev.map((conversation) => {
-          if (conversation._id !== incomingConversation._id) return conversation;
+        const mergedConversation = callbacksRef.current.enrichConversationIdentity(
+          {
+            ...(previousConversation || {}),
+            ...incomingConversation,
+            lastMessageStatus: resolvePreferredMessageStatus(
+              previousConversation?.lastMessageStatus,
+              incomingConversation?.lastMessageStatus
+            ),
+            lastMessageWhatsappMessageId:
+              String(
+                incomingConversation?.lastMessageWhatsappMessageId ||
+                  incomingConversation?.lastMessageMessageId ||
+                  incomingConversation?.lastMessageId ||
+                  ''
+              ).trim() ||
+              String(previousConversation?.lastMessageWhatsappMessageId || '').trim()
+          },
+          [previousConversation, incomingConversation, ...prev]
+        );
 
-          found = true;
-          const mergedConversation = callbacksRef.current.enrichConversationIdentity(
-            {
-              ...conversation,
-              ...incomingConversation,
-              lastMessageStatus: resolvePreferredMessageStatus(
-                conversation?.lastMessageStatus,
-                incomingConversation?.lastMessageStatus
-              ),
-              lastMessageWhatsappMessageId:
-                String(
-                  incomingConversation?.lastMessageWhatsappMessageId ||
-                    incomingConversation?.lastMessageMessageId ||
-                    incomingConversation?.lastMessageId ||
-                    ''
-                ).trim() ||
-                String(conversation?.lastMessageWhatsappMessageId || '').trim()
-            },
-            [conversation, incomingConversation, ...prev]
-          );
-
-          if (isSelectedConversation && isIncomingContactMessage) {
-            mergedConversation.unreadCount = 0;
-          } else if (isIncomingContactMessage) {
-            mergedConversation.unreadCount = Math.max(
-              callbacksRef.current.getUnreadCount(incomingConversation),
-              callbacksRef.current.getUnreadCount(conversation) + 1,
-              1
-            );
-          }
-
-          return mergedConversation;
-        });
-
-        if (!found && incomingConversation._id) {
-          updated.unshift(
-            callbacksRef.current.enrichConversationIdentity(
-              {
-                ...incomingConversation,
-                unreadCount:
-                  isSelectedConversation && isIncomingContactMessage
-                    ? 0
-                    : Math.max(
-                        callbacksRef.current.getUnreadCount(incomingConversation),
-                        isIncomingContactMessage ? 1 : 0
-                      )
-              },
-              [...prev, selectedConversationRef.current].filter(Boolean)
-            )
+        if (isSelectedConversation && isIncomingContactMessage) {
+          mergedConversation.unreadCount = 0;
+        } else if (isIncomingContactMessage) {
+          mergedConversation.unreadCount = Math.max(
+            callbacksRef.current.getUnreadCount(incomingConversation),
+            callbacksRef.current.getUnreadCount(previousConversation) + 1,
+            1
           );
         }
 
-        return updated.sort((a, b) => new Date(b.lastMessageTime) - new Date(a.lastMessageTime));
+        return upsertConversationInOrderedList(prev, mergedConversation);
       });
 
       const activeConversation = selectedConversationRef.current;
@@ -464,7 +451,9 @@ export const useInboxRealtimeEffects = ({
           callbacksRef.current.appendMessageUnique(incoming);
           callbacksRef.current.markAsRead(activeConversation._id);
         }
-        callbacksRef.current.scheduleRealtimeResync(activeConversation._id);
+        if (shouldAllowSelectedConversationResync()) {
+          callbacksRef.current.scheduleRealtimeResync(activeConversation._id);
+        }
       }
     };
 
@@ -612,34 +601,41 @@ export const useInboxRealtimeEffects = ({
       );
 
       if (incomingStatus) {
-        setConversations((prev) =>
-          prev.map((conversation) => {
-            const conversationIdValue = String(conversation?._id || '').trim();
-            const previewMessageId = getConversationLastOutboundMessageId(conversation);
-            const matchesConversation =
-              (eventConversationId && conversationIdValue === eventConversationId) ||
-              (previewMessageId && Array.from(incomingMessageIds).includes(previewMessageId));
+        setConversations((prev) => {
+          const matchingConversation = Array.isArray(prev)
+            ? prev.find((conversation) => {
+                const conversationIdValue = String(conversation?._id || '').trim();
+                const previewMessageId = getConversationLastOutboundMessageId(conversation);
+                return (
+                  (eventConversationId && conversationIdValue === eventConversationId) ||
+                  (previewMessageId && Array.from(incomingMessageIds).includes(previewMessageId))
+                );
+              })
+            : null;
 
-            if (!matchesConversation) return conversation;
+          if (!matchingConversation) return prev;
 
-            const nextConversation = {
-              ...conversation,
-              lastMessageStatus: resolvePreferredMessageStatus(
-                conversation?.lastMessageStatus,
-                incomingStatus
-              ),
-              lastMessageWhatsappMessageId:
-                String(data?.messageId || data?.whatsappMessageId || '').trim() ||
-                String(conversation?.lastMessageWhatsappMessageId || '').trim()
-            };
+          const nextConversation = {
+            ...matchingConversation,
+            lastMessageStatus: resolvePreferredMessageStatus(
+              matchingConversation?.lastMessageStatus,
+              incomingStatus
+            ),
+            lastMessageWhatsappMessageId:
+              String(data?.messageId || data?.whatsappMessageId || '').trim() ||
+              String(matchingConversation?.lastMessageWhatsappMessageId || '').trim()
+          };
 
-            if (incomingStatus === 'read' || incomingStatus === 'delivered') {
-              nextConversation.lastMessageFrom = 'agent';
-            }
+          if (incomingStatus === 'read' || incomingStatus === 'delivered') {
+            nextConversation.lastMessageFrom = 'agent';
+          }
 
-            return nextConversation;
-          })
-        );
+          return patchConversationInOrderedList(
+            prev,
+            String(matchingConversation?._id || '').trim(),
+            nextConversation
+          );
+        });
 
         if (mediaPipelineRequestId && typeof notifyActionFeedback === 'function') {
           const statusLabel =
@@ -696,18 +692,42 @@ export const useInboxRealtimeEffects = ({
         eventConversationId &&
         String(activeConversation._id) === eventConversationId
       ) {
-        callbacksRef.current.scheduleRealtimeResync(activeConversation._id);
+        if (shouldAllowSelectedConversationResync()) {
+          callbacksRef.current.scheduleRealtimeResync(activeConversation._id);
+        }
       }
     };
 
     const handleLeadScoreUpdated = (data) => {
       if (!data) return;
+      const eventConversationId = String(data?.conversationId || '').trim();
+      const eventContactId = String(data?.contactId || '').trim();
 
-      setConversations((prev) =>
-        prev.map((conversation) =>
-          callbacksRef.current.applyLeadScoreUpdateToConversation(conversation, data)
-        )
-      );
+      setConversations((prev) => {
+        const matchingConversation = Array.isArray(prev)
+          ? prev.find((conversation) => {
+              const conversationIdValue = String(conversation?._id || '').trim();
+              const contactIdValue = String(
+                conversation?.contactId?._id ||
+                  conversation?.contactId?.id ||
+                  conversation?.contactId ||
+                  ''
+              ).trim();
+              return (
+                (eventConversationId && eventConversationId === conversationIdValue) ||
+                (eventContactId && eventContactId === contactIdValue)
+              );
+            })
+          : null;
+
+        if (!matchingConversation) return prev;
+
+        return patchConversationInOrderedList(
+          prev,
+          String(matchingConversation?._id || '').trim(),
+          callbacksRef.current.applyLeadScoreUpdateToConversation(matchingConversation, data)
+        );
+      });
 
       setSelectedConversation((prev) =>
         callbacksRef.current.applyLeadScoreUpdateToConversation(prev, data)
@@ -768,13 +788,7 @@ export const useInboxRealtimeEffects = ({
       const conversationId = String(data?.conversationId || '').trim();
       if (!conversationId) return;
 
-      setConversations((prev) =>
-        prev.map((conversation) =>
-          String(conversation?._id || '').trim() === conversationId
-            ? { ...conversation, unreadCount: 0 }
-            : conversation
-        )
-      );
+      setConversations((prev) => patchConversationInOrderedList(prev, conversationId, { unreadCount: 0 }));
 
       setSelectedConversation((prev) => {
         if (!prev || String(prev?._id || '').trim() !== conversationId) return prev;
@@ -806,7 +820,9 @@ export const useInboxRealtimeEffects = ({
       }
 
       if (batchTouchesActiveConversation && activeConversationId) {
-        callbacksRef.current.scheduleRealtimeResync(activeConversationId);
+        if (shouldAllowSelectedConversationResync()) {
+          callbacksRef.current.scheduleRealtimeResync(activeConversationId);
+        }
       }
     };
 

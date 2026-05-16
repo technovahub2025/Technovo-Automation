@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 
 const REALTIME_RESYNC_DEBOUNCE_MS = 250;
 const REALTIME_RESYNC_COOLDOWN_MS = 1200;
+const THREAD_FRESH_SYNC_SUPPRESSION_MS = 5000;
 
 const getConversationId = (conversation) =>
   String(conversation?._id || conversation?.id || '').trim();
@@ -37,6 +38,7 @@ export const useTeamInboxViewEffects = ({
   loadMessages,
   chatMessagesRef,
   isConversationSwitchRef,
+  threadFreshSyncAtRef,
   messages,
   messagesLoading,
   messagesOlderLoading
@@ -107,6 +109,11 @@ export const useTeamInboxViewEffects = ({
 
       const activeConversationId = getConversationId(selectedConversationRef?.current);
       if (activeConversationId !== normalizedConversationId) {
+        return;
+      }
+
+      const lastFreshSyncAt = Number(threadFreshSyncAtRef?.current || 0) || 0;
+      if (lastFreshSyncAt && now - lastFreshSyncAt < THREAD_FRESH_SYNC_SUPPRESSION_MS) {
         return;
       }
 

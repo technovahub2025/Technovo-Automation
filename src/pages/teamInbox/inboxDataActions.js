@@ -1,4 +1,4 @@
-import axios from 'axios';
+﻿import axios from 'axios';
 import { whatsappService } from '../../services/whatsappService';
 import { startLoadingTimeoutGuard } from '../../utils/loadingGuard';
 import {
@@ -10,7 +10,9 @@ import {
   readTeamInboxThreadCache,
   writeTeamInboxThreadCache
 } from './teamInboxSessionCache';
+import { upsertConversationInOrderedList } from './teamInboxUtils';
 
+const DEFAULT_CONVERSATION_PAGE_LIMIT = 20;
 const DEFAULT_MESSAGES_PAGE_LIMIT = 30;
 const CONVERSATION_LIST_LOADING_TIMEOUT_MS = 8000;
 const VALID_CONVERSATION_FILTERS = new Set(['all', 'unread', 'read']);
@@ -61,11 +63,15 @@ const normalizeConversationListFilter = (value = 'all') => {
   return VALID_CONVERSATION_FILTERS.has(normalizedValue) ? normalizedValue : 'all';
 };
 
-const buildConversationListQuerySignature = ({ search = '', filter = 'all', limit = 100 }) =>
+const buildConversationListQuerySignature = ({
+  search = '',
+  filter = 'all',
+  limit = DEFAULT_CONVERSATION_PAGE_LIMIT
+}) =>
   [
     String(search || '').trim().toLowerCase(),
     normalizeConversationListFilter(filter),
-    Math.max(1, Math.min(Number(limit || 100) || 100, 200))
+    Math.max(1, Math.min(Number(limit || DEFAULT_CONVERSATION_PAGE_LIMIT) || DEFAULT_CONVERSATION_PAGE_LIMIT, 200))
   ].join('::');
 
 export const createInboxDataActions = ({
@@ -98,6 +104,8 @@ export const createInboxDataActions = ({
   conversationLoadPromiseMapRef,
   conversationPageMetaRef,
   conversationLoadRequestIdRef,
+  threadCacheDisplaySourceRef,
+  threadFreshSyncAtRef,
   setConversationPageMeta,
   setSidebarRefreshing,
   notifyActionFeedback,
@@ -122,34 +130,26 @@ export const createInboxDataActions = ({
   };
 
   const normalizeConversationPageMeta = (meta = {}, querySignature = '') => {
-    const limit = Number(meta?.limit || conversationPageMetaRef?.current?.limit || 100);
+    const limit = Number(
+      meta?.limit || conversationPageMetaRef?.current?.limit || DEFAULT_CONVERSATION_PAGE_LIMIT
+    );
     return {
-      limit: Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : 100,
+      limit:
+        Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : DEFAULT_CONVERSATION_PAGE_LIMIT,
       hasMore: Boolean(meta?.hasMore),
       nextCursor: String(meta?.nextCursor || '').trim() || null,
+      exhausted: Boolean(meta?.exhausted),
       loaded: true,
       querySignature: String(querySignature || '').trim()
     };
   };
 
   const mergeConversationLists = (base = [], incoming = []) => {
-    const byId = new Map();
-    (Array.isArray(base) ? base : []).forEach((conversation) => {
-      const id = String(conversation?._id || conversation?.id || '').trim();
-      if (id) byId.set(id, conversation);
-    });
-
+    let nextConversations = Array.isArray(base) ? [...base] : [];
     (Array.isArray(incoming) ? incoming : []).forEach((conversation) => {
-      const id = String(conversation?._id || conversation?.id || '').trim();
-      if (!id) return;
-      byId.set(id, conversation);
+      nextConversations = upsertConversationInOrderedList(nextConversations, conversation);
     });
-
-    return Array.from(byId.values()).sort(
-      (left, right) =>
-        new Date(right?.lastMessageTime || right?.updatedAt || right?.createdAt || 0).valueOf() -
-        new Date(left?.lastMessageTime || left?.updatedAt || left?.createdAt || 0).valueOf()
-    );
+    return nextConversations;
   };
 
   const loadConversations = async ({
@@ -176,7 +176,9 @@ export const createInboxDataActions = ({
     try {
       const normalizedSearch = String(search || '').trim();
       const normalizedFilter = normalizeConversationListFilter(filter);
-      const queryLimit = Number(limit || conversationPageMetaRef?.current?.limit || 100) || 100;
+      const queryLimit =
+        Number(limit || conversationPageMetaRef?.current?.limit || DEFAULT_CONVERSATION_PAGE_LIMIT) ||
+        DEFAULT_CONVERSATION_PAGE_LIMIT;
       const querySignature = buildConversationListQuerySignature({
         search: normalizedSearch,
         filter: normalizedFilter,
@@ -203,9 +205,6 @@ export const createInboxDataActions = ({
         return false;
       }
 
-      if (append && !String(pageMeta.nextCursor || '').trim() && pageMeta.loaded && isSameQuery) {
-        return true;
-      }
       if (append && (!pageMeta.loaded || !isSameQuery)) {
         return false;
       }
@@ -216,7 +215,8 @@ export const createInboxDataActions = ({
       if (!silent) setLoading(true);
       if (!append) {
         const pendingMeta = {
-          limit: Math.max(1, Math.min(queryLimit, 200)) || 100,
+          limit:
+            Math.max(1, Math.min(queryLimit, 200)) || DEFAULT_CONVERSATION_PAGE_LIMIT,
           hasMore: false,
           nextCursor: null,
           loaded: false,
@@ -234,11 +234,12 @@ export const createInboxDataActions = ({
       }
 
       const loadPromise = (async () => {
+        const currentCursor = String(pageMeta?.nextCursor || '').trim();
         const response = whatsappService.getConversationsPage
           ? await whatsappService.getConversationsPage({
               limit: queryLimit,
               scope: 'team',
-              ...(append && String(pageMeta.nextCursor || '').trim() ? { cursor: pageMeta.nextCursor } : {}),
+              ...(append && currentCursor ? { cursor: currentCursor } : {}),
               ...(normalizedSearch ? { search: normalizedSearch } : {}),
               ...(normalizedFilter !== 'all' ? { filter: normalizedFilter } : {})
             })
@@ -251,7 +252,13 @@ export const createInboxDataActions = ({
               }
             };
 
-        if (Number(conversationLoadRequestIdRef?.current || 0) !== requestId) {
+        const currentQuerySignature = String(
+          conversationPageMetaRef?.current?.querySignature || ''
+        ).trim();
+        if (append && currentQuerySignature !== querySignature) {
+          return false;
+        }
+        if (!append && Number(conversationLoadRequestIdRef?.current || 0) !== requestId) {
           return false;
         }
 
@@ -259,6 +266,13 @@ export const createInboxDataActions = ({
           ? response.data.map(normalizeConversation)
           : [];
         const nextMeta = normalizeConversationPageMeta(response?.meta, querySignature);
+        const responseHasMore =
+          Boolean(nextMeta.hasMore) ||
+          Boolean(nextMeta.nextCursor) ||
+          incomingConversations.length >= queryLimit;
+        const responseExhausted =
+          Boolean(nextMeta.exhausted) ||
+          (response?.ok !== false && !nextMeta.hasMore && !nextMeta.nextCursor);
         let shouldRestorePreviousMeta = false;
 
         setConversations((prev) => {
@@ -280,11 +294,10 @@ export const createInboxDataActions = ({
             return previousList;
           }
 
-          const merged = append
-            ? mergeConversationLists(previousList, incomingConversations)
-            : previousList.length && isSameQuery
-              ? mergeConversationLists(previousList, incomingConversations)
-              : incomingConversations;
+          const merged = mergeConversationLists(
+            append || (previousList.length && isSameQuery) ? previousList : [],
+            incomingConversations
+          );
 
           return merged.map((conversation) => {
             const conversationId = String(conversation?._id || conversation?.id || '').trim();
@@ -310,9 +323,15 @@ export const createInboxDataActions = ({
         });
 
         const effectiveMeta = shouldRestorePreviousMeta ? previousPageMeta : nextMeta;
-        conversationPageMetaRef.current = effectiveMeta;
+        const normalizedEffectiveMeta = {
+          ...effectiveMeta,
+          hasMore: responseHasMore,
+          exhausted: responseExhausted,
+          totalPages: effectiveMeta.totalPages || null
+        };
+        conversationPageMetaRef.current = normalizedEffectiveMeta;
         if (typeof setConversationPageMeta === 'function') {
-          setConversationPageMeta(effectiveMeta);
+          setConversationPageMeta(normalizedEffectiveMeta);
         }
 
         if (!response?.ok) {
@@ -423,8 +442,20 @@ export const createInboxDataActions = ({
 
     if (typeof setThreadCacheInfo === 'function') {
       const cachedCount = Array.isArray(cachedMessages) ? cachedMessages.length : 0;
+      if (
+        cachedCount > 0 &&
+        threadCacheDisplaySourceRef &&
+        threadCacheDisplaySourceRef.current === 'unknown'
+      ) {
+        threadCacheDisplaySourceRef.current = 'cache';
+      }
       setThreadCacheInfo({
-        source: Array.isArray(cachedMessages) ? 'cache' : 'network',
+        source:
+          threadCacheDisplaySourceRef?.current === 'cache'
+            ? 'cache'
+            : Array.isArray(cachedMessages)
+              ? 'cache'
+              : 'network',
         isStale: Boolean(persistentCachedThread?.isStale),
         updatedAt: persistentCachedThread?.updatedAt || null,
         messageCount: cachedCount
@@ -576,8 +607,20 @@ export const createInboxDataActions = ({
         setMessages(nextMessages);
         setMessagesHasMore(Boolean(nextMeta.hasMore));
         if (typeof setThreadCacheInfo === 'function') {
+          const nextThreadSource =
+            threadCacheDisplaySourceRef?.current === 'cache'
+              ? 'cache'
+              : responseOk
+                ? 'fresh'
+                : 'cache';
+          if (threadCacheDisplaySourceRef) {
+            threadCacheDisplaySourceRef.current = nextThreadSource;
+          }
+          if (responseOk && threadFreshSyncAtRef) {
+            threadFreshSyncAtRef.current = Date.now();
+          }
           setThreadCacheInfo({
-            source: responseOk ? 'fresh' : 'cache',
+            source: nextThreadSource,
             isStale: !responseOk,
             updatedAt: responseOk ? Date.now() : Date.now(),
             messageCount: nextMessages.length
@@ -631,6 +674,31 @@ export const createInboxDataActions = ({
 
     messageLoadPromiseMapRef?.current?.set(requestKey, loadPromise);
     return loadPromise;
+  };
+
+  const loadConversationById = async (targetConversationId, { silent = true } = {}) => {
+    const normalizedConversationId = String(targetConversationId || '').trim();
+    if (!normalizedConversationId) return null;
+
+    try {
+      const response = await whatsappService.getConversation(normalizedConversationId);
+      const rawConversation = response?.data || response || null;
+      if (!rawConversation) return null;
+
+      const normalizedConversation = normalizeConversation(rawConversation);
+      const conversationIdValue = String(
+        normalizedConversation?._id || normalizedConversation?.id || ''
+      ).trim();
+      if (!conversationIdValue) return null;
+
+      setConversations((prev) => upsertConversationInOrderedList(prev, normalizedConversation));
+      return normalizedConversation;
+    } catch (error) {
+      if (!silent) {
+        console.error('Failed to load conversation by id:', error);
+      }
+      return null;
+    }
   };
 
   const buildReplyMetadata = (replyContext = null) => {
@@ -1481,6 +1549,7 @@ export const createInboxDataActions = ({
 
   return {
     loadConversations,
+    loadConversationById,
     loadMessages,
     sendMessage,
     sendReaction,

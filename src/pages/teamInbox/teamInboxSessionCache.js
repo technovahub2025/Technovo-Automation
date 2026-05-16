@@ -1,4 +1,4 @@
-const TEAM_INBOX_CACHE_VERSION = 5;
+const TEAM_INBOX_CACHE_VERSION = 6;
 const TEAM_INBOX_CACHE_PREFIX = 'team-inbox-cache';
 
 const TEAM_INBOX_BOOTSTRAP_TTL_MS = 30 * 60 * 1000;
@@ -217,12 +217,21 @@ const sanitizeContact = (contact = {}) => {
 const sanitizeConversationForCache = (conversation = {}) => {
   if (!conversation || typeof conversation !== 'object') return null;
 
-  const conversationId = pickString(conversation._id || conversation.id);
+  const summaryId = pickString(conversation.summaryId || conversation.summary_id || conversation._id);
+  const conversationId = pickString(
+    conversation.conversationId ||
+      conversation.conversation_id ||
+      conversation.threadConversationId ||
+      conversation._id ||
+      conversation.id
+  );
   if (!conversationId) return null;
 
   return {
     _id: conversationId,
     id: pickString(conversation.id),
+    conversationId,
+    summaryId: summaryId && summaryId !== conversationId ? summaryId : '',
     contactName: pickString(conversation.contactName),
     contactPhone: pickString(conversation.contactPhone),
     lastMessage: pickString(conversation.lastMessage),

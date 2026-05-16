@@ -50,6 +50,480 @@ const IMAGE_PREVIEW_MAX_ZOOM = 3;
 const IMAGE_PREVIEW_ZOOM_STEP = 0.25;
 
 const THREAD_SKELETON_ROWS = 6;
+
+const buildMessageRowSignature = ({
+  messageKey = '',
+  message = {},
+  showMessageSelectMode = false,
+  isMessageSelected = false,
+  isReplyTargetHighlighted = false,
+  hasPersistedReaction = false,
+  hasActiveMessageActions = false,
+  showReplyPreview = false,
+  replyLabel = '',
+  replyPreview = '',
+  replySourceMessageKey = '',
+  replySourceMessageSender = '',
+  hasAttachment = false,
+  displayText = '',
+  attachmentKind = '',
+  hasImageAttachment = false,
+  hasAudioAttachment = false,
+  hasDocumentAttachment = false,
+  showAttachmentCaption = false,
+  hasDocumentCaption = false,
+  showInlineMeta = false,
+  useCompactInlineMeta = false,
+  useTrailingCompactMeta = false,
+  useOverlayCompactHoverMenu = false,
+  reactionBarPlacement = {},
+  hoverMenuPlacement = {}
+}) =>
+  [
+    messageKey,
+    message?._id || message?.whatsappMessageId || '',
+    message?.sender || '',
+    message?.status || '',
+    message?.timestamp || message?.whatsappTimestamp || message?.createdAt || '',
+    showMessageSelectMode ? '1' : '0',
+    isMessageSelected ? '1' : '0',
+    isReplyTargetHighlighted ? '1' : '0',
+    hasPersistedReaction ? '1' : '0',
+    hasActiveMessageActions ? '1' : '0',
+    showReplyPreview ? '1' : '0',
+    replyLabel,
+    replyPreview,
+    replySourceMessageKey,
+    replySourceMessageSender,
+    hasAttachment ? '1' : '0',
+    displayText,
+    attachmentKind,
+    hasImageAttachment ? '1' : '0',
+    hasAudioAttachment ? '1' : '0',
+    hasDocumentAttachment ? '1' : '0',
+    showAttachmentCaption ? '1' : '0',
+    hasDocumentCaption ? '1' : '0',
+    showInlineMeta ? '1' : '0',
+    useCompactInlineMeta ? '1' : '0',
+    useTrailingCompactMeta ? '1' : '0',
+    useOverlayCompactHoverMenu ? '1' : '0',
+    hasActiveMessageActions ? reactionBarPlacement.horizontal || '' : '',
+    hasActiveMessageActions ? reactionBarPlacement.vertical || '' : '',
+    hasActiveMessageActions ? hoverMenuPlacement.horizontal || '' : '',
+    hasActiveMessageActions ? hoverMenuPlacement.vertical || '' : ''
+  ].join('|');
+
+const ChatMessageRow = React.memo(
+  function ChatMessageRow({
+    item,
+    message = {},
+    messageKey = '',
+    rowSignature = '',
+    isSeparator = false,
+    separatorLabel = '',
+    showMessageSelectMode = false,
+    isMessageSelected = false,
+    isReplyTargetHighlighted = false,
+    hasPersistedReaction = false,
+    hasActiveMessageActions = false,
+    showReplyPreview = false,
+    replyLabel = '',
+    replyPreview = '',
+    replySourceMessage = null,
+    replySourceMessageKey = '',
+    hasAttachment = false,
+    displayText = '',
+    hasImageAttachment = false,
+    hasAudioAttachment = false,
+    hasDocumentAttachment = false,
+    showAttachmentCaption = false,
+    hasDocumentCaption = false,
+    useAttachmentCaptionTrailingMeta = false,
+    showInlineMeta = false,
+    useCompactInlineMeta = false,
+    useTrailingCompactMeta = false,
+    useOverlayCompactHoverMenu = false,
+    renderHoverReactionTrigger,
+    renderReactionBar,
+    renderMessageHoverMenu,
+    renderAttachment,
+    renderReactionChip,
+    formatMessageTime,
+    getStatusIcon,
+    onToggleMessageSelection,
+    onScrollToReferencedMessage
+  }) {
+    if (isSeparator) {
+      return (
+        <div key={item?.virtualKey} className="message-date-separator">
+          <span>{separatorLabel}</span>
+        </div>
+      );
+    }
+
+    const messageTimestampLabel = formatMessageTime(
+      message.timestamp || message.whatsappTimestamp || message.createdAt
+    );
+
+    return (
+      <div
+        key={messageKey}
+        className={`message ${message.sender === 'agent' ? 'outgoing' : 'incoming'} ${
+          showMessageSelectMode ? 'select-mode' : ''
+        } ${isReplyTargetHighlighted ? 'reply-target-highlight' : ''} ${
+          hasPersistedReaction ? 'has-reaction-chip' : ''
+        } ${hasActiveMessageActions ? 'has-active-message-actions' : ''}`}
+        onClick={() => {
+          if (showMessageSelectMode) {
+            onToggleMessageSelection(messageKey);
+          }
+        }}
+      >
+        {showMessageSelectMode && (
+          <div className="message-select-checkbox">
+            <input
+              type="checkbox"
+              checked={isMessageSelected}
+              onChange={() => onToggleMessageSelection(messageKey)}
+              onClick={(event) => event.stopPropagation()}
+            />
+          </div>
+        )}
+
+        <div
+          className={`bubble ${showInlineMeta ? 'has-inline-meta' : ''} ${
+            useCompactInlineMeta ? 'has-compact-inline-meta' : ''
+          } ${useTrailingCompactMeta ? 'has-trailing-hover-corner' : ''} ${
+            hasImageAttachment ? 'has-image-attachment' : ''
+          } ${hasAudioAttachment ? 'has-audio-attachment' : ''} ${
+            hasDocumentAttachment ? 'has-document-attachment' : ''
+          } ${hasDocumentCaption ? 'has-document-caption' : ''} ${
+            showReplyPreview ? 'has-reply-preview' : ''
+          } ${hasActiveMessageActions ? 'has-active-message-actions' : ''}`}
+        >
+          {!showMessageSelectMode && renderHoverReactionTrigger(message, messageKey)}
+          {renderReactionBar(message, messageKey)}
+          {showReplyPreview && (
+            <div
+              className={`message-reply-preview ${replySourceMessageKey ? 'is-clickable' : ''} ${
+                replySourceMessage?.sender === 'agent' ? 'is-self-source' : 'is-contact-source'
+              }`}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (replySourceMessageKey) {
+                  onScrollToReferencedMessage(replySourceMessageKey);
+                }
+              }}
+            >
+              <div className="message-reply-label">{replyLabel}</div>
+              <div className="message-reply-text">{replyPreview}</div>
+            </div>
+          )}
+          {!showAttachmentCaption && !hasImageAttachment && displayText && !useCompactInlineMeta && displayText}
+          {useCompactInlineMeta && (
+            <div
+              className={`message-text-content message-text-content--compact-meta ${
+                useTrailingCompactMeta ? 'message-text-content--trailing-meta' : ''
+              }`}
+            >
+              {displayText}
+              <span className="message-inline-meta message-inline-meta--compact">
+                <span className="timestamp">{messageTimestampLabel}</span>
+                {message.sender === 'agent' && getStatusIcon(message.status)}
+                {!useOverlayCompactHoverMenu &&
+                  renderMessageHoverMenu({
+                    message,
+                    messageKey,
+                    hasAttachment,
+                    variant: 'inline'
+                  })}
+              </span>
+            </div>
+          )}
+          {useOverlayCompactHoverMenu &&
+            renderMessageHoverMenu({
+              message,
+              messageKey,
+              hasAttachment,
+              variant: 'overlay',
+              contextClass: useTrailingCompactMeta ? 'trailing-text' : 'compact-inline'
+            })}
+          {renderAttachment(message, messageKey)}
+          {showAttachmentCaption && (
+            <div
+              className={`message-media-caption ${
+                useAttachmentCaptionTrailingMeta ? 'message-media-caption--trailing-meta' : ''
+              }`}
+            >
+              <span className="message-media-caption-text">{displayText}</span>
+              <span className="message-inline-meta message-inline-meta--compact">
+                <span className="timestamp">{messageTimestampLabel}</span>
+                {message.sender === 'agent' && getStatusIcon(message.status)}
+              </span>
+            </div>
+          )}
+          {renderReactionChip(messageKey)}
+          {showInlineMeta && !useCompactInlineMeta && !showAttachmentCaption && (
+            <div className="message-inline-meta">
+              <span className="timestamp">{messageTimestampLabel}</span>
+              {message.sender === 'agent' && getStatusIcon(message.status)}
+              {!hasDocumentAttachment &&
+                !hasAudioAttachment &&
+                renderMessageHoverMenu({
+                  message,
+                  messageKey,
+                  hasAttachment,
+                  variant: 'inline'
+                })}
+            </div>
+          )}
+        </div>
+
+        {!showInlineMeta && !hasImageAttachment && (
+          <div className="message-info">
+            <span className="timestamp">{messageTimestampLabel}</span>
+            {message.sender === 'agent' && getStatusIcon(message.status)}
+          </div>
+        )}
+      </div>
+    );
+  },
+  (prev, next) => prev.rowSignature === next.rowSignature
+);
+
+const ChatMessageReactionBar = React.memo(
+  function ChatMessageReactionBar({
+    signature = '',
+    message = {},
+    messageKey = '',
+    selectedReaction = '',
+    isPickerOpen = false,
+    isMenuOpen = false,
+    isPlacementReady = false,
+    reactionBarPlacement = {},
+    reactionPickerRef = null,
+    canReact = false,
+    onReactEmoji,
+    onTogglePicker
+  }) {
+    if (!messageKey || !canReact) return null;
+
+    return (
+      <div
+        className={`message-reaction-bar ${isPickerOpen || isMenuOpen ? 'is-open' : ''} ${
+          reactionBarPlacement.horizontal || ''
+        } ${reactionBarPlacement.vertical || ''} ${
+          isPickerOpen || isMenuOpen ? (isPlacementReady ? 'is-ready' : 'is-measuring') : ''
+        }`.trim()}
+        ref={isPickerOpen || isMenuOpen ? reactionPickerRef : null}
+      >
+        {QUICK_REACTIONS.map((emoji) => (
+          <button
+            key={`${messageKey}-${emoji}`}
+            type="button"
+            className={`message-reaction-btn ${selectedReaction === emoji ? 'is-active' : ''}`}
+            onClick={(event) => {
+              event.stopPropagation();
+              onReactEmoji?.(message, messageKey, emoji);
+            }}
+          >
+            {emoji}
+          </button>
+        ))}
+        <button
+          type="button"
+          className={`message-reaction-btn message-reaction-btn--more ${isPickerOpen ? 'is-active' : ''}`}
+          onClick={(event) => {
+            event.stopPropagation();
+            onTogglePicker?.(messageKey);
+          }}
+        >
+          <Plus size={16} />
+        </button>
+        {isPickerOpen && (
+          <div className="message-reaction-picker">
+            {EXTRA_REACTIONS.map((emoji) => (
+              <button
+                key={`${messageKey}-extra-${emoji}`}
+                type="button"
+                className={`message-reaction-btn ${selectedReaction === emoji ? 'is-active' : ''}`}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onReactEmoji?.(message, messageKey, emoji);
+                }}
+              >
+                {emoji}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  },
+  (prev, next) => prev.signature === next.signature
+);
+
+const ChatMessageHoverReactionTrigger = React.memo(
+  function ChatMessageHoverReactionTrigger({
+    signature = '',
+    message = {},
+    messageKey = '',
+    canReact = false,
+    isOpen = false,
+    onOpenReactMenu
+  }) {
+    if (!messageKey || !canReact) return null;
+
+    return (
+      <button
+        type="button"
+        className={`message-hover-reaction-trigger ${isOpen ? 'is-open' : ''}`}
+        aria-label="React to message"
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpenReactMenu?.(messageKey, message);
+        }}
+      >
+        <Smile size={16} />
+      </button>
+    );
+  },
+  (prev, next) => prev.signature === next.signature
+);
+
+const ChatMessageHoverMenu = React.memo(
+  function ChatMessageHoverMenu({
+    signature = '',
+    message = {},
+    messageKey = '',
+    hasAttachment = false,
+    variant = 'overlay',
+    contextClass = '',
+    canCopy = false,
+    canDownload = false,
+    isOutgoingMessage = false,
+    canDelete = false,
+    isOpen = false,
+    isPlacementReady = false,
+    hoverMenuPlacement = {},
+    openMenuRef = null,
+    onToggleMenu,
+    onReply,
+    onCopy,
+    onReact,
+    onDownload,
+    onInfo,
+    onDelete
+  }) {
+    if (!messageKey) return null;
+
+    const menuItems = [
+      {
+        key: 'reply',
+        label: 'Reply',
+        icon: <Reply size={15} />,
+        onSelect: () => onReply?.(message, messageKey)
+      },
+      ...(canCopy
+        ? [
+            {
+              key: 'copy',
+              label: 'Copy',
+              icon: <Copy size={15} />,
+              onSelect: () => onCopy?.(message)
+            }
+          ]
+        : []),
+      {
+        key: 'react',
+        label: 'React',
+        icon: <Smile size={15} />,
+        onSelect: () => onReact?.(messageKey, message)
+      },
+      ...(canDownload
+        ? [
+            {
+              key: 'download',
+              label: 'Download',
+              icon: <Download size={15} />,
+              onSelect: () => onDownload?.(message, messageKey)
+            }
+          ]
+        : []),
+      ...(isOutgoingMessage
+        ? [
+            {
+              key: 'info',
+              label: 'Message info',
+              icon: <Info size={15} />,
+              hasSeparator: true,
+              onSelect: () => onInfo?.(message)
+            }
+          ]
+        : []),
+      ...(canDelete
+        ? [
+            {
+              key: 'delete',
+              label: 'Delete',
+              icon: <Trash2 size={15} />,
+              className: 'danger',
+              hasSeparator: !isOutgoingMessage,
+              onSelect: () => onDelete?.(message)
+            }
+          ]
+        : [])
+    ];
+
+    if (menuItems.length === 0) return null;
+
+    return (
+      <span
+        className={`message-hover-shell ${variant} ${contextClass} ${isOpen ? 'is-open' : ''}`}
+        ref={isOpen ? openMenuRef : null}
+      >
+        <button
+          type="button"
+          className={`message-hover-trigger ${variant} ${contextClass} ${isOpen ? 'is-open' : ''}`}
+          aria-label="Open message actions"
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleMenu?.(messageKey);
+          }}
+        >
+          <ChevronDown size={18} />
+        </button>
+
+        {isOpen && (
+          <span
+            className={`message-hover-menu ${variant} ${contextClass} ${hoverMenuPlacement.horizontal || ''} ${
+              hoverMenuPlacement.vertical || ''
+            } ${isPlacementReady ? 'is-ready' : 'is-measuring'}`.trim()}
+          >
+            {menuItems.map((item) => (
+              <React.Fragment key={`${messageKey}-${item.key}`}>
+                {item.hasSeparator && <span className="message-hover-menu-separator" />}
+                <button
+                  type="button"
+                  className={`message-hover-menu-item ${item.className || ''}`.trim()}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    item.onSelect();
+                  }}
+                >
+                  {item.icon}
+                  {item.label}
+                </button>
+              </React.Fragment>
+            ))}
+          </span>
+        )}
+      </span>
+    );
+  },
+  (prev, next) => prev.signature === next.signature
+);
+
 const getStatusIcon = (status) => {
   const normalizedStatus = String(status || '').toLowerCase();
 
@@ -283,11 +757,14 @@ const estimateMessageHeight = (item = {}) => {
 
 const ChatArea = ({
   selectedConversation,
+  currentThreadConversationId = '',
   messages,
   messagesLoading,
   hasOlderMessages,
   olderMessagesLoading,
   threadCacheInfo,
+  inboxDebugInfo,
+  isInboxDebugVisible,
   getConversationAvatarText,
   getConversationDisplayName,
   messageMenuRef,
@@ -364,6 +841,7 @@ const ChatArea = ({
     horizontal: '',
     vertical: ''
   });
+  const [showConversationOpeningSkeleton, setShowConversationOpeningSkeleton] = useState(false);
   const attachmentInputRef = useRef(null);
   const imagePreviewReactionRef = useRef(null);
   const voiceRecorderRef = useRef(null);
@@ -374,6 +852,22 @@ const ChatArea = ({
   const attachmentDragDepthRef = useRef(0);
   const typingStopTimerRef = useRef(null);
   const isTypingRef = useRef(false);
+  const selectedConversationId = String(
+    selectedConversation?.conversationId ||
+      selectedConversation?.conversation_id ||
+      selectedConversation?.threadConversationId ||
+      selectedConversation?._id ||
+      selectedConversation?.id ||
+      ''
+  ).trim();
+  const displayedConversationId = String(currentThreadConversationId || '').trim();
+  const isSwitchingDisplayedConversation =
+    Boolean(selectedConversationId) &&
+    Boolean(displayedConversationId) &&
+    selectedConversationId !== displayedConversationId;
+  const selectedConversationTransitionIdRef = useRef('');
+  const selectedConversationTransitionStartedAtRef = useRef(0);
+  const selectedConversationTransitionHideTimerRef = useRef(null);
   const isFreeformBlocked = Boolean(
     selectedConversation && whatsappMessagingState && !whatsappMessagingState.freeformAllowed
   );
@@ -597,7 +1091,7 @@ const ChatArea = ({
     setPendingAttachmentComposer(null);
     setIsAttachmentDragActive(false);
     attachmentDragDepthRef.current = 0;
-  }, [selectedConversation?._id, selectedConversation?.id]);
+  }, [selectedConversationId]);
 
   useEffect(
     () => () => {
@@ -664,7 +1158,7 @@ const ChatArea = ({
   }, [activeImagePreview?.messageKey]);
 
   useEffect(() => {
-    const conversationId = String(selectedConversation?._id || '').trim();
+    const conversationId = selectedConversationId;
     if (!conversationId) return undefined;
 
     const hasContent = String(messageInput || '').trim().length > 0;
@@ -708,11 +1202,11 @@ const ChatArea = ({
         typingStopTimerRef.current = null;
       }
     };
-  }, [messageInput, selectedConversation?._id]);
+  }, [messageInput, selectedConversationId]);
 
   useEffect(
     () => () => {
-      const conversationId = String(selectedConversation?._id || '').trim();
+      const conversationId = selectedConversationId;
       if (conversationId && isTypingRef.current) {
         webSocketService.send({
           type: 'typing',
@@ -725,7 +1219,7 @@ const ChatArea = ({
         window.clearTimeout(typingStopTimerRef.current);
       }
     },
-    [selectedConversation?._id]
+    [selectedConversationId]
   );
 
   const messageLookup = useMemo(() => {
@@ -783,7 +1277,6 @@ const ChatArea = ({
   }, [virtualMessageLayout.items]);
 
   useLayoutEffect(() => {
-    const selectedConversationId = String(selectedConversation?._id || '').trim();
     if (!selectedConversationId) return;
     if (selectedConversationScrollKeyRef.current === selectedConversationId) return;
     if (virtualMessageLayout.items.length === 0) return;
@@ -801,7 +1294,7 @@ const ChatArea = ({
       selectedConversationScrollKeyRef.current = selectedConversationId;
       canTriggerOlderLoadRef.current = true;
     });
-  }, [selectedConversation?._id, virtualMessageLayout.items.length]);
+  }, [selectedConversationId, virtualMessageLayout.items.length]);
 
   useLayoutEffect(() => {
     const anchorKey = String(pendingPrependAnchorKeyRef.current || '').trim();
@@ -1650,7 +2143,7 @@ const ChatArea = ({
   };
 
   const renderReactionBar = (message = {}, messageKey = '') => {
-    if (!messageKey || !canReactToMessage(message)) return null;
+    if (!messageKey) return null;
     const selectedReaction = String(persistedReactionMap[messageKey] || '').trim();
     const isPickerOpen = activeReactionPickerKey === messageKey;
     const isMenuOpen = activeHoverMenuKey === messageKey;
@@ -1658,79 +2151,58 @@ const ChatArea = ({
       String(reactionBarPlacement.horizontal || '').trim() &&
         String(reactionBarPlacement.vertical || '').trim()
     );
+    const signature = [
+      messageKey,
+      selectedReaction,
+      isPickerOpen ? '1' : '0',
+      isMenuOpen ? '1' : '0',
+      isPlacementReady ? '1' : '0',
+      reactionBarPlacement.horizontal || '',
+      reactionBarPlacement.vertical || '',
+      String(message?.sender || ''),
+      String(message?.status || '')
+    ].join('|');
 
     return (
-      <>
-        <div
-          className={`message-reaction-bar ${isPickerOpen || isMenuOpen ? 'is-open' : ''} ${
-            reactionBarPlacement.horizontal
-          } ${reactionBarPlacement.vertical} ${
-            isPickerOpen || isMenuOpen ? (isPlacementReady ? 'is-ready' : 'is-measuring') : ''
-          }`.trim()}
-          ref={isPickerOpen || isMenuOpen ? reactionPickerRef : null}
-        >
-          {QUICK_REACTIONS.map((emoji) => (
-            <button
-              key={`${messageKey}-${emoji}`}
-              type="button"
-              className={`message-reaction-btn ${selectedReaction === emoji ? 'is-active' : ''}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                handleMessageReaction(message, messageKey, emoji);
-              }}
-            >
-              {emoji}
-            </button>
-          ))}
-          <button
-            type="button"
-            className={`message-reaction-btn message-reaction-btn--more ${isPickerOpen ? 'is-active' : ''}`}
-            onClick={(event) => {
-              event.stopPropagation();
-              setActiveReactionPickerKey((current) => (current === messageKey ? '' : messageKey));
-              setActiveHoverMenuKey('');
-            }}
-          >
-            <Plus size={16} />
-          </button>
-          {isPickerOpen && (
-            <div className="message-reaction-picker">
-              {EXTRA_REACTIONS.map((emoji) => (
-                <button
-                  key={`${messageKey}-extra-${emoji}`}
-                  type="button"
-                  className={`message-reaction-btn ${selectedReaction === emoji ? 'is-active' : ''}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    handleMessageReaction(message, messageKey, emoji);
-                  }}
-                >
-                  {emoji}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </>
+      <ChatMessageReactionBar
+        signature={signature}
+        message={message}
+        messageKey={messageKey}
+        selectedReaction={selectedReaction}
+        isPickerOpen={isPickerOpen}
+        isMenuOpen={isMenuOpen}
+        isPlacementReady={isPlacementReady}
+        reactionBarPlacement={reactionBarPlacement}
+        reactionPickerRef={reactionPickerRef}
+        canReact={canReactToMessage(message)}
+        onReactEmoji={handleMessageReaction}
+        onTogglePicker={(targetKey) => {
+          setActiveReactionPickerKey((current) => (current === targetKey ? '' : targetKey));
+          setActiveHoverMenuKey('');
+        }}
+      />
     );
   };
 
   const renderHoverReactionTrigger = (message = {}, messageKey = '') => {
-    if (!messageKey || !canReactToMessage(message)) return null;
+    if (!messageKey) return null;
     const isOpen = activeReactionPickerKey === messageKey;
+    const signature = [
+      messageKey,
+      isOpen ? '1' : '0',
+      String(message?.sender || ''),
+      String(message?.status || '')
+    ].join('|');
 
     return (
-      <button
-        type="button"
-        className={`message-hover-reaction-trigger ${isOpen ? 'is-open' : ''}`}
-        aria-label="React to message"
-        onClick={(event) => {
-          event.stopPropagation();
-          handleOpenReactMenu(messageKey, message);
-        }}
-      >
-        <Smile size={16} />
-      </button>
+      <ChatMessageHoverReactionTrigger
+        signature={signature}
+        message={message}
+        messageKey={messageKey}
+        canReact={canReactToMessage(message)}
+        isOpen={isOpen}
+        onOpenReactMenu={handleOpenReactMenu}
+      />
     );
   };
 
@@ -1761,115 +2233,55 @@ const ChatArea = ({
       String(hoverMenuPlacement.horizontal || '').trim() &&
         String(hoverMenuPlacement.vertical || '').trim()
     );
-    const menuItems = [
-      {
-        key: 'reply',
-        label: 'Reply',
-        icon: <Reply size={15} />,
-        onSelect: () => handleReplyToMessage(message, messageKey)
-      },
-      ...(canCopy
-        ? [
-            {
-              key: 'copy',
-              label: 'Copy',
-              icon: <Copy size={15} />,
-              onSelect: () => handleCopyMessage(message)
-            }
-          ]
-        : []),
-      {
-        key: 'react',
-        label: 'React',
-        icon: <Smile size={15} />,
-        onSelect: () => handleOpenReactMenu(messageKey, message)
-      },
-      ...(canDownload
-        ? [
-            {
-              key: 'download',
-              label: 'Download',
-              icon: <Download size={15} />,
-              onSelect: () => handleDownloadMessage(message, messageKey)
-            }
-          ]
-        : []),
-      ...(isOutgoingMessage
-        ? [
-            {
-              key: 'info',
-              label: 'Message info',
-              icon: <Info size={15} />,
-              hasSeparator: true,
-              onSelect: () => handleMessageInfo(message)
-            }
-          ]
-        : []),
-      ...(canDelete
-        ? [
-            {
-              key: 'delete',
-              label: 'Delete',
-              icon: <Trash2 size={15} />,
-              className: 'danger',
-              hasSeparator: !isOutgoingMessage,
-              onSelect: () => handleDeleteMessage(message)
-            }
-          ]
-        : [])
-    ];
-
-    if (menuItems.length === 0) return null;
+    const signature = [
+      messageKey,
+      canCopy ? '1' : '0',
+      canDownload ? '1' : '0',
+      isOutgoingMessage ? '1' : '0',
+      canDelete ? '1' : '0',
+      isOpen ? '1' : '0',
+      isPlacementReady ? '1' : '0',
+      hoverMenuPlacement.horizontal || '',
+      hoverMenuPlacement.vertical || '',
+      variant,
+      contextClass,
+      String(message?.sender || ''),
+      String(message?.status || '')
+    ].join('|');
 
     return (
-      <span
-        className={`message-hover-shell ${variant} ${contextClass} ${isOpen ? 'is-open' : ''}`}
-        ref={isOpen ? openMenuRef : null}
-      >
-        <button
-          type="button"
-          className={`message-hover-trigger ${variant} ${contextClass} ${isOpen ? 'is-open' : ''}`}
-          aria-label="Open message actions"
-          onClick={(event) => {
-            event.stopPropagation();
-            setActiveHoverMenuKey((current) => {
-              if (current === messageKey) {
-                return '';
-              }
-              alignMessageForActionMenu(messageKey);
-              return messageKey;
-            });
-            setActiveReactionPickerKey('');
-          }}
-        >
-          <ChevronDown size={18} />
-        </button>
-
-        {isOpen && (
-          <span
-            className={`message-hover-menu ${variant} ${contextClass} ${hoverMenuPlacement.horizontal} ${hoverMenuPlacement.vertical} ${
-              isPlacementReady ? 'is-ready' : 'is-measuring'
-            }`.trim()}
-          >
-            {menuItems.map((item) => (
-              <React.Fragment key={`${messageKey}-${item.key}`}>
-                {item.hasSeparator && <span className="message-hover-menu-separator" />}
-                <button
-                  type="button"
-                  className={`message-hover-menu-item ${item.className || ''}`.trim()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    item.onSelect();
-                  }}
-                >
-                  {item.icon}
-                  {item.label}
-                </button>
-              </React.Fragment>
-            ))}
-          </span>
-        )}
-      </span>
+      <ChatMessageHoverMenu
+        signature={signature}
+        message={message}
+        messageKey={messageKey}
+        hasAttachment={hasAttachment}
+        variant={variant}
+        contextClass={contextClass}
+        canCopy={canCopy}
+        canDownload={canDownload}
+        isOutgoingMessage={isOutgoingMessage}
+        canDelete={canDelete}
+        isOpen={isOpen}
+        isPlacementReady={isPlacementReady}
+        hoverMenuPlacement={hoverMenuPlacement}
+        openMenuRef={openMenuRef}
+        onToggleMenu={(targetKey) => {
+          setActiveHoverMenuKey((current) => {
+            if (current === targetKey) {
+              return '';
+            }
+            alignMessageForActionMenu(targetKey);
+            return targetKey;
+          });
+          setActiveReactionPickerKey('');
+        }}
+        onReply={handleReplyToMessage}
+        onCopy={handleCopyMessage}
+        onReact={handleOpenReactMenu}
+        onDownload={handleDownloadMessage}
+        onInfo={handleMessageInfo}
+        onDelete={handleDeleteMessage}
+      />
     );
   };
 
@@ -2226,6 +2638,90 @@ const ChatArea = ({
     }
   };
 
+  useLayoutEffect(() => {
+    if (!selectedConversationId) {
+      selectedConversationTransitionIdRef.current = '';
+      selectedConversationTransitionStartedAtRef.current = 0;
+      setShowConversationOpeningSkeleton(false);
+      if (selectedConversationTransitionHideTimerRef.current) {
+        window.clearTimeout(selectedConversationTransitionHideTimerRef.current);
+        selectedConversationTransitionHideTimerRef.current = null;
+      }
+      return undefined;
+    }
+
+    if (selectedConversationTransitionIdRef.current === selectedConversationId) {
+      return undefined;
+    }
+
+    selectedConversationTransitionIdRef.current = selectedConversationId;
+    selectedConversationTransitionStartedAtRef.current = Date.now();
+    setShowConversationOpeningSkeleton(true);
+
+    if (selectedConversationTransitionHideTimerRef.current) {
+      window.clearTimeout(selectedConversationTransitionHideTimerRef.current);
+      selectedConversationTransitionHideTimerRef.current = null;
+    }
+
+    return undefined;
+  }, [selectedConversationId]);
+
+  useEffect(() => {
+    if (!selectedConversationId) return undefined;
+
+    if (!showConversationOpeningSkeleton) {
+      if (selectedConversationTransitionHideTimerRef.current) {
+        window.clearTimeout(selectedConversationTransitionHideTimerRef.current);
+        selectedConversationTransitionHideTimerRef.current = null;
+      }
+      return undefined;
+    }
+
+    const threadBusy = Boolean(messagesLoading) || Boolean(olderMessagesLoading);
+    if (threadBusy) {
+      if (selectedConversationTransitionHideTimerRef.current) {
+        window.clearTimeout(selectedConversationTransitionHideTimerRef.current);
+        selectedConversationTransitionHideTimerRef.current = null;
+      }
+      return undefined;
+    }
+
+    const minVisibleMs = 180;
+    const elapsed = Date.now() - Number(selectedConversationTransitionStartedAtRef.current || 0);
+    const remaining = Math.max(0, minVisibleMs - elapsed);
+
+    if (remaining === 0) {
+      setShowConversationOpeningSkeleton(false);
+      return undefined;
+    }
+
+    if (selectedConversationTransitionHideTimerRef.current) {
+      window.clearTimeout(selectedConversationTransitionHideTimerRef.current);
+    }
+
+    selectedConversationTransitionHideTimerRef.current = window.setTimeout(() => {
+      selectedConversationTransitionHideTimerRef.current = null;
+      setShowConversationOpeningSkeleton(false);
+    }, remaining);
+
+    return () => {
+      if (selectedConversationTransitionHideTimerRef.current) {
+        window.clearTimeout(selectedConversationTransitionHideTimerRef.current);
+        selectedConversationTransitionHideTimerRef.current = null;
+      }
+    };
+  }, [messagesLoading, olderMessagesLoading, selectedConversationId, showConversationOpeningSkeleton]);
+
+  useEffect(
+    () => () => {
+      if (selectedConversationTransitionHideTimerRef.current) {
+        window.clearTimeout(selectedConversationTransitionHideTimerRef.current);
+        selectedConversationTransitionHideTimerRef.current = null;
+      }
+    },
+    []
+  );
+
   const handleLoadOlderMessages = useCallback(async () => {
     if (
       !onLoadOlderMessages ||
@@ -2260,7 +2756,7 @@ const ChatArea = ({
   const slaMeta = resolveConversationSlaMeta(selectedConversation);
   const whatsappStateLabel = String(whatsappMessagingState?.statusLabel || '').trim();
   const whatsappStateTone = String(whatsappMessagingState?.badgeTone || '').trim() || 'template-only';
-  const selectedTypingConversationId = String(selectedConversation?._id || '').trim();
+  const selectedTypingConversationId = selectedConversationId;
   const selectedConversationTypingEntries = Array.isArray(typingState?.[selectedTypingConversationId])
     ? typingState[selectedTypingConversationId]
     : [];
@@ -2277,8 +2773,13 @@ const ChatArea = ({
     : null;
   const selectedConversationAssigneeIsOnline = Boolean(selectedConversationAssigneePresence?.online);
   const threadCacheSource = String(threadCacheInfo?.source || '').trim().toLowerCase();
-  const showThreadCacheBadge = threadCacheSource === 'cache';
-  const showThreadFreshBadge = threadCacheSource === 'fresh';
+  const isThreadTransitioning =
+    Boolean(showConversationOpeningSkeleton) ||
+    Boolean(messagesLoading) ||
+    isSwitchingDisplayedConversation;
+  const showThreadCacheBadge = threadCacheSource === 'cache' && !isThreadTransitioning;
+  const showThreadFreshBadge = threadCacheSource === 'fresh' && !isThreadTransitioning;
+  const showThreadLoadingBadge = isThreadTransitioning;
   const threadCacheUpdatedLabel = threadCacheInfo?.updatedAt
     ? new Intl.DateTimeFormat(undefined, {
         dateStyle: 'medium',
@@ -2290,6 +2791,11 @@ const ChatArea = ({
   const threadStatusTimestampLabel = threadCacheUpdatedLabel
     ? `Last updated ${threadCacheUpdatedLabel}`
     : '';
+  const debugSelectedConversationId = selectedConversationId;
+  const debugMessageCount = Array.isArray(messages) ? messages.length : 0;
+  const debugThreadSource = String(threadCacheInfo?.source || '').trim() || 'unknown';
+  const debugEventLabel = String(inboxDebugInfo?.lastEvent || 'idle').trim() || 'idle';
+  const debugEventDetails = String(inboxDebugInfo?.details || '').trim();
   const selectedMessagesForDeletionSet = useMemo(
     () =>
       new Set(
@@ -2300,8 +2806,10 @@ const ChatArea = ({
     [selectedMessagesForDeletion]
   );
   const hasVisibleMessages = Array.isArray(messages) && messages.length > 0;
-  const showInitialThreadLoading = messagesLoading && !hasVisibleMessages;
-  const showEmptyThreadState = !messagesLoading && !olderMessagesLoading && !hasVisibleMessages;
+  const showEmptyThreadState =
+    !isThreadTransitioning && !messagesLoading && !olderMessagesLoading && !hasVisibleMessages;
+  const shouldRenderMessageList =
+    !isSwitchingDisplayedConversation && (hasVisibleMessages || olderMessagesLoading);
   const defaultVirtualItemHeight = Math.max(
     64,
     Number(virtualMessageLayout.items[0]?.estimatedHeight || 88)
@@ -2340,8 +2848,13 @@ const ChatArea = ({
             <span className="name text-white">{getConversationDisplayName(selectedConversation)}</span>
             <span className="status text-white">{selectedConversation.contactPhone}</span>
             <div className="chat-header-operator-meta">
-              {(showThreadCacheBadge || showThreadFreshBadge) && (
+              {(showThreadCacheBadge || showThreadFreshBadge || showThreadLoadingBadge) && (
                 <div className="chat-header-thread-status">
+                  {showThreadLoadingBadge && (
+                    <span className="chat-header-operator-chip chat-header-operator-chip--loading">
+                      Loading conversation...
+                    </span>
+                  )}
                   {showThreadCacheBadge && (
                     <span
                       className={`chat-header-operator-chip chat-header-operator-chip--cache ${
@@ -2375,6 +2888,17 @@ const ChatArea = ({
                       {threadStatusTimestampLabel}
                     </span>
                   )}
+                </div>
+              )}
+              {isInboxDebugVisible && (
+                <div className="chat-header-debug-strip" aria-live="polite">
+                  <span>conv: {debugSelectedConversationId || 'none'}</span>
+                  <span>source: {debugThreadSource}</span>
+                  <span>messages: {debugMessageCount}</span>
+                  <span>loading: {messagesLoading ? 'yes' : 'no'}</span>
+                  <span>older: {olderMessagesLoading ? 'yes' : 'no'}</span>
+                  <span>event: {debugEventLabel}</span>
+                  {debugEventDetails && <span title={debugEventDetails}>detail: {debugEventDetails}</span>}
                 </div>
               )}
               {slaMeta.label && (
@@ -2683,20 +3207,10 @@ const ChatArea = ({
         )}
 
         <div className="chat-messages">
-          {showInitialThreadLoading && !hasVisibleMessages && (
-            <div className="chat-thread-skeleton" aria-label="Loading conversation">
-              {Array.from({ length: THREAD_SKELETON_ROWS }).map((_, index) => (
-                <div
-                  key={`thread-skeleton-${index}`}
-                  className={`chat-thread-skeleton-row ${index % 2 === 0 ? 'is-right' : 'is-left'}`}
-                >
-                  <div className="chat-thread-skeleton-avatar" />
-                  <div className="chat-thread-skeleton-bubble">
-                    <span className="chat-thread-skeleton-line short" />
-                    <span className="chat-thread-skeleton-line" />
-                  </div>
-                </div>
-              ))}
+          {isThreadTransitioning && (
+            <div className="chat-thread-loading-banner" aria-label="Loading conversation">
+              <span className="chat-thread-loading-spinner" aria-hidden="true" />
+              <span>Loading conversation...</span>
             </div>
           )}
 
@@ -2709,8 +3223,8 @@ const ChatArea = ({
             </div>
           )}
 
-          {hasVisibleMessages || showInitialThreadLoading || olderMessagesLoading ? (
-            <Virtuoso
+              {shouldRenderMessageList ? (
+                <Virtuoso
               ref={messageListRef}
               scrollerRef={setChatMessagesScrollerRef}
               className="chat-messages-virtuoso"
@@ -2721,16 +3235,19 @@ const ChatArea = ({
               increaseViewportBy={{ top: 320, bottom: 520 }}
               startReached={handleLoadOlderMessages}
               itemContent={(_index, item) => {
+                const message = item?.message || {};
+                const messageKey = String(item?.virtualKey || '').trim();
                 if (item?.type === 'separator') {
                   return (
-                    <div key={item.virtualKey} className="message-date-separator">
-                      <span>{item.label}</span>
-                    </div>
+                    <ChatMessageRow
+                      item={item}
+                      isSeparator
+                      separatorLabel={item?.label || ''}
+                      rowSignature={String(item?.label || '').trim()}
+                    />
                   );
                 }
 
-                const message = item?.message || {};
-                const messageKey = String(item?.virtualKey || '').trim();
                 const conversationReplyLabel =
                   String(getConversationDisplayName(selectedConversation) || '').trim() || 'Contact';
                 const replySourceMessage = getReplySourceMessage(message);
@@ -2777,155 +3294,84 @@ const ChatArea = ({
                 const hasPersistedReaction = Boolean(
                   String(persistedReactionMap[messageKey] || '').trim()
                 );
+                const rowSignature = buildMessageRowSignature({
+                  messageKey,
+                  message,
+                  showMessageSelectMode,
+                  isMessageSelected: selectedMessagesForDeletionSet.has(messageKey),
+                  isReplyTargetHighlighted: highlightedMessageKey === messageKey,
+                  hasPersistedReaction,
+                  hasActiveMessageActions,
+                  showReplyPreview,
+                  replyLabel,
+                  replyPreview,
+                  replySourceMessageKey,
+                  replySourceMessageSender: replySourceMessage?.sender || '',
+                  hasAttachment,
+                  displayText,
+                  attachmentKind,
+                  hasImageAttachment,
+                  hasAudioAttachment,
+                  hasDocumentAttachment,
+                  showAttachmentCaption,
+                  hasDocumentCaption,
+                  showInlineMeta,
+                  useCompactInlineMeta,
+                  useTrailingCompactMeta,
+                  useOverlayCompactHoverMenu,
+                  reactionBarPlacement,
+                  hoverMenuPlacement
+                });
 
                 return (
-                  <div
+                  <ChatMessageRow
                     key={messageKey}
-                    className={`message ${message.sender === 'agent' ? 'outgoing' : 'incoming'} ${
-                      showMessageSelectMode ? 'select-mode' : ''
-                    } ${highlightedMessageKey === messageKey ? 'reply-target-highlight' : ''} ${
-                    hasPersistedReaction ? 'has-reaction-chip' : ''
-                  } ${hasActiveMessageActions ? 'has-active-message-actions' : ''}`}
-                  onClick={() => {
-                    if (showMessageSelectMode) {
-                      onToggleMessageSelection(messageKey);
-                    }
-                  }}
-                >
-                    {showMessageSelectMode && (
-                      <div className="message-select-checkbox">
-                        <input
-                          type="checkbox"
-                          checked={selectedMessagesForDeletionSet.has(messageKey)}
-                          onChange={() => onToggleMessageSelection(messageKey)}
-                          onClick={(event) => event.stopPropagation()}
-                        />
-                      </div>
-                  )}
-
-                  <div
-                    className={`bubble ${showInlineMeta ? 'has-inline-meta' : ''} ${
-                      useCompactInlineMeta ? 'has-compact-inline-meta' : ''
-                    } ${useTrailingCompactMeta ? 'has-trailing-hover-corner' : ''} ${
-                      hasImageAttachment ? 'has-image-attachment' : ''
-                    } ${hasAudioAttachment ? 'has-audio-attachment' : ''} ${
-                      hasDocumentAttachment ? 'has-document-attachment' : ''
-                    } ${hasDocumentCaption ? 'has-document-caption' : ''} ${
-                      showReplyPreview ? 'has-reply-preview' : ''
-                    } ${hasActiveMessageActions ? 'has-active-message-actions' : ''}`}
-                  >
-                    {!showMessageSelectMode && renderHoverReactionTrigger(message, messageKey)}
-                    {renderReactionBar(message, messageKey)}
-                    {showReplyPreview && (
-                      <div
-                        className={`message-reply-preview ${replySourceMessageKey ? 'is-clickable' : ''} ${
-                          replySourceMessage?.sender === 'agent'
-                            ? 'is-self-source'
-                            : 'is-contact-source'
-                        }`}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          if (replySourceMessageKey) {
-                            scrollToReferencedMessage(replySourceMessageKey);
-                          }
-                        }}
-                      >
-                        <div className="message-reply-label">{replyLabel}</div>
-                        <div className="message-reply-text">{replyPreview}</div>
-                      </div>
-                    )}
-                    {!showAttachmentCaption && !hasImageAttachment && displayText && !useCompactInlineMeta && displayText}
-                    {useCompactInlineMeta && (
-                      <div
-                        className={`message-text-content message-text-content--compact-meta ${
-                          useTrailingCompactMeta ? 'message-text-content--trailing-meta' : ''
-                        }`}
-                      >
-                        {displayText}
-                        <span className="message-inline-meta message-inline-meta--compact">
-                          <span className="timestamp">
-                            {formatMessageTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
-                          </span>
-                          {message.sender === 'agent' && getStatusIcon(message.status)}
-                          {!useOverlayCompactHoverMenu &&
-                            renderMessageHoverMenu({
-                              message,
-                              messageKey,
-                              hasAttachment,
-                              variant: 'inline'
-                            })}
-                        </span>
-                      </div>
-                    )}
-                    {useOverlayCompactHoverMenu &&
-                      renderMessageHoverMenu({
-                        message,
-                        messageKey,
-                        hasAttachment,
-                        variant: 'overlay',
-                        contextClass: useTrailingCompactMeta ? 'trailing-text' : 'compact-inline'
-                      })}
-                    {renderAttachment(message, messageKey)}
-                    {showAttachmentCaption && (
-                      <div
-                        className={`message-media-caption ${
-                          useAttachmentCaptionTrailingMeta ? 'message-media-caption--trailing-meta' : ''
-                        }`}
-                      >
-                        <span className="message-media-caption-text">{displayText}</span>
-                        <span className="message-inline-meta message-inline-meta--compact">
-                          <span className="timestamp">
-                            {formatMessageTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
-                          </span>
-                          {message.sender === 'agent' && getStatusIcon(message.status)}
-                        </span>
-                      </div>
-                    )}
-                    {renderReactionChip(messageKey)}
-                    {showInlineMeta && !useCompactInlineMeta && !showAttachmentCaption && (
-                      <div className="message-inline-meta">
-                        <span className="timestamp">
-                          {formatMessageTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
-                        </span>
-                        {message.sender === 'agent' && getStatusIcon(message.status)}
-                        {!hasDocumentAttachment &&
-                          !hasAudioAttachment &&
-                          renderMessageHoverMenu({
-                            message,
-                            messageKey,
-                            hasAttachment,
-                            variant: 'inline'
-                          })}
-                      </div>
-                    )}
-                  </div>
-
-                  {!showInlineMeta && !hasImageAttachment && (
-                    <div className="message-info">
-                      <span className="timestamp">
-                        {formatMessageTime(message.timestamp || message.whatsappTimestamp || message.createdAt)}
-                      </span>
-                      {message.sender === 'agent' && getStatusIcon(message.status)}
-                    </div>
-                  )}
-                </div>
+                    item={item}
+                    message={message}
+                    messageKey={messageKey}
+                    rowSignature={rowSignature}
+                    showMessageSelectMode={showMessageSelectMode}
+                    isMessageSelected={selectedMessagesForDeletionSet.has(messageKey)}
+                    isReplyTargetHighlighted={highlightedMessageKey === messageKey}
+                    hasPersistedReaction={hasPersistedReaction}
+                    hasActiveMessageActions={hasActiveMessageActions}
+                    displayText={displayText}
+                    replySourceMessage={replySourceMessage}
+                    replySourceMessageKey={replySourceMessageKey}
+                    replyPreview={replyPreview}
+                    replyLabel={replyLabel}
+                    hasAttachment={hasAttachment}
+                    showReplyPreview={showReplyPreview}
+                    showAttachmentCaption={showAttachmentCaption}
+                    useAttachmentCaptionTrailingMeta={useAttachmentCaptionTrailingMeta}
+                    showInlineMeta={showInlineMeta}
+                    useCompactInlineMeta={useCompactInlineMeta}
+                    useTrailingCompactMeta={useTrailingCompactMeta}
+                    useOverlayCompactHoverMenu={useOverlayCompactHoverMenu}
+                    hasImageAttachment={hasImageAttachment}
+                    hasAudioAttachment={hasAudioAttachment}
+                    hasDocumentAttachment={hasDocumentAttachment}
+                    hasDocumentCaption={hasDocumentCaption}
+                    renderHoverReactionTrigger={renderHoverReactionTrigger}
+                    renderReactionBar={renderReactionBar}
+                    renderMessageHoverMenu={renderMessageHoverMenu}
+                    renderAttachment={renderAttachment}
+                    renderReactionChip={renderReactionChip}
+                    onToggleMessageSelection={onToggleMessageSelection}
+                    onScrollToReferencedMessage={scrollToReferencedMessage}
+                    formatMessageTime={formatMessageTime}
+                    getStatusIcon={getStatusIcon}
+                  />
                 );
               }}
               components={{
                 Header: () =>
-                  olderMessagesLoading || showInitialThreadLoading ? (
+                  olderMessagesLoading ? (
                     <div className="chat-messages-header">
                       {olderMessagesLoading && (
                         <div className="chat-history-loading">
                           <span className="chat-history-loading-spinner" aria-hidden="true" />
                           <span>Loading earlier messages...</span>
-                        </div>
-                      )}
-
-                      {showInitialThreadLoading && (
-                        <div className="chat-thread-loading">
-                          <span className="chat-thread-loading-spinner" aria-hidden="true" />
-                          <span>Loading conversation...</span>
                         </div>
                       )}
                     </div>

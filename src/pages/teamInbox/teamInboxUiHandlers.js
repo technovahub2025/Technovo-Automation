@@ -21,25 +21,38 @@ export const createTeamInboxUiHandlers = ({
   pendingConversationRouteSyncRef
 }) => {
   const handleSelectConversation = (conversation) => {
-    const conversationIdValue = String(conversation?._id || '').trim();
+    const conversationIdValue = String(
+      conversation?.conversationId ||
+        conversation?.conversation_id ||
+        conversation?.threadConversationId ||
+        conversation?._id ||
+        conversation?.id ||
+        ''
+    ).trim();
     if (!conversationIdValue) return;
     if (pendingConversationRouteSyncRef) {
       pendingConversationRouteSyncRef.current = conversationIdValue;
     }
     const activeConversationId = String(
-      selectedConversation?._id || selectedConversation?.id || ''
+      selectedConversation?.conversationId ||
+        selectedConversation?.conversation_id ||
+        selectedConversation?.threadConversationId ||
+        selectedConversation?._id ||
+        selectedConversation?.id ||
+        ''
     ).trim();
-    const commitSelection = () => {
-      if (activeConversationId !== conversationIdValue) {
-        setSelectedConversation(conversation);
-      }
+    if (activeConversationId !== conversationIdValue) {
+      setSelectedConversation(conversation);
+    }
+
+    const commitNavigation = () => {
       navigate(`/inbox/${conversationIdValue}`);
     };
 
     if (typeof startTransition === 'function') {
-      startTransition(commitSelection);
+      startTransition(commitNavigation);
     } else {
-      commitSelection();
+      commitNavigation();
     }
     if (getUnreadCount(conversation) > 0) {
       markAsRead(conversationIdValue);

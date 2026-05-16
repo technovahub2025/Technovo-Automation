@@ -476,12 +476,18 @@ export const apiClient = {
    * @param {Object} params - Query parameters
    */
   getBroadcasts: (params = {}) => api.get('/broadcasts', { params, timeout: LONG_TIMEOUT_MS }),
-  
+
+  getCampaignSelectionBroadcasts: (params = {}) =>
+    api.get('/broadcasts/selection/campaigns', { params, timeout: LONG_TIMEOUT_MS }),
+
   /**
    * Get single broadcast by ID
    * @param {string} id - Broadcast ID
    */
   getBroadcast: (id) => api.get(`/broadcasts/${id}`, { timeout: LONG_TIMEOUT_MS }),
+
+  getBroadcastAudienceRecipients: (id, params = {}) =>
+    api.get(`/broadcasts/${id}/audience/recipients`, { params, timeout: LONG_TIMEOUT_MS }),
 
   getBroadcastReliabilitySummary: (params = {}) =>
     api.get('/broadcasts/analytics/reliability', { params, timeout: LONG_TIMEOUT_MS }),

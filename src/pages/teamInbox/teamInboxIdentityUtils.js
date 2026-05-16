@@ -1,5 +1,16 @@
 export const normalizePhone = (value) => String(value || '').replace(/\D/g, '');
 
+export const getConversationPhoneValue = (conversation = {}) =>
+  String(
+    conversation?.contactPhone ||
+      conversation?.contactId?.phone ||
+      conversation?.contactId?.mobile ||
+      conversation?.phone ||
+      conversation?.phoneNumber ||
+      conversation?.contactPhoneDigits ||
+      ''
+  ).trim();
+
 export const getPhoneLookupKeys = (value) => {
   const normalized = normalizePhone(value);
   if (!normalized) return [];
@@ -46,7 +57,7 @@ export const doesConversationMatchSearch = ({
   const rawName = normalizeLookupText(
     conversation?.contactId?.name || conversation?.contactName || ''
   );
-  const contactPhone = String(conversation?.contactPhone || '').trim();
+  const contactPhone = getConversationPhoneValue(conversation);
   const previewText = normalizeLookupText(conversation?.lastMessagePreviewText || '');
   const normalizedPhoneQuery = normalizePhone(searchTerm);
   const phoneKeys = getPhoneLookupKeys(contactPhone);
@@ -73,7 +84,7 @@ export const findConversationByContactIdentity = ({
   const normalizedContactName = normalizeLookupText(contactName);
 
   const phoneMatch = safeConversations.find((conversation) =>
-    matchesPhoneLookup(conversation?.contactPhone, phoneNumber)
+    matchesPhoneLookup(getConversationPhoneValue(conversation), phoneNumber)
   );
   if (phoneMatch) return phoneMatch;
 

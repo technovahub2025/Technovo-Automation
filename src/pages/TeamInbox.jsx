@@ -1,4 +1,4 @@
-﻿import React, {
+import React, {
   useState,
   useEffect,
   useMemo,
@@ -124,6 +124,7 @@ const TeamInbox = () => {
     limit: 100,
     hasMore: false,
     nextCursor: null,
+    exhausted: false,
     loaded: false,
     querySignature: ''
   });
@@ -248,10 +249,13 @@ const TeamInbox = () => {
   const messageLoadPromiseMapRef = useRef(new Map());
   const conversationLoadPromiseMapRef = useRef(new Map());
   const threadAutoLoadAttemptRef = useRef('');
+  const threadCacheDisplaySourceRef = useRef('unknown');
+  const threadFreshSyncAtRef = useRef(0);
   const conversationPageMetaRef = useRef({
     limit: 100,
     hasMore: false,
     nextCursor: null,
+    exhausted: false,
     loaded: false,
     querySignature: ''
   });
@@ -284,7 +288,6 @@ const TeamInbox = () => {
   )
     ? String(conversationFilter || 'all').trim().toLowerCase()
     : 'all';
-  const activeConversationId = String(selectedConversation?._id || '').trim();
   const isInboxDebugVisible = isTeamInboxDebugVisible();
   const {
     getUnreadCount,
@@ -310,11 +313,31 @@ const TeamInbox = () => {
     getCrmActivityLabel,
     getCrmActivityDescription
   } = useTeamInboxBoundUtils(contactNameMap, leadStageOptions);
+  const activeConversationId = String(getConversationIdValue(selectedConversation) || '').trim();
 
   useEffect(() => {
     setConversationDrafts(readTeamInboxDrafts(currentUserId));
     draftRestoreConversationIdRef.current = '';
   }, [currentUserId, normalizeConversation]);
+
+  useEffect(() => {
+    if (!selectedConversation) return;
+
+    const currentConversationId = String(getConversationIdValue(selectedConversation) || '').trim();
+    if (!currentConversationId) return;
+
+    const nextSelectedConversation = enrichConversationIdentity(selectedConversation, conversations);
+    const nextConversationId = String(getConversationIdValue(nextSelectedConversation) || '').trim();
+    if (!nextConversationId || nextConversationId === currentConversationId) return;
+
+    setSelectedConversation(nextSelectedConversation);
+  }, [
+    conversations,
+    enrichConversationIdentity,
+    getConversationIdValue,
+    selectedConversation,
+    setSelectedConversation
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -452,16 +475,18 @@ const TeamInbox = () => {
     setContactNameMap(cachedContactNameMap);
     setLoading(false);
   }, [currentUserId, normalizeConversation]);
-  const showTeamInboxActionFeedback = (message, tone = 'info') => {
+  const showTeamInboxActionFeedback = useCallback((message, tone = 'info') => {
     const nextMessage = String(message || '').trim();
     if (!nextMessage) return;
     setTeamInboxActionFeedback({
       message: nextMessage,
       tone: String(tone || 'info').trim() || 'info'
     });
-  };
-  const confirmTeamInboxAction = async (message) =>
-    window.confirm(String(message || '').trim());
+  }, []);
+  const confirmTeamInboxAction = useCallback(
+    async (message) => window.confirm(String(message || '').trim()),
+    []
+  );
 
   const applyWhatsAppContactUpdateLocally = (contactUpdate = {}) => {
     const normalizedContactId = String(
@@ -606,7 +631,9 @@ const TeamInbox = () => {
       pendingConversationRouteSyncRef.current = nextConversationId;
 
       const matchingConversation = conversations.find(
-        (conversation) => String(conversation?._id || '').trim() === nextConversationId
+        (conversation) =>
+          String(getConversationIdValue(conversation) || '').trim() === nextConversationId ||
+          String(conversation?.summaryId || '').trim() === nextConversationId
       );
 
       if (matchingConversation) {
@@ -629,7 +656,7 @@ const TeamInbox = () => {
     };
   }, [conversations, navigate]);
 
-  const appendMessageUnique = (incomingMessage) => {
+  const appendMessageUnique = useCallback((incomingMessage) => {
 
     if (!incomingMessage) return;
 
@@ -653,7 +680,7 @@ const TeamInbox = () => {
 
     });
 
-  };
+  }, []);
 
   const {
     showTemplateSendModal,
@@ -899,17 +926,17 @@ const TeamInbox = () => {
 
   useEffect(() => {
     selectedConversationRef.current = selectedConversation;
+    threadCacheDisplaySourceRef.current = 'unknown';
+    threadFreshSyncAtRef.current = 0;
   }, [selectedConversation]);
 
   useEffect(() => {
-    const activeConversationId = String(
-      selectedConversation?._id || selectedConversation?.id || ''
-    ).trim();
-
     if (activeConversationId) return;
 
     activeMessagesConversationIdRef.current = '';
     messageLoadRequestIdRef.current += 1;
+    threadCacheDisplaySourceRef.current = 'unknown';
+    threadFreshSyncAtRef.current = 0;
     setMessagesHasMore(false);
     setMessagesOlderLoading(false);
     setMessagesLoading(false);
@@ -928,7 +955,7 @@ const TeamInbox = () => {
       messageId: '',
       details: 'No active conversation selected'
     });
-  }, [selectedConversation?._id, selectedConversation?.id]);
+  }, [activeConversationId]);
 
   useEffect(() => {
     const activeMessagesConversationId = String(
@@ -995,6 +1022,7 @@ const TeamInbox = () => {
 
   const {
     loadConversations,
+    loadConversationById,
     loadMessages,
     sendMessage,
     sendReaction,
@@ -1030,6 +1058,8 @@ const TeamInbox = () => {
     conversationLoadPromiseMapRef,
     conversationPageMetaRef,
     conversationLoadRequestIdRef,
+    threadCacheDisplaySourceRef,
+    threadFreshSyncAtRef,
     setConversationPageMeta,
     setSidebarRefreshing,
     setMessagesOlderLoading,
@@ -1041,23 +1071,26 @@ const TeamInbox = () => {
   });
 
   useEffect(() => {
-    const activeId = String(selectedConversation?._id || '').trim();
+    const activeId = String(getConversationIdValue(selectedConversation) || '').trim();
     if (!activeId) return;
     if (messagesLoading || messagesOlderLoading) return;
     if (Array.isArray(messages) && messages.length > 0) return;
+    if (messageLoadPromiseMapRef.current?.has(activeId)) return;
 
     const cachedThreadCount = Number(threadCacheInfo?.messageCount || 0);
     if (cachedThreadCount > 0) return;
     if (threadAutoLoadAttemptRef.current === activeId) return;
 
     const timer = window.setTimeout(() => {
-      if (String(selectedConversationRef.current?._id || '').trim() !== activeId) return;
+      if (String(getConversationIdValue(selectedConversationRef.current) || '').trim() !== activeId) {
+        return;
+      }
       const cachedMessages = messageCacheRef.current.get(activeId);
       if (Array.isArray(cachedMessages) && cachedMessages.length > 0) {
         return;
       }
       threadAutoLoadAttemptRef.current = activeId;
-      void loadMessages(activeId, { forceRefresh: true });
+      void loadMessages(activeId);
     }, 0);
 
     return () => window.clearTimeout(timer);
@@ -1066,12 +1099,12 @@ const TeamInbox = () => {
     messages,
     messagesLoading,
     messagesOlderLoading,
-    selectedConversation?._id,
+    activeConversationId,
     threadCacheInfo?.messageCount
   ]);
 
   useEffect(() => {
-    const activeId = String(selectedConversation?._id || '').trim();
+    const activeId = String(getConversationIdValue(selectedConversation) || '').trim();
     if (!activeId) {
       threadAutoLoadAttemptRef.current = '';
       return;
@@ -1080,7 +1113,7 @@ const TeamInbox = () => {
     if (Array.isArray(messages) && messages.length > 0) {
       threadAutoLoadAttemptRef.current = '';
     }
-  }, [messages, selectedConversation?._id]);
+  }, [messages, activeConversationId]);
 
   const loadScopedConversations = useCallback(
     async (options = {}) =>
@@ -1145,6 +1178,7 @@ const TeamInbox = () => {
     loadMessages,
     chatMessagesRef,
     isConversationSwitchRef,
+    threadFreshSyncAtRef,
     messages,
     messagesLoading,
     messagesOlderLoading
@@ -1156,6 +1190,7 @@ const TeamInbox = () => {
     selectedConversationId: activeConversationId,
     isConversationSwitchRef,
     loadMessages,
+    loadConversationById,
     conversationId,
     getUnreadCount,
     markAsRead,
@@ -1195,7 +1230,8 @@ const TeamInbox = () => {
     setUserPresenceMap,
     setConversationTypingState,
     setInboxDebugInfo,
-    notifyActionFeedback: showTeamInboxActionFeedback
+    notifyActionFeedback: showTeamInboxActionFeedback,
+    threadFreshSyncAtRef
   });
   const {
     deleteCurrentConversation,
@@ -1234,55 +1270,7 @@ const TeamInbox = () => {
     [conversations, deferredSearchTerm, conversationFilter, getUnreadCount, getConversationDisplayName]
   );
 
-  const sidebarConversations = useMemo(() => {
-    const activeId = String(selectedConversation?._id || '').trim();
-    if (!activeId || !Array.isArray(messages) || messages.length === 0) {
-      return filteredConversations;
-    }
-
-    let latestVisibleMessage = null;
-    let latestVisibleTimestamp = Number.NEGATIVE_INFINITY;
-
-    for (const message of messages) {
-      if (!String(message?.sender || '').trim()) continue;
-
-      const messageTimestamp = new Date(
-        message?.timestamp || message?.whatsappTimestamp || message?.createdAt || 0
-      ).valueOf();
-
-      if (!Number.isFinite(messageTimestamp) || messageTimestamp < latestVisibleTimestamp) {
-        continue;
-      }
-
-      latestVisibleTimestamp = messageTimestamp;
-      latestVisibleMessage = message;
-    }
-
-    if (!latestVisibleMessage) {
-      return filteredConversations;
-    }
-
-    return filteredConversations.map((conversation) => {
-      if (String(conversation?._id || '').trim() !== activeId) {
-        return conversation;
-      }
-
-      const latestSender = String(latestVisibleMessage?.sender || '').trim().toLowerCase();
-      const latestStatus = String(latestVisibleMessage?.status || '').trim().toLowerCase();
-
-      return {
-        ...conversation,
-        lastMessageFrom: latestSender || conversation?.lastMessageFrom || '',
-        lastMessageStatus:
-          latestSender === 'agent'
-            ? resolvePreferredMessageStatus(conversation?.lastMessageStatus, latestStatus)
-            : conversation?.lastMessageStatus || '',
-        lastMessageWhatsappMessageId:
-          String(latestVisibleMessage?.whatsappMessageId || '').trim() ||
-          String(conversation?.lastMessageWhatsappMessageId || '').trim()
-      };
-    });
-  }, [filteredConversations, messages, selectedConversation?._id]);
+  const sidebarConversations = filteredConversations;
 
   filteredConversationsRef.current = filteredConversations;
 
@@ -1523,7 +1511,7 @@ const TeamInbox = () => {
       if (!safeConversations.length) return;
 
       const currentIndex = safeConversations.findIndex(
-        (conversation) => String(conversation?._id || '').trim() === activeConversationId
+        (conversation) => String(getConversationIdValue(conversation) || '').trim() === activeConversationId
       );
       const fallbackIndex = currentIndex < 0 ? 0 : currentIndex;
       const direction = event.key === 'ArrowDown' ? 1 : -1;
@@ -1548,7 +1536,22 @@ const TeamInbox = () => {
         wsConnected={wsConnected}
         refreshing={sidebarRefreshing}
         loadingMoreConversations={conversationLoadingMore}
-        hasMoreConversations={conversationPageMeta.hasMore}
+        allowLoadMoreConversations={
+          Boolean(conversationPageMeta.loaded) &&
+          !Boolean(conversationPageMeta.exhausted) &&
+          !conversationLoadingMore
+        }
+        hasMoreConversations={
+          Boolean(conversationPageMeta.hasMore) ||
+          Boolean(conversationPageMeta.nextCursor) ||
+          (!Boolean(conversationPageMeta.exhausted) && Boolean(conversationPageMeta.loaded))
+        }
+        conversationListExhausted={
+          Boolean(conversationPageMeta.loaded) &&
+          Boolean(conversationPageMeta.exhausted) &&
+          Array.isArray(sidebarConversations) &&
+          sidebarConversations.length > 0
+        }
         filterMenuRef={filterMenuRef}
         inboxMenuRef={inboxMenuRef}
         showFilterMenu={showFilterMenu}
@@ -1579,10 +1582,13 @@ const TeamInbox = () => {
 
       <ChatArea
         selectedConversation={selectedConversation}
+        currentThreadConversationId={String(activeMessagesConversationIdRef.current || '').trim()}
         messages={messages}
         messagesLoading={messagesLoading}
         hasOlderMessages={messagesHasMore}
         threadCacheInfo={threadCacheInfo}
+        inboxDebugInfo={inboxDebugInfo}
+        isInboxDebugVisible={isInboxDebugVisible}
         olderMessagesLoading={messagesOlderLoading}
         getConversationAvatarText={getConversationAvatarText}
         getConversationDisplayName={getConversationDisplayName}
@@ -1619,7 +1625,7 @@ const TeamInbox = () => {
         onDeleteMessage={deleteMessage}
         onRetryAttachment={retryAttachment}
         onLoadOlderMessages={() =>
-          selectedConversation ? loadMessages(selectedConversation._id, { loadOlder: true }) : false
+          activeConversationId ? loadMessages(activeConversationId, { loadOlder: true }) : false
         }
         onToggleEmojiPicker={() => setShowEmojiPicker((prev) => !prev)}
         onEmojiInsert={handleEmojiInsert}

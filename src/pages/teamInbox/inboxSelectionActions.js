@@ -1,5 +1,15 @@
 import { whatsappService } from '../../services/whatsappService';
 
+const getConversationId = (conversation = {}) =>
+  String(
+    conversation?.conversationId ||
+      conversation?.conversation_id ||
+      conversation?.threadConversationId ||
+      conversation?._id ||
+      conversation?.id ||
+      ''
+  ).trim();
+
 export const createInboxSelectionActions = ({
   selectedConversation,
   selectedForDeletion,
@@ -38,7 +48,7 @@ export const createInboxSelectionActions = ({
   const deleteConversationEntry = async (conversation) => {
     const targetConversation = conversation || selectedConversation;
     if (!targetConversation) return;
-    const targetConversationId = String(targetConversation?._id || '').trim();
+    const targetConversationId = getConversationId(targetConversation);
     if (!targetConversationId) return;
     const targetDisplayName =
       targetConversation.contactId?.name || targetConversation.contactPhone || 'this contact';
@@ -52,10 +62,10 @@ export const createInboxSelectionActions = ({
         await whatsappService.deleteConversation(targetConversationId);
 
         setConversations((prev) =>
-          prev.filter((conversationItem) => conversationItem._id !== targetConversationId)
+          prev.filter((conversationItem) => getConversationId(conversationItem) !== targetConversationId)
         );
 
-        if (String(selectedConversation?._id || '').trim() === targetConversationId) {
+        if (getConversationId(selectedConversation) === targetConversationId) {
           setSelectedConversation(null);
           setMessages([]);
           navigate('/inbox');
@@ -102,10 +112,10 @@ export const createInboxSelectionActions = ({
         await whatsappService.deleteSelectedConversations(selectedForDeletion);
 
         setConversations((prev) =>
-          prev.filter((conversation) => !selectedForDeletion.includes(conversation._id))
+          prev.filter((conversation) => !selectedForDeletion.includes(getConversationId(conversation)))
         );
 
-        if (selectedConversation && selectedForDeletion.includes(selectedConversation._id)) {
+        if (selectedConversation && selectedForDeletion.includes(getConversationId(selectedConversation))) {
           setSelectedConversation(null);
           setMessages([]);
           navigate('/inbox');

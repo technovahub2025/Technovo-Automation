@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import Papa from 'papaparse';
 
@@ -29,6 +29,7 @@ import AllCampaignsPopup from '../components/broadcastComponents/AllCampaignsPop
 import BroadcastAnalyticsModal from '../components/broadcastComponents/BroadcastAnalyticsModal';
 import BroadcastAudienceValidationModal from '../components/broadcastComponents/BroadcastAudienceValidationModal';
 import ContactAudiencePickerModal from '../components/broadcastComponents/ContactAudiencePickerModal';
+import CampaignAudiencePickerModal from '../components/broadcastComponents/CampaignAudiencePickerModal';
 import OutboundDialer from '../components/outbound/OutboundDialer';
 import { stripAppRouteBase } from '../utils/appRouteBase';
 
@@ -209,10 +210,20 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const [broadcastMode, setBroadcastMode] = useState('whatsapp');
   const [outboundPhaseTab, setOutboundPhaseTab] = useState('quick');
   const [showContactAudiencePicker, setShowContactAudiencePicker] = useState(false);
+  const [contactAudiencePickerPurpose, setContactAudiencePickerPurpose] = useState('direct');
+  const [showCampaignAudiencePicker, setShowCampaignAudiencePicker] = useState(false);
   const [audienceSourceMode, setAudienceSourceMode] = useState('contacts');
   const [selectedAudienceMeta, setSelectedAudienceMeta] = useState({
     segmentId: '',
     segmentName: ''
+  });
+  const [selectedCampaignAudience, setSelectedCampaignAudience] = useState({
+    campaignBroadcastId: '',
+    campaignName: '',
+    campaignStatus: '',
+    campaignRecipientCount: 0,
+    excludedPhones: [],
+    additionalContacts: []
   });
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
   const [quietHoursStartHour, setQuietHoursStartHour] = useState(22);
@@ -1245,8 +1256,32 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     Boolean(String(recipient?.contactId || recipient?.data?._id || recipient?.fullData?._id || '').trim())
   );
 
+  const campaignAdditionalContacts = Array.isArray(selectedCampaignAudience?.additionalContacts)
+    ? selectedCampaignAudience.additionalContacts
+    : [];
+  const campaignExcludedPhones = Array.isArray(selectedCampaignAudience?.excludedPhones)
+    ? selectedCampaignAudience.excludedPhones
+        .map((phone) => String(phone || '').trim())
+        .filter(Boolean)
+    : [];
+  const selectedCampaignAudienceCount = React.useMemo(() => {
+    const baseCount = Math.max(0, Number(selectedCampaignAudience?.campaignRecipientCount || 0));
+    const excludedPhoneSet = new Set(campaignExcludedPhones.map((phone) => phone.replace(/\D/g, '')));
+    const excludedCount = excludedPhoneSet.size;
+    const additionalCount = new Set(
+      campaignAdditionalContacts
+        .map((contact) => String(contact?.phone || '').replace(/\D/g, ''))
+        .filter((phone) => Boolean(phone) && !excludedPhoneSet.has(phone))
+    ).size;
+    return Math.max(0, baseCount - excludedCount + additionalCount);
+  }, [campaignAdditionalContacts, campaignExcludedPhones, selectedCampaignAudience?.campaignRecipientCount]);
+
   const audienceSourceLabel = uploadedFile
     ? `CSV upload: ${uploadedFile.name}`
+    : String(selectedCampaignAudience?.campaignName || '').trim() && audienceSourceMode === 'campaign'
+      ? `Campaign: ${selectedCampaignAudience.campaignName}`
+    : String(selectedCampaignAudience?.campaignBroadcastId || '').trim() && audienceSourceMode === 'campaign'
+      ? `Campaign: ${selectedCampaignAudience.campaignBroadcastId}`
     : String(selectedAudienceMeta?.segmentName || '').trim()
       ? `Saved segment: ${selectedAudienceMeta.segmentName}`
     : hasContactsAudience
@@ -1265,12 +1300,24 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     const hasContactsSelection = selectedContactCount > 0;
     const segmentId = String(selectedAudienceMeta?.segmentId || '').trim();
     const segmentName = String(selectedAudienceMeta?.segmentName || '').trim();
+    const campaignBroadcastId = String(selectedCampaignAudience?.campaignBroadcastId || '').trim();
+    const campaignName = String(selectedCampaignAudience?.campaignName || '').trim();
+    const campaignStatus = String(selectedCampaignAudience?.campaignStatus || '').trim();
+    const campaignRecipientCount = Math.max(0, Number(selectedCampaignAudience?.campaignRecipientCount || 0));
+    const excludedPhones = campaignExcludedPhones;
+    const additionalContacts = campaignAdditionalContacts
+      .map((contact) => normalizeContactToRecipient(contact))
+      .filter((recipient) => String(recipient?.phone || '').trim());
+    const campaignSelectedCount = selectedCampaignAudienceCount;
+    const excludedPhoneSet = new Set(campaignExcludedPhones.map((phone) => phone.replace(/\D/g, '')));
     const sourceType = uploadedFile
       ? 'csv'
+      : campaignBroadcastId
+        ? 'campaign'
       : segmentId
         ? 'saved_segment'
-      : hasContactsSelection
-        ? 'contacts'
+        : hasContactsSelection
+          ? 'contacts'
         : recipientCount > 0
           ? 'manual'
           : 'unknown';
@@ -1281,13 +1328,17 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         label: audienceSourceLabel,
         type: sourceType,
         segmentId,
+        campaignBroadcastId,
         sourceName:
           uploadedFile?.name ||
+          (campaignName ? `campaign:${campaignName}` : campaignBroadcastId ? `campaign:${campaignBroadcastId}` : '') ||
           (segmentName ? `segment:${segmentName}` : hasContactsSelection ? 'crm_contacts' : 'manual_list'),
         uploadedFileName: uploadedFile?.name || '',
-        recipientCount,
-        selectedContactCount,
-        hasContactIds: hasContactsSelection
+        recipientCount: sourceType === 'campaign' ? campaignSelectedCount : recipientCount,
+        selectedContactCount: sourceType === 'campaign' ? campaignSelectedCount : selectedContactCount,
+        hasContactIds: sourceType === 'campaign' ? additionalContacts.some((recipient) => Boolean(recipient.contactId)) : hasContactsSelection,
+        campaignRecipientCount,
+        campaignStatus
       },
       audienceSnapshot: {
         mode: audienceSourceMode,
@@ -1295,9 +1346,22 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         sourceType,
         segmentId,
         segmentName,
+        campaignBroadcastId,
+        campaignName,
+        campaignStatus,
+        campaignRecipientCount,
+        campaignSelectedCount,
+        excludedPhones,
+        excludedCount: excludedPhones.length,
+        additionalContactIds: sourceType === 'campaign'
+          ? additionalContacts
+              .filter((recipient) => !excludedPhoneSet.has(String(recipient?.phone || '').replace(/\D/g, '')))
+              .map((recipient) => String(recipient?.contactId || recipient?.data?._id || recipient?.fullData?._id || '').trim())
+              .filter(Boolean)
+          : [],
         uploadedFileName: uploadedFile?.name || '',
-        recipientCount,
-        selectedContactCount,
+        recipientCount: sourceType === 'campaign' ? campaignSelectedCount : recipientCount,
+        selectedContactCount: sourceType === 'campaign' ? campaignSelectedCount : selectedContactCount,
         contactIds: Array.isArray(recipients)
           ? recipients
               .map((recipient) => String(recipient?.contactId || recipient?.data?._id || recipient?.fullData?._id || '').trim())
@@ -1311,12 +1375,40 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   };
 
   const openContactAudiencePicker = () => {
+    setContactAudiencePickerPurpose('direct');
     setShowContactAudiencePicker(true);
   };
 
   const closeContactAudiencePicker = () => {
     setShowContactAudiencePicker(false);
   };
+
+  const openCampaignAudiencePicker = () => {
+    setShowCampaignAudiencePicker(true);
+  };
+
+  const closeCampaignAudiencePicker = () => {
+    setShowCampaignAudiencePicker(false);
+  };
+
+  const openCampaignExtraContactsPicker = () => {
+    setContactAudiencePickerPurpose('campaign_extra');
+    setShowContactAudiencePicker(true);
+  };
+
+  const handleAudienceSourceModeChange = useCallback((nextMode) => {
+    setAudienceSourceMode(nextMode);
+    if (String(nextMode || '').trim() !== 'campaign') {
+      setSelectedCampaignAudience({
+        campaignBroadcastId: '',
+        campaignName: '',
+        campaignStatus: '',
+        campaignRecipientCount: 0,
+        excludedPhones: [],
+        additionalContacts: []
+      });
+    }
+  }, []);
 
   const applyContactAudienceSelection = (selectedContacts = [], segmentMeta = {}) => {
     const normalized = Array.isArray(selectedContacts)
@@ -1325,14 +1417,85 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           .filter((recipient) => recipient.phone)
       : [];
 
-    setRecipients(normalized);
+    if (contactAudiencePickerPurpose === 'campaign_extra') {
+      setSelectedCampaignAudience((previous) => {
+        const existing = Array.isArray(previous?.additionalContacts) ? previous.additionalContacts : [];
+        const merged = [...existing];
+        for (const contact of normalized) {
+          const contactPhone = String(contact?.phone || '').replace(/\D/g, '');
+          if (!contactPhone) continue;
+          const alreadyExists = merged.some((item) => String(item?.phone || '').replace(/\D/g, '') === contactPhone);
+          if (!alreadyExists) {
+            merged.push(contact);
+          }
+        }
+        return {
+          ...previous,
+          additionalContacts: merged
+        };
+      });
+    } else {
+      setRecipients(normalized);
+      setUploadedFile(null);
+      setFileVariables([]);
+      setSelectedAudienceMeta({
+        segmentId: String(segmentMeta?.segmentId || '').trim(),
+        segmentName: String(segmentMeta?.segmentName || '').trim()
+      });
+      setAudienceSourceMode('contacts');
+    }
+
+    setShowContactAudiencePicker(false);
+  };
+
+  const applyCampaignAudienceSelection = ({
+    campaign = null,
+    excludedPhones = [],
+    additionalContacts = []
+  } = {}) => {
+    const campaignBroadcastId = String(campaign?._id || campaign?.id || '').trim();
+    const campaignName = String(campaign?.name || '').trim();
+    const campaignStatus = String(campaign?.status || '').trim();
+    const campaignRecipientCount = Math.max(
+      0,
+      Number(campaign?.recipientCount || campaign?.sentCount || campaign?.stats?.sent || 0)
+    );
+
+    setSelectedCampaignAudience({
+      campaignBroadcastId,
+      campaignName,
+      campaignStatus,
+      campaignRecipientCount,
+      excludedPhones: Array.isArray(excludedPhones)
+        ? excludedPhones.map((phone) => String(phone || '').trim()).filter(Boolean)
+        : [],
+      additionalContacts: Array.isArray(additionalContacts)
+        ? additionalContacts
+            .map((contact) => normalizeContactToRecipient(contact))
+            .filter((recipient) => recipient.phone)
+        : []
+    });
+    setAudienceSourceMode('campaign');
     setUploadedFile(null);
     setFileVariables([]);
-    setSelectedAudienceMeta({
-      segmentId: String(segmentMeta?.segmentId || '').trim(),
-      segmentName: String(segmentMeta?.segmentName || '').trim()
-    });
+    setRecipients([]);
+    setSelectedAudienceMeta({ segmentId: '', segmentName: '' });
+    setShowCampaignAudiencePicker(false);
     setShowContactAudiencePicker(false);
+  };
+
+  const clearSelectedCampaignAudience = () => {
+    setSelectedCampaignAudience({
+      campaignBroadcastId: '',
+      campaignName: '',
+      campaignStatus: '',
+      campaignRecipientCount: 0,
+      excludedPhones: [],
+      additionalContacts: []
+    });
+    if (audienceSourceMode === 'campaign') {
+      setAudienceSourceMode('contacts');
+    }
   };
 
   const clearSelectedAudience = () => {
@@ -1340,6 +1503,9 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     setUploadedFile(null);
     setFileVariables([]);
     setSelectedAudienceMeta({ segmentId: '', segmentName: '' });
+    setShowCampaignAudiencePicker(false);
+    setShowContactAudiencePicker(false);
+    clearSelectedCampaignAudience();
   };
 
   const handleAutoCleanRecipients = () => {
@@ -1420,6 +1586,15 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
 
   const createBroadcast = async () => {
+    const campaignMode = audienceSourceMode === 'campaign';
+    const campaignHasAudience = Boolean(String(selectedCampaignAudience?.campaignBroadcastId || '').trim());
+    const campaignAdditionalRecipients = Array.isArray(selectedCampaignAudience?.additionalContacts)
+      ? selectedCampaignAudience.additionalContacts
+          .map((contact) => normalizeContactToRecipient(contact))
+          .filter((recipient) => recipient.phone)
+      : [];
+    const campaignSelectedCount = selectedCampaignAudienceCount;
+
     if (broadcastSubmitInFlightRef.current) {
       console.warn('Duplicate schedule click blocked (request already in flight)');
       return;
@@ -1431,10 +1606,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     console.log('🔍 scheduledTime:', scheduledTime);
     console.log('🔍 messageType:', messageType);
 
-    if (!broadcastName || !recipients.length) {
+    if (!broadcastName || (!campaignMode && !recipients.length) || (campaignMode && !campaignHasAudience)) {
 
       console.log('❌ Validation failed - missing broadcastName or recipients');
-      alert('Please provide a campaign name and add recipients');
+      alert('Please provide a campaign name and select an audience');
 
       return;
 
@@ -1514,28 +1689,34 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       broadcastSubmitInFlightRef.current = true;
       setIsSending(true);
       await new Promise((resolve) => window.requestAnimationFrame(resolve));
-      const recipientPreparation = prepareRecipientsForDelivery();
-      if (!validatePreparedRecipients(recipientPreparation)) {
-        return;
-      }
-      const audienceValidation = await validateAudienceOrAbort({
-        recipientsPayload: recipientPreparation.eligibleRecipients,
-        selectedTemplate
-      });
-      if (!audienceValidation) {
-        return;
-      }
-      const audienceSummary = audienceValidation.validation?.summary || {};
-      const eligibleCount = Number(audienceSummary.eligible || 0);
-      const invalidCount = Number(audienceSummary.invalid || 0);
-      if (eligibleCount <= 0) {
-        openAudienceValidationModal(audienceValidation);
-        return;
-      }
-      if (invalidCount > 0) {
-        console.warn(
-          `Audience validation found ${invalidCount} invalid recipient(s), but continuing with ${eligibleCount} eligible recipient(s).`
-        );
+      let audienceValidation = null;
+      let preparedRecipients = [];
+
+      if (!campaignMode) {
+        const recipientPreparation = prepareRecipientsForDelivery();
+        if (!validatePreparedRecipients(recipientPreparation)) {
+          return;
+        }
+        audienceValidation = await validateAudienceOrAbort({
+          recipientsPayload: recipientPreparation.eligibleRecipients,
+          selectedTemplate
+        });
+        if (!audienceValidation) {
+          return;
+        }
+        const audienceSummary = audienceValidation.validation?.summary || {};
+        const eligibleCount = Number(audienceSummary.eligible || 0);
+        const invalidCount = Number(audienceSummary.invalid || 0);
+        if (eligibleCount <= 0) {
+          openAudienceValidationModal(audienceValidation);
+          return;
+        }
+        if (invalidCount > 0) {
+          console.warn(
+            `Audience validation found ${invalidCount} invalid recipient(s), but continuing with ${eligibleCount} eligible recipient(s).`
+          );
+        }
+        preparedRecipients = recipientPreparation.eligibleRecipients;
       }
 
       const payload = {
@@ -1544,7 +1725,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         messageType,
 
-        recipients: recipientPreparation.eligibleRecipients,
+        recipients: campaignMode ? campaignAdditionalRecipients : preparedRecipients,
+        recipientCount: campaignMode ? campaignSelectedCount : preparedRecipients.length,
 
         ...buildAudiencePayload(),
 
@@ -1555,7 +1737,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           language,
 
           templateContent,
-          templateCategory: selectedTemplateCategory || audienceValidation.templateCategory || 'utility',
+          templateCategory: selectedTemplateCategory || audienceValidation?.templateCategory || 'utility',
           mediaUrl: String(templateHeaderMediaUrl || '').trim(),
           mediaType: String(templateHeaderMediaUrl || '').trim() ? 'image' : ''
 
@@ -1602,6 +1784,17 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         setUploadedFile(null);
 
         setRecipients([]);
+        setAudienceSourceMode('contacts');
+        setShowCampaignAudiencePicker(false);
+        setShowContactAudiencePicker(false);
+        setSelectedCampaignAudience({
+          campaignBroadcastId: '',
+          campaignName: '',
+          campaignStatus: '',
+          campaignRecipientCount: 0,
+          excludedPhones: [],
+          additionalContacts: []
+        });
 
         setFileVariables([]);
         setQuietHoursEnabled(false);
@@ -1645,6 +1838,11 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const handleSendBroadcast = async () => {
     if (broadcastSubmitInFlightRef.current) {
       console.warn('Duplicate send click blocked (request already in flight)');
+      return;
+    }
+
+    if (audienceSourceMode === 'campaign') {
+      await createBroadcast();
       return;
     }
 
@@ -2002,10 +2200,21 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     setScheduledTime('');
     setUploadedFile(null);
     setRecipients([]);
+    setShowCampaignAudiencePicker(false);
+    setShowContactAudiencePicker(false);
     setFileVariables([]);
     setTemplateVariables([]);
     setMessageType('template');
     setSelectedAudienceMeta({ segmentId: '', segmentName: '' });
+    setSelectedCampaignAudience({
+      campaignBroadcastId: '',
+      campaignName: '',
+      campaignStatus: '',
+      campaignRecipientCount: 0,
+      excludedPhones: [],
+      additionalContacts: []
+    });
+    setAudienceSourceMode('contacts');
     setQuietHoursEnabled(false);
     setQuietHoursStartHour(22);
     setQuietHoursEndHour(9);
@@ -2230,7 +2439,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           onOpenContactAudiencePicker={openContactAudiencePicker}
           onClearSelectedAudience={clearSelectedAudience}
           audienceSourceMode={audienceSourceMode}
-          onAudienceSourceModeChange={setAudienceSourceMode}
+          onAudienceSourceModeChange={handleAudienceSourceModeChange}
           audienceSourceLabel={audienceSourceLabel}
           onAutoCleanRecipients={handleAutoCleanRecipients}
           selectedTemplateCategory={selectedTemplateCategory}
@@ -2274,7 +2483,11 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           open={showContactAudiencePicker}
           onClose={closeContactAudiencePicker}
           onConfirm={applyContactAudienceSelection}
-          initialSelectedContacts={recipients}
+          initialSelectedContacts={
+            contactAudiencePickerPurpose === 'campaign_extra'
+              ? selectedCampaignAudience?.additionalContacts || []
+              : recipients
+          }
         />
       </div>
     );
@@ -2577,7 +2790,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           onOpenContactAudiencePicker={openContactAudiencePicker}
           onClearSelectedAudience={clearSelectedAudience}
           audienceSourceMode={audienceSourceMode}
-          onAudienceSourceModeChange={setAudienceSourceMode}
+          onAudienceSourceModeChange={handleAudienceSourceModeChange}
           audienceSourceLabel={audienceSourceLabel}
           onAutoCleanRecipients={handleAutoCleanRecipients}
           selectedTemplateCategory={selectedTemplateCategory}
@@ -2693,11 +2906,14 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         onTemplateHeaderMediaUpload={handleTemplateHeaderMediaFileUpload}
         onClearTemplateHeaderMedia={clearTemplateHeaderMedia}
         onOpenContactAudiencePicker={openContactAudiencePicker}
-        onCloseContactAudiencePicker={closeContactAudiencePicker}
+        onOpenCampaignExtraContactsPicker={openCampaignExtraContactsPicker}
+        onOpenCampaignAudiencePicker={openCampaignAudiencePicker}
         onClearSelectedAudience={clearSelectedAudience}
         audienceSourceMode={audienceSourceMode}
-        onAudienceSourceModeChange={setAudienceSourceMode}
+        onAudienceSourceModeChange={handleAudienceSourceModeChange}
         audienceSourceLabel={audienceSourceLabel}
+        selectedCampaignAudienceLabel={selectedCampaignAudience?.campaignName || ''}
+        selectedCampaignAudienceCount={selectedCampaignAudienceCount}
 
         scheduledTime={scheduledTime}
 
@@ -2714,6 +2930,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         onBackToChoice={() => {
 
           setShowContactAudiencePicker(false);
+          setShowCampaignAudiencePicker(false);
           setShowNewBroadcastPopup(false);
 
           setShowBroadcastTypeChoice(true);
@@ -2746,6 +2963,14 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         suppressionListRaw={suppressionListRaw}
         onSuppressionListRawChange={setSuppressionListRaw}
 
+      />
+
+      <CampaignAudiencePickerModal
+        open={showCampaignAudiencePicker}
+        onClose={closeCampaignAudiencePicker}
+        onConfirm={applyCampaignAudienceSelection}
+        onRequestAddContacts={openCampaignExtraContactsPicker}
+        additionalContacts={selectedCampaignAudience?.additionalContacts || []}
       />
 
 
