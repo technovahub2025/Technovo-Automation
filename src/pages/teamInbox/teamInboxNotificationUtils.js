@@ -16,7 +16,8 @@ const MEDIA_NOTIFICATION_LABELS = {
   image: 'Photo',
   video: 'Video',
   audio: 'Voice message',
-  document: 'Document'
+  document: 'Document',
+  sticker: 'Sticker'
 };
 
 const isPlaceholderMediaText = (text, mediaType) => {

@@ -10,12 +10,6 @@ export const SUPPORTED_ATTACHMENT_COMPOSER_DOCUMENT_EXTENSIONS = new Set([
   'pptx',
   'txt',
   'zip',
-  'mp4',
-  'mov',
-  'm4v',
-  'webm',
-  '3gp',
-  '3g2',
   'mp3',
   'm4a',
   'aac',
@@ -60,16 +54,23 @@ export const getDraggedFileExtension = (file = {}) => {
   return fileName.slice(lastDotIndex + 1).toLowerCase();
 };
 
-export const inferAttachmentComposerMediaType = (file = {}) =>
-  String(file?.type || '').toLowerCase().startsWith('image/') ? 'image' : 'document';
+export const inferAttachmentComposerMediaType = (file = {}) => {
+  const mimeType = String(file?.type || '').trim().toLowerCase();
+  const extension = getDraggedFileExtension(file);
+
+  if (mimeType.startsWith('audio/')) return 'audio';
+  if (mimeType.startsWith('image/')) return 'image';
+  return 'document';
+};
 
 export const isSupportedAttachmentComposerFile = (file = {}) => {
   const mimeType = String(file?.type || '')
     .trim()
     .toLowerCase();
+  const extension = getDraggedFileExtension(file);
+  if (mimeType === 'image/webp' || extension === 'webp') return false;
   if (mimeType.startsWith('image/')) return true;
   if (mimeType.startsWith('audio/')) return true;
-  if (mimeType.startsWith('video/')) return true;
   return SUPPORTED_ATTACHMENT_COMPOSER_DOCUMENT_EXTENSIONS.has(getDraggedFileExtension(file));
 };
 

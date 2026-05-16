@@ -387,7 +387,7 @@ const ConversationSidebar = ({
           return (
             <div className="conversation-load-more-wrap conversation-load-more-wrap--end" aria-live="polite">
               <div className="conversation-load-more-status conversation-load-more-status--end">
-                <span>No more conversations</span>
+                <span>No more chats</span>
               </div>
             </div>
           );
@@ -416,7 +416,7 @@ const ConversationSidebar = ({
                 <span className="conversation-load-more-divider conversation-load-more-divider--soft" />
                 <span className="conversation-load-more-loading-copy">
                   <Loader2 size={13} className="conversation-load-more-spinner" aria-hidden="true" />
-                  <span className="conversation-load-more-text">Loading more conversations...</span>
+                  <span className="conversation-load-more-text">Loading more chats...</span>
                 </span>
                 <span className="conversation-load-more-divider conversation-load-more-divider--soft" />
               </div>
@@ -532,14 +532,14 @@ const ConversationSidebar = ({
         />
         {refreshing ? (
           <div className="conversation-refresh-indicator" aria-live="polite">
-            Refreshing...
+            Updating...
           </div>
         ) : null}
       </div>
 
       <div className="conversation-list">
         {loading ? (
-          <div className="loading">Loading conversations...</div>
+          <div className="loading">Loading chats...</div>
         ) : (
           <>
             {showSelectMode && (

@@ -98,6 +98,7 @@ export const createInboxDataActions = ({
   setContactNameMap,
   activeMessagesConversationIdRef,
   messageLoadRequestIdRef,
+  messageLoadAbortControllerRef,
   messageCacheRef,
   messagePaginationCacheRef,
   messageLoadPromiseMapRef,
@@ -244,7 +245,7 @@ export const createInboxDataActions = ({
               ...(normalizedFilter !== 'all' ? { filter: normalizedFilter } : {})
             })
           : {
-              data: await whatsappService.getConversations(),
+              ...(await whatsappService.getConversationsPage({ limit: queryLimit, scope: 'team' })),
               meta: {
                 limit: queryLimit,
                 hasMore: false,
@@ -514,17 +515,31 @@ export const createInboxDataActions = ({
     }
 
     const requestId = loadOlder ? Number(messageLoadRequestIdRef.current || 0) : Number(messageLoadRequestIdRef.current || 0) + 1;
+    let nextAbortController = null;
     if (!loadOlder) {
+      if (messageLoadAbortControllerRef?.current) {
+        try {
+          messageLoadAbortControllerRef.current.abort();
+        } catch {
+          // Ignore abort cleanup errors.
+        }
+      }
+      nextAbortController =
+        typeof AbortController !== 'undefined' ? new AbortController() : null;
+      if (messageLoadAbortControllerRef) {
+        messageLoadAbortControllerRef.current = nextAbortController;
+      }
       messageLoadRequestIdRef.current = requestId;
       setMessagesLoading(!Array.isArray(cachedMessages) || cachedMessages.length === 0);
     } else {
       setMessagesOlderLoading(true);
     }
 
-      const loadPromise = whatsappService
+    const loadPromise = whatsappService
       .getMessagesPage(normalizedConversationId, {
         limit: pageLimit,
         scope: 'team',
+        signal: !loadOlder ? messageLoadAbortControllerRef?.current?.signal || null : null,
         ...(loadOlder && cachedMeta.nextCursor ? { cursor: cachedMeta.nextCursor } : {})
       })
       .then((data) => {
@@ -536,6 +551,7 @@ export const createInboxDataActions = ({
         const responseOk = Boolean(data?.ok !== false);
         const fetchedMessages = Array.isArray(data?.data) ? data.data : [];
         const fetchedMeta = normalizeMessagePageMeta(data?.meta, pageLimit);
+        const wasCanceled = Boolean(data?.canceled);
         const currentCachedMessages = Array.isArray(
           messageCacheRef.current.get(normalizedConversationId)
         )
@@ -570,6 +586,15 @@ export const createInboxDataActions = ({
               pageLimit
             )
           : fetchedMeta;
+
+        if (wasCanceled) {
+          traceTeamInbox('loadMessages:canceled', {
+            conversationId: normalizedConversationId,
+            loadOlder,
+            requestId
+          });
+          return false;
+        }
 
         traceTeamInbox('loadMessages:success', {
           conversationId: normalizedConversationId,
@@ -627,6 +652,9 @@ export const createInboxDataActions = ({
           });
         }
         if (!responseOk) {
+          if (data?.canceled || String(data?.error || '').toLowerCase() === 'canceled') {
+            return false;
+          }
           console.warn('Team Inbox message refresh returned a degraded response.', {
             conversationId: normalizedConversationId,
             requestId,
@@ -638,6 +666,13 @@ export const createInboxDataActions = ({
         return true;
       })
       .catch((error) => {
+        const isAbortError =
+          error?.name === 'AbortError' ||
+          error?.code === 'ERR_CANCELED' ||
+          String(error?.message || '').toLowerCase().includes('canceled');
+        if (isAbortError) {
+          return false;
+        }
         if (
           String(activeMessagesConversationIdRef.current || '').trim() === normalizedConversationId &&
           (!loadOlder ? messageLoadRequestIdRef.current === requestId : true)
@@ -663,6 +698,9 @@ export const createInboxDataActions = ({
       })
       .finally(() => {
         messageLoadPromiseMapRef?.current?.delete(requestKey);
+        if (!loadOlder && messageLoadAbortControllerRef?.current === nextAbortController) {
+          messageLoadAbortControllerRef.current = null;
+        }
         if (
           String(activeMessagesConversationIdRef.current || '').trim() === normalizedConversationId &&
           (!loadOlder ? messageLoadRequestIdRef.current === requestId : true)
@@ -748,9 +786,11 @@ export const createInboxDataActions = ({
 
   const resolveOutgoingMediaType = (file = {}) => {
     const normalizedMimeType = String(file?.type || '').trim().toLowerCase();
+    const normalizedExtension = String(file?.name || '').trim().split('.').pop().toLowerCase();
+    if (normalizedMimeType.startsWith('video/')) return 'unsupported';
+    if (normalizedMimeType === 'image/webp' || normalizedExtension === 'webp') return 'unsupported';
     if (normalizedMimeType.startsWith('image/')) return 'image';
     if (normalizedMimeType.startsWith('audio/')) return 'audio';
-    if (normalizedMimeType.startsWith('video/')) return 'video';
     return 'document';
   };
 
@@ -1011,15 +1051,19 @@ export const createInboxDataActions = ({
     const caption = overrideCaption !== null ? overrideCaption.trim() : String(messageInput || '').trim();
     const replaceMessageId = String(options.replaceMessageId || '').trim();
     const mediaType = resolveOutgoingMediaType(file);
+    if (mediaType === 'unsupported') {
+      throw new Error('This website only supports sending images, audio, and documents.');
+    }
+    if (mediaType !== 'image' && mediaType !== 'audio' && mediaType !== 'document') {
+      throw new Error('This website only supports sending images, audio, and documents.');
+    }
     const optimisticText =
       caption ||
       (mediaType === 'image'
         ? '[Image]'
         : mediaType === 'audio'
           ? '[Audio]'
-          : mediaType === 'video'
-            ? '[Video]'
-            : '[Document]');
+          : '[Document]');
     const replyMetadata = buildReplyMetadata(options?.replyContext);
     const mediaPipelineRequestId =
       String(options?.mediaPipelineRequestId || '').trim() || createMediaPipelineRequestId();
@@ -1108,12 +1152,29 @@ export const createInboxDataActions = ({
         updateUploadProgress,
         {
           ...replyMetadata,
-          mediaPipelineRequestId
+          mediaPipelineRequestId,
+          conversationLastInboundMessageAt:
+            String(options?.conversationLastInboundMessageAt || '').trim()
         }
       );
 
       if (!result?.success) {
-        throw new Error(result?.error || 'Attachment send failed');
+        const errorMessage = String(
+          result?.errorDetails || result?.error || 'Attachment send failed'
+        ).trim();
+        const errorCode = String(result?.errorCode || '').trim();
+        const statusCode = Number(result?.status || 0) || null;
+        const attachmentError = new Error(
+          [errorMessage, errorCode ? `code: ${errorCode}` : '', statusCode ? `status: ${statusCode}` : '']
+            .filter(Boolean)
+            .join(' • ')
+        );
+        attachmentError.code = errorCode || undefined;
+        attachmentError.status = statusCode || undefined;
+        attachmentError.errorCode = errorCode || undefined;
+        attachmentError.errorDetails = String(result?.errorDetails || '').trim() || undefined;
+        attachmentError.mediaPipelineRequestId = String(result?.mediaPipelineRequestId || '').trim() || undefined;
+        throw attachmentError;
       }
 
       const sentMessage = result?.message || result?.data?.message;
@@ -1497,7 +1558,21 @@ export const createInboxDataActions = ({
       notify(
         mediaPipelineRequestId
           ? `Attachment file is no longer available to retry (ref: ${mediaPipelineRequestId}).`
-          : 'Attachment file is no longer available to retry.',
+        : 'Attachment file is no longer available to retry.',
+        'info'
+      );
+      return;
+    }
+    const normalizedMimeType = String(
+      localFile?.type || message?.attachment?.mimeType || ''
+    )
+      .trim()
+      .toLowerCase()
+      .split(';')[0]
+      .trim();
+    if (normalizedMimeType === 'audio/mp4') {
+      notify(
+        'This old voice note was recorded in an unsupported format. Please record a new voice message.',
         'info'
       );
       return;
@@ -1508,7 +1583,9 @@ export const createInboxDataActions = ({
     await sendAttachment(localFile, {
       captionOverride,
       replaceMessageId: message?._id,
-      mediaPipelineRequestId: mediaPipelineRequestId || undefined
+      mediaPipelineRequestId: mediaPipelineRequestId || undefined,
+      conversationLastInboundMessageAt:
+        String(selectedConversation?.lastInboundMessageAt || '').trim()
     });
   };
 
@@ -1529,8 +1606,41 @@ export const createInboxDataActions = ({
 
   const loadContacts = async ({ silent = true } = {}) => {
     try {
-      const data = await whatsappService.getContacts();
-      const contacts = Array.isArray(data) ? data : [];
+      const contacts = [];
+      const seenContactKeys = new Set();
+      let cursor = '';
+      let hasMore = true;
+      let safetyCounter = 0;
+
+      while (hasMore && safetyCounter < 100) {
+        safetyCounter += 1;
+        const page = whatsappService.getContactsPage
+          ? await whatsappService.getContactsPage({
+              limit: 200,
+              ...(cursor ? { cursor } : {})
+            })
+          : {
+              ok: true,
+              data: (await whatsappService.getContactsPage({ limit: 200 }))?.data || [],
+              meta: { hasMore: false, nextCursor: null }
+            };
+
+        if (page?.ok === false) {
+          break;
+        }
+
+        const pageContacts = Array.isArray(page?.data) ? page.data : [];
+        for (const contact of pageContacts) {
+          const key = String(contact?._id || contact?.id || contact?.phone || '').trim();
+          if (!key || seenContactKeys.has(key)) continue;
+          seenContactKeys.add(key);
+          contacts.push(contact);
+        }
+
+        cursor = String(page?.meta?.nextCursor || '').trim();
+        hasMore = Boolean(page?.meta?.hasMore) && Boolean(cursor);
+      }
+
       const nextMap = {};
       contacts.forEach((contact) => {
         const name = String(contact?.name || '').trim();

@@ -119,7 +119,10 @@ const AttachmentComposerOverlay = ({
               id: String(item?.id || buildAttachmentComposerItemId(item.file, index)),
               file: item.file,
               mediaType,
-              previewUrl: mediaType === 'image' ? registerPreviewUrl(item.file) : '',
+              previewUrl:
+                mediaType === 'image' || mediaType === 'sticker'
+                  ? registerPreviewUrl(item.file)
+                  : '',
               caption: index === 0 ? String(pendingAttachment?.restoreComposerText || '') : '',
               history: []
             };
@@ -149,7 +152,8 @@ const AttachmentComposerOverlay = ({
     return composerItems.find((item) => item.id === activeItemId) || composerItems[0];
   }, [composerItems, activeItemId]);
 
-  const activeImageItem = activeItem?.mediaType === 'image';
+  const activeImageItem =
+    activeItem?.mediaType === 'image' || activeItem?.mediaType === 'sticker';
   const editorBusy = Boolean(sendingMessage || isSendingItems || isApplyingEdit);
   const contactTitle =
     String(getConversationDisplayName(selectedConversation) || '').trim() ||
@@ -485,7 +489,8 @@ const AttachmentComposerOverlay = ({
             id: buildAttachmentComposerItemId(file, currentItems.length + index),
             file,
             mediaType,
-            previewUrl: mediaType === 'image' ? registerPreviewUrl(file) : '',
+            previewUrl:
+              mediaType === 'image' || mediaType === 'sticker' ? registerPreviewUrl(file) : '',
             caption: '',
             history: []
           };
@@ -642,7 +647,11 @@ const AttachmentComposerOverlay = ({
             <div className="attachment-compose-contact-copy">
               <span className="attachment-compose-contact-title">{contactTitle}</span>
               <span className="attachment-compose-contact-subtitle">
-                {activeImageItem ? 'Photo preview' : 'Document preview'}
+                {activeItem?.mediaType === 'sticker'
+                  ? 'Sticker preview'
+                  : activeImageItem
+                    ? 'Photo preview'
+                    : 'Document preview'}
               </span>
             </div>
           </div>
@@ -1066,7 +1075,7 @@ const AttachmentComposerOverlay = ({
               <input
                 ref={addMoreInputRef}
                 type="file"
-                accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.mp4,.mov,.m4v,.webm,.3gp,.3g2,.mp3,.m4a,.aac,.amr,.ogg,.oga,.wav,.opus"
+                accept="image/jpeg,image/png,image/jpg,image/gif,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.mp3,.m4a,.aac,.amr,.ogg,.oga,.wav,.opus"
                 multiple
                 className="attachment-compose-hidden-input"
                 onChange={handleAddMoreFiles}

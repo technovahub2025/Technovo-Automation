@@ -30,6 +30,18 @@ const dedupeTemplatesById = (items = []) => {
   });
 };
 
+const dedupeBroadcastsById = (items = []) => {
+  const seen = new Set();
+  return (Array.isArray(items) ? items : []).filter((item) => {
+    const key = String(item?._id || item?.id || '').trim();
+    if (!key || seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+};
+
 const sanitizeBroadcastTemplateForCache = (template = {}) => ({
   _id: String(template?._id || '').trim(),
   id: String(template?.id || '').trim(),
@@ -227,21 +239,47 @@ export const useBroadcast = () => {
   const loadBroadcasts = useCallback(async () => {
     const requestSeq = ++loadRequestSeqRef.current;
     try {
-      const result = await apiClient.getBroadcasts();
-      const responseData = result?.data?.data ?? result?.data ?? [];
-      const broadcastsData = Array.isArray(responseData) ? responseData : [];
-      // Ignore stale responses that arrive after a newer request already updated UI
-      if (requestSeq < latestAppliedSeqRef.current) {
-        return;
+      let cursor = '';
+      let hasMore = true;
+      let aggregatedBroadcasts = [];
+      while (hasMore) {
+        if (requestSeq !== loadRequestSeqRef.current) {
+          return;
+        }
+
+        const result = await apiClient.getBroadcasts({ limit: 100, ...(cursor ? { cursor } : {}) });
+        const responseData = result?.data?.data ?? result?.data ?? [];
+        const broadcastItems = Array.isArray(responseData?.items)
+          ? responseData.items
+          : Array.isArray(responseData)
+            ? responseData
+            : [];
+        const meta = responseData?.meta || {};
+
+        aggregatedBroadcasts = dedupeBroadcastsById([
+          ...aggregatedBroadcasts,
+          ...broadcastItems
+        ]);
+
+        if (requestSeq !== loadRequestSeqRef.current) {
+          return;
+        }
+
+        latestAppliedSeqRef.current = requestSeq;
+        setBroadcasts(aggregatedBroadcasts);
+        const nextUpdatedAt = new Date();
+        setLastUpdated(nextUpdatedAt);
+        persistBroadcastPageCache({
+          broadcasts: aggregatedBroadcasts,
+          lastUpdated: nextUpdatedAt
+        });
+
+        cursor = String(meta?.nextCursor || '').trim();
+        hasMore = Boolean(meta?.hasMore) && Boolean(cursor);
+        if (hasMore) {
+          await new Promise((resolve) => window.setTimeout(resolve, 0));
+        }
       }
-      latestAppliedSeqRef.current = requestSeq;
-      setBroadcasts(broadcastsData);
-      const nextUpdatedAt = new Date();
-      setLastUpdated(nextUpdatedAt);
-      persistBroadcastPageCache({
-        broadcasts: broadcastsData,
-        lastUpdated: nextUpdatedAt
-      });
     } catch (error) {
       console.error('Failed to load broadcasts:', error);
     }
@@ -275,6 +313,15 @@ export const useBroadcast = () => {
   // Handle WebSocket messages
   const handleWebSocketMessage = useCallback(() => {}, []);
 
+  const scheduleBroadcastRefresh = useCallback(() => {
+    if (broadcastRefreshTimerRef.current) {
+      window.clearTimeout(broadcastRefreshTimerRef.current);
+    }
+    broadcastRefreshTimerRef.current = window.setTimeout(() => {
+      loadBroadcasts();
+    }, 200);
+  }, [loadBroadcasts]);
+
   // Handle broadcast stats updates
   const handleBroadcastStatsUpdate = useCallback((data) => {
     if (data.broadcastId && data.stats) {
@@ -300,7 +347,7 @@ export const useBroadcast = () => {
           return broadcast;
         });
 
-        return updatedBroadcasts;
+      return updatedBroadcasts;
       });
     }
   }, []);
@@ -341,24 +388,15 @@ export const useBroadcast = () => {
       );
 
       // fast backend reconciliation
-      setTimeout(() => loadBroadcasts(), 120);
+      scheduleBroadcastRefresh();
       return;
     }
 
     // Fallback for payloads without broadcastId
     if (['delivered', 'read', 'failed', 'sent'].includes(status)) {
-      setTimeout(() => loadBroadcasts(), 180);
+      scheduleBroadcastRefresh();
     }
-  }, [loadBroadcasts]);
-
-  const scheduleBroadcastRefresh = useCallback(() => {
-    if (broadcastRefreshTimerRef.current) {
-      window.clearTimeout(broadcastRefreshTimerRef.current);
-    }
-    broadcastRefreshTimerRef.current = window.setTimeout(() => {
-      loadBroadcasts();
-    }, 200);
-  }, [loadBroadcasts]);
+  }, [loadBroadcasts, scheduleBroadcastRefresh]);
 
   const parseDateValue = (value) => {
     if (!value) return null;

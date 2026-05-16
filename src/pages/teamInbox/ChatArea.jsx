@@ -42,6 +42,7 @@ import {
   resolveConversationAssigneeLabel,
   resolveConversationSlaMeta
 } from './teamInboxDisplayUtils';
+import { getWhatsAppConversationState } from '../../utils/whatsappContactState';
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
 const EXTRA_REACTIONS = ['🔥', '👏', '🎉', '🤝', '✅', '💯'];
@@ -619,6 +620,8 @@ const getMessagePreviewText = (message = {}) => {
   switch (mediaType) {
     case 'image':
       return 'Photo';
+    case 'sticker':
+      return 'Sticker';
     case 'document':
       return 'Document';
     case 'audio':
@@ -794,6 +797,7 @@ const ChatArea = ({
   onSendMessage,
   onReactToMessage,
   onSendAttachment,
+  selectedConversationLatestInboundMessageAt,
   onOpenAttachment,
   onDeleteMessage,
   onRetryAttachment,
@@ -868,14 +872,70 @@ const ChatArea = ({
   const selectedConversationTransitionIdRef = useRef('');
   const selectedConversationTransitionStartedAtRef = useRef(0);
   const selectedConversationTransitionHideTimerRef = useRef(null);
+  const conversationWhatsAppState = useMemo(() => {
+    if (!selectedConversation) return whatsappMessagingState || null;
+    const contactSource = {
+      ...(selectedConversation?.contactId && typeof selectedConversation.contactId === 'object'
+        ? selectedConversation.contactId
+        : {}),
+      ...(selectedConversation?.contactName ? { name: selectedConversation.contactName } : {}),
+      ...(selectedConversation?.contactPhone ? { phone: selectedConversation.contactPhone } : {}),
+      ...(selectedConversation?.whatsappOptInStatus
+        ? { whatsappOptInStatus: selectedConversation.whatsappOptInStatus }
+        : {}),
+      ...(selectedConversation?.whatsappOptInScope
+        ? { whatsappOptInScope: selectedConversation.whatsappOptInScope }
+        : {}),
+      ...(selectedConversation?.serviceWindowClosesAt
+        ? { serviceWindowClosesAt: selectedConversation.serviceWindowClosesAt }
+        : {}),
+      ...(selectedConversation?.lastInboundMessageAt
+        ? { lastInboundMessageAt: selectedConversation.lastInboundMessageAt }
+        : {}),
+      ...(selectedConversationLatestInboundMessageAt
+        ? { lastInboundMessageAt: selectedConversationLatestInboundMessageAt }
+        : {})
+    };
+    const derivedState = getWhatsAppConversationState(contactSource);
+    if (whatsappMessagingState?.optedOut) {
+      return {
+        ...derivedState,
+        optedOut: true,
+        freeformAllowed: false,
+        templateOnly: false,
+        statusLabel: 'Opted Out',
+        badgeTone: 'opted-out'
+      };
+    }
+    if (derivedState.freeformAllowed) {
+      return {
+        ...derivedState,
+        optedOut: Boolean(whatsappMessagingState?.optedOut),
+        marketingRateLimited: Boolean(whatsappMessagingState?.marketingRateLimited),
+        marketingRateRemaining:
+          whatsappMessagingState?.marketingRateRemaining ?? derivedState.marketingRateRemaining,
+        marketingNextAllowedAt:
+          whatsappMessagingState?.marketingNextAllowedAt || derivedState.marketingNextAllowedAt,
+        marketingWindowStartAt:
+          whatsappMessagingState?.marketingWindowStartAt || derivedState.marketingWindowStartAt,
+        statusLabel: derivedState.statusLabel,
+        badgeTone: derivedState.badgeTone
+      };
+    }
+    return whatsappMessagingState || derivedState;
+  }, [
+    selectedConversation,
+    selectedConversationLatestInboundMessageAt,
+    whatsappMessagingState
+  ]);
   const isFreeformBlocked = Boolean(
-    selectedConversation && whatsappMessagingState && !whatsappMessagingState.freeformAllowed
+    selectedConversation && conversationWhatsAppState && !conversationWhatsAppState.freeformAllowed
   );
-  const freeformBlockedAttachmentMessage = whatsappMessagingState?.optedOut
+  const freeformBlockedAttachmentMessage = conversationWhatsAppState?.optedOut
     ? 'This contact has opted out of WhatsApp messaging. Update consent before sending attachments.'
     : 'The 24-hour customer service window is closed. Send an approved template before attaching media.';
   const composerPlaceholder = isFreeformBlocked
-    ? whatsappMessagingState?.optedOut
+    ? conversationWhatsAppState?.optedOut
       ? 'WhatsApp outreach is blocked for this contact'
       : 'Send an approved template to continue this chat'
     : 'Type a message...';
@@ -1364,7 +1424,10 @@ const ChatArea = ({
           const mediaType = String(message?.mediaType || '').trim().toLowerCase();
           const fileCategory = String(message?.attachment?.fileCategory || '').trim().toLowerCase();
           const isImageMessage =
-            (mediaType === 'image' || fileCategory === 'image') &&
+            (mediaType === 'image' ||
+              mediaType === 'sticker' ||
+              fileCategory === 'image' ||
+              fileCategory === 'sticker') &&
             Boolean(String(message?.mediaUrl || '').trim());
           if (!isImageMessage) return null;
 
@@ -1796,28 +1859,33 @@ const ChatArea = ({
           return;
         }
 
+        const voiceStamp = Date.now();
         const extension = inferVoiceRecorderExtension(finalMimeType);
-        const voiceFile = new File([voiceBlob], `voice-note-${Date.now()}.${extension}`, {
+        const voiceFile = new File([voiceBlob], `voice-note-${voiceStamp}.${extension}`, {
           type: finalMimeType || 'audio/ogg',
-          lastModified: Date.now()
+          lastModified: voiceStamp
         });
         const replyContext = buildReplyContext();
         const didSend = await onSendAttachment?.(voiceFile, {
           captionOverride: '',
-          ...(replyContext ? { replyContext } : {})
+          ...(replyContext ? { replyContext } : {}),
+          conversationLastInboundMessageAt: selectedConversationLatestInboundMessageAt || ''
         });
 
-        if (didSend !== false) {
+        if (didSend !== false && didSend?.success !== false) {
           clearReplyContext();
           resetVoiceRecorderState();
           showMessageActionToast('Voice message sent', 'success');
           return;
         }
 
+        const voiceSendError =
+          String(didSend?.error || didSend?.message || 'Unable to send voice message').trim();
         resetVoiceRecorderState({
           restoreComposer: true,
           restoreComposerText: fallbackRestoreComposerText
         });
+        showMessageActionToast(voiceSendError, 'error');
       };
 
       recorder.start(250);
@@ -1892,7 +1960,8 @@ const ChatArea = ({
     for (const draftItem of draftItems) {
       const didSend = await onSendAttachment(draftItem.file, {
         captionOverride: String(draftItem.caption || ''),
-        ...(replyContext ? { replyContext } : {})
+        ...(replyContext ? { replyContext } : {}),
+        conversationLastInboundMessageAt: selectedConversationLatestInboundMessageAt || ''
       });
 
       if (didSend === false || didSend?.success === false) {
@@ -1921,11 +1990,14 @@ const ChatArea = ({
     const isImage = fileCategory === 'image' || mediaType === 'image';
     const isAudio = fileCategory === 'audio' || mediaType === 'audio';
     const isVideo = fileCategory === 'video' || mediaType === 'video';
+    const isSticker = fileCategory === 'sticker' || mediaType === 'sticker';
     const fileExtension = getFileExtension(message, attachment);
     const fileName =
       String(attachment?.originalFileName || message?.mediaCaption || '').trim() ||
       (isImage
         ? 'Image attachment'
+        : isSticker
+          ? 'Sticker'
         : isAudio
           ? 'Voice message'
           : isVideo
@@ -1946,6 +2018,7 @@ const ChatArea = ({
       isImage,
       isAudio,
       isVideo,
+      isSticker,
       fileExtension,
       fileName,
       fileSizeLabel,
@@ -2290,6 +2363,7 @@ const ChatArea = ({
       isImage,
       isAudio,
       isVideo,
+      isSticker,
       fileExtension,
       fileName,
       fileSizeLabel,
@@ -2305,14 +2379,15 @@ const ChatArea = ({
       Boolean(attachment?.publicId) ||
       Boolean(attachment?.originalFileName) ||
       Boolean(attachment?.bytes);
-    if (!hasMedia && !hasAttachmentMeta && !isAudio && !isVideo) return null;
+    if (!hasMedia && !hasAttachmentMeta && !isAudio && !isVideo && !isSticker) return null;
     const canOpen = Boolean(onOpenAttachment);
     const isDeleted = Boolean(deletedAt);
     const isUploading = typeof uploadProgress === 'number' && uploadProgress < 1;
     const canRetry = Boolean(onRetryAttachment) && isFailed;
-    const openMode = isImage ? 'view' : 'download';
+    const openMode = isImage || isSticker ? 'view' : 'download';
     const attachmentPages = Number(attachment?.pages || 0);
-    const isDownloadButtonHidden = !isImage && !isAudio && !isVideo && Boolean(downloadedDocumentKeys[messageKey]);
+    const isDownloadButtonHidden =
+      !isImage && !isSticker && !isAudio && !isVideo && Boolean(downloadedDocumentKeys[messageKey]);
     const documentMetaLabel = [fileExtension, fileSizeLabel || '']
       .filter(Boolean)
       .join(' • ');
@@ -2327,7 +2402,7 @@ const ChatArea = ({
     const showMediaPipelineRequestId =
       Boolean(mediaPipelineRequestId) && isMediaPipelineDebugVisible();
 
-    if (!hasMedia && !message?.attachment && !isAudio && !isVideo) return null;
+    if (!hasMedia && !message?.attachment && !isAudio && !isVideo && !isSticker) return null;
 
     if (isDeleted) {
       return (
@@ -2348,13 +2423,13 @@ const ChatArea = ({
       );
     }
 
-    if (isImage && hasMedia) {
+    if ((isImage || isSticker) && hasMedia) {
       const messageTimestamp = formatMessageTime(
         message.timestamp || message.whatsappTimestamp || message.createdAt
       );
 
       return (
-        <div className={`message-image ${isDeleted ? 'is-deleted' : ''}`}>
+        <div className={`message-image ${isDeleted ? 'is-deleted' : ''} ${isSticker ? 'is-sticker' : ''}`}>
           <button
             type="button"
             className="message-image-button"
@@ -2365,7 +2440,7 @@ const ChatArea = ({
                 await handleAttachmentOpen(message, openMode, messageKey);
               }
             }}
-            aria-label="Open image attachment"
+            aria-label={isSticker ? 'Open sticker attachment' : 'Open image attachment'}
           >
             <img src={message.mediaUrl} alt={fileName} />
             {!hasCaptionText && (
@@ -2805,6 +2880,7 @@ const ChatArea = ({
       ),
     [selectedMessagesForDeletion]
   );
+  const [isAtBottom, setIsAtBottom] = useState(true);
   const hasVisibleMessages = Array.isArray(messages) && messages.length > 0;
   const showEmptyThreadState =
     !isThreadTransitioning && !messagesLoading && !olderMessagesLoading && !hasVisibleMessages;
@@ -2852,7 +2928,7 @@ const ChatArea = ({
                 <div className="chat-header-thread-status">
                   {showThreadLoadingBadge && (
                     <span className="chat-header-operator-chip chat-header-operator-chip--loading">
-                      Loading conversation...
+                      Opening chat...
                     </span>
                   )}
                   {showThreadCacheBadge && (
@@ -3210,7 +3286,7 @@ const ChatArea = ({
           {isThreadTransitioning && (
             <div className="chat-thread-loading-banner" aria-label="Loading conversation">
               <span className="chat-thread-loading-spinner" aria-hidden="true" />
-              <span>Loading conversation...</span>
+              <span>Opening chat...</span>
             </div>
           )}
 
@@ -3233,6 +3309,8 @@ const ChatArea = ({
               computeItemKey={(_index, item) => String(item?.virtualKey || '').trim()}
               defaultItemHeight={defaultVirtualItemHeight}
               increaseViewportBy={{ top: 320, bottom: 520 }}
+              followOutput={isAtBottom ? 'smooth' : false}
+              atBottomStateChange={setIsAtBottom}
               startReached={handleLoadOlderMessages}
               itemContent={(_index, item) => {
                 const message = item?.message || {};
@@ -3465,7 +3543,7 @@ const ChatArea = ({
             ref={attachmentInputRef}
             type="file"
             className="attachment-file-input"
-            accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.mp4,.mov,.m4v,.webm,.3gp,.3g2,.mp3,.m4a,.aac,.amr,.ogg,.oga,.wav,.opus"
+            accept="image/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.mp3,.m4a,.aac,.amr,.ogg,.oga,.wav,.opus"
             multiple
             onChange={handleAttachmentSelect}
           />

@@ -94,7 +94,7 @@ const isTeamInboxDebugVisible = () => {
   }
 
   try {
-    return Boolean(import.meta?.env?.DEV) || String(window.localStorage.getItem('debugTeamInbox') || '').trim() === '1';
+    return Boolean(import.meta?.env?.DEV);
   } catch {
     return Boolean(import.meta?.env?.DEV);
   }
@@ -243,6 +243,7 @@ const TeamInbox = () => {
   const filteredConversationsRef = useRef([]);
   const draftRestoreConversationIdRef = useRef('');
   const messageLoadRequestIdRef = useRef(0);
+  const messageLoadAbortControllerRef = useRef(null);
   const conversationLoadRequestIdRef = useRef(0);
   const messageCacheRef = useRef(new Map());
   const messagePaginationCacheRef = useRef(new Map());
@@ -770,15 +771,31 @@ const TeamInbox = () => {
     return latestTime ? new Date(latestTime).toISOString() : null;
   }, [messages]);
 
-  const whatsappStateContactSource =
-    selectedConversation?.contactId && typeof selectedConversation.contactId === 'object'
-      ? {
-          ...selectedConversation.contactId,
-          ...(latestInboundMessageAtFromThread
-            ? { lastInboundMessageAt: latestInboundMessageAtFromThread }
-            : {})
-        }
-      : selectedConversation?.contactId || {};
+  const whatsappStateContactSource = {
+    ...(selectedConversation?.contactId && typeof selectedConversation.contactId === 'object'
+      ? selectedConversation.contactId
+      : {}),
+    ...(selectedConversation?.contactId && typeof selectedConversation.contactId !== 'object'
+      ? { _id: selectedConversation.contactId }
+      : {}),
+    ...(selectedConversation?.contactName ? { name: selectedConversation.contactName } : {}),
+    ...(selectedConversation?.contactPhone ? { phone: selectedConversation.contactPhone } : {}),
+    ...(selectedConversation?.whatsappOptInStatus
+      ? { whatsappOptInStatus: selectedConversation.whatsappOptInStatus }
+      : {}),
+    ...(selectedConversation?.whatsappOptInScope
+      ? { whatsappOptInScope: selectedConversation.whatsappOptInScope }
+      : {}),
+    ...(selectedConversation?.serviceWindowClosesAt
+      ? { serviceWindowClosesAt: selectedConversation.serviceWindowClosesAt }
+      : {}),
+    ...(selectedConversation?.lastInboundMessageAt
+      ? { lastInboundMessageAt: selectedConversation.lastInboundMessageAt }
+      : {}),
+    ...(latestInboundMessageAtFromThread
+      ? { lastInboundMessageAt: latestInboundMessageAtFromThread }
+      : {})
+  };
 
   const selectedWhatsAppState = getWhatsAppConversationState(whatsappStateContactSource);
 
@@ -1052,6 +1069,7 @@ const TeamInbox = () => {
     setContactNameMap,
     activeMessagesConversationIdRef,
     messageLoadRequestIdRef,
+    messageLoadAbortControllerRef,
     messageCacheRef,
     messagePaginationCacheRef,
     messageLoadPromiseMapRef,
@@ -1621,6 +1639,7 @@ const TeamInbox = () => {
         onSendMessage={sendMessage}
         onReactToMessage={sendReaction}
         onSendAttachment={sendAttachment}
+        selectedConversationLatestInboundMessageAt={latestInboundMessageAtFromThread}
         onOpenAttachment={openAttachment}
         onDeleteMessage={deleteMessage}
         onRetryAttachment={retryAttachment}

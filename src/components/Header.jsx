@@ -136,16 +136,16 @@ const Header = () => {
   }, [refreshFromBackend]);
 
   useEffect(() => {
-    const toCount = (value) => {
-      const parsed = Number(value || 0);
-      return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
-    };
+      const toCount = (value) => {
+        const parsed = Number(value || 0);
+        return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+      };
 
-    const loadNotifications = async () => {
-      try {
-        const requests = [
-          whatsappService.getConversations(),
-          whatsappService.getContacts(),
+      const loadNotifications = async () => {
+        try {
+          const requests = [
+          whatsappService.getConversationsPage({ limit: 50 }),
+          whatsappService.getContacts({ limit: 100 }),
           crmService.getOwnerNotifications({ status: "unread", limit: 12 })
         ];
         if (API_URL && token) {
@@ -156,11 +156,12 @@ const Header = () => {
           );
         }
 
-        const results = await Promise.all(requests);
-        const conversations = results[0];
-        const contacts = results[1];
-        const crmNotificationsResult = results[2];
-        const rejectedDocs = results[3]?.data?.data || [];
+        const results = await Promise.allSettled(requests);
+        const conversationsResult = results[0]?.status === 'fulfilled' ? results[0].value : null;
+        const contacts = results[1]?.status === 'fulfilled' ? results[1].value : [];
+        const crmNotificationsResult = results[2]?.status === 'fulfilled' ? results[2].value : null;
+        const rejectedDocs = results[3]?.status === 'fulfilled' ? results[3].value?.data?.data || [] : [];
+        const conversations = Array.isArray(conversationsResult?.data) ? conversationsResult.data : [];
 
         const contactNameMap = new Map();
         (Array.isArray(contacts) ? contacts : []).forEach((contact) => {
@@ -203,49 +204,23 @@ const Header = () => {
         );
 
         const unreadTop = unreadOnly.slice(0, 5);
-        const mapped = await Promise.all(
-          unreadTop.map(async (conv) => {
-            const unread = toCount(
-              conv?.unreadCount ?? conv?.unread_count ?? conv?.unreadMessages ?? 0
-            );
-            const fallbackMessage = unread > 1 ? `${unread} unread messages` : "1 unread message";
-            const baseItem = {
-              id: conv?._id || `${conv?.contactPhone || "unknown"}-${conv?.lastMessageTime || ""}`,
-              conversationId: conv?._id || null,
-              name: resolveContactName(conv, contactNameMap),
-              message: fallbackMessage,
-              unread,
-              time: conv?.lastMessageTime || null
-            };
+        const mapped = unreadTop.map((conv) => {
+          const unread = toCount(
+            conv?.unreadCount ?? conv?.unread_count ?? conv?.unreadMessages ?? 0
+          );
+          const fallbackMessage = unread > 1 ? `${unread} unread messages` : '1 unread message';
+          const previewMessage =
+            String(conv?.lastMessage || conv?.lastMessagePreview || '').trim() || fallbackMessage;
 
-            if (!conv?._id) return baseItem;
-
-            try {
-              const messages = await whatsappService.getMessages(conv._id);
-              const latestUnread = [...(Array.isArray(messages) ? messages : [])]
-                .filter(
-                  (msg) =>
-                    String(msg?.sender || "").toLowerCase() === "contact" &&
-                    String(msg?.status || "").toLowerCase() === "received"
-                )
-                .sort(
-                  (a, b) =>
-                    new Date(b?.timestamp || b?.createdAt || 0).getTime() -
-                    new Date(a?.timestamp || a?.createdAt || 0).getTime()
-                )[0];
-
-              if (!latestUnread) return baseItem;
-
-              return {
-                ...baseItem,
-                message: latestUnread?.text || fallbackMessage,
-                time: latestUnread?.timestamp || latestUnread?.createdAt || baseItem.time
-              };
-            } catch {
-              return baseItem;
-            }
-          })
-        );
+          return {
+            id: conv?._id || `${conv?.contactPhone || 'unknown'}-${conv?.lastMessageTime || ''}`,
+            conversationId: conv?._id || null,
+            name: resolveContactName(conv, contactNameMap),
+            message: previewMessage,
+            unread,
+            time: conv?.lastMessageTime || conv?.updatedAt || conv?.createdAt || null
+          };
+        });
         setNotifications(mapped);
 
         const ownerAlerts = Array.isArray(crmNotificationsResult?.data)

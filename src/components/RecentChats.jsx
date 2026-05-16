@@ -16,7 +16,8 @@ const RecentChats = () => {
     const loadRecentConversations = async () => {
         try {
             setLoading(true);
-            const conversations = await whatsappService.getConversations();
+            const conversationsResult = await whatsappService.getConversationsPage({ limit: 5 });
+            const conversations = Array.isArray(conversationsResult?.data) ? conversationsResult.data : [];
             
             // Get the 5 most recent conversations (same as TeamInbox)
             const recentConversations = conversations

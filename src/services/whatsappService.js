@@ -64,6 +64,58 @@ const normalizeServiceErrorMessage = (errorValue, fallback = 'Request failed') =
   }
 };
 
+const SERVICE_ERROR_LOG_COOLDOWN_MS = 15000;
+const recentServiceErrorLogs = new Map();
+
+const describeAxiosError = (error, fallbackMessage) => {
+  const status = Number(error?.response?.status || 0) || null;
+  const method = String(error?.config?.method || '').toUpperCase() || null;
+  const url = String(error?.config?.url || '').trim() || null;
+  const code = String(error?.code || '').trim() || null;
+  const responseData = error?.response?.data;
+  let responseSnippet = null;
+
+  if (typeof responseData === 'string') {
+    responseSnippet = responseData.slice(0, 300);
+  } else if (responseData && typeof responseData === 'object') {
+    try {
+      responseSnippet = JSON.stringify(responseData).slice(0, 300);
+    } catch {
+      responseSnippet = null;
+    }
+  }
+
+  return {
+    message: normalizeServiceErrorMessage(
+      responseData?.error || responseData?.message || error?.message,
+      fallbackMessage
+    ),
+    status,
+    method,
+    url,
+    code,
+    responseSnippet
+  };
+};
+
+const logAxiosServiceError = (label, error, fallbackMessage) => {
+  const details = describeAxiosError(error, fallbackMessage);
+  const signature = [
+    label,
+    details.status || 'no-status',
+    details.method || 'no-method',
+    details.url || 'no-url',
+    details.responseSnippet || 'no-response-snippet'
+  ].join('|');
+  const now = Date.now();
+  const lastLoggedAt = Number(recentServiceErrorLogs.get(signature) || 0);
+  if (!lastLoggedAt || now - lastLoggedAt >= SERVICE_ERROR_LOG_COOLDOWN_MS) {
+    recentServiceErrorLogs.set(signature, now);
+    console.error(`${label}:`, details);
+  }
+  return details;
+};
+
 const toBase64Url = (value = '') => {
   const normalizedValue = String(value || '');
   if (typeof btoa === 'function') {
@@ -332,6 +384,9 @@ export const whatsappService = {
       const replyToMessageId = String(options?.replyToMessageId || '').trim();
       const whatsappContextMessageId = String(options?.whatsappContextMessageId || '').trim();
       const mediaPipelineRequestId = String(options?.mediaPipelineRequestId || '').trim();
+      const conversationLastInboundMessageAt = String(
+        options?.conversationLastInboundMessageAt || ''
+      ).trim();
       if (replyToMessageId) {
         formData.append('replyToMessageId', replyToMessageId);
       }
@@ -341,18 +396,16 @@ export const whatsappService = {
       if (mediaPipelineRequestId) {
         formData.append('mediaPipelineRequestId', mediaPipelineRequestId);
       }
-      formData.append('file', file);
-
-      const headers = getAuthHeaders(false);
-      if (mediaPipelineRequestId) {
-        headers['x-request-id'] = mediaPipelineRequestId;
+      if (conversationLastInboundMessageAt) {
+        formData.append('conversationLastInboundMessageAt', conversationLastInboundMessageAt);
       }
+      formData.append('file', file);
 
       const response = await axios.post(
         `${API_BASE_URL}/api/messages/send-attachment`,
         formData,
         {
-          headers,
+          headers: getAuthHeaders(false),
           onUploadProgress: (event) => {
             if (typeof onProgress !== 'function') return;
             const total = Number(event?.total || 0);
@@ -376,6 +429,11 @@ export const whatsappService = {
         success: false,
         error: normalizeServiceErrorMessage(backendError, 'Failed to send attachment message'),
         errorCode: backendResponse?.code || backendResponse?.errorCode || null,
+        errorDetails:
+          backendResponse?.errorDetails ||
+          backendResponse?.details ||
+          backendResponse?.errorDetailsText ||
+          null,
         policy: backendResponse?.policy || null,
         status: Number(error?.response?.status || 0) || null,
         mediaPipelineRequestId: String(backendResponse?.mediaPipelineRequestId || '').trim() || null
@@ -483,13 +541,8 @@ export const whatsappService = {
 
   async deleteAttachmentMessage(messageId, options = {}) {
     try {
-      const mediaPipelineRequestId = String(options?.mediaPipelineRequestId || '').trim();
-      const headers = getAuthHeaders(false);
-      if (mediaPipelineRequestId) {
-        headers['x-request-id'] = mediaPipelineRequestId;
-      }
       const response = await axios.delete(`${API_BASE_URL}/api/messages/attachments/${messageId}`, {
-        headers
+        headers: getAuthHeaders(false)
       });
       return response.data;
     } catch (error) {
@@ -515,19 +568,57 @@ export const whatsappService = {
   async getConversations(filters = {}) {
 
     try {
+      const normalizedFilters = filters && typeof filters === 'object' ? filters : {};
+      const hasExplicitPaging =
+        Number(normalizedFilters?.limit || 0) > 0 || String(normalizedFilters?.cursor || '').trim();
 
-      const response = await axios.get(`${API_BASE_URL}/api/conversations`, {
-        headers: getAuthHeaders(false),
-        params: filters,
-        timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
-      });
-      const data = response.data;
-      const result = data?.data || data;
-      return Array.isArray(result) ? result : [];
+      if (hasExplicitPaging) {
+        const response = await axios.get(`${API_BASE_URL}/api/conversations`, {
+          headers: getAuthHeaders(false),
+          params: normalizedFilters,
+          timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
+        });
+        const data = response.data;
+        const result = data?.data || data;
+        return Array.isArray(result) ? result : [];
+      }
+
+      const aggregatedConversations = [];
+      const seenConversationKeys = new Set();
+      let cursor = '';
+      let hasMore = true;
+      let safetyCounter = 0;
+
+      while (hasMore && safetyCounter < 100) {
+        safetyCounter += 1;
+        const page = await this.getConversationsPage({
+          ...normalizedFilters,
+          limit: Math.min(Number(normalizedFilters?.limit || 0) || 200, 200) || 200,
+          ...(cursor ? { cursor } : {})
+        });
+
+        if (page?.ok === false) {
+          break;
+        }
+
+        for (const conversation of Array.isArray(page?.data) ? page.data : []) {
+          const key = String(conversation?._id || conversation?.id || '').trim();
+          if (!key || seenConversationKeys.has(key)) continue;
+          seenConversationKeys.add(key);
+          aggregatedConversations.push(conversation);
+        }
+
+        cursor = String(page?.meta?.nextCursor || '').trim();
+        hasMore = Boolean(page?.meta?.hasMore) && Boolean(cursor);
+        if (!hasMore) {
+          break;
+        }
+      }
+
+      return aggregatedConversations;
 
     } catch (error) {
-
-      console.error('Failed to fetch conversations:', error);
+      logAxiosServiceError('Failed to fetch conversations', error, 'Failed to fetch conversations');
 
       return [];
 
@@ -592,7 +683,7 @@ export const whatsappService = {
         }
       };
     } catch (error) {
-      console.error('Failed to fetch paged conversations:', error);
+      logAxiosServiceError('Failed to fetch paged conversations', error, 'Failed to fetch conversations');
       return {
         ok: false,
         error: normalizeServiceErrorMessage(
@@ -825,6 +916,7 @@ export const whatsappService = {
     const parsedLimit = Number(options?.limit);
     const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 80)) : 30;
     const cursor = String(options?.cursor || '').trim();
+    const signal = options?.signal || undefined;
     const shouldTryCompatFallback = !cursor;
     const buildEmptyPage = () => ({
       data: [],
@@ -841,6 +933,7 @@ export const whatsappService = {
         {
           headers: getAuthHeaders(false),
           timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
+          signal,
           params: {
             limit,
             ...(String(options?.scope || '').trim() ? { scope: String(options.scope).trim() } : {}),
@@ -900,6 +993,7 @@ export const whatsappService = {
                     {
                       headers: getAuthHeaders(false),
                       timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
+                      signal,
                       params: { limit }
                     }
                   )
@@ -910,6 +1004,7 @@ export const whatsappService = {
                   axios.get(`${API_BASE_URL}/api/messages/attachments`, {
                     headers: getAuthHeaders(false),
                     timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
+                    signal,
                     params: {
                       conversationId: normalizedConversationId,
                       limit
@@ -954,8 +1049,20 @@ export const whatsappService = {
 
       return primaryPage;
     } catch (error) {
+      const isAbortError =
+        error?.name === 'AbortError' ||
+        error?.code === 'ERR_CANCELED' ||
+        String(error?.message || '').toLowerCase().includes('canceled');
+      if (isAbortError) {
+        return {
+          ...buildEmptyPage(),
+          ok: false,
+          canceled: true,
+          error: 'canceled'
+        };
+      }
       if (!isNotFoundError(error)) {
-        console.error('Failed to fetch paged messages:', error);
+        logAxiosServiceError('Failed to fetch paged messages', error, 'Failed to fetch messages');
         return {
           ...buildEmptyPage(),
           ok: false,
@@ -977,6 +1084,7 @@ export const whatsappService = {
                   {
                     headers: getAuthHeaders(false),
                     timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
+                    signal,
                     params: {
                       limit,
                       ...(cursor ? { cursor } : {})
@@ -984,19 +1092,20 @@ export const whatsappService = {
                   }
                 )
             },
-            {
-              name: "paged-messages-attachments-compat",
-              run: async () =>
-                axios.get(`${API_BASE_URL}/api/messages/attachments`, {
-                  headers: getAuthHeaders(false),
-                  timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
-                  params: {
-                    conversationId: normalizedConversationId,
-                    limit,
-                    ...(cursor ? { cursor } : {})
-                  }
-                })
-            }
+              {
+                name: "paged-messages-attachments-compat",
+                run: async () =>
+                  axios.get(`${API_BASE_URL}/api/messages/attachments`, {
+                    headers: getAuthHeaders(false),
+                    timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
+                    signal,
+                    params: {
+                      conversationId: normalizedConversationId,
+                      limit,
+                      ...(cursor ? { cursor } : {})
+                    }
+                  })
+              }
           ],
           isRetryable: isNotFoundError,
           onStepFailure: ({ name, retryable }) => {
@@ -1067,24 +1176,149 @@ export const whatsappService = {
   async getContacts(filters = {}) {
 
     try {
+      const normalizedFilters = filters && typeof filters === 'object' ? filters : {};
+      const hasExplicitPaging =
+        Number(normalizedFilters?.limit || 0) > 0 || String(normalizedFilters?.cursor || '').trim();
 
-      const response = await axios.get(`${API_BASE_URL}/api/contacts`, {
-        headers: getAuthHeaders(false),
-        params: filters,
-        timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
-      });
-      const data = response.data;
-      const result = data?.data || data;
-      return Array.isArray(result) ? result : [];
+      if (hasExplicitPaging) {
+        const response = await axios.get(`${API_BASE_URL}/api/contacts`, {
+          headers: getAuthHeaders(false),
+          params: normalizedFilters,
+          timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
+        });
+        const data = response.data;
+        const result = data?.data || data;
+        return Array.isArray(result) ? result : [];
+      }
+
+      const aggregatedContacts = [];
+      const seenContactKeys = new Set();
+      let cursor = '';
+      let hasMore = true;
+      let safetyCounter = 0;
+
+      while (hasMore && safetyCounter < 100) {
+        safetyCounter += 1;
+        const response = await axios.get(`${API_BASE_URL}/api/contacts`, {
+          headers: getAuthHeaders(false),
+          params: {
+            ...normalizedFilters,
+            limit: Math.min(Number(normalizedFilters?.limit || 0) || 200, 200) || 200,
+            ...(cursor ? { cursor } : {})
+          },
+          timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
+        });
+
+        const payload = response.data;
+        const wrappedPayload =
+          payload && !Array.isArray(payload) && typeof payload === 'object' ? payload : null;
+        const pageContacts = Array.isArray(payload)
+          ? payload
+          : Array.isArray(wrappedPayload?.data)
+            ? wrappedPayload.data
+            : [];
+        const meta = wrappedPayload?.meta && typeof wrappedPayload.meta === 'object' ? wrappedPayload.meta : {};
+
+        for (const contact of pageContacts) {
+          const key = String(contact?._id || contact?.id || contact?.phone || '').trim();
+          if (!key || seenContactKeys.has(key)) continue;
+          seenContactKeys.add(key);
+          aggregatedContacts.push(contact);
+        }
+
+        cursor = String(meta?.nextCursor || '').trim();
+        hasMore = Boolean(meta?.hasMore) && Boolean(cursor);
+
+        if (!hasMore) {
+          break;
+        }
+      }
+
+      return aggregatedContacts;
 
     } catch (error) {
-
-      console.error('Failed to fetch contacts:', error);
+      logAxiosServiceError('Failed to fetch contacts', error, 'Failed to fetch contacts');
 
       return [];
 
     }
 
+  },
+
+  async getContactsPage(filters = {}) {
+    try {
+      const requestedLimit = Number(filters?.limit || 0) || null;
+      const response = await axios.get(`${API_BASE_URL}/api/contacts`, {
+        headers: getAuthHeaders(false),
+        params: filters,
+        timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
+      });
+      const payload = response.data;
+      const wrappedPayload =
+        payload && !Array.isArray(payload) && typeof payload === 'object' ? payload : null;
+      const contacts = Array.isArray(payload)
+        ? payload
+        : Array.isArray(wrappedPayload?.data)
+          ? wrappedPayload.data
+          : [];
+      const responseMeta =
+        wrappedPayload?.meta && typeof wrappedPayload.meta === 'object' && !Array.isArray(wrappedPayload.meta)
+          ? wrappedPayload.meta
+          : {};
+      const hasMoreFromMeta = typeof responseMeta?.hasMore === 'boolean' ? responseMeta.hasMore : null;
+      const derivedHasMore =
+        hasMoreFromMeta !== null
+          ? hasMoreFromMeta
+          : requestedLimit
+            ? contacts.length >= requestedLimit
+            : contacts.length > 0;
+      const derivedNextCursor =
+        String(responseMeta?.nextCursor || '').trim() || '';
+
+      if (wrappedPayload?.success === false) {
+        return {
+          ok: false,
+          error: normalizeServiceErrorMessage(
+            wrappedPayload?.error || wrappedPayload?.message,
+            'Failed to fetch contacts'
+          ),
+          data: [],
+          meta: {
+            limit: Number(responseMeta?.limit || requestedLimit || 0) || null,
+            hasMore: false,
+            nextCursor: null,
+            exhausted: false
+          }
+        };
+      }
+
+      return {
+        ok: true,
+        data: contacts,
+        meta: {
+          limit: Number(responseMeta?.limit || requestedLimit || 0) || null,
+          hasMore: derivedHasMore,
+          nextCursor: derivedNextCursor || null,
+          exhausted: Boolean(responseMeta?.exhausted) || (!derivedHasMore && !derivedNextCursor)
+        }
+      };
+    } catch (error) {
+      logAxiosServiceError('Failed to fetch paged contacts', error, 'Failed to fetch contacts');
+      return {
+        ok: false,
+        error: normalizeServiceErrorMessage(
+          error?.response?.data?.error || error?.message,
+          'Failed to fetch contacts'
+        ),
+        data: [],
+        meta: {
+          limit: null,
+          hasMore: false,
+          nextCursor: null,
+          exhausted: false
+        }
+      };
+    }
   },
 
 
@@ -1358,13 +1592,38 @@ export const whatsappService = {
   async getBroadcasts() {
 
     try {
+      const aggregatedBroadcasts = [];
+      const seenBroadcastKeys = new Set();
+      let cursor = '';
+      let hasMore = true;
+      let safetyCounter = 0;
 
-      const response = await axios.get(`${API_BASE_URL}/api/broadcasts`, {
-        headers: getAuthHeaders(false)
-      });
-      const data = response.data;
-      const result = data?.data || data;
-      return Array.isArray(result) ? result : [];
+      while (hasMore && safetyCounter < 100) {
+        safetyCounter += 1;
+        const page = await this.getBroadcastsPage({
+          limit: 100,
+          ...(cursor ? { cursor } : {})
+        });
+
+        if (page?.ok === false) {
+          break;
+        }
+
+        for (const broadcast of Array.isArray(page?.data) ? page.data : []) {
+          const key = String(broadcast?._id || broadcast?.id || '').trim();
+          if (!key || seenBroadcastKeys.has(key)) continue;
+          seenBroadcastKeys.add(key);
+          aggregatedBroadcasts.push(broadcast);
+        }
+
+        cursor = String(page?.meta?.nextCursor || '').trim();
+        hasMore = Boolean(page?.meta?.hasMore) && Boolean(cursor);
+        if (!hasMore) {
+          break;
+        }
+      }
+
+      return aggregatedBroadcasts;
 
     } catch (error) {
 
@@ -1374,6 +1633,81 @@ export const whatsappService = {
 
     }
 
+  },
+
+  async getBroadcastsPage(params = {}) {
+    try {
+      const requestedLimit = Number(params?.limit || 0) || null;
+      const response = await axios.get(`${API_BASE_URL}/api/broadcasts`, {
+        headers: getAuthHeaders(false),
+        params,
+        timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
+      });
+      const payload = response.data;
+      const wrappedPayload =
+        payload && !Array.isArray(payload) && typeof payload === 'object' ? payload : null;
+      const broadcasts = Array.isArray(payload)
+        ? payload
+        : Array.isArray(wrappedPayload?.data)
+          ? wrappedPayload.data
+          : [];
+      const responseMeta =
+        wrappedPayload?.meta && typeof wrappedPayload.meta === 'object' && !Array.isArray(wrappedPayload.meta)
+          ? wrappedPayload.meta
+          : {};
+      const hasMoreFromMeta = typeof responseMeta?.hasMore === 'boolean' ? responseMeta.hasMore : null;
+      const derivedHasMore =
+        hasMoreFromMeta !== null
+          ? hasMoreFromMeta
+          : requestedLimit
+            ? broadcasts.length >= requestedLimit
+            : broadcasts.length > 0;
+      const derivedNextCursor = String(responseMeta?.nextCursor || '').trim() || null;
+
+      if (wrappedPayload?.success === false) {
+        return {
+          ok: false,
+          error: normalizeServiceErrorMessage(
+            wrappedPayload?.error || wrappedPayload?.message,
+            'Failed to fetch broadcasts'
+          ),
+          data: [],
+          meta: {
+            limit: Number(responseMeta?.limit || requestedLimit || 0) || null,
+            hasMore: false,
+            nextCursor: null,
+            exhausted: false
+          }
+        };
+      }
+
+      return {
+        ok: true,
+        data: broadcasts,
+        meta: {
+          limit: Number(responseMeta?.limit || requestedLimit || 0) || null,
+          hasMore: derivedHasMore,
+          nextCursor: derivedNextCursor,
+          exhausted: Boolean(responseMeta?.exhausted) || (!derivedHasMore && !derivedNextCursor)
+        }
+      };
+    } catch (error) {
+      logAxiosServiceError('Failed to fetch paged broadcasts', error, 'Failed to fetch broadcasts');
+      return {
+        ok: false,
+        error: normalizeServiceErrorMessage(
+          error?.response?.data?.error || error?.message,
+          'Failed to fetch broadcasts'
+        ),
+        data: [],
+        meta: {
+          limit: null,
+          hasMore: false,
+          nextCursor: null,
+          exhausted: false
+        }
+      };
+    }
   },
 
 
@@ -1445,8 +1779,7 @@ export const whatsappService = {
       return data.data || data || {};
 
     } catch (error) {
-
-      console.error('Failed to fetch analytics:', error);
+      logAxiosServiceError('Failed to fetch analytics', error, 'Failed to fetch analytics');
 
       return {};
 

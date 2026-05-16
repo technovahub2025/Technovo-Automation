@@ -1,4 +1,4 @@
-const TEAM_INBOX_CACHE_VERSION = 6;
+const TEAM_INBOX_CACHE_VERSION = 7;
 const TEAM_INBOX_CACHE_PREFIX = 'team-inbox-cache';
 
 const TEAM_INBOX_BOOTSTRAP_TTL_MS = 30 * 60 * 1000;

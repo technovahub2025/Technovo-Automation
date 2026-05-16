@@ -166,13 +166,17 @@ const WhatsAppBusinessPlatform = () => {
         setLoading(true);
         console.log('🔄 Fetching data from backend API...');
         
-        // Fetch all data in parallel
-        const [conversationsData, contactsData, broadcastsData, analyticsData] = await Promise.all([
-          whatsappService.getConversations(),
-          whatsappService.getContacts(),
-          whatsappService.getBroadcasts(),
+        // Fetch only the summary slices needed for the shell.
+        const [conversationsPage, contactsPage, broadcastsPage, analyticsData] = await Promise.all([
+          whatsappService.getConversationsPage({ limit: 50 }),
+          whatsappService.getContactsPage({ limit: 100 }),
+          whatsappService.getBroadcastsPage({ limit: 50 }),
           whatsappService.getAnalytics()
         ]);
+
+        const conversationsData = Array.isArray(conversationsPage?.data) ? conversationsPage.data : [];
+        const contactsData = Array.isArray(contactsPage?.data) ? contactsPage.data : [];
+        const broadcastsData = Array.isArray(broadcastsPage?.data) ? broadcastsPage.data : [];
 
         console.log('📊 Data loaded:', {
           conversations: conversationsData.length,
@@ -314,9 +318,14 @@ const WhatsAppBusinessPlatform = () => {
   const handleMessageContact = async (contact) => {
     try {
       // Try to find existing conversation for this contact
-      const conversationsData = await whatsappService.getConversations();
-      const conversation = conversationsData.find(c => 
-        c.contactPhone === contact.phone || c.contactId === contact.id
+      const conversationsData = await whatsappService.getConversationsPage({
+        limit: 50,
+        search: String(contact?.phone || '').trim()
+      });
+      const conversationList = Array.isArray(conversationsData?.data) ? conversationsData.data : [];
+      let conversation = conversationList.find(c =>
+        String(c?.contactPhone || '') === String(contact?.phone || '') ||
+        String(c?.contactId || '') === String(contact?.id || '')
       );
       
       if (!conversation) {
@@ -329,7 +338,7 @@ const WhatsAppBusinessPlatform = () => {
         });
         
         if (createResult.success) {
-          conversation = createResult;
+          conversation = createResult?.data || createResult?.conversation || createResult;
         }
       }
       

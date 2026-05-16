@@ -1,43 +1,35 @@
 import { useEffect, useRef } from 'react';
 import webSocketService from '../../services/websocketService';
-import {
-  mergeMessagePreservingReplyContext,
-  resolvePreferredMessageStatus
-} from './replyMessageMergeUtils';
-import {
-  patchConversationInOrderedList,
-  upsertConversationInOrderedList
-} from './teamInboxUtils';
-import { showIncomingMessageSystemNotification } from './teamInboxNotificationUtils';
-import { publishCrmContactSync } from '../../utils/crmSyncEvents';
 
-const MESSAGE_STATUS_RANK = { sent: 1, delivered: 2, read: 3, failed: 4 };
+const MESSAGE_STATUS_BATCH_WINDOW_MS = 120;
+const LIST_REFRESH_DEBOUNCE_MS = 180;
+const LIST_REFRESH_MIN_INTERVAL_MS = 1500;
 
-const isTeamInboxTraceEnabled = () => {
-  if (typeof window === 'undefined') return false;
-  try {
-    return Boolean(import.meta?.env?.DEV) || String(window.localStorage.getItem('debugTeamInbox') || '').trim() === '1';
-  } catch {
-    return Boolean(import.meta?.env?.DEV);
-  }
-};
+const getConversationId = (conversation) =>
+  String(conversation?._id || conversation?.id || '').trim();
 
-const traceTeamInbox = (...args) => {
-  if (!isTeamInboxTraceEnabled()) return;
-  console.debug('[TeamInbox:socket]', ...args);
-};
+const getErrorMessageFromPayload = (payload = {}) =>
+  String(
+    payload?.errorMessage ||
+      payload?.message?.errorMessage ||
+      payload?.error ||
+      payload?.message ||
+      ''
+  ).trim();
 
-const recordInboxDebugEvent = (setInboxDebugInfo, lastEvent, extra = {}) => {
-  if (typeof setInboxDebugInfo !== 'function') return;
+const mergeMessageStatus = (message, update) => {
+  const nextStatus = String(update?.status || '').trim().toLowerCase();
+  const currentStatus = String(message?.status || '').trim().toLowerCase();
+  const nextErrorMessage =
+    nextStatus === 'failed'
+      ? getErrorMessageFromPayload(update) || message?.errorMessage || ''
+      : '';
 
-  setInboxDebugInfo({
-    lastEvent: String(lastEvent || 'idle').trim() || 'idle',
-    lastEventAt: new Date().toISOString(),
-    source: String(extra?.source || 'socket').trim() || 'socket',
-    conversationId: String(extra?.conversationId || '').trim(),
-    messageId: String(extra?.messageId || '').trim(),
-    details: String(extra?.details || '').trim()
-  });
+  return {
+    ...message,
+    status: nextStatus || currentStatus,
+    errorMessage: nextErrorMessage
+  };
 };
 
 export const useInboxRealtimeEffects = ({
@@ -70,867 +62,441 @@ export const useInboxRealtimeEffects = ({
   notifyActionFeedback,
   threadFreshSyncAtRef
 }) => {
-  const getContactIdFromConversationPayload = (conversation = {}) =>
-    String(
-      conversation?.contactId?._id ||
-        conversation?.contactId?.id ||
-        conversation?.contactId ||
-        ''
-    ).trim();
-
-  const getConversationLastOutboundMessageId = (conversation = {}) =>
-    String(
-      conversation?.lastMessageWhatsappMessageId ||
-        conversation?.lastMessageMessageId ||
-        conversation?.lastMessageId ||
-        ''
-    ).trim();
-
-  const notifiedIncomingMessageKeysRef = useRef(new Set());
-  const lastContactRefreshAtRef = useRef(0);
-  const lastVisibilityRefreshAtRef = useRef(0);
   const lastConversationListRefreshAtRef = useRef(0);
-  const bootstrapLoadPromiseRef = useRef(null);
-  const lastBootstrapLoadAtRef = useRef(0);
-  const typingPruneTimerRef = useRef(null);
-  const lastSyncedCompanyIdRef = useRef('');
-  const lastSyncedConversationIdRef = useRef('');
-  const callbacksRef = useRef({
-    loadConversations,
-    loadContacts,
-    hasRealContactName,
-    getMappedContactName,
-    enrichConversationIdentity,
-    getUnreadCount,
-    appendMessageUnique,
-    markAsRead,
-    scheduleRealtimeResync,
-    loadMessages,
-    applyLeadScoreUpdateToConversation
-  });
+  const conversationListRefreshTimerRef = useRef(null);
+  const pendingConversationListRefreshReasonRef = useRef('unknown');
+  const messageStatusFlushTimerRef = useRef(null);
+  const pendingMessageStatusUpdatesRef = useRef(new Map());
 
-  const shouldAllowSelectedConversationResync = () => {
-    const lastFreshSyncAt = Number(threadFreshSyncAtRef?.current || 0) || 0;
-    return !lastFreshSyncAt;
+  const notify = (message, tone = 'info') => {
+    const nextMessage = String(message || '').trim();
+    if (!nextMessage) return;
+    if (typeof notifyActionFeedback === 'function') {
+      notifyActionFeedback(nextMessage, tone);
+      return;
+    }
+    console.warn('Team Inbox feedback callback missing:', nextMessage);
   };
 
-  const pruneTypingState = (typingState = {}) => {
-    const cutoff = Date.now() - 10000;
-    const nextState = {};
+  const queueConversationListRefresh = ({
+    silent = true,
+    minIntervalMs = LIST_REFRESH_MIN_INTERVAL_MS,
+    debounceMs = LIST_REFRESH_DEBOUNCE_MS,
+    reason = 'unknown'
+  } = {}) => {
+    if (typeof loadConversations !== 'function') return;
 
-    Object.entries(typingState || {}).forEach(([conversationId, entries]) => {
-      const safeEntries = Array.isArray(entries) ? entries : [];
-      const filteredEntries = safeEntries.filter((entry) => {
-        const updatedAt = new Date(entry?.updatedAt || 0).getTime();
-        return Number.isFinite(updatedAt) && updatedAt >= cutoff;
+    const now = Date.now();
+    const elapsed = now - Number(lastConversationListRefreshAtRef.current || 0);
+    const delay = Math.max(0, elapsed >= minIntervalMs ? debounceMs : minIntervalMs - elapsed);
+    pendingConversationListRefreshReasonRef.current =
+      String(reason || 'unknown').trim() || 'unknown';
+
+    if (conversationListRefreshTimerRef.current) return;
+
+    conversationListRefreshTimerRef.current = window.setTimeout(() => {
+      conversationListRefreshTimerRef.current = null;
+      lastConversationListRefreshAtRef.current = Date.now();
+      if (typeof setSidebarRefreshing === 'function') {
+        setSidebarRefreshing(true);
+      }
+      Promise.resolve(loadConversations({ silent }))
+        .catch(() => undefined)
+        .finally(() => {
+          if (typeof setSidebarRefreshing === 'function') {
+            setSidebarRefreshing(false);
+          }
+        });
+    }, delay);
+  };
+
+  const flushMessageStatusBatch = (batch = []) => {
+    const safeBatch = Array.isArray(batch) ? batch.filter(Boolean) : [];
+    if (safeBatch.length === 0) return;
+
+    setMessages((prev) => {
+      const nextMessages = prev.slice();
+      let mutated = false;
+
+      safeBatch.forEach((update) => {
+        const updateConversationId = String(update?.conversationId || '').trim();
+        const updateMessageIds = new Set(
+          [update?.messageId, update?.whatsappMessageId].filter(Boolean).map((value) => String(value))
+        );
+
+        for (let index = 0; index < nextMessages.length; index += 1) {
+          const message = nextMessages[index];
+          const messageIds = [message?._id, message?.messageId, message?.whatsappMessageId]
+            .filter(Boolean)
+            .map((value) => String(value));
+          const matchedById = messageIds.some((id) => updateMessageIds.has(id));
+          const matchedByConversation =
+            !matchedById &&
+            updateConversationId &&
+            String(message?.conversationId || '').trim() === updateConversationId &&
+            String(message?.sender || '').trim().toLowerCase() === 'agent';
+
+          if (!matchedById && !matchedByConversation) continue;
+          const merged = mergeMessageStatus(message, update);
+          if (merged.status !== message.status || merged.errorMessage !== message.errorMessage) {
+            nextMessages[index] = merged;
+            mutated = true;
+          }
+        }
       });
 
-      if (filteredEntries.length > 0) {
-        nextState[conversationId] = filteredEntries;
-      }
+      return mutated ? nextMessages : prev;
     });
 
-    return nextState;
-  };
+    setConversations((prev) => {
+      let next = prev;
+      let mutated = false;
 
-  const areTypingStateEntriesEqual = (leftEntries = [], rightEntries = []) => {
-    const normalizeEntries = (entries = []) =>
-      [...entries]
-        .map((entry) => ({
-          userId: String(entry?.userId || '').trim(),
-          conversationId: String(entry?.conversationId || '').trim(),
-          displayName: String(entry?.displayName || '').trim(),
-          isTyping: Boolean(entry?.isTyping),
-          updatedAt: String(entry?.updatedAt || '').trim()
-        }))
-        .sort((left, right) => left.userId.localeCompare(right.userId));
+      safeBatch.forEach((update) => {
+        const eventConversationId = String(update?.conversationId || '').trim();
+        if (!eventConversationId) return;
 
-    const left = normalizeEntries(leftEntries);
-    const right = normalizeEntries(rightEntries);
-
-    if (left.length !== right.length) return false;
-
-    for (let index = 0; index < left.length; index += 1) {
-      const leftEntry = left[index];
-      const rightEntry = right[index];
-      if (
-        leftEntry.userId !== rightEntry.userId ||
-        leftEntry.conversationId !== rightEntry.conversationId ||
-        leftEntry.displayName !== rightEntry.displayName ||
-        leftEntry.isTyping !== rightEntry.isTyping ||
-        leftEntry.updatedAt !== rightEntry.updatedAt
-      ) {
-        return false;
-      }
-    }
-
-    return true;
-  };
-
-  const areTypingStatesEqual = (leftState = {}, rightState = {}) => {
-    const leftKeys = Object.keys(leftState || {}).sort();
-    const rightKeys = Object.keys(rightState || {}).sort();
-
-    if (leftKeys.length !== rightKeys.length) return false;
-
-    for (let index = 0; index < leftKeys.length; index += 1) {
-      const key = leftKeys[index];
-      if (key !== rightKeys[index]) return false;
-      if (!areTypingStateEntriesEqual(leftState?.[key], rightState?.[key])) return false;
-    }
-
-    return true;
-  };
-
-  const bootstrapInboxData = ({
-    silentConversations = false,
-    silentContacts = true,
-    force = false
-  } = {}) => {
-    const now = Date.now();
-    if (!force && bootstrapLoadPromiseRef.current) {
-      return bootstrapLoadPromiseRef.current;
-    }
-
-    if (!force && lastBootstrapLoadAtRef.current && now - lastBootstrapLoadAtRef.current < 15000) {
-      return Promise.resolve();
-    }
-
-    const loadPromise = Promise.all([
-      callbacksRef.current.loadConversations({ silent: silentConversations }),
-      callbacksRef.current.loadContacts({ silent: silentContacts })
-    ])
-      .catch((error) => {
-        console.error('Failed to bootstrap Team Inbox data:', error);
-      })
-      .finally(() => {
-        lastBootstrapLoadAtRef.current = Date.now();
-        bootstrapLoadPromiseRef.current = null;
-      });
-
-    bootstrapLoadPromiseRef.current = loadPromise;
-    return loadPromise;
-  };
-
-  useEffect(() => {
-    callbacksRef.current = {
-      loadConversations,
-      loadContacts,
-      hasRealContactName,
-      getMappedContactName,
-      enrichConversationIdentity,
-      getUnreadCount,
-      appendMessageUnique,
-      markAsRead,
-      scheduleRealtimeResync,
-      loadMessages,
-      applyLeadScoreUpdateToConversation
-    };
-  }, [
-    loadConversations,
-    loadContacts,
-    hasRealContactName,
-    getMappedContactName,
-    enrichConversationIdentity,
-    getUnreadCount,
-    appendMessageUnique,
-    markAsRead,
-    scheduleRealtimeResync,
-    loadMessages,
-    applyLeadScoreUpdateToConversation
-  ]);
-
-  useEffect(() => {
-    const normalizedCompanyId = String(currentCompanyId || '').trim();
-    if (lastSyncedCompanyIdRef.current === normalizedCompanyId) return;
-
-    lastSyncedCompanyIdRef.current = normalizedCompanyId;
-    webSocketService.setCompanyId(normalizedCompanyId);
-  }, [currentCompanyId]);
-
-  useEffect(() => {
-    const normalizedConversationId = String(activeConversationId || '').trim();
-    if (lastSyncedConversationIdRef.current === normalizedConversationId) return;
-
-    lastSyncedConversationIdRef.current = normalizedConversationId;
-    webSocketService.setActiveConversationId(normalizedConversationId);
-  }, [activeConversationId]);
-
-  useEffect(() => {
-    const handleConnect = () => {
-      setWsConnected(true);
-      bootstrapInboxData({
-        silentConversations: true,
-        silentContacts: true
-      });
-      recordInboxDebugEvent(setInboxDebugInfo, 'socket:connected', {
-        source: 'socket',
-        conversationId: String(activeConversationId || '').trim(),
-        details: 'WebSocket connection established'
-      });
-      traceTeamInbox('connected', {
-        currentUserId,
-        currentCompanyId,
-        activeConversationId: String(activeConversationId || '').trim()
-      });
-    };
-
-    const handleDisconnect = () => {
-      setWsConnected(false);
-      recordInboxDebugEvent(setInboxDebugInfo, 'socket:disconnected', {
-        source: 'socket',
-        conversationId: String(activeConversationId || '').trim(),
-        details: 'WebSocket disconnected'
-      });
-      traceTeamInbox('disconnected');
-    };
-
-    const handleNewMessage = (data) => {
-      traceTeamInbox('newMessage', {
-        conversationId: String(data?.conversation?._id || '').trim(),
-        messageId: String(data?.message?._id || data?.message?.whatsappMessageId || '').trim(),
-        sender: String(data?.message?.sender || '').trim(),
-        activeConversationId: String(selectedConversationRef?.current?._id || '').trim()
-      });
-      recordInboxDebugEvent(setInboxDebugInfo, 'socket:newMessage', {
-        source: 'socket',
-        conversationId: String(data?.conversation?._id || '').trim(),
-        messageId: String(data?.message?._id || data?.message?.whatsappMessageId || '').trim(),
-        details: `sender=${String(data?.message?.sender || '').trim() || 'unknown'}`
-      });
-
-      const incomingConversationRaw = data?.conversation || {};
-      if (
-        !callbacksRef.current.hasRealContactName(incomingConversationRaw) &&
-        !callbacksRef.current.getMappedContactName(incomingConversationRaw?.contactPhone)
-      ) {
-        const now = Date.now();
-        if (now - lastContactRefreshAtRef.current > 30000) {
-          lastContactRefreshAtRef.current = now;
-          callbacksRef.current.loadContacts({ silent: true });
-        }
-      }
-
-      setConversations((prev) => {
-        const incomingConversation = callbacksRef.current.enrichConversationIdentity(
-          data?.conversation || {},
-          [...prev, selectedConversationRef.current].filter(Boolean)
-        );
-        const activeConversation = selectedConversationRef.current;
-        const isSelectedConversation =
-          activeConversation && activeConversation._id === incomingConversation._id;
-        const isIncomingContactMessage = data?.message?.sender === 'contact';
-        const previousConversation = Array.isArray(prev)
-          ? prev.find((conversation) => conversation._id === incomingConversation._id)
+        const matchingConversation = Array.isArray(next)
+          ? next.find((conversation) => getConversationId(conversation) === eventConversationId)
           : null;
+        if (!matchingConversation) return;
 
-        const mergedConversation = callbacksRef.current.enrichConversationIdentity(
-          {
-            ...(previousConversation || {}),
-            ...incomingConversation,
-            lastMessageStatus: resolvePreferredMessageStatus(
-              previousConversation?.lastMessageStatus,
-              incomingConversation?.lastMessageStatus
-            ),
-            lastMessageWhatsappMessageId:
-              String(
-                incomingConversation?.lastMessageWhatsappMessageId ||
-                  incomingConversation?.lastMessageMessageId ||
-                  incomingConversation?.lastMessageId ||
-                  ''
-              ).trim() ||
-              String(previousConversation?.lastMessageWhatsappMessageId || '').trim()
-          },
-          [previousConversation, incomingConversation, ...prev]
+        const nextConversation = {
+          ...matchingConversation,
+          lastMessageStatus: String(update?.status || '').trim().toLowerCase() || matchingConversation?.lastMessageStatus || '',
+          lastMessageWhatsappMessageId:
+            String(update?.messageId || update?.whatsappMessageId || '').trim() ||
+            String(matchingConversation?.lastMessageWhatsappMessageId || '').trim(),
+          ...(String(update?.status || '').trim().toLowerCase() === 'read' ||
+          String(update?.status || '').trim().toLowerCase() === 'delivered'
+            ? { lastMessageFrom: 'agent' }
+            : {})
+        };
+
+        next = next.map((conversation) =>
+          getConversationId(conversation) === eventConversationId ? nextConversation : conversation
         );
-
-        if (isSelectedConversation && isIncomingContactMessage) {
-          mergedConversation.unreadCount = 0;
-        } else if (isIncomingContactMessage) {
-          mergedConversation.unreadCount = Math.max(
-            callbacksRef.current.getUnreadCount(incomingConversation),
-            callbacksRef.current.getUnreadCount(previousConversation) + 1,
-            1
-          );
-        }
-
-        return upsertConversationInOrderedList(prev, mergedConversation);
+        mutated = true;
       });
 
-      const activeConversation = selectedConversationRef.current;
-      const currentConversationId = String(data?.conversation?._id || '').trim();
-      const isSelectedConversation =
-        Boolean(activeConversation?._id) &&
-        String(activeConversation._id).trim() === currentConversationId;
-      const incoming = data?.message || {};
-      const isIncomingContactMessage = String(incoming?.sender || '').trim().toLowerCase() === 'contact';
-      const contactIdValue = getContactIdFromConversationPayload(data?.conversation);
+      return mutated ? next : prev;
+    });
 
-      if (isIncomingContactMessage && contactIdValue) {
-        publishCrmContactSync({
-          contactId: contactIdValue,
-          conversationId: currentConversationId,
-          reason: 'inbox_contact_reply'
-        });
-      }
-      const incomingNotificationKey =
-        String(incoming?._id || incoming?.whatsappMessageId || '').trim() ||
-        `${currentConversationId}:${String(
-          incoming?.timestamp || incoming?.whatsappTimestamp || incoming?.createdAt || Date.now()
-        ).trim()}:${String(incoming?.text || incoming?.mediaType || '').trim()}`;
+    setSelectedConversation((prev) => {
+      if (!prev) return prev;
+      const selectedConversationId = getConversationId(prev);
+      let next = prev;
+      let mutated = false;
 
-      if (isIncomingContactMessage && incomingNotificationKey) {
-        const notifiedKeys = notifiedIncomingMessageKeysRef.current;
-        if (!notifiedKeys.has(incomingNotificationKey)) {
-          notifiedKeys.add(incomingNotificationKey);
-          if (notifiedKeys.size > 500) {
-            const firstKey = notifiedKeys.values().next().value;
-            if (firstKey) notifiedKeys.delete(firstKey);
-          }
-
-          const notificationConversation = callbacksRef.current.enrichConversationIdentity(
-            data?.conversation || {},
-            [activeConversation].filter(Boolean)
-          );
-
-          showIncomingMessageSystemNotification({
-            message: incoming,
-            conversation: notificationConversation,
-            isSelectedConversation,
-            mode: notificationMode
-          }).catch((error) => {
-            console.error('Failed to show Team Inbox system notification:', error);
-          });
-        }
-      }
-
-      if (activeConversation && activeConversation._id === data?.conversation?._id) {
-        if (incoming?.sender === 'agent') {
-          setMessages((prev) => {
-            const incomingId = incoming?._id ? String(incoming._id) : '';
-            const incomingWamid = incoming?.whatsappMessageId
-              ? String(incoming.whatsappMessageId)
-              : '';
-
-            const existingIndex = prev.findIndex((message) => {
-              const messageId = message?._id ? String(message._id) : '';
-              const messageWamid = message?.whatsappMessageId
-                ? String(message.whatsappMessageId)
-                : '';
-              return (
-                (incomingId && messageId === incomingId) ||
-                (incomingWamid && messageWamid === incomingWamid)
-              );
-            });
-            if (existingIndex >= 0) {
-              return prev.map((message, index) =>
-                index === existingIndex
-                  ? mergeMessagePreservingReplyContext(message, incoming)
-                  : message
-              );
-            }
-
-            const optimisticIndex = prev.findIndex(
-              (message) =>
-                typeof message?._id === 'string' &&
-                message._id.startsWith('temp-') &&
-                message.sender === 'agent' &&
-                message.text === incoming.text
-            );
-            if (optimisticIndex >= 0) {
-              return prev.map((message, index) =>
-                index === optimisticIndex
-                  ? mergeMessagePreservingReplyContext(message, incoming)
-                  : message
-              );
-            }
-
-            return [...prev, incoming];
-          });
-        } else {
-          callbacksRef.current.appendMessageUnique(incoming);
-          callbacksRef.current.markAsRead(activeConversation._id);
-        }
-        if (shouldAllowSelectedConversationResync()) {
-          callbacksRef.current.scheduleRealtimeResync(activeConversation._id);
-        }
-      }
-    };
-
-    const handleMessageSent = (data) => {
-      traceTeamInbox('messageSent', {
-        conversationId: String(data?.message?.conversationId || '').trim(),
-        messageId: String(data?.message?._id || data?.message?.whatsappMessageId || '').trim()
-      });
-      recordInboxDebugEvent(setInboxDebugInfo, 'socket:messageSent', {
-        source: 'socket',
-        conversationId: String(data?.message?.conversationId || '').trim(),
-        messageId: String(data?.message?._id || data?.message?.whatsappMessageId || '').trim(),
-        details: 'Outbound message acknowledged'
+      safeBatch.forEach((update) => {
+        if (getConversationId({ _id: update?.conversationId }) !== selectedConversationId) return;
+        const nextStatus = String(update?.status || '').trim().toLowerCase();
+        next = {
+          ...next,
+          lastMessageStatus: nextStatus || next?.lastMessageStatus || '',
+          lastMessageWhatsappMessageId:
+            String(update?.messageId || update?.whatsappMessageId || '').trim() ||
+            String(next?.lastMessageWhatsappMessageId || '').trim(),
+          ...(nextStatus === 'read' || nextStatus === 'delivered'
+            ? { lastMessageFrom: 'agent' }
+            : {})
+        };
+        mutated = true;
       });
 
-      const activeConversation = selectedConversationRef.current;
-      if (activeConversation && activeConversation._id === data.message.conversationId) {
-        setMessages((prev) => {
-          const incoming = data.message || {};
-          const incomingId = incoming?._id ? String(incoming._id) : '';
-          const incomingWamid = incoming?.whatsappMessageId
-            ? String(incoming.whatsappMessageId)
-            : '';
+      return mutated ? next : prev;
+    });
+  };
 
-          const existingIndex = prev.findIndex((message) => {
-            const messageId = message?._id ? String(message._id) : '';
-            const messageWamid = message?.whatsappMessageId
-              ? String(message.whatsappMessageId)
-              : '';
-            return (
-              (incomingId && messageId === incomingId) ||
-              (incomingWamid && messageWamid === incomingWamid)
-            );
-          });
-          if (existingIndex >= 0) {
-            return prev.map((message, index) =>
-              index === existingIndex
-                ? mergeMessagePreservingReplyContext(message, incoming)
-                : message
-            );
-          }
-
-          const optimisticIndex = prev.findIndex(
-            (message) =>
-              typeof message?._id === 'string' &&
-              message._id.startsWith('temp-') &&
-              message.sender === 'agent' &&
-              message.text === incoming.text
-          );
-          if (optimisticIndex >= 0) {
-            return prev.map((message, index) =>
-              index === optimisticIndex
-                ? mergeMessagePreservingReplyContext(message, incoming)
-                : message
-            );
-          }
-
-          return [...prev, incoming];
-        });
-      }
-    };
-
-    const handleMessageStatus = (data) => {
-      traceTeamInbox('messageStatus', {
+  const queueMessageStatusUpdate = (() => {
+    let timer = null;
+    return (data = {}) => {
+      const normalized = {
         conversationId: String(data?.conversationId || '').trim(),
-        status: String(data?.status || '').trim(),
-        messageId: String(data?.messageId || data?.whatsappMessageId || data?.message?._id || '').trim(),
+        status: String(data?.status || '').trim().toLowerCase(),
+        messageId: String(
+          data?.messageId ||
+            data?.id ||
+            data?.whatsappMessageId ||
+            data?.message?._id ||
+            data?.message?.messageId ||
+            data?.message?.whatsappMessageId ||
+            ''
+        ).trim(),
+        whatsappMessageId: String(data?.whatsappMessageId || data?.message?.whatsappMessageId || '').trim(),
+        errorMessage: getErrorMessageFromPayload(data),
         mediaPipelineRequestId: String(data?.mediaPipelineRequestId || '').trim()
-      });
-      recordInboxDebugEvent(setInboxDebugInfo, 'socket:messageStatus', {
-        source: 'socket',
-        conversationId: String(data?.conversationId || '').trim(),
-        messageId: String(data?.messageId || data?.whatsappMessageId || data?.message?._id || '').trim(),
-        details: `status=${String(data?.status || '').trim() || 'unknown'}`
+      };
+
+      if (!normalized.conversationId && !normalized.messageId && !normalized.whatsappMessageId) return;
+
+      const batchKey = [
+        normalized.conversationId || 'unknown-conversation',
+        normalized.messageId || 'unknown-message',
+        normalized.mediaPipelineRequestId || 'no-media'
+      ].join('::');
+
+      const existing = pendingMessageStatusUpdatesRef.current.get(batchKey);
+      pendingMessageStatusUpdatesRef.current.set(batchKey, {
+        ...(existing || {}),
+        ...normalized
       });
 
+      if (timer) return;
+      timer = window.setTimeout(() => {
+        timer = null;
+        const batch = Array.from(pendingMessageStatusUpdatesRef.current.values());
+        pendingMessageStatusUpdatesRef.current.clear();
+        flushMessageStatusBatch(batch);
+      }, MESSAGE_STATUS_BATCH_WINDOW_MS);
+      messageStatusFlushTimerRef.current = timer;
+    };
+  })();
+
+  useEffect(() => {
+    if (typeof setWsConnected === 'function') {
+      setWsConnected(Boolean(webSocketService.isConnected?.()));
+    }
+
+    const handleConnected = () => {
+      if (typeof setWsConnected === 'function') setWsConnected(true);
+    };
+    const handleDisconnected = () => {
+      if (typeof setWsConnected === 'function') setWsConnected(false);
+    };
+    const handleConnectError = () => {
+      if (typeof setWsConnected === 'function') setWsConnected(false);
+    };
+
+    const handleMessageSent = (data = {}) => {
+      const conversationId = String(data?.conversationId || '').trim();
+      if (conversationId && activeConversationId && conversationId !== activeConversationId) {
+        queueConversationListRefresh({ silent: true, reason: 'message_sent_other_thread' });
+        return;
+      }
+
+      if (conversationId && typeof scheduleRealtimeResync === 'function') {
+        scheduleRealtimeResync(conversationId);
+      }
+    };
+
+    const handleNewMessage = (data = {}) => {
+      const conversationId = String(data?.conversationId || '').trim();
+      const activeId = String(activeConversationId || '').trim();
+      const incomingMessage = data?.message || data;
+      const targetConversationId = String(incomingMessage?.conversationId || conversationId || '').trim();
+
+      if (targetConversationId && activeId && targetConversationId === activeId) {
+        if (typeof appendMessageUnique === 'function') {
+          appendMessageUnique(incomingMessage);
+        } else if (typeof setMessages === 'function') {
+          setMessages((prev) => (prev.some((message) => String(message?._id || '') === String(incomingMessage?._id || '')) ? prev : [...prev, incomingMessage]));
+        }
+        if (typeof scheduleRealtimeResync === 'function') {
+          scheduleRealtimeResync(targetConversationId);
+        }
+        return;
+      }
+
+      queueConversationListRefresh({ silent: true, reason: 'new_message' });
+    };
+
+    const handleConversationRead = (data = {}) => {
+      const conversationId = String(data?.conversationId || '').trim();
+      if (!conversationId) return;
+      if (typeof markAsRead === 'function') {
+        markAsRead(conversationId);
+      }
+      queueConversationListRefresh({ silent: true, reason: 'conversation_read' });
+    };
+
+    const handleMessageStatus = (data = {}) => {
       const incomingStatus = String(data?.status || '').toLowerCase();
-      const eventConversationId = String(data?.conversationId || '').trim();
-      const incomingMessageIds = new Set(
-        [
-          data?.messageId,
-          data?.id,
-          data?.whatsappMessageId,
-          data?.message?._id,
-          data?.message?.messageId,
-          data?.message?.whatsappMessageId
-        ]
-          .filter(Boolean)
-          .map((value) => String(value))
-      );
-
-      const statusRank = { sent: 1, delivered: 2, read: 3, failed: 4 };
-      let foundMatch = false;
       const mediaPipelineRequestId = String(data?.mediaPipelineRequestId || '').trim();
+      const backendErrorMessage = String(
+        data?.errorMessage ||
+          data?.errorDetails ||
+          data?.errorCode ||
+          data?.message?.errorMessage ||
+          data?.message?.errorDetails ||
+          data?.message?.errorCode ||
+          data?.error ||
+          data?.message ||
+          ''
+      ).trim();
 
-      setMessages((prev) =>
-        (() => {
-          const nextMessages = prev.slice();
-          const updateMessageAtIndex = (index) => {
-            if (index < 0 || index >= nextMessages.length) return false;
-            const message = nextMessages[index];
-            const currentStatus = String(message?.status || '').toLowerCase();
-            const currentRank = statusRank[currentStatus] || 0;
-            const nextRank = statusRank[incomingStatus] || currentRank;
+      queueMessageStatusUpdate(data);
 
-            if (nextRank < currentRank) return true;
+      if (incomingStatus && mediaPipelineRequestId) {
+        const statusLabel =
+          incomingStatus === 'read'
+            ? 'Read'
+            : incomingStatus === 'delivered'
+              ? 'Delivered'
+              : incomingStatus === 'failed'
+                ? 'Failed'
+                : incomingStatus === 'sent'
+                  ? 'Sent'
+                  : incomingStatus;
+        const friendlyFailureReason =
+          incomingStatus === 'failed'
+            ? backendErrorMessage ||
+              'WhatsApp rejected the media send. Please check the 24-hour window, media upload response, or template policy.'
+            : '';
+        const statusMessage =
+          incomingStatus === 'failed' && friendlyFailureReason
+            ? `Media failed: ${friendlyFailureReason}`
+            : `Media ${statusLabel}`;
 
-            nextMessages[index] = {
-              ...message,
-              status: incomingStatus || currentStatus,
-              errorMessage:
-                incomingStatus === 'failed'
-                  ? String(data?.errorMessage || message?.errorMessage || '').trim()
-                  : ''
-            };
-            foundMatch = true;
-            return true;
-          };
-
-          for (let index = 0; index < nextMessages.length; index += 1) {
-            const message = nextMessages[index];
-            const messageIds = [message?._id, message?.messageId, message?.whatsappMessageId]
-              .filter(Boolean)
-              .map((value) => String(value));
-
-            const matched = messageIds.some((id) => incomingMessageIds.has(id));
-            if (!matched) continue;
-            updateMessageAtIndex(index);
-          }
-
-          if (!foundMatch && eventConversationId) {
-            for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
-              const message = nextMessages[index];
-              const messageConversationId = String(message?.conversationId || '').trim();
-              const isOutboundAgentMessage = String(message?.sender || '').trim().toLowerCase() === 'agent';
-              if (!isOutboundAgentMessage) continue;
-              if (messageConversationId && messageConversationId !== eventConversationId) continue;
-              updateMessageAtIndex(index);
-              if (foundMatch) break;
-            }
-          }
-
-          return nextMessages;
-        })()
-      );
-
-      if (incomingStatus) {
-        setConversations((prev) => {
-          const matchingConversation = Array.isArray(prev)
-            ? prev.find((conversation) => {
-                const conversationIdValue = String(conversation?._id || '').trim();
-                const previewMessageId = getConversationLastOutboundMessageId(conversation);
-                return (
-                  (eventConversationId && conversationIdValue === eventConversationId) ||
-                  (previewMessageId && Array.from(incomingMessageIds).includes(previewMessageId))
-                );
-              })
-            : null;
-
-          if (!matchingConversation) return prev;
-
-          const nextConversation = {
-            ...matchingConversation,
-            lastMessageStatus: resolvePreferredMessageStatus(
-              matchingConversation?.lastMessageStatus,
-              incomingStatus
-            ),
-            lastMessageWhatsappMessageId:
-              String(data?.messageId || data?.whatsappMessageId || '').trim() ||
-              String(matchingConversation?.lastMessageWhatsappMessageId || '').trim()
-          };
-
-          if (incomingStatus === 'read' || incomingStatus === 'delivered') {
-            nextConversation.lastMessageFrom = 'agent';
-          }
-
-          return patchConversationInOrderedList(
-            prev,
-            String(matchingConversation?._id || '').trim(),
-            nextConversation
-          );
-        });
-
-        if (mediaPipelineRequestId && typeof notifyActionFeedback === 'function') {
-          const statusLabel =
-            incomingStatus === 'read'
-              ? 'Read'
-              : incomingStatus === 'delivered'
-                ? 'Delivered'
-                : incomingStatus === 'failed'
-                  ? 'Failed'
-                  : incomingStatus === 'sent'
-                    ? 'Sent'
-                    : incomingStatus;
-          notifyActionFeedback(
-            `Media ${statusLabel}${mediaPipelineRequestId ? ` • ${mediaPipelineRequestId}` : ''}`,
-            incomingStatus === 'failed' ? 'error' : 'info'
-          );
-        }
-
-        setSelectedConversation((prev) => {
-          if (!prev) return prev;
-          const eventConversationId = String(data?.conversationId || '').trim();
-          const selectedConversationId = String(prev?._id || '').trim();
-          const previewMessageId = getConversationLastOutboundMessageId(prev);
-          const selectedMatches =
-            (eventConversationId && selectedConversationId === eventConversationId) ||
-            (previewMessageId && Array.from(incomingMessageIds).includes(previewMessageId));
-
-          if (!selectedMatches) return prev;
-          return {
-            ...prev,
-            lastMessageStatus: resolvePreferredMessageStatus(
-              prev?.lastMessageStatus,
-              incomingStatus
-            ),
-            lastMessageWhatsappMessageId:
-              String(data?.messageId || data?.whatsappMessageId || '').trim() ||
-              String(prev?.lastMessageWhatsappMessageId || '').trim(),
-            ...(incomingStatus === 'read' || incomingStatus === 'delivered'
-              ? { lastMessageFrom: 'agent' }
-              : {})
-          };
-        });
-
-        const now = Date.now();
-        if (now - lastConversationListRefreshAtRef.current > 5000) {
-          lastConversationListRefreshAtRef.current = now;
-          callbacksRef.current.loadConversations({ silent: true });
-        }
-      }
-
-      const activeConversation = selectedConversationRef.current;
-      if (
-        activeConversation &&
-        eventConversationId &&
-        String(activeConversation._id) === eventConversationId
-      ) {
-        if (shouldAllowSelectedConversationResync()) {
-          callbacksRef.current.scheduleRealtimeResync(activeConversation._id);
-        }
-      }
-    };
-
-    const handleLeadScoreUpdated = (data) => {
-      if (!data) return;
-      const eventConversationId = String(data?.conversationId || '').trim();
-      const eventContactId = String(data?.contactId || '').trim();
-
-      setConversations((prev) => {
-        const matchingConversation = Array.isArray(prev)
-          ? prev.find((conversation) => {
-              const conversationIdValue = String(conversation?._id || '').trim();
-              const contactIdValue = String(
-                conversation?.contactId?._id ||
-                  conversation?.contactId?.id ||
-                  conversation?.contactId ||
-                  ''
-              ).trim();
-              return (
-                (eventConversationId && eventConversationId === conversationIdValue) ||
-                (eventContactId && eventContactId === contactIdValue)
-              );
-            })
-          : null;
-
-        if (!matchingConversation) return prev;
-
-        return patchConversationInOrderedList(
-          prev,
-          String(matchingConversation?._id || '').trim(),
-          callbacksRef.current.applyLeadScoreUpdateToConversation(matchingConversation, data)
+        notify(
+          `${statusMessage}${mediaPipelineRequestId ? ` • ${mediaPipelineRequestId}` : ''}`,
+          incomingStatus === 'failed' ? 'error' : 'info'
         );
-      });
+      }
 
-      setSelectedConversation((prev) =>
-        callbacksRef.current.applyLeadScoreUpdateToConversation(prev, data)
-      );
+      if (typeof scheduleRealtimeResync === 'function') {
+        const conversationId = String(data?.conversationId || '').trim();
+        const activeId = String(activeConversationId || '').trim();
+        if (conversationId && conversationId === activeId) {
+          scheduleRealtimeResync(conversationId);
+        }
+      }
     };
 
-    const handlePresenceUpdate = (data) => {
-      const userId = String(data?.userId || '').trim();
-      if (!userId) return;
+    const handleLeadScoreUpdated = (data = {}) => {
+      if (typeof applyLeadScoreUpdateToConversation === 'function') {
+        applyLeadScoreUpdateToConversation(data);
+      }
+    };
 
+    const handlePresenceUpdate = (data = {}) => {
+      const userId = String(data?.userId || '').trim();
+      if (!userId || typeof setUserPresenceMap !== 'function') return;
       setUserPresenceMap((prev) => ({
         ...prev,
         [userId]: {
-          userId,
-          online: Boolean(data?.online),
-          socketCount: Math.max(0, Number(data?.socketCount || 0) || 0),
-          lastSeen: String(data?.lastSeen || '').trim() || new Date().toISOString(),
-          activeConversationId: String(data?.activeConversationId || '').trim() || null,
-          updatedAt: new Date().toISOString()
+          ...(prev?.[userId] || {}),
+          status: String(data?.status || '').trim(),
+          updatedAt: data?.updatedAt || new Date().toISOString()
         }
       }));
     };
 
-    const handleTypingUpdate = (data) => {
+    const handleTypingUpdate = (data = {}) => {
+      const conversationId = String(data?.conversationId || '').trim();
       const userId = String(data?.userId || '').trim();
-      const conversationId = String(data?.conversationId || '').trim();
-      if (!userId || !conversationId) return;
-
-      const nextEntry = {
-        userId,
-        conversationId,
-        displayName: String(data?.displayName || '').trim() || null,
-        isTyping: Boolean(data?.isTyping),
-        updatedAt: new Date().toISOString()
-      };
-
+      if (!conversationId || !userId || typeof setConversationTypingState !== 'function') return;
       setConversationTypingState((prev) => {
-        const currentEntries = Array.isArray(prev?.[conversationId]) ? prev[conversationId] : [];
-        const remaining = currentEntries.filter((entry) => String(entry?.userId || '').trim() !== userId);
-        if (!nextEntry.isTyping) {
-          const nextState = { ...prev };
-          if (remaining.length > 0) {
-            nextState[conversationId] = remaining;
-          } else {
-            delete nextState[conversationId];
-          }
-          return pruneTypingState(nextState);
+        const current = Array.isArray(prev?.[conversationId]) ? prev[conversationId] : [];
+        const nextEntries = current.filter((entry) => String(entry?.userId || '') !== userId);
+        if (Boolean(data?.isTyping)) {
+          nextEntries.push({
+            userId,
+            conversationId,
+            displayName: String(data?.displayName || data?.name || '').trim(),
+            isTyping: true,
+            updatedAt: data?.updatedAt || new Date().toISOString()
+          });
         }
-
-        return pruneTypingState({
-          ...prev,
-          [conversationId]: [...remaining, nextEntry]
-        });
+        return {
+          ...(prev || {}),
+          [conversationId]: nextEntries
+        };
       });
     };
 
-    const handleConversationRead = (data) => {
-      const conversationId = String(data?.conversationId || '').trim();
-      if (!conversationId) return;
-
-      setConversations((prev) => patchConversationInOrderedList(prev, conversationId, { unreadCount: 0 }));
-
-      setSelectedConversation((prev) => {
-        if (!prev || String(prev?._id || '').trim() !== conversationId) return prev;
-        return { ...prev, unreadCount: 0 };
-      });
-    };
-
-    const handleCrmChanged = () => {
-      bootstrapInboxData({
-        silentConversations: true,
-        silentContacts: true
-      });
-    };
-
-    const handleBroadcastMessageBatch = (data = {}) => {
-      const events = Array.isArray(data?.events) ? data.events : [];
-      if (events.length === 0) return;
-
-      const activeConversation = selectedConversationRef.current;
-      const activeConversationId = String(activeConversation?._id || '').trim();
-      const batchTouchesActiveConversation = events.some(
-        (event) => String(event?.conversationId || '').trim() === activeConversationId
-      );
-
-      const now = Date.now();
-      if (now - lastConversationListRefreshAtRef.current > 5000) {
-        lastConversationListRefreshAtRef.current = now;
-        callbacksRef.current.loadConversations({ silent: true });
-      }
-
-      if (batchTouchesActiveConversation && activeConversationId) {
-        if (shouldAllowSelectedConversationResync()) {
-          callbacksRef.current.scheduleRealtimeResync(activeConversationId);
+    const handleCacheInvalidated = (data = {}) => {
+      const eventConversationId = String(data?.conversationId || '').trim();
+      const activeId = String(activeConversationId || '').trim();
+      if (eventConversationId && activeId && eventConversationId === activeId) {
+        if (typeof scheduleRealtimeResync === 'function') {
+          scheduleRealtimeResync(activeConversationId);
         }
+        return;
       }
+      queueConversationListRefresh({ silent: true, reason: 'cache_invalidated' });
     };
 
-    webSocketService.connect(currentUserId);
-    webSocketService.on('connected', handleConnect);
-    webSocketService.on('disconnected', handleDisconnect);
-    webSocketService.on('newMessage', handleNewMessage);
-    webSocketService.on('new_message', handleNewMessage);
-    webSocketService.on('messageSent', handleMessageSent);
+    webSocketService.on('connected', handleConnected);
+    webSocketService.on('disconnected', handleDisconnected);
+    webSocketService.on('connect_error', handleConnectError);
     webSocketService.on('message_sent', handleMessageSent);
-    webSocketService.on('messageStatus', handleMessageStatus);
+    webSocketService.on('new_message', handleNewMessage);
     webSocketService.on('message_status', handleMessageStatus);
-    webSocketService.on('broadcast_message_batch', handleBroadcastMessageBatch);
-    webSocketService.on('lead_score_updated', handleLeadScoreUpdated);
-    webSocketService.on('leadScoreUpdated', handleLeadScoreUpdated);
-    webSocketService.on('crm_changed', handleCrmChanged);
-    webSocketService.on('presence:update', handlePresenceUpdate);
-    webSocketService.on('typing:update', handleTypingUpdate);
     webSocketService.on('conversation_read', handleConversationRead);
+    webSocketService.on('lead_score_updated', handleLeadScoreUpdated);
+    webSocketService.on('crm_changed', queueConversationListRefresh);
+    webSocketService.on('team_inbox_cache_invalidated', handleCacheInvalidated);
+    webSocketService.on('presence', handlePresenceUpdate);
+    webSocketService.on('typing', handleTypingUpdate);
+
+    webSocketService
+      .connect(currentUserId || 'team-inbox-user', (payload) => {
+        if (payload?.type === 'message_status') handleMessageStatus(payload);
+        if (payload?.type === 'new_message') handleNewMessage(payload);
+      })
+      .catch((error) => {
+        console.error('Team Inbox websocket connection failed:', error);
+        if (typeof setWsConnected === 'function') setWsConnected(false);
+      });
+
+    if (hasBootstrapCache && typeof loadContacts === 'function' && !hasRealContactName) {
+      void loadContacts({ silent: true }).catch(() => undefined);
+    }
 
     return () => {
-      webSocketService.off('connected', handleConnect);
-      webSocketService.off('disconnected', handleDisconnect);
-      webSocketService.off('newMessage', handleNewMessage);
-      webSocketService.off('new_message', handleNewMessage);
-      webSocketService.off('messageSent', handleMessageSent);
+      webSocketService.off('connected', handleConnected);
+      webSocketService.off('disconnected', handleDisconnected);
+      webSocketService.off('connect_error', handleConnectError);
       webSocketService.off('message_sent', handleMessageSent);
-      webSocketService.off('messageStatus', handleMessageStatus);
+      webSocketService.off('new_message', handleNewMessage);
       webSocketService.off('message_status', handleMessageStatus);
-      webSocketService.off('broadcast_message_batch', handleBroadcastMessageBatch);
-      webSocketService.off('lead_score_updated', handleLeadScoreUpdated);
-      webSocketService.off('leadScoreUpdated', handleLeadScoreUpdated);
-      webSocketService.off('crm_changed', handleCrmChanged);
-      webSocketService.off('presence:update', handlePresenceUpdate);
-      webSocketService.off('typing:update', handleTypingUpdate);
       webSocketService.off('conversation_read', handleConversationRead);
+      webSocketService.off('lead_score_updated', handleLeadScoreUpdated);
+      webSocketService.off('crm_changed', queueConversationListRefresh);
+      webSocketService.off('team_inbox_cache_invalidated', handleCacheInvalidated);
+      webSocketService.off('presence', handlePresenceUpdate);
+      webSocketService.off('typing', handleTypingUpdate);
+
+      if (conversationListRefreshTimerRef.current) {
+        clearTimeout(conversationListRefreshTimerRef.current);
+        conversationListRefreshTimerRef.current = null;
+      }
+      if (messageStatusFlushTimerRef.current) {
+        clearTimeout(messageStatusFlushTimerRef.current);
+        messageStatusFlushTimerRef.current = null;
+      }
+      if (realtimeResyncTimerRef?.current) {
+        clearTimeout(realtimeResyncTimerRef.current);
+        realtimeResyncTimerRef.current = null;
+      }
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    activeConversationId,
+    applyLeadScoreUpdateToConversation,
+    currentCompanyId,
     currentUserId,
-    notificationMode,
     hasBootstrapCache,
-    setWsConnected,
-    setConversations,
+    hasRealContactName,
+    loadContacts,
+    loadConversations,
+    markAsRead,
+    notifyActionFeedback,
+    scheduleRealtimeResync,
+    setConversationTypingState,
+    setInboxDebugInfo,
     setMessages,
     setSelectedConversation,
-    selectedConversationRef
+    setSidebarRefreshing,
+    setUserPresenceMap,
+    setWsConnected
   ]);
 
   useEffect(() => {
-    if (typingPruneTimerRef.current) {
-      clearInterval(typingPruneTimerRef.current);
-    }
-
-    typingPruneTimerRef.current = setInterval(() => {
-      setConversationTypingState((current) => {
-        const nextState = pruneTypingState(current);
-        return areTypingStatesEqual(current, nextState) ? current : nextState;
-      });
-    }, 5000);
-
-    return () => {
-      if (typingPruneTimerRef.current) {
-        clearInterval(typingPruneTimerRef.current);
-        typingPruneTimerRef.current = null;
-      }
-    };
-  }, [setConversationTypingState]);
-
-  useEffect(() => {
-    const timerRef = realtimeResyncTimerRef;
-    return () => {
-      if (timerRef.current) {
-        clearTimeout(timerRef.current);
-      }
-    };
-  }, [realtimeResyncTimerRef]);
-
-  useEffect(() => {
-    const useSilentBootstrap = Boolean(hasBootstrapCache);
-    if (useSilentBootstrap && typeof setSidebarRefreshing === 'function') {
-      setSidebarRefreshing(true);
-    }
-
-    bootstrapInboxData({
-      silentConversations: useSilentBootstrap,
-      silentContacts: true,
-      force: false
-    }).finally(() => {
-      if (useSilentBootstrap && typeof setSidebarRefreshing === 'function') {
-        setSidebarRefreshing(false);
-      }
-    });
-  }, [hasBootstrapCache, setSidebarRefreshing]);
-
-  useEffect(() => {
-    const onFocusRefresh = () => {
-      if (document.visibilityState && document.visibilityState !== 'visible') return;
-
-      const now = Date.now();
-      if (now - lastVisibilityRefreshAtRef.current < 30000) return;
-      lastVisibilityRefreshAtRef.current = now;
-      callbacksRef.current.loadConversations({ silent: true });
-    };
-    window.addEventListener('focus', onFocusRefresh);
-    document.addEventListener('visibilitychange', onFocusRefresh);
-    return () => {
-      window.removeEventListener('focus', onFocusRefresh);
-      document.removeEventListener('visibilitychange', onFocusRefresh);
-    };
-  }, []);
+    if (!threadFreshSyncAtRef) return undefined;
+    if (!activeConversationId) return undefined;
+    threadFreshSyncAtRef.current = Number(threadFreshSyncAtRef.current || 0) || 0;
+    return undefined;
+  }, [activeConversationId, threadFreshSyncAtRef]);
 };

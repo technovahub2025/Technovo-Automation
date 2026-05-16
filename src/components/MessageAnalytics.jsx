@@ -28,7 +28,6 @@ import {
   Download,
   RefreshCw
 } from 'lucide-react';
-import { whatsappService } from '../services/whatsappService';
 import './MessageAnalytics.css';
 
 const MessageAnalytics = ({ overviewData = {} }) => {
@@ -128,71 +127,6 @@ const MessageAnalytics = ({ overviewData = {} }) => {
     }));
   };
 
-  const buildDailyFromMessages = async () => {
-    const { buckets, bucketMap } = buildDailyBuckets();
-    const days = getWindowDays();
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
-    start.setDate(start.getDate() - (days - 1));
-
-    const conversations = await whatsappService.getConversations();
-    const conversationIds = conversations
-      .map((c) => c._id)
-      .filter(Boolean)
-      .slice(0, 200);
-
-    if (conversationIds.length === 0) {
-      return {
-        dailyTrends: buckets.map((bucket) => ({
-          date: bucket.date,
-          sent: bucket.sent,
-          delivered: bucket.delivered,
-          read: bucket.read,
-          conversations: bucket.conversations
-        })),
-        hourlyActivity: buildFallbackHourlyActivity()
-      };
-    }
-
-    const messageLists = await Promise.all(conversationIds.map((id) => whatsappService.getMessages(id)));
-    const allMessages = messageLists.flat();
-    const conversationSetByDay = new Map();
-
-    allMessages.forEach((msg) => {
-      if (msg.sender !== 'agent' || !msg.timestamp) return;
-      const ts = new Date(msg.timestamp);
-      if (Number.isNaN(ts.getTime()) || ts < start) return;
-      const key = formatDayKey(ts);
-      const bucket = bucketMap.get(key);
-      if (!bucket) return;
-
-      bucket.sent += 1;
-      if (msg.status === 'delivered' || msg.status === 'read') {
-        bucket.delivered += 1;
-      }
-      if (msg.status === 'read') {
-        bucket.read += 1;
-      }
-
-      if (!conversationSetByDay.has(key)) {
-        conversationSetByDay.set(key, new Set());
-      }
-      if (msg.conversationId) {
-        conversationSetByDay.get(key).add(String(msg.conversationId));
-      }
-    });
-
-    const dailyTrends = buckets.map(({ key, ...rest }) => ({
-      ...rest,
-      conversations: conversationSetByDay.has(key) ? conversationSetByDay.get(key).size : 0
-    }));
-
-    return {
-      dailyTrends,
-      hourlyActivity: buildHourlyFromMessages(allMessages)
-    };
-  };
-
   const buildFallbackDailyTrends = () => {
     const { buckets } = buildDailyBuckets();
     return buckets.map((bucket) => ({
@@ -225,20 +159,8 @@ const MessageAnalytics = ({ overviewData = {} }) => {
       const backendDailyTrends = Array.isArray(overviewData.dailyTrends) ? overviewData.dailyTrends : [];
       const backendHourlyActivity = Array.isArray(overviewData.hourlyActivity) ? overviewData.hourlyActivity : [];
       const backendMessageTypes = Array.isArray(overviewData.messageTypes) ? overviewData.messageTypes : [];
-      let resolvedDailyTrends = backendDailyTrends;
-      let resolvedHourlyActivity = backendHourlyActivity;
-      if (resolvedDailyTrends.length === 0) {
-        try {
-          const derived = await buildDailyFromMessages();
-          resolvedDailyTrends = derived.dailyTrends || [];
-          if (resolvedHourlyActivity.length === 0) {
-            resolvedHourlyActivity = derived.hourlyActivity || [];
-          }
-        } catch (trendError) {
-          console.error('Failed to build daily trends from messages:', trendError);
-          resolvedDailyTrends = [];
-        }
-      }
+      const resolvedDailyTrends = backendDailyTrends;
+      const resolvedHourlyActivity = backendHourlyActivity;
 
       const sentCount = Number(overviewData.messagesSent || 0);
       const deliveredCount = Number(overviewData.messagesDelivered || 0);

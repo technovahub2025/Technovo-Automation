@@ -248,6 +248,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     topFailureCode: null
   });
   const broadcastSubmitInFlightRef = useRef(false);
+  const reliabilitySummaryTimerRef = useRef(null);
   const csvRecipientRefreshContextRef = useRef({
     recipients: [],
     uploadedFile: null
@@ -440,12 +441,21 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       }
     };
 
-    loadReliabilitySummary();
+    if (reliabilitySummaryTimerRef.current) {
+      window.clearTimeout(reliabilitySummaryTimerRef.current);
+    }
+    reliabilitySummaryTimerRef.current = window.setTimeout(() => {
+      loadReliabilitySummary();
+    }, 180);
 
     return () => {
       isAlive = false;
+      if (reliabilitySummaryTimerRef.current) {
+        window.clearTimeout(reliabilitySummaryTimerRef.current);
+        reliabilitySummaryTimerRef.current = null;
+      }
     };
-  }, [broadcasts, statusFilter, startDate, endDate]);
+  }, [lastUpdated, statusFilter, startDate, endDate]);
 
 
 

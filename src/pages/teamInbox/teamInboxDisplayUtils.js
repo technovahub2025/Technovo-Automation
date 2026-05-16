@@ -4,7 +4,8 @@ const conversationMediaLabels = {
   image: 'Photo',
   video: 'Video',
   audio: 'Voice message',
-  document: 'Document'
+  document: 'Document',
+  sticker: 'Sticker'
 };
 
 const formatConversationDocumentPreviewText = (conversation = {}, rawText = '') => {
@@ -26,7 +27,8 @@ const conversationMediaPlaceholders = {
   image: new Set(['[image]', 'image', '[photo]', 'photo']),
   video: new Set(['[video]', 'video']),
   audio: new Set(['[audio]', 'audio', '[voice message]', 'voice message']),
-  document: new Set(['[document]', 'document', '[file]', 'file', '[attachment]', 'attachment'])
+  document: new Set(['[document]', 'document', '[file]', 'file', '[attachment]', 'attachment']),
+  sticker: new Set(['[sticker]', 'sticker'])
 };
 
 const inferConversationMediaType = (conversation = {}) => {
@@ -45,6 +47,7 @@ const inferConversationMediaType = (conversation = {}) => {
   if (conversationMediaPlaceholders.image.has(normalizedText)) return 'image';
   if (conversationMediaPlaceholders.video.has(normalizedText)) return 'video';
   if (conversationMediaPlaceholders.audio.has(normalizedText)) return 'audio';
+  if (conversationMediaPlaceholders.sticker.has(normalizedText)) return 'sticker';
   if (conversationMediaPlaceholders.document.has(normalizedText)) return 'document';
   return '';
 };
