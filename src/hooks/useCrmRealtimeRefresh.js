@@ -36,10 +36,22 @@ const payloadMatchesContact = (payload = {}, contactId = "") => {
   return contactIds.some((item) => item === normalizedContactId);
 };
 
+const normalizeEntitySet = (entities = []) => {
+  const source = Array.isArray(entities) ? entities : [entities];
+  return new Set(source.map((entity) => String(entity || "").trim().toLowerCase()).filter(Boolean));
+};
+
+const payloadMatchesEntity = (payload = {}, entitySet = new Set()) => {
+  if (!entitySet.size) return true;
+  const entity = String(payload?.entity || "").trim().toLowerCase();
+  return !entity || entitySet.has(entity);
+};
+
 const useCrmRealtimeRefresh = ({
   currentUserId = resolveCacheUserId(),
   onRefresh,
   enabled = true,
+  entities = [],
   contactId = "",
   listenToLocalSync = true,
   listenToWebsocket = true,
@@ -59,6 +71,7 @@ const useCrmRealtimeRefresh = ({
   const lastRefreshAtRef = useRef(0);
   const onRefreshRef = useRef(onRefresh);
   const contactIdRef = useRef(normalizeId(contactId));
+  const entitySetRef = useRef(normalizeEntitySet(entities));
 
   useEffect(() => {
     onRefreshRef.current = onRefresh;
@@ -69,11 +82,22 @@ const useCrmRealtimeRefresh = ({
   }, [contactId]);
 
   useEffect(() => {
-    if (!enabled || typeof onRefresh !== "function") return undefined;
+    entitySetRef.current = normalizeEntitySet(entities);
+  }, [entities]);
+
+  useEffect(() => {
+    if (!enabled) return undefined;
     if (typeof window === "undefined") return undefined;
 
     let isActive = true;
+    const runRefresh = () => {
+      if (!isActive || typeof onRefreshRef.current !== "function") return;
+      lastRefreshAtRef.current = Date.now();
+      onRefreshRef.current();
+    };
+
     const scheduleRefresh = () => {
+      if (typeof onRefreshRef.current !== "function") return;
       if (timerRef.current) {
         window.clearTimeout(timerRef.current);
       }
@@ -83,17 +107,23 @@ const useCrmRealtimeRefresh = ({
         if (!isActive) return;
 
         const now = Date.now();
-        if (now - lastRefreshAtRef.current < Math.max(0, Number(minGapMs) || 0)) {
+        const minGap = Math.max(0, Number(minGapMs) || 0);
+        const remainingGapMs = minGap - (now - lastRefreshAtRef.current);
+        if (remainingGapMs > 0) {
+          timerRef.current = window.setTimeout(() => {
+            timerRef.current = null;
+            runRefresh();
+          }, remainingGapMs);
           return;
         }
 
-        lastRefreshAtRef.current = now;
-        onRefreshRef.current?.();
+        runRefresh();
       }, Math.max(0, Number(debounceMs) || 0));
     };
 
     const handleRealtimeMessage = (payload = {}) => {
       if (String(payload?.type || "").trim() !== "crm_changed") return;
+      if (!payloadMatchesEntity(payload, entitySetRef.current)) return;
       if (!payloadMatchesContact(payload, contactIdRef.current)) return;
       scheduleRefresh();
     };

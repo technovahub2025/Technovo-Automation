@@ -3,16 +3,26 @@ import { useSearchParams } from "react-router-dom";
 import { TableVirtuoso } from "react-virtuoso";
 import {
   CheckCircle2,
+  AlertCircle,
+  CirclePlus,
+  CalendarClock,
+  BadgeCheck,
+  Clock3,
+  Layers3,
+  ListChecks,
+  Percent,
+  TrendingUp,
+  Trash,
   Pencil,
+  PencilLine,
   MessageSquarePlus,
-  Plus,
+  ExternalLink,
   MoreVertical,
   Search,
   SlidersHorizontal,
   Trash2,
   X
 } from "lucide-react";
-import apiService from "../services/api";
 import { crmService } from "../services/crmService";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
 import {
@@ -21,6 +31,7 @@ import {
   writeSidebarPageCache
 } from "../utils/sidebarPageCache";
 import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
+import useCrmUserRoster from "../hooks/useCrmUserRoster";
 import CrmContactDrawer from "../components/crm/CrmContactDrawer";
 import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
 import CrmToast from "../components/crm/CrmToast";
@@ -81,15 +92,6 @@ const normalizeTaskApiList = (value) => {
   if (Array.isArray(value?.data)) return value.data;
   if (Array.isArray(value?.results)) return value.results;
   if (Array.isArray(value?.tasks)) return value.tasks;
-  return [];
-};
-
-const normalizeUserApiList = (value) => {
-  if (Array.isArray(value)) return value;
-  if (Array.isArray(value?.data)) return value.data;
-  if (Array.isArray(value?.data?.users)) return value.data.users;
-  if (Array.isArray(value?.users)) return value.users;
-  if (Array.isArray(value?.results)) return value.results;
   return [];
 };
 
@@ -300,14 +302,16 @@ const CrmTasks = () => {
   const [taskContactSearch, setTaskContactSearch] = useState("");
   const [taskContactLoading, setTaskContactLoading] = useState(false);
   const [taskContactSearchResults, setTaskContactSearchResults] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [usersLoading, setUsersLoading] = useState(false);
   const [expandedTaskId, setExpandedTaskId] = useState("");
   const hasInitializedFilterEffectRef = useRef(false);
   const taskContactSearchSeqRef = useRef(0);
   const taskLoadRequestIdRef = useRef(0);
   const loadDataRef = useRef(null);
   const currentUserId = resolveCacheUserId();
+  const {
+    users,
+    loading: usersLoading
+  } = useCrmUserRoster();
   const [form, setForm] = useState(() => getInitialTaskForm(currentUserId));
   const isDefaultView =
     statusFilter === "all" &&
@@ -539,6 +543,7 @@ const CrmTasks = () => {
 
   const crmRealtime = useCrmRealtimeRefresh({
     currentUserId,
+    entities: ["task", "contact"],
     onRefresh: handleRealtimeRefresh
   });
 
@@ -657,29 +662,6 @@ const CrmTasks = () => {
 
     return () => window.clearTimeout(timer);
   }, [searchInput, searchQuery]);
-
-  useEffect(() => {
-    let mounted = true;
-    const loadUsers = async () => {
-      try {
-        setUsersLoading(true);
-        const result = await apiService.getUsers();
-        if (!mounted) return;
-        const nextUsers = normalizeUserApiList(result?.data || result?.users || result?.results || result);
-        setUsers(nextUsers);
-      } catch (userError) {
-        if (!mounted) return;
-        setUsers([]);
-      } finally {
-        if (mounted) setUsersLoading(false);
-      }
-    };
-
-    loadUsers();
-    return () => {
-      mounted = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (!createTaskOpen) {
@@ -1164,23 +1146,25 @@ const CrmTasks = () => {
   }, [hasMoreTasks, loading, loadingMoreTasks, nextCursor]);
 
   const summaryCards = [
-    { key: "open", label: "Open", value: summary?.open ?? 0, interactive: true },
-    { key: "overdue", label: "Overdue", value: summary?.overdue ?? 0, interactive: true },
-    { key: "due_today", label: "Due Today", value: summary?.dueToday ?? 0, interactive: true },
-    { key: "today_calls", label: "Today Calls", value: summary?.todayCalls ?? 0, interactive: false },
-    { key: "completed", label: "Completed", value: summary?.completed ?? 0, interactive: true },
-    { key: "all", label: "Total", value: summary?.total ?? 0, interactive: true },
+    { key: "open", label: "Open", value: summary?.open ?? 0, interactive: true, icon: Layers3 },
+    { key: "overdue", label: "Overdue", value: summary?.overdue ?? 0, interactive: true, icon: AlertCircle },
+    { key: "due_today", label: "Due Today", value: summary?.dueToday ?? 0, interactive: true, icon: CalendarClock },
+    { key: "today_calls", label: "Today Calls", value: summary?.todayCalls ?? 0, interactive: false, icon: Clock3 },
+    { key: "completed", label: "Completed", value: summary?.completed ?? 0, interactive: true, icon: BadgeCheck },
+    { key: "all", label: "Total", value: summary?.total ?? 0, interactive: true, icon: ListChecks },
     {
       key: "completion_rate",
       label: "Completion Rate",
       value: `${summary?.completionRate ?? 0}%`,
-      interactive: false
+      interactive: false,
+      icon: Percent
     },
     {
       key: "follow_up_completion",
       label: "Follow-up Rate",
       value: `${summary?.followUpCompletionRate ?? 0}%`,
-      interactive: false
+      interactive: false,
+      icon: TrendingUp
     }
   ];
 
@@ -1203,7 +1187,7 @@ const CrmTasks = () => {
                 className="crm-btn crm-btn-primary crm-btn--compact crm-create-task-trigger"
                 onClick={openCreateTaskModal}
               >
-                <Plus size={16} />
+                <CirclePlus size={16} />
                 Create Task
               </button>
             </div>
@@ -1221,13 +1205,27 @@ const CrmTasks = () => {
                 }`}
                 onClick={() => setBucketFilterAndReset(card.key)}
               >
-                <strong>{card.value}</strong>
-                <span>{card.label}</span>
+                <div className="crm-summary-card__top">
+                  {card.icon ? (
+                    <span className="crm-summary-card__icon" aria-hidden="true">
+                      <card.icon size={15} />
+                    </span>
+                  ) : null}
+                  <strong>{card.value}</strong>
+                </div>
+                <span className="crm-summary-card__label">{card.label}</span>
               </button>
             ) : (
               <div key={card.key} className="crm-summary-card">
-                <strong>{card.value}</strong>
-                <span>{card.label}</span>
+                <div className="crm-summary-card__top">
+                  {card.icon ? (
+                    <span className="crm-summary-card__icon" aria-hidden="true">
+                      <card.icon size={15} />
+                    </span>
+                  ) : null}
+                  <strong>{card.value}</strong>
+                </div>
+                <span className="crm-summary-card__label">{card.label}</span>
               </div>
             )
           )}
@@ -1251,7 +1249,7 @@ const CrmTasks = () => {
                 <div className="crm-create-task__header">
                   <div className="crm-create-task__heading">
                     <span className="crm-create-task__icon" aria-hidden="true">
-                      {isEditingTask ? <Pencil size={16} /> : <Plus size={16} />}
+                      {isEditingTask ? <PencilLine size={16} /> : <CalendarClock size={16} />}
                     </span>
                     <div className="crm-create-task__heading-copy">
                       <h3>{isEditingTask ? "Edit Task" : "Create Task"}</h3>
@@ -1645,7 +1643,7 @@ const CrmTasks = () => {
               aria-label="Delete selected tasks"
               title="Delete selected tasks"
             >
-              <Trash2 size={16} />
+              <Trash size={16} />
             </button>
           </div>
         )}
@@ -1703,7 +1701,7 @@ const CrmTasks = () => {
                       <th className="crm-task-col-status">Status</th>
                       <th className="crm-task-col-actions crm-task-actions-heading">
                         <span className="crm-task-table-heading">
-                          <MoreVertical size={14} />
+                          <ListChecks size={14} />
                           Actions
                         </span>
                       </th>
@@ -1889,7 +1887,7 @@ const CrmTasks = () => {
                                   openContactDrawer(contact);
                                 }}
                               >
-                                <Search size={15} />
+                                <ExternalLink size={15} />
                                 <span>Open contact</span>
                               </button>
                               <button
@@ -1916,7 +1914,7 @@ const CrmTasks = () => {
                                 }}
                                 disabled={isBusy}
                               >
-                                <CheckCircle2 size={15} />
+                                <BadgeCheck size={15} />
                                 <span>{isCompleted ? "Mark Pending" : "Mark Complete"}</span>
                               </button>
                               <button

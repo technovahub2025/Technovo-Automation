@@ -1,8 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
-  BadgeDollarSign,
+  BadgeCheck,
+  BriefcaseBusiness,
   CalendarClock,
   ExternalLink,
+  PencilLine,
   Target,
   Trash2,
   UserRound,
@@ -157,7 +159,7 @@ const CrmDealDrawer = ({
         <div className="crm-create-task__header crm-deal-drawer__header">
           <div className="crm-create-task__heading">
             <span className="crm-create-task__icon" aria-hidden="true">
-              <BadgeDollarSign size={16} />
+              <BriefcaseBusiness size={16} />
             </span>
             <div className="crm-create-task__heading-copy">
               <h3>{deal?.title || "Untitled Deal"}</h3>
@@ -229,7 +231,7 @@ const CrmDealDrawer = ({
                 className="crm-contact-action-btn crm-contact-action-btn--secondary"
                 onClick={() => setForm((previous) => ({ ...previous, status: "won", stage: "won" }))}
               >
-                <BadgeDollarSign size={14} />
+                <BadgeCheck size={14} />
                 Mark Won
               </button>
               <button
@@ -383,7 +385,7 @@ const CrmDealDrawer = ({
             {deleting ? "Deleting..." : "Delete Deal"}
           </button>
           <button type="button" className="crm-btn crm-btn-primary crm-create-task__submit" onClick={handleSave} disabled={saving}>
-            <CalendarClock size={15} />
+            <PencilLine size={15} />
             {saving ? "Saving..." : "Save Deal"}
           </button>
         </div>

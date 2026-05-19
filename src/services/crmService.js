@@ -1,9 +1,11 @@
 import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
 import { handleUnauthorizedServiceError } from "./serviceAuth";
+import webSocketService from "./websocketService";
 
 const API_BASE_URL = resolveApiBaseUrl();
 const CRM_REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_CRM_REQUEST_TIMEOUT_MS || 15000);
+const CRM_USER_ROSTER_WAIT_MS = Number(import.meta.env.VITE_CRM_USER_ROSTER_WAIT_MS || 900);
 const PIPELINE_STAGES_AVAILABILITY_KEY = "crmPipelineStagesApiAvailable";
 const DEFAULT_PIPELINE_STAGES = [
   { key: "new", label: "New Lead", color: "#5f8fc3", order: 0 },
@@ -16,6 +18,11 @@ const DEFAULT_PIPELINE_STAGES = [
 ];
 let pipelineStagesApiAvailable = null;
 let pipelineStagesRequestPromise = null;
+let crmUserRosterCache = [];
+let crmUserRosterSource = "";
+let crmUserRosterUpdatedAt = 0;
+let crmUserRosterSocketListenerBound = false;
+const crmUserRosterListeners = new Set();
 
 const readPipelineStagesAvailability = () => {
   try {
@@ -75,6 +82,217 @@ const buildRequestConfig = (includeJson = true, extra = {}) => {
     },
     ...rest
   };
+};
+
+const normalizeCrmUserLabel = (user = {}, fallbackId = "") => {
+  const resolvedId = String(user?._id || user?.id || user?.userId || fallbackId || "").trim();
+  const name = String(user?.name || user?.displayName || user?.fullName || "").trim();
+  const email = String(user?.email || "").trim();
+  return name || email || resolvedId || "Unknown user";
+};
+
+const normalizeCrmUserRecord = (user = {}, fallbackId = "") => {
+  const id = String(user?._id || user?.id || user?.userId || fallbackId || "").trim();
+  if (!id) return null;
+
+  return {
+    _id: id,
+    id,
+    userId: id,
+    name: String(user?.name || user?.displayName || user?.fullName || "").trim(),
+    displayName: String(user?.displayName || user?.name || user?.fullName || "").trim(),
+    email: String(user?.email || "").trim(),
+    label: normalizeCrmUserLabel(user, id),
+    source: String(user?.source || "").trim(),
+    connected: user?.connected !== false,
+    lastSeenAt: String(user?.lastSeenAt || "").trim()
+  };
+};
+
+const normalizeCrmUserRosterList = (value = {}) => {
+  const rawUsers = Array.isArray(value)
+    ? value
+    : Array.isArray(value?.users)
+      ? value.users
+      : Array.isArray(value?.data)
+        ? value.data
+        : Array.isArray(value?.results)
+          ? value.results
+          : Array.isArray(value?.owners)
+            ? value.owners.map((owner) => ({
+                _id: owner?.ownerId,
+                id: owner?.ownerId,
+                userId: owner?.ownerId,
+                name: owner?.ownerName,
+                displayName: owner?.ownerName,
+                source: "owner-dashboard"
+              }))
+            : [];
+
+  const seen = new Set();
+  return rawUsers
+    .map((user) => normalizeCrmUserRecord(user))
+    .filter(Boolean)
+    .filter((user) => {
+      if (seen.has(user.id)) return false;
+      seen.add(user.id);
+      return true;
+    });
+};
+
+const emitCrmUserRoster = (users, meta = {}) => {
+  crmUserRosterCache = Array.isArray(users) ? users : [];
+  crmUserRosterSource = String(meta?.source || "").trim() || crmUserRosterSource || "websocket";
+  crmUserRosterUpdatedAt = Date.now();
+
+  const payload = {
+    users: crmUserRosterCache,
+    source: crmUserRosterSource,
+    updatedAt: crmUserRosterUpdatedAt,
+    fallback: Boolean(meta?.fallback)
+  };
+
+  crmUserRosterListeners.forEach((listener) => {
+    try {
+      listener(payload);
+    } catch (error) {
+      console.error("Failed to notify CRM user roster listener:", error);
+    }
+  });
+};
+
+const ensureCrmUserRosterSocketBinding = () => {
+  if (crmUserRosterSocketListenerBound || typeof webSocketService?.on !== "function") return;
+
+  const handleUserList = (payload = {}) => {
+    if (String(payload?.type || "").trim() !== "user_list") return;
+    const nextUsers = normalizeCrmUserRosterList(payload);
+    if (!nextUsers.length) return;
+    emitCrmUserRoster(nextUsers, { source: "websocket" });
+  };
+
+  webSocketService.on("user_list", handleUserList);
+  crmUserRosterSocketListenerBound = true;
+};
+
+const fetchCrmUserRosterFallback = async () => {
+  const response = await axios.get(`${API_BASE_URL}/api/crm/ops/owner-dashboard`, {
+    ...buildRequestConfig(false)
+  });
+
+  const owners = Array.isArray(response?.data?.data?.owners)
+    ? response.data.data.owners
+    : Array.isArray(response?.data?.owners)
+      ? response.data.owners
+      : [];
+
+  return owners
+    .map((owner) =>
+      normalizeCrmUserRecord({
+        _id: owner?.ownerId,
+        id: owner?.ownerId,
+        userId: owner?.ownerId,
+        name: owner?.ownerName,
+        displayName: owner?.ownerName,
+        source: "owner-dashboard"
+      })
+    )
+    .filter(Boolean);
+};
+
+const waitForCrmUserList = (waitMs = CRM_USER_ROSTER_WAIT_MS) =>
+  new Promise((resolve) => {
+    if (!webSocketService?.isConnected?.()) {
+      resolve([]);
+      return;
+    }
+
+    let settled = false;
+    let timeoutId = null;
+
+    const cleanup = () => {
+      if (timeoutId) window.clearTimeout(timeoutId);
+      webSocketService.off?.("user_list", handleUserList);
+    };
+
+    const settle = (users = []) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(Array.isArray(users) ? users : []);
+    };
+
+    const handleUserList = (payload = {}) => {
+      if (String(payload?.type || "").trim() !== "user_list") return;
+      const nextUsers = normalizeCrmUserRosterList(payload);
+      if (!nextUsers.length) return;
+      settle(nextUsers);
+    };
+
+    webSocketService.on("user_list", handleUserList);
+    timeoutId = window.setTimeout(() => settle([]), Math.max(0, Number(waitMs) || 0));
+  });
+
+export const subscribeCrmUserRoster = (listener) => {
+  ensureCrmUserRosterSocketBinding();
+
+  if (typeof listener !== "function") {
+    return () => {};
+  }
+
+  crmUserRosterListeners.add(listener);
+  if (Array.isArray(crmUserRosterCache) && crmUserRosterCache.length) {
+    listener({
+      users: crmUserRosterCache,
+      source: crmUserRosterSource || "websocket",
+      updatedAt: crmUserRosterUpdatedAt,
+      fallback: crmUserRosterSource !== "websocket"
+    });
+  }
+
+  return () => {
+    crmUserRosterListeners.delete(listener);
+  };
+};
+
+export const getCrmUserRoster = async ({ preferWebSocket = true, waitMs = CRM_USER_ROSTER_WAIT_MS } = {}) => {
+  ensureCrmUserRosterSocketBinding();
+
+  if (Array.isArray(crmUserRosterCache) && crmUserRosterCache.length) {
+    return {
+      success: true,
+      data: crmUserRosterCache,
+      source: crmUserRosterSource || "websocket",
+      updatedAt: crmUserRosterUpdatedAt
+    };
+  }
+
+  if (preferWebSocket && webSocketService?.isConnected?.()) {
+    const nextUsers = await waitForCrmUserList(waitMs);
+    if (nextUsers.length) {
+      emitCrmUserRoster(nextUsers, { source: "websocket" });
+      return {
+        success: true,
+        data: nextUsers,
+        source: "websocket",
+        updatedAt: crmUserRosterUpdatedAt
+      };
+    }
+  }
+
+  try {
+    const fallbackUsers = await fetchCrmUserRosterFallback();
+    emitCrmUserRoster(fallbackUsers, { source: "fallback", fallback: true });
+    return {
+      success: true,
+      data: fallbackUsers,
+      source: "fallback",
+      fallback: true,
+      updatedAt: crmUserRosterUpdatedAt
+    };
+  } catch (error) {
+    return withServiceError(error, "Failed to fetch CRM users");
+  }
 };
 
 export const crmService = {
@@ -574,6 +792,19 @@ export const crmService = {
     }
   },
 
+  async scheduleReportExport(payload = {}) {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/crm/reports/schedule`,
+        payload,
+        buildRequestConfig()
+      );
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to schedule CRM report export");
+    }
+  },
+
   async getMeetings(filters = {}) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/meetings`, {
@@ -582,6 +813,31 @@ export const crmService = {
       return response.data;
     } catch (error) {
       return withServiceError(error, "Failed to fetch CRM meetings");
+    }
+  },
+
+  async updateMeeting(meetingId, payload = {}) {
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/api/crm/meetings/${meetingId}`,
+        payload,
+        buildRequestConfig()
+      );
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to update CRM meeting");
+    }
+  },
+
+  async deleteMeeting(meetingId) {
+    try {
+      const response = await axios.delete(
+        `${API_BASE_URL}/api/crm/meetings/${meetingId}`,
+        buildRequestConfig()
+      );
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to delete CRM meeting");
     }
   },
 

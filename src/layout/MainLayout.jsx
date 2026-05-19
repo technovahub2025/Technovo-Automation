@@ -22,6 +22,7 @@ const MainLayout = () => {
   const trialUsage = user?.trialUsage || {};
   const trialLimits = user?.trialLimits || {};
   const documentStatus = String(user?.documentStatus || "").toLowerCase();
+  const isCrmHome = currentPath === "/crm/home";
   // Track last active bulk message item when navigating to bulk message routes
   useEffect(() => {
     const bulkMessageRoutes = [
@@ -137,7 +138,9 @@ const MainLayout = () => {
             </button>
           </div>
         )}
-        <main className={`page-content ${currentPath === "/crm/pipeline" ? "page-content--crm-pipeline" : ""}`}>
+        <main
+          className={`page-content ${isCrmHome ? "page-content--crm-home" : ""} ${currentPath === "/crm/pipeline" ? "page-content--crm-pipeline" : ""}`}
+        >
           <Outlet />
         </main>
       </div>

@@ -9,6 +9,9 @@ const normalizeRealtimeStatus = (status) => {
   if (normalized === "connecting") {
     return { key: "connecting", label: "Connecting" };
   }
+  if (normalized === "reconnecting") {
+    return { key: "reconnecting", label: "Reconnecting..." };
+  }
   return { key: "offline", label: "Offline" };
 };
 
@@ -19,7 +22,7 @@ const CrmRealtimeStatus = ({ status, className = "" }) => {
     .join(" ");
 
   return (
-    <span className={classes} title={`CRM realtime: ${realtime.label}`}>
+    <span className={classes} title={`CRM realtime: ${realtime.label}`} role="status" aria-live="polite">
       <span className="crm-live-pill__dot" />
       <Activity size={15} />
       {realtime.label}

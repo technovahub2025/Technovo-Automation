@@ -118,6 +118,7 @@ const CrmTaskCalendar = () => {
   const selectedDayTasks = tasksByDay.get(activeDateKey) || [];
 
   const crmRealtime = useCrmRealtimeRefresh({
+    entities: ["task"],
     onRefresh: () => loadTasks({ silent: true })
   });
 

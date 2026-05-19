@@ -39,21 +39,35 @@ const CrmOnboardingChecklist = ({ contactsCount = 0, tasksCount = 0, dealsCount 
 
   const completedCount = steps.filter((step) => step.done).length;
   const allDone = completedCount === steps.length;
+  const progressPercent = Math.round((completedCount / steps.length) * 100);
 
   return (
     <section className="crm-onboarding-card">
       <div className="crm-onboarding-card__header">
-        <h3>Quick Start</h3>
+        <div>
+          <h3>Quick Start</h3>
+          <p>Complete these steps to turn a blank workspace into an active pipeline.</p>
+        </div>
         <span>
           {completedCount}/{steps.length} completed
         </span>
       </div>
+      <div className="crm-onboarding-card__progress" aria-hidden="true">
+        <span style={{ width: `${progressPercent}%` }} />
+      </div>
       {allDone ? (
-        <p className="crm-onboarding-card__done">Core setup completed. Your CRM is ready for daily execution.</p>
+        <p className="crm-onboarding-card__done">
+          Core setup completed. Your CRM is ready for daily execution.
+        </p>
       ) : null}
       <div className="crm-onboarding-card__list">
         {steps.map((step) => (
-          <NavLink key={step.id} to={step.to} className="crm-onboarding-item">
+          <NavLink
+            key={step.id}
+            to={step.to}
+            className={`crm-onboarding-item${step.done ? " crm-onboarding-item--done" : ""}`}
+            aria-label={`${step.title}${step.done ? ", completed" : ""}`}
+          >
             {step.done ? (
               <CheckCircle2 size={16} className="crm-onboarding-item__icon done" />
             ) : (

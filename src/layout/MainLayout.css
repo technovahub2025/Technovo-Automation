@@ -40,6 +40,11 @@
     min-width: 0; /* Allow proper shrinking */
 }
 
+.page-content--crm-home {
+    overflow: hidden;
+    padding: 0;
+}
+
 .page-content--crm-pipeline {
     overflow: hidden;
     display: flex;
@@ -85,6 +90,10 @@
         margin-left: 76px;
         width: calc(100% - 76px);
     }
+
+    .page-content--crm-home {
+        overflow-y: auto;
+    }
 }
 
 @media (max-width: 768px) {
@@ -100,6 +109,11 @@
 
     .page-content {
         padding: 16px;
+    }
+
+    .page-content--crm-home {
+        padding: 0;
+        overflow-y: auto;
     }
 
     .plan-expired-banner {
@@ -121,5 +135,10 @@
 
     .page-content {
         padding: 12px;
+    }
+
+    .page-content--crm-home {
+        padding: 0;
+        overflow-y: auto;
     }
 }

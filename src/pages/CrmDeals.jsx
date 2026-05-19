@@ -3,20 +3,25 @@ import { useSearchParams } from "react-router-dom";
 import { TableVirtuoso } from "react-virtuoso";
 import {
   BadgeDollarSign,
+  BadgeCheck,
+  BriefcaseBusiness,
   CalendarClock,
-  Edit3,
   ExternalLink,
   MoreVertical,
+  PencilLine,
   Plus,
+  Clock3,
+  Sparkles,
+  Target,
+  Trophy,
+  Wallet,
   RotateCcw,
   Search,
   SlidersHorizontal,
-  Save,
   Trash2,
   UserRound,
   X
 } from "lucide-react";
-import apiService from "../services/api";
 import { crmService } from "../services/crmService";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
 import {
@@ -25,6 +30,7 @@ import {
   writeSidebarPageCache
 } from "../utils/sidebarPageCache";
 import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
+import useCrmUserRoster from "../hooks/useCrmUserRoster";
 import CrmContactDrawer from "../components/crm/CrmContactDrawer";
 import CrmDealDrawer from "../components/crm/CrmDealDrawer";
 import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
@@ -65,10 +71,30 @@ const DEAL_STAGE_FILTER_OPTIONS = [
 ];
 
 const DEAL_QUICK_FILTERS = [
-  { key: "my_deals", label: "My Deals" },
-  { key: "recently_updated", label: "Recently Updated" },
-  { key: "high_value", label: "High Value Deals" },
-  { key: "closing_this_week", label: "Closing This Week" }
+  { key: "my_deals", label: "My Deals", icon: UserRound },
+  { key: "recently_updated", label: "Recently Updated", icon: Clock3 },
+  { key: "high_value", label: "High Value Deals", icon: BadgeDollarSign },
+  { key: "closing_this_week", label: "Closing This Week", icon: CalendarClock }
+];
+
+const DEAL_SUMMARY_METRICS = [
+  { icon: BriefcaseBusiness, value: (metrics) => metrics?.open ?? 0, label: "Open Deals" },
+  {
+    icon: Wallet,
+    value: (metrics) => formatCurrency(metrics?.pipelineValue),
+    label: "Pipeline Value"
+  },
+  {
+    icon: Target,
+    value: (metrics) => formatCurrency(metrics?.weightedValue),
+    label: "Weighted Value"
+  },
+  {
+    icon: Trophy,
+    value: (metrics) => formatCurrency(metrics?.wonValue),
+    label: "Won Revenue"
+  },
+  { icon: BadgeCheck, value: (metrics) => metrics?.won ?? 0, label: "Won Deals" }
 ];
 
 const DEAL_PRESET_KEYS = [
@@ -220,26 +246,6 @@ const normalizeDealMetrics = (metrics = {}) => ({
       : DEAL_DEFAULT_METRICS.byStage
 });
 
-const normalizeDealFilterPreset = (preset = {}) => ({
-  id: String(preset?.id || preset?._id || "").trim(),
-  label: String(preset?.label || "").trim(),
-  filters: {
-    search: String(preset?.filters?.search || "").trim(),
-    dealStatus: String(preset?.filters?.dealStatus || "all").trim().toLowerCase() || "all",
-    dealStage: String(preset?.filters?.dealStage || "all").trim().toLowerCase() || "all",
-    dealOwnerId: String(preset?.filters?.dealOwnerId || "all").trim() || "all",
-    dealCreatedFrom: String(preset?.filters?.dealCreatedFrom || "").trim(),
-    dealCreatedTo: String(preset?.filters?.dealCreatedTo || "").trim(),
-    dealUpdatedFrom: String(preset?.filters?.dealUpdatedFrom || "").trim(),
-    dealUpdatedTo: String(preset?.filters?.dealUpdatedTo || "").trim(),
-    dealExpectedCloseFrom: String(preset?.filters?.dealExpectedCloseFrom || "").trim(),
-    dealExpectedCloseTo: String(preset?.filters?.dealExpectedCloseTo || "").trim(),
-    dealValueMin: String(preset?.filters?.dealValueMin || "").trim(),
-    dealValueMax: String(preset?.filters?.dealValueMax || "").trim(),
-    dealQuickFilter: String(preset?.filters?.dealQuickFilter || "all").trim().toLowerCase() || "all"
-  }
-});
-
 const DEAL_HIGH_VALUE_THRESHOLD = 500000;
 
 const getDealDateRangeForQuickFilter = (quickFilter = "", currentUserId = "") => {
@@ -284,17 +290,6 @@ const getDealDateRangeForQuickFilter = (quickFilter = "", currentUserId = "") =>
   }
 
   return {};
-};
-
-const normalizeUserList = (response) => {
-  const rawList =
-    response?.data ||
-    response?.users ||
-    response?.results ||
-    response?.items ||
-    response ||
-    [];
-  return Array.isArray(rawList) ? rawList : [];
 };
 
 const getFilterDateLabel = (value) => {
@@ -349,9 +344,6 @@ const CrmDeals = () => {
   const [bulkBusy, setBulkBusy] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [filterPresets, setFilterPresets] = useState([]);
-  const [users, setUsers] = useState([]);
-  const [usersLoading, setUsersLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [stageFilter, setStageFilter] = useState("all");
@@ -390,6 +382,10 @@ const CrmDeals = () => {
   const dealContactSearchSeqRef = useRef(0);
   const dealContactSearchInputRef = useRef(null);
   const currentUserId = resolveCacheUserId();
+  const {
+    users,
+    loading: usersLoading
+  } = useCrmUserRoster();
   const requestedSearchQuery = String(searchParams.get("q") || "").trim();
   const requestedStatusFilter = String(searchParams.get("status") || "all").trim().toLowerCase();
   const requestedStageFilter = String(searchParams.get("stage") || "all").trim().toLowerCase();
@@ -810,6 +806,7 @@ const CrmDeals = () => {
 
   const crmRealtime = useCrmRealtimeRefresh({
     currentUserId,
+    entities: ["deal", "contact", "pipeline_stage"],
     onRefresh: handleRealtimeRefresh
   });
 
@@ -1004,42 +1001,6 @@ const CrmDeals = () => {
   }, [selectedDealIds.length, visibleDealIds]);
 
   useEffect(() => {
-    let mounted = true;
-    const loadUsers = async () => {
-      try {
-        setUsersLoading(true);
-        const result = await apiService.getUsers();
-        if (!mounted) return;
-        setUsers(normalizeUserList(result?.data));
-      } catch (userError) {
-        if (!mounted) return;
-        setUsers([]);
-      } finally {
-        if (mounted) setUsersLoading(false);
-      }
-    };
-
-    const loadPresets = async () => {
-      try {
-        const result = await crmService.getFilterPresets();
-        if (!mounted) return;
-        const nextPresets = Array.isArray(result?.data) ? result.data.map(normalizeDealFilterPreset) : [];
-        setFilterPresets(nextPresets.filter((preset) => preset.id && preset.label));
-      } catch (presetError) {
-        if (!mounted) return;
-        setFilterPresets([]);
-      }
-    };
-
-    loadUsers();
-    loadPresets();
-
-    return () => {
-      mounted = false;
-    };
-  }, []);
-
-  useEffect(() => {
     if (!activeActionMenuDealId) return undefined;
 
     const closeActionMenu = () => {
@@ -1194,58 +1155,6 @@ const CrmDeals = () => {
     }
     if (key === "quickFilter") setActiveQuickFilter("all");
   }, []);
-
-  const handleSaveFilterPreset = useCallback(async () => {
-    const label = String(window.prompt("Save deal filter preset as:", "") || "").trim();
-    if (!label) return;
-    try {
-      const result = await crmService.createFilterPreset({
-        label,
-        filters: {
-          dealSearch: dealFilterState.search,
-          dealStatus: dealFilterState.status,
-          dealStage: dealFilterState.stage,
-          dealOwnerId: dealFilterState.ownerId,
-          dealCreatedFrom: dealFilterState.createdFrom,
-          dealCreatedTo: dealFilterState.createdTo,
-          dealUpdatedFrom: dealFilterState.updatedFrom,
-          dealUpdatedTo: dealFilterState.updatedTo,
-          dealExpectedCloseFrom: dealFilterState.expectedCloseFrom,
-          dealExpectedCloseTo: dealFilterState.expectedCloseTo,
-          dealValueMin: dealFilterState.valueMin,
-          dealValueMax: dealFilterState.valueMax,
-          dealQuickFilter: dealFilterState.quickFilter
-        }
-      });
-      if (result?.success === false) {
-        throw new Error(result?.error || "Failed to save filter preset");
-      }
-      const nextPreset = normalizeDealFilterPreset(result?.data || {});
-      setFilterPresets((previous) => [nextPreset, ...previous.filter((preset) => preset.id !== nextPreset.id)]);
-      setToast({ type: "success", message: "Filter preset saved." });
-    } catch (presetError) {
-      setToast({ type: "error", message: presetError?.message || "Failed to save filter preset" });
-    }
-  }, [dealFilterState]);
-
-  const applyDealFilterPreset = useCallback((presetId) => {
-    const preset = filterPresets.find((item) => item.id === presetId);
-    if (!preset) return;
-    const filters = preset.filters || {};
-    setSearchQuery(String(filters.search || "").trim());
-    setStatusFilter(String(filters.dealStatus || "all").trim().toLowerCase() || "all");
-    setStageFilter(String(filters.dealStage || "all").trim().toLowerCase() || "all");
-    setOwnerFilter(String(filters.dealOwnerId || "all").trim() || "all");
-    setCreatedFrom(String(filters.dealCreatedFrom || "").trim());
-    setCreatedTo(String(filters.dealCreatedTo || "").trim());
-    setUpdatedFrom(String(filters.dealUpdatedFrom || "").trim());
-    setUpdatedTo(String(filters.dealUpdatedTo || "").trim());
-    setExpectedCloseFrom(String(filters.dealExpectedCloseFrom || "").trim());
-    setExpectedCloseTo(String(filters.dealExpectedCloseTo || "").trim());
-    setValueMin(String(filters.dealValueMin || "").trim());
-    setValueMax(String(filters.dealValueMax || "").trim());
-    setActiveQuickFilter(String(filters.dealQuickFilter || "all").trim().toLowerCase() || "all");
-  }, [filterPresets]);
 
   const loadMoreDeals = useCallback(() => {
     if (loadingMore || !hasMore) return;
@@ -1415,23 +1324,14 @@ const CrmDeals = () => {
         />
 
         <div className="crm-summary-grid">
-          <CrmMetricCard icon={BadgeDollarSign} value={metrics?.open ?? 0} label="Open Deals" />
-          <CrmMetricCard
-            icon={BadgeDollarSign}
-            value={formatCurrency(metrics?.pipelineValue)}
-            label="Pipeline Value"
-          />
-          <CrmMetricCard
-            icon={BadgeDollarSign}
-            value={formatCurrency(metrics?.weightedValue)}
-            label="Weighted Value"
-          />
-          <CrmMetricCard
-            icon={BadgeDollarSign}
-            value={formatCurrency(metrics?.wonValue)}
-            label="Won Revenue"
-          />
-          <CrmMetricCard icon={CalendarClock} value={metrics?.won ?? 0} label="Won Deals" />
+          {DEAL_SUMMARY_METRICS.map((metric) => (
+            <CrmMetricCard
+              key={metric.label}
+              icon={metric.icon}
+              value={metric.value(metrics)}
+              label={metric.label}
+            />
+          ))}
         </div>
 
         {createDealOpen && (
@@ -1452,7 +1352,7 @@ const CrmDeals = () => {
                 <div className="crm-create-task__header">
                   <div className="crm-create-task__heading">
                     <span className="crm-create-task__icon" aria-hidden="true">
-                      <Plus size={16} />
+                      <Sparkles size={16} />
                     </span>
                     <div className="crm-create-task__heading-copy">
                       <h3>Create Deal</h3>
@@ -1652,30 +1552,6 @@ const CrmDeals = () => {
               onChange={(event) => updateSearchQuery(event.target.value)}
             />
           </label>
-          <select
-            className="crm-select"
-            value={statusFilter}
-            onChange={(event) => updateStatusFilter(event.target.value)}
-          >
-            {DEAL_STATUS_OPTIONS.map((option) => (
-              <option key={option.key} value={option.key}>
-                {option.label}
-              </option>
-            ))}
-          </select>
-          <select
-            className="crm-select"
-            value={ownerFilter}
-            onChange={(event) => setOwnerFilter(event.target.value)}
-          >
-            <option value="all">All Owners</option>
-            {currentUserId && <option value={currentUserId}>My Deals</option>}
-            {ownerOptions.map((owner) => (
-              <option key={owner.id} value={owner.id}>
-                {owner.label}
-              </option>
-            ))}
-          </select>
           <button
             type="button"
             className={`crm-deals-filter-toggle ${showFilters ? "active" : ""}`}
@@ -1685,30 +1561,81 @@ const CrmDeals = () => {
             <SlidersHorizontal size={15} />
             Filter
           </button>
-          <button
-            type="button"
-            className="crm-deals-filter-toggle"
-            onClick={handleSaveFilterPreset}
-            title="Save current filters"
-            disabled={bulkBusy}
-          >
-            <Save size={15} />
-            Save
-          </button>
-          <button
-            type="button"
-            className="crm-deals-filter-toggle"
-            onClick={handleSelectAllVisibleDeals}
-            disabled={!deals.length || bulkBusy}
-            title={allVisibleSelected ? "Clear all visible deals" : "Select all visible deals"}
-          >
-            {allVisibleSelected ? <X size={15} /> : <Trash2 size={15} style={{ opacity: 0.5 }} />}
-            {allVisibleSelected ? "Clear All" : "Select All"}
-          </button>
+            <div className="crm-deals-quick-filters crm-deals-quick-filters--inline">
+              {DEAL_QUICK_FILTERS.map((quickFilter) => (
+                <button
+                  key={quickFilter.key}
+                  type="button"
+                  className={`crm-deals-quick-filter ${activeQuickFilter === quickFilter.key ? "active" : ""}`}
+                  onClick={() => applyDealQuickFilter(quickFilter.key)}
+                >
+                  <span className="crm-deals-quick-filter__icon" aria-hidden="true">
+                    <quickFilter.icon size={14} />
+                  </span>
+                  {quickFilter.label}
+                </button>
+              ))}
+            </div>
         </CrmFilterBar>
 
         {showFilters && (
           <div className="crm-deals-filters-panel">
+            <div className="crm-deals-filters-panel__grid crm-deals-filters-panel__grid--top">
+              <label className="crm-deals-filter-field">
+                <span>Status</span>
+                <select
+                  className="crm-select"
+                  value={statusFilter}
+                  onChange={(event) => updateStatusFilter(event.target.value)}
+                >
+                  {DEAL_STATUS_OPTIONS.map((option) => (
+                    <option key={option.key} value={option.key}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="crm-deals-filter-field">
+                <span>Owner</span>
+                <select
+                  className="crm-select"
+                  value={ownerFilter}
+                  onChange={(event) => setOwnerFilter(event.target.value)}
+                >
+                  <option value="all">All Owners</option>
+                  {currentUserId && <option value={currentUserId}>My Deals</option>}
+                  {ownerOptions.map((owner) => (
+                    <option key={owner.id} value={owner.id}>
+                      {owner.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <button
+                type="button"
+                className="crm-deals-filter-action crm-deals-filter-action--select"
+                onClick={handleSelectAllVisibleDeals}
+                disabled={!deals.length || bulkBusy}
+                title={allVisibleSelected ? "Clear all visible deals" : "Select all visible deals"}
+                aria-label={allVisibleSelected ? "Clear all visible deals" : "Select all visible deals"}
+              >
+                {allVisibleSelected ? <X size={15} /> : <Trash2 size={15} style={{ opacity: 0.5 }} />}
+                {allVisibleSelected ? "Clear" : "Select"}
+              </button>
+
+              <button
+                type="button"
+                className="crm-deals-filter-action crm-deals-filter-action--reset"
+                onClick={clearDealFilters}
+                aria-label="Reset all deal filters"
+              >
+                <RotateCcw size={14} />
+                Reset
+              </button>
+            </div>
+
             <div className="crm-deals-filters-panel__grid">
               <label className="crm-deals-filter-field">
                 <span>Stage</span>
@@ -1806,45 +1733,6 @@ const CrmDeals = () => {
                   onChange={(event) => setValueMax(event.target.value)}
                 />
               </label>
-
-              <div className="crm-deals-filter-field crm-deals-filter-field--preset">
-                <span>Saved Presets</span>
-                <select
-                  className="crm-select"
-                  value=""
-                  onChange={(event) => applyDealFilterPreset(event.target.value)}
-                  disabled={!filterPresets.length}
-                >
-                  <option value="">{filterPresets.length ? "Load saved preset" : "No presets saved"}</option>
-                  {filterPresets.map((preset) => (
-                    <option key={preset.id} value={preset.id}>
-                      {preset.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            </div>
-            <div className="crm-deals-filters-panel__footer">
-              <div className="crm-deals-quick-filters">
-                {DEAL_QUICK_FILTERS.map((quickFilter) => (
-                  <button
-                    key={quickFilter.key}
-                    type="button"
-                    className={`crm-deals-quick-filter ${activeQuickFilter === quickFilter.key ? "active" : ""}`}
-                    onClick={() => applyDealQuickFilter(quickFilter.key)}
-                  >
-                    {quickFilter.label}
-                  </button>
-                ))}
-              </div>
-              <button
-                type="button"
-                className="crm-deals-clear-filters"
-                onClick={clearDealFilters}
-              >
-                <RotateCcw size={14} />
-                Clear Filters
-              </button>
             </div>
           </div>
         )}
@@ -2048,8 +1936,8 @@ const CrmDeals = () => {
                               setSelectedDeal(deal);
                             }}
                           >
-                            <Edit3 size={15} />
-                            <span>Open/Edit</span>
+                            <PencilLine size={15} />
+                            <span>Edit Deal</span>
                           </button>
                           <button
                             type="button"

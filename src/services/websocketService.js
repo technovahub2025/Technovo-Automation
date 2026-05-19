@@ -86,9 +86,9 @@ class WebSocketService extends EventEmitter {
     this.activeConversationId = '';
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 10;
-    this.baseReconnectDelay = 1000;
+    this.baseReconnectDelay = 2000;
     this.maxReconnectDelay = 30000;
-    this.reconnectJitterMs = 1000;
+    this.reconnectJitterMs = 0;
     this.connectionTimeoutMs = 20000;
     this.reconnectTimer = null;
     this.heartbeatTimer = null;
