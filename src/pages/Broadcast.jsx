@@ -1,62 +1,75 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import Papa from 'papaparse';
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import Papa from "papaparse";
 
-import { apiClient } from '../services/whatsappapi';
-import { useBroadcast, useCampaignAutomation } from '../hooks/useBroadcast';
-import webSocketService from '../services/websocketService';
+import { apiClient } from "../services/whatsappapi";
+import { useBroadcast, useCampaignAutomation } from "../hooks/useBroadcast";
+import webSocketService from "../services/websocketService";
 
 // Import components
-import BroadcastHeader from '../components/broadcastComponents/BroadcastHeader';
-import DateRangeFilter from '../components/broadcastComponents/DateRangeFilter';
-import OverviewStats from '../components/broadcastComponents/OverviewStats';
-import ReliabilityInsights from '../components/broadcastComponents/ReliabilityInsights';
+import BroadcastHeader from "../components/broadcastComponents/BroadcastHeader";
+import DateRangeFilter from "../components/broadcastComponents/DateRangeFilter";
+import OverviewStats from "../components/broadcastComponents/OverviewStats";
+import ReliabilityInsights from "../components/broadcastComponents/ReliabilityInsights";
 
-import { getCachedOverviewStats } from '../utils/stableBroadcastStats';
-import { clearSidebarPageCache, resolveCacheUserId } from '../utils/sidebarPageCache';
+import { getCachedOverviewStats } from "../utils/stableBroadcastStats";
+import {
+  clearSidebarPageCache,
+  resolveCacheUserId,
+} from "../utils/sidebarPageCache";
 
-import BroadcastListControls from '../components/broadcastComponents/BroadcastListControls';
-import BroadcastTable from '../components/broadcastComponents/BroadcastTable';
-import ScheduleForm from '../components/broadcastComponents/ScheduleForm';
-import DeleteModal from '../components/broadcastComponents/DeleteModal';
-import BroadcastTypeChoice from '../components/broadcastComponents/BroadcastTypeChoice';
-import NewBroadcastPopup from '../components/broadcastComponents/NewBroadcastPopup';
+import BroadcastListControls from "../components/broadcastComponents/BroadcastListControls";
+import BroadcastTable from "../components/broadcastComponents/BroadcastTable";
+import ScheduleForm from "../components/broadcastComponents/ScheduleForm";
+import DeleteModal from "../components/broadcastComponents/DeleteModal";
+import BroadcastTypeChoice from "../components/broadcastComponents/BroadcastTypeChoice";
+import NewBroadcastPopup from "../components/broadcastComponents/NewBroadcastPopup";
 
-
-import AllCampaignsPopup from '../components/broadcastComponents/AllCampaignsPopup';
+import AllCampaignsPopup from "../components/broadcastComponents/AllCampaignsPopup";
 
 // Import existing components
-import BroadcastAnalyticsModal from '../components/broadcastComponents/BroadcastAnalyticsModal';
-import BroadcastAudienceValidationModal from '../components/broadcastComponents/BroadcastAudienceValidationModal';
-import ContactAudiencePickerModal from '../components/broadcastComponents/ContactAudiencePickerModal';
-import CampaignAudiencePickerModal from '../components/broadcastComponents/CampaignAudiencePickerModal';
-import OutboundDialer from '../components/outbound/OutboundDialer';
-import { stripAppRouteBase } from '../utils/appRouteBase';
+import BroadcastAnalyticsModal from "../components/broadcastComponents/BroadcastAnalyticsModal";
+import BroadcastAudienceValidationModal from "../components/broadcastComponents/BroadcastAudienceValidationModal";
+import ContactAudiencePickerModal from "../components/broadcastComponents/ContactAudiencePickerModal";
+import CampaignAudiencePickerModal from "../components/broadcastComponents/CampaignAudiencePickerModal";
+import OutboundDialer from "../components/outbound/OutboundDialer";
+import { stripAppRouteBase } from "../utils/appRouteBase";
 
 // Import styles
-import '../styles/whatsapp.css';
-import '../styles/message-preview.css';
-import '../styles/broadcast-list-controls.css';
-import './Broadcast.css';
+import "../styles/whatsapp.css";
+import "../styles/message-preview.css";
+import "../styles/broadcast-list-controls.css";
+import "./Broadcast.css";
 
-const normalizeText = (value = '') => String(value || '').trim();
+const normalizeText = (value = "") => String(value || "").trim();
 
-const getBroadcastErrorMessage = (error, fallback = 'Failed to send campaign. Please try again.') => {
+const getBroadcastErrorMessage = (
+  error,
+  fallback = "Failed to send campaign. Please try again.",
+) => {
   const status = Number(error?.response?.status || 0);
-  const backendMessage = String(error?.response?.data?.error || error?.response?.data?.message || error?.message || '').trim();
+  const backendMessage = String(
+    error?.response?.data?.error ||
+      error?.response?.data?.message ||
+      error?.message ||
+      "",
+  ).trim();
   const normalized = backendMessage.toLowerCase();
 
   if (
-    normalized.includes('redis is not configured') ||
-    normalized.includes('redis is disabled by environment configuration') ||
-    normalized.includes('broadcast queue is disabled') ||
-    normalized.includes('broadcast inbox queue is disabled')
+    normalized.includes("redis is not configured") ||
+    normalized.includes("redis is disabled by environment configuration") ||
+    normalized.includes("broadcast queue is disabled") ||
+    normalized.includes("broadcast inbox queue is disabled")
   ) {
-    return 'Broadcast sending is temporarily unavailable in this deployment. Please try again later or contact support.';
+    return "Broadcast sending is temporarily unavailable in this deployment. Please try again later or contact support.";
   }
 
   if (status === 403) {
-    return backendMessage || 'Broadcast is blocked for this workspace until activation.';
+    return (
+      backendMessage ||
+      "Broadcast is blocked for this workspace until activation."
+    );
   }
 
   if (!backendMessage) {
@@ -75,98 +88,128 @@ const findPhoneField = (fields = []) => {
     /\bwhatsapp\b/i,
     /\bphone\b/i,
     /\bmobile\b/i,
-    /\bnumber\b/i
+    /\bnumber\b/i,
   ];
 
   for (const pattern of patterns) {
-    const match = normalizedFields.find((field) => pattern.test(String(field || '').trim()));
+    const match = normalizedFields.find((field) =>
+      pattern.test(String(field || "").trim()),
+    );
     if (match) return match;
   }
 
-  return normalizedFields[0] || '';
+  return normalizedFields[0] || "";
 };
 
-
-
-const Broadcast = ({ composerMode = false, composerType = null, chooserMode = false }) => {
+const Broadcast = ({
+  composerMode = false,
+  composerType = null,
+  chooserMode = false,
+}) => {
   const navigate = useNavigate();
   const location = useLocation();
   const currentPath = stripAppRouteBase(location.pathname);
   const currentUserId = resolveCacheUserId();
 
   const {
-
     // State
 
-    activeTab, setActiveTab,
-    messageType, setMessageType,
+    activeTab,
+    setActiveTab,
+    messageType,
+    setMessageType,
     officialTemplates,
-    templateName, setTemplateName,
-    language, setLanguage,
+    templateName,
+    setTemplateName,
+    language,
+    setLanguage,
 
-    templateFilter, setTemplateFilter,
+    templateFilter,
+    setTemplateFilter,
 
     broadcasts,
 
-    recipients, setRecipients,
+    recipients,
+    setRecipients,
 
-    uploadedFile, setUploadedFile,
+    uploadedFile,
+    setUploadedFile,
 
-    isSending, setIsSending,
+    isSending,
+    setIsSending,
 
-    sendResults, setSendResults,
+    sendResults,
+    setSendResults,
 
-    showResultsPopup, setShowResultsPopup,
+    showResultsPopup,
+    setShowResultsPopup,
 
-    showNewBroadcastPopup, setShowNewBroadcastPopup,
+    showNewBroadcastPopup,
+    setShowNewBroadcastPopup,
 
-    showBroadcastTypeChoice, setShowBroadcastTypeChoice,
+    showBroadcastTypeChoice,
+    setShowBroadcastTypeChoice,
 
+    customMessage,
+    setCustomMessage,
 
-    customMessage, setCustomMessage,
+    scheduledTime,
+    setScheduledTime,
 
-    scheduledTime, setScheduledTime,
+    selectedCampaigns,
+    setSelectedCampaigns,
 
-    selectedCampaigns, setSelectedCampaigns,
+    showDropdown,
+    setShowDropdown,
 
-    showDropdown, setShowDropdown,
+    showDeleteModal,
+    setShowDeleteModal,
 
-    showDeleteModal, setShowDeleteModal,
-
-    selectionMode, setSelectionMode,
+    selectionMode,
+    setSelectionMode,
     isExportingCampaigns,
 
     lastUpdated,
 
-    searchTerm, setSearchTerm,
+    searchTerm,
+    setSearchTerm,
 
-    statusFilter, setStatusFilter,
+    statusFilter,
+    setStatusFilter,
 
-    sortBy, setSortBy,
+    sortBy,
+    setSortBy,
 
-    sortOrder, setSortOrder,
+    sortOrder,
+    setSortOrder,
 
-    showFilterDropdown, setShowFilterDropdown,
+    showFilterDropdown,
+    setShowFilterDropdown,
 
-    dateFilter, setDateFilter,
+    dateFilter,
+    setDateFilter,
 
-    startDate, setStartDate,
+    startDate,
+    setStartDate,
 
-    endDate, setEndDate,
+    endDate,
+    setEndDate,
 
-    selectedPeriod, setSelectedPeriod,
+    selectedPeriod,
+    setSelectedPeriod,
 
-    templateVariables, setTemplateVariables,
+    templateVariables,
+    setTemplateVariables,
 
-    fileVariables, setFileVariables,
+    fileVariables,
+    setFileVariables,
 
     templateHeaderMediaUrl,
     templateHeaderMediaUploading,
     templateHeaderMediaError,
 
-    broadcastName, setBroadcastName,
-
-
+    broadcastName,
+    setBroadcastName,
 
     // Functions
 
@@ -194,8 +237,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
     getFilteredAndSortedBroadcasts,
 
-    downloadAllCampaigns
-
+    downloadAllCampaigns,
   } = useBroadcast();
 
   // Additional state for pagination and broadcast mode
@@ -203,40 +245,51 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const [itemsPerPage] = useState(5);
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState(null);
-  const [audienceValidationModalOpen, setAudienceValidationModalOpen] = useState(false);
-  const [pendingAudienceValidation, setPendingAudienceValidation] = useState(null);
+  const [audienceValidationModalOpen, setAudienceValidationModalOpen] =
+    useState(false);
+  const [pendingAudienceValidation, setPendingAudienceValidation] =
+    useState(null);
   const [metaLeadBatchLoading, setMetaLeadBatchLoading] = useState(false);
   const [metaLeadBatchResult, setMetaLeadBatchResult] = useState(null);
-  const [broadcastMode, setBroadcastMode] = useState('whatsapp');
-  const [outboundPhaseTab, setOutboundPhaseTab] = useState('quick');
-  const [showContactAudiencePicker, setShowContactAudiencePicker] = useState(false);
-  const [contactAudiencePickerPurpose, setContactAudiencePickerPurpose] = useState('direct');
-  const [showCampaignAudiencePicker, setShowCampaignAudiencePicker] = useState(false);
-  const [audienceSourceMode, setAudienceSourceMode] = useState('contacts');
+  const [broadcastMode, setBroadcastMode] = useState("whatsapp");
+  const [outboundPhaseTab, setOutboundPhaseTab] = useState("quick");
+  const [showContactAudiencePicker, setShowContactAudiencePicker] =
+    useState(false);
+  const [contactAudiencePickerPurpose, setContactAudiencePickerPurpose] =
+    useState("direct");
+  const [showCampaignAudiencePicker, setShowCampaignAudiencePicker] =
+    useState(false);
+  const [audienceSourceMode, setAudienceSourceMode] = useState("contacts");
   const [selectedAudienceMeta, setSelectedAudienceMeta] = useState({
-    segmentId: '',
-    segmentName: ''
+    segmentId: "",
+    segmentName: "",
   });
   const [selectedCampaignAudience, setSelectedCampaignAudience] = useState({
-    campaignBroadcastId: '',
-    campaignName: '',
-    campaignStatus: '',
+    campaignBroadcastId: "",
+    campaignName: "",
+    campaignStatus: "",
     campaignRecipientCount: 0,
     excludedPhones: [],
-    additionalContacts: []
+    campaignRecipients: [],
+    additionalContacts: [],
   });
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
   const [quietHoursStartHour, setQuietHoursStartHour] = useState(22);
   const [quietHoursEndHour, setQuietHoursEndHour] = useState(9);
-  const [quietHoursTimezone, setQuietHoursTimezone] = useState('Asia/Kolkata');
-  const [quietHoursAction, setQuietHoursAction] = useState('defer');
+  const [quietHoursTimezone, setQuietHoursTimezone] = useState("Asia/Kolkata");
+  const [quietHoursAction, setQuietHoursAction] = useState("defer");
   const [deliveryBatchSize, setDeliveryBatchSize] = useState(50);
   const [deliveryBatchDelaySeconds, setDeliveryBatchDelaySeconds] = useState(5);
   const [retryPolicyEnabled, setRetryPolicyEnabled] = useState(true);
   const [retryMaxAttempts, setRetryMaxAttempts] = useState(3);
   const [retryBackoffSeconds, setRetryBackoffSeconds] = useState(45);
   const [respectOptOut, setRespectOptOut] = useState(true);
-  const [suppressionListRaw, setSuppressionListRaw] = useState('');
+  const [suppressionListRaw, setSuppressionListRaw] = useState("");
+  const [csvUploadState, setCsvUploadState] = useState({
+    phase: "idle",
+    message: "",
+    percent: 0,
+  });
   const [reliabilitySummary, setReliabilitySummary] = useState({
     campaigns: 0,
     recipientCount: 0,
@@ -245,53 +298,86 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     retried: 0,
     skippedQuietHours: 0,
     failureCodeBreakdown: {},
-    topFailureCode: null
+    topFailureCode: null,
   });
   const broadcastSubmitInFlightRef = useRef(false);
   const reliabilitySummaryTimerRef = useRef(null);
   const csvRecipientRefreshContextRef = useRef({
     recipients: [],
-    uploadedFile: null
+    uploadedFile: null,
   });
+  const csvReplaceTimeoutRef = useRef(null);
+  const csvUploadProgressRef = useRef({
+    lastPercent: -1,
+    lastUpdateAt: 0,
+  });
+
+  useEffect(
+    () => () => {
+      if (csvReplaceTimeoutRef.current) {
+        clearTimeout(csvReplaceTimeoutRef.current);
+        csvReplaceTimeoutRef.current = null;
+      }
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (uploadedFile) return;
+    csvUploadProgressRef.current = {
+      lastPercent: -1,
+      lastUpdateAt: 0,
+    };
+    setCsvUploadState((current) =>
+      current.phase === "idle" && current.percent === 0 && !current.message
+        ? current
+        : { phase: "idle", message: "", percent: 0 },
+    );
+  }, [uploadedFile]);
 
   useEffect(() => {
     if (composerMode) {
-      setActiveTab('schedule');
+      setActiveTab("schedule");
     }
   }, [composerMode, setActiveTab]);
 
   useEffect(() => {
     if (chooserMode) {
       setShowBroadcastTypeChoice(true);
-      setActiveTab('overview');
+      setActiveTab("overview");
     }
   }, [chooserMode, setShowBroadcastTypeChoice, setActiveTab]);
 
   useEffect(() => {
     if (!composerMode) return;
-    if (composerType === 'template') {
-      setMessageType('template');
+    if (composerType === "template") {
+      setMessageType("template");
     }
   }, [composerMode, composerType, setMessageType]);
 
   useEffect(() => {
-    if (currentPath === '/broadcast') {
-      setActiveTab('overview');
+    if (currentPath === "/broadcast") {
+      setActiveTab("overview");
       setShowBroadcastTypeChoice(false);
       setShowNewBroadcastPopup(false);
       setShowContactAudiencePicker(false);
     }
-  }, [currentPath, setActiveTab, setShowBroadcastTypeChoice, setShowNewBroadcastPopup]);
+  }, [
+    currentPath,
+    setActiveTab,
+    setShowBroadcastTypeChoice,
+    setShowNewBroadcastPopup,
+  ]);
 
   useEffect(() => {
     const handleCrmChanged = () => {
       void refreshCsvRecipientsFromContacts();
     };
 
-    webSocketService.on('crm_changed', handleCrmChanged);
+    webSocketService.on("crm_changed", handleCrmChanged);
 
     return () => {
-      webSocketService.off('crm_changed', handleCrmChanged);
+      webSocketService.off("crm_changed", handleCrmChanged);
     };
   }, []);
   const {
@@ -299,7 +385,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     retryLoading,
     abTestLoading,
     rotationLoading,
-    scheduleResponse, 
+    scheduleResponse,
     retryStats,
     abTestResults,
     rotationStats,
@@ -307,55 +393,69 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     scheduleCampaign,
     triggerRetry,
     createABTest,
-    loadRotationStats
+    loadRotationStats,
   } = useCampaignAutomation();
 
   const extractTemplateBody = (template) => {
-    if (!template || typeof template !== 'object') return '';
+    if (!template || typeof template !== "object") return "";
 
-    if (typeof template.templateContent === 'string' && template.templateContent.trim()) {
+    if (
+      typeof template.templateContent === "string" &&
+      template.templateContent.trim()
+    ) {
       return template.templateContent.trim();
     }
 
-    if (typeof template.content === 'string' && template.content.trim()) {
+    if (typeof template.content === "string" && template.content.trim()) {
       return template.content.trim();
     }
 
-    if (template.content && typeof template.content === 'object') {
-      if (typeof template.content.body === 'string' && template.content.body.trim()) {
+    if (template.content && typeof template.content === "object") {
+      if (
+        typeof template.content.body === "string" &&
+        template.content.body.trim()
+      ) {
         return template.content.body.trim();
       }
-      if (typeof template.content.text === 'string' && template.content.text.trim()) {
+      if (
+        typeof template.content.text === "string" &&
+        template.content.text.trim()
+      ) {
         return template.content.text.trim();
       }
     }
 
     if (Array.isArray(template.components)) {
       const bodyComponent = template.components.find((comp) => {
-        const type = String(comp?.type || '').toUpperCase();
-        return type === 'BODY' || type === 'body';
+        const type = String(comp?.type || "").toUpperCase();
+        return type === "BODY" || type === "body";
       });
-      if (typeof bodyComponent?.text === 'string' && bodyComponent.text.trim()) {
+      if (
+        typeof bodyComponent?.text === "string" &&
+        bodyComponent.text.trim()
+      ) {
         return bodyComponent.text.trim();
       }
     }
 
-    return '';
+    return "";
   };
-
-
 
   // Get filtered and sorted broadcasts
 
   const filteredBroadcasts = getFilteredAndSortedBroadcasts();
 
-
-
-  const totalPages = Math.max(1, Math.ceil(filteredBroadcasts.length / itemsPerPage));
+  const totalPages = Math.max(
+    1,
+    Math.ceil(filteredBroadcasts.length / itemsPerPage),
+  );
   const safeCurrentPage = Math.min(currentPage, totalPages);
   const indexOfLastItem = safeCurrentPage * itemsPerPage;
   const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentBroadcasts = filteredBroadcasts.slice(indexOfFirstItem, indexOfLastItem);
+  const currentBroadcasts = filteredBroadcasts.slice(
+    indexOfFirstItem,
+    indexOfLastItem,
+  );
 
   const paginate = (pageNumber) => {
     const nextPage = Math.min(Math.max(1, pageNumber), totalPages);
@@ -377,7 +477,16 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter, sortBy, sortOrder, dateFilter, startDate, endDate, selectedPeriod]);
+  }, [
+    searchTerm,
+    statusFilter,
+    sortBy,
+    sortOrder,
+    dateFilter,
+    startDate,
+    endDate,
+    selectedPeriod,
+  ]);
 
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
@@ -388,7 +497,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     suppressed: Number(reliabilitySummary?.suppressed || 0),
     deferred: Number(reliabilitySummary?.deferred || 0),
     retried: Number(reliabilitySummary?.retried || 0),
-    skippedQuietHours: Number(reliabilitySummary?.skippedQuietHours || 0)
+    skippedQuietHours: Number(reliabilitySummary?.skippedQuietHours || 0),
   };
 
   useEffect(() => {
@@ -396,7 +505,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
     const loadReliabilitySummary = async () => {
       const params = {};
-      if (statusFilter && statusFilter !== 'all') {
+      if (statusFilter && statusFilter !== "all") {
         params.status = statusFilter;
       }
       if (startDate) {
@@ -418,13 +527,15 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           retried: Number(payload?.retried || 0),
           skippedQuietHours: Number(payload?.skippedQuietHours || 0),
           failureCodeBreakdown:
-            payload?.failureCodeBreakdown && typeof payload.failureCodeBreakdown === 'object'
+            payload?.failureCodeBreakdown &&
+            typeof payload.failureCodeBreakdown === "object"
               ? payload.failureCodeBreakdown
               : {},
           topFailureCode:
-            payload?.topFailureCode && typeof payload.topFailureCode === 'object'
+            payload?.topFailureCode &&
+            typeof payload.topFailureCode === "object"
               ? payload.topFailureCode
-              : null
+              : null,
         });
       } catch (_error) {
         if (!isAlive) return;
@@ -436,7 +547,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           retried: 0,
           skippedQuietHours: 0,
           failureCodeBreakdown: {},
-          topFailureCode: null
+          topFailureCode: null,
         });
       }
     };
@@ -457,491 +568,597 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     };
   }, [lastUpdated, statusFilter, startDate, endDate]);
 
-
-
   // Filter templates by category
 
-  const filteredTemplates = officialTemplates.filter(template =>
-
-    templateFilter === 'all' || template.category?.toLowerCase() === templateFilter.toLowerCase()
-
+  const filteredTemplates = officialTemplates.filter(
+    (template) =>
+      templateFilter === "all" ||
+      template.category?.toLowerCase() === templateFilter.toLowerCase(),
   );
-
-
 
   // Event handlers
 
   const handleDropdownToggle = (campaignId, event) => {
-
     event.stopPropagation();
 
     setShowDropdown(showDropdown === campaignId ? null : campaignId);
-
   };
 
-
-
   const handleSelectCampaign = () => {
-
     setSelectionMode(true);
 
     setSelectedCampaigns([]);
 
     setShowDropdown(null);
-
   };
 
-
-
   const handleExitSelectionMode = () => {
-
     setSelectionMode(false);
 
     setSelectedCampaigns([]);
-
   };
 
-
-
   const handleCheckboxChange = (campaignId, event) => {
-
     event.stopPropagation();
 
     if (event.target.checked) {
-
       setSelectedCampaigns((prev) => [...prev, campaignId]);
-
     } else {
-
       setSelectedCampaigns((prev) => prev.filter((id) => id !== campaignId));
-
     }
-
   };
 
-
-
   const handleSelectAll = (event) => {
-
     if (event.target.checked) {
-
       const allIds = currentBroadcasts.map((b) => b._id);
 
       setSelectedCampaigns(allIds);
-
     } else {
-
       setSelectedCampaigns([]);
-
     }
-
   };
 
-
-
   const handleDeleteClick = (campaign) => {
-
     setSelectedCampaigns([campaign._id]);
 
     setShowDeleteModal(true);
 
     setShowDropdown(null);
-
   };
 
-
-
   const handleBulkDelete = () => {
-
     if (selectedCampaigns.length === 0) return;
 
     setShowDeleteModal(true);
-
   };
 
-
-
   const handleDeleteConfirm = async () => {
-
     if (selectedCampaigns.length === 0) return;
 
-
-
     try {
-
-      await Promise.all(selectedCampaigns.map((id) => apiClient.deleteBroadcast(id)));
+      await Promise.all(
+        selectedCampaigns.map((id) => apiClient.deleteBroadcast(id)),
+      );
 
       await loadBroadcasts();
-
-
 
       setShowDeleteModal(false);
 
       setSelectedCampaigns([]);
 
       setSelectionMode(false);
-
     } catch (error) {
+      console.error("Failed to delete campaigns:", error);
 
-      console.error('Failed to delete campaigns:', error);
-
-      alert('Failed to delete campaigns. Please try again.');
-
+      alert("Failed to delete campaigns. Please try again.");
     }
-
   };
-
-
 
   const handleDeleteCancel = () => {
-
     setShowDeleteModal(false);
-
   };
 
-
-
   const handleTemplateNameChange = (e) => {
-
     const selectedTemplateName = e.target.value;
 
     setTemplateName(selectedTemplateName);
 
-
-
-    const selectedTemplate = officialTemplates.find(t => t.name === selectedTemplateName);
+    const selectedTemplate = officialTemplates.find(
+      (t) => t.name === selectedTemplateName,
+    );
 
     if (selectedTemplate) {
-
-      setLanguage(selectedTemplate.language || 'en_US');
-
-
+      setLanguage(selectedTemplate.language || "en_US");
 
       if (selectedTemplate.content?.body) {
-
         extractTemplateVariables(selectedTemplate.content.body);
-
       } else if (selectedTemplate.components) {
-
         const bodyComponent = selectedTemplate.components.find(
-
-          comp => comp.type === 'BODY' && comp.text
-
+          (comp) => comp.type === "BODY" && comp.text,
         );
 
         if (bodyComponent) {
-
           extractTemplateVariables(bodyComponent.text);
-
         }
-
       }
 
       resetTemplateHeaderMediaState(selectedTemplate);
-
     } else {
-
       setTemplateVariables([]);
 
-      setLanguage('en_US');
+      setLanguage("en_US");
 
       clearTemplateHeaderMedia();
-
     }
 
     resetTemplateHeaderMediaState(selectedTemplate);
-
   };
 
-
-
-  const handleFileUpload = (event) => {
+  const handleFileUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
 
+    if (csvReplaceTimeoutRef.current) {
+      clearTimeout(csvReplaceTimeoutRef.current);
+      csvReplaceTimeoutRef.current = null;
+    }
+    csvUploadProgressRef.current = {
+      lastPercent: -1,
+      lastUpdateAt: 0,
+    };
+    setRecipients([]);
+    setFileVariables([]);
     setUploadedFile(file);
+    setCsvUploadState({
+      phase: "parsing",
+      message: "Parsing CSV...",
+      percent: 5,
+    });
 
     const rawRows = [];
     let detectedFields = [];
 
-    Papa.parse(file, {
-      header: true,
-      worker: true,
-      skipEmptyLines: 'greedy',
-      step: (results) => {
-        const row = results?.data && typeof results.data === 'object' ? results.data : {};
-        if (!detectedFields.length && Array.isArray(results?.meta?.fields)) {
-          detectedFields = results.meta.fields;
-        }
-        rawRows.push(row);
-      },
-      complete: async () => {
-        try {
-          const phoneField = findPhoneField(detectedFields.length ? detectedFields : Object.keys(rawRows[0] || {}));
-          const recipientsWithFullData = rawRows
-            .map((row, index) => {
-              const normalizedRow = row && typeof row === 'object' ? row : {};
-              const phone = normalizeText(
-                normalizedRow?.[phoneField] ||
-                normalizedRow.phone ||
-                normalizedRow.mobile ||
-                normalizedRow.whatsappNumber
-              );
-              if (!phone) return null;
+    const updateCsvUploadState = (phase, message, percent, force = false) => {
+      const normalizedPercent = Math.max(
+        0,
+        Math.min(100, Math.round(Number(percent) || 0)),
+      );
+      const now = Date.now();
+      const lastState = csvUploadProgressRef.current;
+      if (
+        !force &&
+        normalizedPercent <= lastState.lastPercent &&
+        now - lastState.lastUpdateAt < 120
+      ) {
+        return;
+      }
+      csvUploadProgressRef.current = {
+        lastPercent: normalizedPercent,
+        lastUpdateAt: now,
+      };
+      setCsvUploadState({
+        phase,
+        message,
+        percent: normalizedPercent,
+      });
+    };
 
-              const fields = detectedFields.length ? detectedFields : Object.keys(normalizedRow || {});
-              const variables = fields
-                .filter((field) => String(field || '').trim() !== phoneField)
-                .map((field) => normalizeText(normalizedRow?.[field] || ''));
+    try {
+      await new Promise((resolve, reject) => {
+        Papa.parse(file, {
+          header: true,
+          worker: true,
+          skipEmptyLines: "greedy",
+          step: (results) => {
+            const row =
+              results?.data && typeof results.data === "object"
+                ? results.data
+                : {};
+            if (
+              !detectedFields.length &&
+              Array.isArray(results?.meta?.fields)
+            ) {
+              detectedFields = results.meta.fields;
+            }
+            rawRows.push(row);
 
-              return {
-                phone,
-                variables,
-                fullData: {
-                  ...normalizedRow,
-                  lineNumber: normalizedRow?.lineNumber || index + 1
-                }
-              };
-            })
-            .filter(Boolean);
+            const cursor = Number(results?.meta?.cursor || 0);
+            const parseProgress =
+              file.size > 0
+                ? Math.min(
+                    95,
+                    Math.max(5, Math.round((cursor / file.size) * 75) + 5),
+                  )
+                : 15;
+            updateCsvUploadState("parsing", "Parsing CSV...", parseProgress);
+          },
+          complete: () => resolve(),
+          error: (parseError) => reject(parseError),
+        });
+      });
 
-          let enrichedRecipients = recipientsWithFullData;
+      updateCsvUploadState("validating", "Validating numbers...", 80, true);
 
-          try {
-            const lookupPhones = Array.from(
-              new Set(
-                recipientsWithFullData
-                  .map((recipient) => normalizePhoneForLookup(
-                    recipient?.phone ||
+      const phoneField = findPhoneField(
+        detectedFields.length ? detectedFields : Object.keys(rawRows[0] || {}),
+      );
+      const recipientsWithFullData = rawRows
+        .map((row, index) => {
+          const normalizedRow = row && typeof row === "object" ? row : {};
+          const phone = normalizeText(
+            normalizedRow?.[phoneField] ||
+              normalizedRow.phone ||
+              normalizedRow.mobile ||
+              normalizedRow.whatsappNumber,
+          );
+          if (!phone) return null;
+
+          const fields = detectedFields.length
+            ? detectedFields
+            : Object.keys(normalizedRow || {});
+          const variables = fields
+            .filter((field) => String(field || "").trim() !== phoneField)
+            .map((field) => normalizeText(normalizedRow?.[field] || ""));
+
+          return {
+            phone,
+            variables,
+            fullData: {
+              ...normalizedRow,
+              lineNumber: normalizedRow?.lineNumber || index + 1,
+            },
+          };
+        })
+        .filter(Boolean);
+
+      if (!recipientsWithFullData.length) {
+        throw new Error("No valid phone numbers were found in the CSV file.");
+      }
+
+      let enrichedRecipients = recipientsWithFullData;
+
+      try {
+        const lookupPhones = Array.from(
+          new Set(
+            recipientsWithFullData
+              .map((recipient) =>
+                normalizePhoneForLookup(
+                  recipient?.phone ||
                     recipient?.fullData?.phone ||
                     recipient?.data?.phone ||
-                    ''
-                  ))
-                  .filter(Boolean)
+                    "",
+                ),
               )
-            );
+              .filter(Boolean),
+          ),
+        );
 
-            if (lookupPhones.length > 0) {
-              const lookupResult = await apiClient.lookupContactsByPhones(lookupPhones);
-              const matchedContacts = lookupResult?.data?.data || lookupResult?.data || [];
-              enrichedRecipients = mergeCsvRecipientsWithContacts(recipientsWithFullData, matchedContacts);
-            }
-          } catch (lookupError) {
-            console.warn('CRM contact lookup for CSV recipients failed, continuing with CSV data only:', lookupError);
-          }
+        if (lookupPhones.length > 0) {
+          updateCsvUploadState("validating", "Validating numbers...", 86, true);
+          const lookupResult =
+            await apiClient.lookupContactsByPhones(lookupPhones);
+          const matchedContacts =
+            lookupResult?.data?.data || lookupResult?.data || [];
+          enrichedRecipients = mergeCsvRecipientsWithContacts(
+            recipientsWithFullData,
+            matchedContacts,
+          );
+        }
+      } catch (lookupError) {
+        console.warn(
+          "CRM contact lookup for CSV recipients failed, continuing with CSV data only:",
+          lookupError,
+        );
+      }
 
-          const csvRows = enrichedRecipients.map((recipient, index) => {
-            const row = recipient?.fullData || recipient?.data || recipient || {};
-            const rawTags = Array.isArray(row?.tags)
-              ? row.tags
-              : String(row?.tags || '').split(',').map((tag) => tag.trim()).filter(Boolean);
-            const consentText = String(
-              row?.whatsappOptInTextSnapshot ||
+      const csvRows = enrichedRecipients
+        .map((recipient, index) => {
+          const row = recipient?.fullData || recipient?.data || recipient || {};
+          const rawTags = Array.isArray(row?.tags)
+            ? row.tags
+            : String(row?.tags || "")
+                .split(",")
+                .map((tag) => tag.trim())
+                .filter(Boolean);
+          const consentText = String(
+            row?.whatsappOptInTextSnapshot ||
               row?.consentText ||
               row?.optInText ||
               row?.consentSnapshot ||
-              ''
-            ).trim();
-            const proofType = String(
-              row?.whatsappOptInProofType ||
+              "",
+          ).trim();
+          const proofType = String(
+            row?.whatsappOptInProofType ||
               row?.proofType ||
               row?.consentProofType ||
-              ''
-            ).trim();
-            const proofId = String(
-              row?.whatsappOptInProofId ||
+              "",
+          ).trim();
+          const proofId = String(
+            row?.whatsappOptInProofId ||
               row?.proofId ||
               row?.consentProofId ||
-              ''
-            ).trim();
-            const proofUrl = String(
-              row?.whatsappOptInProofUrl ||
+              "",
+          ).trim();
+          const proofUrl = String(
+            row?.whatsappOptInProofUrl ||
               row?.proofUrl ||
               row?.consentProofUrl ||
-              ''
-            ).trim();
-            const scope = String(
-              row?.whatsappOptInScope ||
-              row?.scope ||
-              row?.consentScope ||
-              ''
-            ).trim();
+              "",
+          ).trim();
+          const scope = String(
+            row?.whatsappOptInScope || row?.scope || row?.consentScope || "",
+          ).trim();
 
-            const importedConsentReferenceId = `landing-page-import-${String(row?.lineNumber || index + 1).trim()}-${String(recipient?.phone || row?.phone || '').replace(/\D/g, '').slice(-4) || 'contact'}-${Date.now().toString(36)}`;
+          const importedConsentReferenceId = `landing-page-import-${String(row?.lineNumber || index + 1).trim()}-${
+            String(recipient?.phone || row?.phone || "")
+              .replace(/\D/g, "")
+              .slice(-4) || "contact"
+          }-${Date.now().toString(36)}`;
 
-            return {
-              name: String(row?.name || row?.contactName || recipient?.name || '').trim(),
-              phone: String(recipient?.phone || row?.phone || row?.mobile || row?.whatsappNumber || '').trim(),
-              email: String(row?.email || row?.emailAddress || '').trim(),
-              tags: rawTags,
-              sourceType: String(row?.sourceType || 'imported').trim() || 'imported',
-              whatsappOptInStatus: 'opted_in',
-              whatsappOptInScope: scope || 'marketing',
-              whatsappOptInTextSnapshot:
-                consentText || 'Consent captured via website landing page during CSV import.',
-              whatsappOptInProofType: proofType || 'import_record',
-              whatsappOptInProofId: proofId || importedConsentReferenceId,
-              whatsappOptInProofUrl: proofUrl,
-              whatsappOptInSource: String(row?.whatsappOptInSource || 'landing_page').trim() || 'landing_page',
-              whatsappOptInCapturedBy: String(row?.whatsappOptInCapturedBy || 'csv_import').trim() || 'csv_import',
-              whatsappOptInPageUrl: String(row?.whatsappOptInPageUrl || '').trim(),
-              whatsappOptInIp: String(row?.whatsappOptInIp || '').trim(),
-              whatsappOptInUserAgent: String(row?.whatsappOptInUserAgent || '').trim(),
-              whatsappOptInMetadata: {
-                importLineNumber: row?.lineNumber || index + 1,
-                importSource: 'csv_import',
-                consentSource: 'landing_page'
-              }
-            };
-          }).filter((contact) => String(contact.phone || '').trim());
+          return {
+            name: String(
+              row?.name || row?.contactName || recipient?.name || "",
+            ).trim(),
+            phone: String(
+              recipient?.phone ||
+                row?.phone ||
+                row?.mobile ||
+                row?.whatsappNumber ||
+                "",
+            ).trim(),
+            email: String(row?.email || row?.emailAddress || "").trim(),
+            tags: rawTags,
+            sourceType:
+              String(row?.sourceType || "imported").trim() || "imported",
+            whatsappOptInStatus: "opted_in",
+            whatsappOptInScope: scope || "marketing",
+            whatsappOptInTextSnapshot:
+              consentText ||
+              "Consent captured via website landing page during CSV import.",
+            whatsappOptInProofType: proofType || "import_record",
+            whatsappOptInProofId: proofId || importedConsentReferenceId,
+            whatsappOptInProofUrl: proofUrl,
+            whatsappOptInSource:
+              String(row?.whatsappOptInSource || "landing_page").trim() ||
+              "landing_page",
+            whatsappOptInCapturedBy:
+              String(row?.whatsappOptInCapturedBy || "csv_import").trim() ||
+              "csv_import",
+            whatsappOptInPageUrl: String(
+              row?.whatsappOptInPageUrl || "",
+            ).trim(),
+            whatsappOptInIp: String(row?.whatsappOptInIp || "").trim(),
+            whatsappOptInUserAgent: String(
+              row?.whatsappOptInUserAgent || "",
+            ).trim(),
+            whatsappOptInMetadata: {
+              importLineNumber: row?.lineNumber || index + 1,
+              importSource: "csv_import",
+              consentSource: "landing_page",
+            },
+          };
+        })
+        .filter((contact) => String(contact.phone || "").trim());
 
-          if (csvRows.length > 0) {
-            const importedConsentLookup = buildContactLookupMap(csvRows);
-            enrichedRecipients = enrichedRecipients.map((recipient) => {
-              const raw = recipient?.data && typeof recipient.data === 'object' ? recipient.data : recipient;
-              const fullData = raw?.fullData && typeof raw.fullData === 'object' ? raw.fullData : raw;
-              const phoneDigits = normalizePhoneForLookup(
-                recipient?.phone ||
-                raw?.phone ||
-                fullData?.phone ||
-                fullData?.mobile ||
-                fullData?.whatsappNumber ||
-                ''
-              );
-              const importedConsent =
-                importedConsentLookup.get(phoneDigits) ||
-                importedConsentLookup.get(phoneDigits.slice(-10)) ||
-                null;
+      if (csvRows.length > 0) {
+        updateCsvUploadState("processing", "Processing contacts...", 92, true);
+        const importedConsentLookup = buildContactLookupMap(csvRows);
+        enrichedRecipients = enrichedRecipients.map((recipient) => {
+          const raw =
+            recipient?.data && typeof recipient.data === "object"
+              ? recipient.data
+              : recipient;
+          const fullData =
+            raw?.fullData && typeof raw.fullData === "object"
+              ? raw.fullData
+              : raw;
+          const phoneDigits = normalizePhoneForLookup(
+            recipient?.phone ||
+              raw?.phone ||
+              fullData?.phone ||
+              fullData?.mobile ||
+              fullData?.whatsappNumber ||
+              "",
+          );
+          const importedConsent =
+            importedConsentLookup.get(phoneDigits) ||
+            importedConsentLookup.get(phoneDigits.slice(-10)) ||
+            null;
 
-              if (!importedConsent) {
-                return recipient;
-              }
-
-              const mergedFullData = {
-                ...fullData,
-                ...importedConsent
-              };
-
-              return {
-                ...recipient,
-                data: mergedFullData,
-                fullData: mergedFullData,
-                whatsappOptInStatus: importedConsent.whatsappOptInStatus || recipient.whatsappOptInStatus || 'opted_in',
-                whatsappOptInScope: importedConsent.whatsappOptInScope || recipient.whatsappOptInScope || 'marketing',
-                whatsappOptInTextSnapshot:
-                  importedConsent.whatsappOptInTextSnapshot || recipient.whatsappOptInTextSnapshot,
-                whatsappOptInProofType: importedConsent.whatsappOptInProofType || recipient.whatsappOptInProofType,
-                whatsappOptInProofId: importedConsent.whatsappOptInProofId || recipient.whatsappOptInProofId,
-                whatsappOptInProofUrl: importedConsent.whatsappOptInProofUrl || recipient.whatsappOptInProofUrl,
-                whatsappOptInSource: importedConsent.whatsappOptInSource || recipient.whatsappOptInSource,
-                whatsappOptInCapturedBy: importedConsent.whatsappOptInCapturedBy || recipient.whatsappOptInCapturedBy,
-                whatsappOptInPageUrl: importedConsent.whatsappOptInPageUrl || recipient.whatsappOptInPageUrl,
-                whatsappOptInIp: importedConsent.whatsappOptInIp || recipient.whatsappOptInIp,
-                whatsappOptInUserAgent: importedConsent.whatsappOptInUserAgent || recipient.whatsappOptInUserAgent,
-                whatsappOptInAt: importedConsent.whatsappOptInAt || recipient.whatsappOptInAt
-              };
-            });
+          if (!importedConsent) {
+            return recipient;
           }
 
-          if (csvRows.length > 0) {
-            try {
-              const importResult = await apiClient.importContacts(csvRows);
-              if (!importResult?.data?.success && importResult?.data?.error) {
-                console.warn('CSV contact import returned a non-success response:', importResult.data);
-              }
-              clearSidebarPageCache('contacts-page:v2', { currentUserId });
-            } catch (importError) {
-              console.warn('CSV contact import failed, continuing with parsed recipients:', importError);
-            }
-          }
+          const mergedFullData = {
+            ...fullData,
+            ...importedConsent,
+          };
 
-          setRecipients(enrichedRecipients);
-
-
-
-          if (enrichedRecipients.length > 0) {
-
-            const firstRecipient = enrichedRecipients[0];
-
-            const fileVarKeys = Object.keys(firstRecipient).filter(
-
-              (key) => /^var\d+$/i.test(String(key || '').trim()) && firstRecipient[key] != null
-
-            );
-
-
-
-            setFileVariables(fileVarKeys);
-
-
-
-
-          }
-
-        } catch (error) {
-          alert('Failed to upload CSV: ' + error.message);
-        }
-      },
-      error: (error) => {
-        alert('Failed to upload CSV: ' + error.message);
+          return {
+            ...recipient,
+            data: mergedFullData,
+            fullData: mergedFullData,
+            whatsappOptInStatus:
+              importedConsent.whatsappOptInStatus ||
+              recipient.whatsappOptInStatus ||
+              "opted_in",
+            whatsappOptInScope:
+              importedConsent.whatsappOptInScope ||
+              recipient.whatsappOptInScope ||
+              "marketing",
+            whatsappOptInTextSnapshot:
+              importedConsent.whatsappOptInTextSnapshot ||
+              recipient.whatsappOptInTextSnapshot,
+            whatsappOptInProofType:
+              importedConsent.whatsappOptInProofType ||
+              recipient.whatsappOptInProofType,
+            whatsappOptInProofId:
+              importedConsent.whatsappOptInProofId ||
+              recipient.whatsappOptInProofId,
+            whatsappOptInProofUrl:
+              importedConsent.whatsappOptInProofUrl ||
+              recipient.whatsappOptInProofUrl,
+            whatsappOptInSource:
+              importedConsent.whatsappOptInSource ||
+              recipient.whatsappOptInSource,
+            whatsappOptInCapturedBy:
+              importedConsent.whatsappOptInCapturedBy ||
+              recipient.whatsappOptInCapturedBy,
+            whatsappOptInPageUrl:
+              importedConsent.whatsappOptInPageUrl ||
+              recipient.whatsappOptInPageUrl,
+            whatsappOptInIp:
+              importedConsent.whatsappOptInIp || recipient.whatsappOptInIp,
+            whatsappOptInUserAgent:
+              importedConsent.whatsappOptInUserAgent ||
+              recipient.whatsappOptInUserAgent,
+            whatsappOptInAt:
+              importedConsent.whatsappOptInAt || recipient.whatsappOptInAt,
+          };
+        });
       }
-    });
+
+      if (csvRows.length > 0) {
+        try {
+          const importResult = await apiClient.importContacts(csvRows);
+          if (!importResult?.data?.success && importResult?.data?.error) {
+            console.warn(
+              "CSV contact import returned a non-success response:",
+              importResult.data,
+            );
+          }
+          clearSidebarPageCache("contacts-page:v2", { currentUserId });
+        } catch (importError) {
+          console.warn(
+            "CSV contact import failed, continuing with parsed recipients:",
+            importError,
+          );
+        }
+      }
+
+      setRecipients(enrichedRecipients);
+
+      if (enrichedRecipients.length > 0) {
+        const firstRecipient = enrichedRecipients[0];
+        const fileVarKeys = Object.keys(firstRecipient).filter(
+          (key) =>
+            /^var\d+$/i.test(String(key || "").trim()) &&
+            firstRecipient[key] != null,
+        );
+        setFileVariables(fileVarKeys);
+      } else {
+        setFileVariables([]);
+      }
+
+      updateCsvUploadState(
+        "completed",
+        `Upload completed: ${Number(enrichedRecipients.length || 0).toLocaleString()} contacts ready`,
+        100,
+        true,
+      );
+    } catch (error) {
+      console.error("Failed to upload CSV:", error);
+      setCsvUploadState({
+        phase: "failed",
+        message: `Upload failed: ${error?.message || "Please try again."}`,
+        percent: 0,
+      });
+      alert("Failed to upload CSV: " + error.message);
+    } finally {
+      if (event?.target) {
+        event.target.value = "";
+      }
+    }
   };
 
-
+  const handlePrepareCsvReplace = () => {
+    if (csvReplaceTimeoutRef.current) {
+      clearTimeout(csvReplaceTimeoutRef.current);
+      csvReplaceTimeoutRef.current = null;
+    }
+    csvUploadProgressRef.current = {
+      lastPercent: -1,
+      lastUpdateAt: 0,
+    };
+    setCsvUploadState({
+      phase: "replacing",
+      message: "Replacing CSV...",
+      percent: 0,
+    });
+    csvReplaceTimeoutRef.current = window.setTimeout(() => {
+      setCsvUploadState((current) =>
+        current.phase === "replacing"
+          ? { phase: "idle", message: "", percent: 0 }
+          : current,
+      );
+      csvReplaceTimeoutRef.current = null;
+    }, 2500);
+  };
 
   const handleClearUpload = () => {
-
+    if (csvReplaceTimeoutRef.current) {
+      clearTimeout(csvReplaceTimeoutRef.current);
+      csvReplaceTimeoutRef.current = null;
+    }
     setUploadedFile(null);
 
     setRecipients([]);
 
     setFileVariables([]);
+    setCsvUploadState({
+      phase: "idle",
+      message: "",
+      percent: 0,
+    });
+    csvUploadProgressRef.current = {
+      lastPercent: -1,
+      lastUpdateAt: 0,
+    };
 
-
-
-
-    const fileInput = document.getElementById('csv-file-popup');
+    const fileInput = document.getElementById("csv-file-popup");
 
     if (fileInput) {
-
-      fileInput.value = '';
-
+      fileInput.value = "";
     }
-
   };
 
   const clearBroadcastCsvInputs = () => {
-    const popupFileInput = document.getElementById('csv-file-popup');
+    const popupFileInput = document.getElementById("csv-file-popup");
     if (popupFileInput) {
-      popupFileInput.value = '';
+      popupFileInput.value = "";
     }
-    const scheduleFileInput = document.getElementById('broadcast-csv-upload');
+    const scheduleFileInput = document.getElementById("broadcast-csv-upload");
     if (scheduleFileInput) {
-      scheduleFileInput.value = '';
+      scheduleFileInput.value = "";
     }
   };
 
   useEffect(() => {
     csvRecipientRefreshContextRef.current = {
       recipients,
-      uploadedFile
+      uploadedFile,
     };
   }, [recipients, uploadedFile]);
 
-  const normalizePhoneForLookup = (value = '') => String(value || '').replace(/\D/g, '');
+  const normalizePhoneForLookup = (value = "") =>
+    String(value || "").replace(/\D/g, "");
 
   const buildContactLookupMap = (contacts = []) => {
     const map = new Map();
     (Array.isArray(contacts) ? contacts : []).forEach((contact) => {
       const phoneDigits = normalizePhoneForLookup(
-        contact?.phone || contact?.mobile || contact?.phoneNumber || contact?.whatsappNumber || ''
+        contact?.phone ||
+          contact?.mobile ||
+          contact?.phoneNumber ||
+          contact?.whatsappNumber ||
+          "",
       );
       if (!phoneDigits) return;
       if (!map.has(phoneDigits)) {
         map.set(phoneDigits, contact);
       }
-      const lastTen = phoneDigits.length > 10 ? phoneDigits.slice(-10) : phoneDigits;
+      const lastTen =
+        phoneDigits.length > 10 ? phoneDigits.slice(-10) : phoneDigits;
       if (lastTen && !map.has(lastTen)) {
         map.set(lastTen, contact);
       }
@@ -953,15 +1170,19 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     const contactLookup = buildContactLookupMap(contacts);
 
     return (Array.isArray(recipients) ? recipients : []).map((recipient) => {
-      const raw = recipient?.data && typeof recipient.data === 'object' ? recipient.data : recipient;
-      const fullData = raw?.fullData && typeof raw.fullData === 'object' ? raw.fullData : raw;
+      const raw =
+        recipient?.data && typeof recipient.data === "object"
+          ? recipient.data
+          : recipient;
+      const fullData =
+        raw?.fullData && typeof raw.fullData === "object" ? raw.fullData : raw;
       const phoneDigits = normalizePhoneForLookup(
         recipient?.phone ||
-        raw?.phone ||
-        fullData?.phone ||
-        fullData?.mobile ||
-        fullData?.whatsappNumber ||
-        ''
+          raw?.phone ||
+          fullData?.phone ||
+          fullData?.mobile ||
+          fullData?.whatsappNumber ||
+          "",
       );
       const matchedContact =
         contactLookup.get(phoneDigits) ||
@@ -974,7 +1195,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
       const mergedFullData = {
         ...fullData,
-        ...matchedContact
+        ...matchedContact,
       };
 
       const mergedRecipient = {
@@ -983,37 +1204,51 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         name: matchedContact.name || recipient.name,
         phone: matchedContact.phone || recipient.phone,
         email: matchedContact.email || recipient.email,
-        tags: Array.isArray(matchedContact.tags) ? matchedContact.tags : recipient.tags,
+        tags: Array.isArray(matchedContact.tags)
+          ? matchedContact.tags
+          : recipient.tags,
         sourceType: matchedContact.sourceType || recipient.sourceType,
         data: mergedFullData,
-        fullData: mergedFullData
+        fullData: mergedFullData,
       };
 
       const optInStatus = String(
         matchedContact.whatsappOptInStatus ||
-        fullData.whatsappOptInStatus ||
-        recipient.whatsappOptInStatus ||
-        ''
+          fullData.whatsappOptInStatus ||
+          recipient.whatsappOptInStatus ||
+          "",
       ).trim();
 
       if (optInStatus) {
         mergedRecipient.whatsappOptInStatus = optInStatus;
-        mergedRecipient.whatsappOptInScope = matchedContact.whatsappOptInScope || recipient.whatsappOptInScope;
+        mergedRecipient.whatsappOptInScope =
+          matchedContact.whatsappOptInScope || recipient.whatsappOptInScope;
         mergedRecipient.whatsappOptInTextSnapshot =
-          matchedContact.whatsappOptInTextSnapshot || recipient.whatsappOptInTextSnapshot;
-        mergedRecipient.whatsappOptInProofType = matchedContact.whatsappOptInProofType || recipient.whatsappOptInProofType;
-        mergedRecipient.whatsappOptInProofId = matchedContact.whatsappOptInProofId || recipient.whatsappOptInProofId;
-        mergedRecipient.whatsappOptInProofUrl = matchedContact.whatsappOptInProofUrl || recipient.whatsappOptInProofUrl;
-        mergedRecipient.whatsappOptInSource = matchedContact.whatsappOptInSource || recipient.whatsappOptInSource;
+          matchedContact.whatsappOptInTextSnapshot ||
+          recipient.whatsappOptInTextSnapshot;
+        mergedRecipient.whatsappOptInProofType =
+          matchedContact.whatsappOptInProofType ||
+          recipient.whatsappOptInProofType;
+        mergedRecipient.whatsappOptInProofId =
+          matchedContact.whatsappOptInProofId || recipient.whatsappOptInProofId;
+        mergedRecipient.whatsappOptInProofUrl =
+          matchedContact.whatsappOptInProofUrl ||
+          recipient.whatsappOptInProofUrl;
+        mergedRecipient.whatsappOptInSource =
+          matchedContact.whatsappOptInSource || recipient.whatsappOptInSource;
       }
 
       if (matchedContact.lastInboundMessageAt) {
-        mergedRecipient.lastInboundMessageAt = matchedContact.lastInboundMessageAt;
-        mergedFullData.lastInboundMessageAt = matchedContact.lastInboundMessageAt;
+        mergedRecipient.lastInboundMessageAt =
+          matchedContact.lastInboundMessageAt;
+        mergedFullData.lastInboundMessageAt =
+          matchedContact.lastInboundMessageAt;
       }
       if (matchedContact.serviceWindowClosesAt) {
-        mergedRecipient.serviceWindowClosesAt = matchedContact.serviceWindowClosesAt;
-        mergedFullData.serviceWindowClosesAt = matchedContact.serviceWindowClosesAt;
+        mergedRecipient.serviceWindowClosesAt =
+          matchedContact.serviceWindowClosesAt;
+        mergedFullData.serviceWindowClosesAt =
+          matchedContact.serviceWindowClosesAt;
       }
       if (matchedContact.whatsappOptOutAt) {
         mergedRecipient.whatsappOptOutAt = matchedContact.whatsappOptOutAt;
@@ -1028,21 +1263,27 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     const { recipients: currentRecipients, uploadedFile: currentUploadedFile } =
       csvRecipientRefreshContextRef.current || {};
 
-    if (!currentUploadedFile || !Array.isArray(currentRecipients) || currentRecipients.length === 0) {
+    if (
+      !currentUploadedFile ||
+      !Array.isArray(currentRecipients) ||
+      currentRecipients.length === 0
+    ) {
       return;
     }
 
     const lookupPhones = Array.from(
       new Set(
         currentRecipients
-          .map((recipient) => normalizePhoneForLookup(
-            recipient?.phone ||
-            recipient?.fullData?.phone ||
-            recipient?.data?.phone ||
-            ''
-          ))
-          .filter(Boolean)
-      )
+          .map((recipient) =>
+            normalizePhoneForLookup(
+              recipient?.phone ||
+                recipient?.fullData?.phone ||
+                recipient?.data?.phone ||
+                "",
+            ),
+          )
+          .filter(Boolean),
+      ),
     );
 
     if (!lookupPhones.length) {
@@ -1051,19 +1292,25 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
     try {
       const lookupResult = await apiClient.lookupContactsByPhones(lookupPhones);
-      const matchedContacts = lookupResult?.data?.data || lookupResult?.data || [];
-      const refreshedRecipients = mergeCsvRecipientsWithContacts(currentRecipients, matchedContacts);
+      const matchedContacts =
+        lookupResult?.data?.data || lookupResult?.data || [];
+      const refreshedRecipients = mergeCsvRecipientsWithContacts(
+        currentRecipients,
+        matchedContacts,
+      );
       setRecipients(refreshedRecipients);
 
       if (refreshedRecipients.length > 0) {
         const firstRecipient = refreshedRecipients[0];
         const fileVarKeys = Object.keys(firstRecipient).filter(
-          (key) => /^var\d+$/i.test(String(key || '').trim()) && firstRecipient[key] != null
+          (key) =>
+            /^var\d+$/i.test(String(key || "").trim()) &&
+            firstRecipient[key] != null,
         );
         setFileVariables(fileVarKeys);
       }
     } catch (error) {
-      console.warn('Failed to refresh CSV recipients after CRM change:', error);
+      console.warn("Failed to refresh CSV recipients after CRM change:", error);
     }
   };
 
@@ -1071,7 +1318,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     recipients.map((recipient) => ({
       phone: recipient.phone,
       variables: recipient.variables || [],
-      data: recipient.data || recipient.fullData || recipient
+      data: recipient.data || recipient.fullData || recipient,
     }));
 
   const prepareRecipientsForDelivery = () => {
@@ -1081,8 +1328,8 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     let duplicatePhoneCount = 0;
 
     const eligibleRecipients = processedRecipients.filter((recipient) => {
-      const phone = String(recipient?.phone || '').trim();
-      if (!phone || phone === '-') {
+      const phone = String(recipient?.phone || "").trim();
+      if (!phone || phone === "-") {
         missingPhoneCount += 1;
         return false;
       }
@@ -1097,23 +1344,25 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     return {
       eligibleRecipients,
       missingPhoneCount,
-      duplicatePhoneCount
+      duplicatePhoneCount,
     };
   };
 
   const validatePreparedRecipients = ({
     eligibleRecipients,
     missingPhoneCount,
-    duplicatePhoneCount
+    duplicatePhoneCount,
   }) => {
     if (!eligibleRecipients.length) {
-      alert('No valid recipients found. Please ensure CSV has unique phone numbers.');
+      alert(
+        "No valid recipients found. Please ensure CSV has unique phone numbers.",
+      );
       return false;
     }
 
     if (missingPhoneCount > 0 || duplicatePhoneCount > 0) {
       alert(
-        `Recipient issues found: ${missingPhoneCount} missing-phone and ${duplicatePhoneCount} duplicate rows. Please run Auto-clean before sending.`
+        `Recipient issues found: ${missingPhoneCount} missing-phone and ${duplicatePhoneCount} duplicate rows. Please run Auto-clean before sending.`,
       );
       return false;
     }
@@ -1132,11 +1381,11 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     if (!scheduledTime) return true;
     const scheduledIso = getScheduledAtIso();
     if (!scheduledIso) {
-      alert('Invalid scheduled time. Please choose a valid date and time.');
+      alert("Invalid scheduled time. Please choose a valid date and time.");
       return false;
     }
     if (new Date(scheduledIso).getTime() <= Date.now()) {
-      alert('Scheduled time must be in the future.');
+      alert("Scheduled time must be in the future.");
       return false;
     }
     return true;
@@ -1151,55 +1400,89 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const buildPolicyPayload = () => {
     const suppressionListPhones = Array.from(
       new Set(
-        String(suppressionListRaw || '')
+        String(suppressionListRaw || "")
           .split(/[\n,;\s]+/)
           .map((item) => item.trim())
-          .filter(Boolean)
-      )
+          .filter(Boolean),
+      ),
     );
 
     return {
       deliveryPolicy: {
         quietHours: {
           enabled: Boolean(quietHoursEnabled),
-          startHour: parseIntegerInRange(quietHoursStartHour, { min: 0, max: 23, fallback: 22 }),
-          endHour: parseIntegerInRange(quietHoursEndHour, { min: 0, max: 23, fallback: 9 }),
-          timezone: String(quietHoursTimezone || '').trim() || 'Asia/Kolkata',
-          action: String(quietHoursAction || '').toLowerCase() === 'skip' ? 'skip' : 'defer',
-          batchSize: parseIntegerInRange(deliveryBatchSize, { min: 1, max: 50, fallback: 50 }),
-          batchDelaySeconds: parseIntegerInRange(deliveryBatchDelaySeconds, { min: 0, max: 3600, fallback: 5 })
-        }
+          startHour: parseIntegerInRange(quietHoursStartHour, {
+            min: 0,
+            max: 23,
+            fallback: 22,
+          }),
+          endHour: parseIntegerInRange(quietHoursEndHour, {
+            min: 0,
+            max: 23,
+            fallback: 9,
+          }),
+          timezone: String(quietHoursTimezone || "").trim() || "Asia/Kolkata",
+          action:
+            String(quietHoursAction || "").toLowerCase() === "skip"
+              ? "skip"
+              : "defer",
+          batchSize: parseIntegerInRange(deliveryBatchSize, {
+            min: 1,
+            max: 50,
+            fallback: 50,
+          }),
+          batchDelaySeconds: parseIntegerInRange(deliveryBatchDelaySeconds, {
+            min: 0,
+            max: 3600,
+            fallback: 5,
+          }),
+        },
       },
       retryPolicy: {
         enabled: Boolean(retryPolicyEnabled),
-        maxAttempts: parseIntegerInRange(retryMaxAttempts, { min: 1, max: 5, fallback: 3 }),
-        backoffSeconds: parseIntegerInRange(retryBackoffSeconds, { min: 0, max: 300, fallback: 45 })
+        maxAttempts: parseIntegerInRange(retryMaxAttempts, {
+          min: 1,
+          max: 5,
+          fallback: 3,
+        }),
+        backoffSeconds: parseIntegerInRange(retryBackoffSeconds, {
+          min: 0,
+          max: 300,
+          fallback: 45,
+        }),
       },
       compliancePolicy: {
         respectOptOut: respectOptOut !== false,
-        suppressionListPhones
-      }
+        suppressionListPhones,
+      },
     };
   };
 
   const buildValidationRecipientPayload = (recipient = {}) => ({
-    phone: String(recipient?.phone || '').trim(),
-    name: String(recipient?.name || '').trim(),
-    contactId: String(recipient?.contactId || '').trim() || null,
-    sourceType: String(recipient?.sourceType || recipient?.data?.sourceType || '').trim() || null,
+    phone: String(recipient?.phone || "").trim(),
+    name: String(recipient?.name || "").trim(),
+    contactId: String(recipient?.contactId || "").trim() || null,
+    sourceType:
+      String(
+        recipient?.sourceType || recipient?.data?.sourceType || "",
+      ).trim() || null,
     whatsappOptInStatus: String(
       recipient?.whatsappOptInStatus ||
-      recipient?.data?.whatsappOptInStatus ||
-      recipient?.fullData?.whatsappOptInStatus ||
-      ''
+        recipient?.data?.whatsappOptInStatus ||
+        recipient?.fullData?.whatsappOptInStatus ||
+        "",
     ).trim(),
     whatsappOptInScope: String(
       recipient?.whatsappOptInScope ||
-      recipient?.data?.whatsappOptInScope ||
-      recipient?.fullData?.whatsappOptInScope ||
-      ''
+        recipient?.data?.whatsappOptInScope ||
+        recipient?.fullData?.whatsappOptInScope ||
+        "",
     ).trim(),
-    whatsappOptOutAt: recipient?.whatsappOptOutAt || recipient?.data?.whatsappOptOutAt || recipient?.fullData?.whatsappOptOutAt || null,
+    whatsappOptOutAt:
+      recipient?.whatsappOptOutAt ||
+      recipient?.data?.whatsappOptOutAt ||
+      recipient?.fullData?.whatsappOptOutAt ||
+      null,
     serviceWindowClosesAt:
       recipient?.serviceWindowClosesAt ||
       recipient?.data?.serviceWindowClosesAt ||
@@ -1213,124 +1496,253 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     isBlocked: Boolean(
       recipient?.isBlocked ||
       recipient?.data?.isBlocked ||
-      recipient?.fullData?.isBlocked
-    )
+      recipient?.fullData?.isBlocked,
+    ),
   });
 
   const normalizeContactToRecipient = (contact = {}) => {
-    const raw = contact?.data && typeof contact.data === 'object' ? contact.data : contact;
+    const raw =
+      contact?.data && typeof contact.data === "object"
+        ? contact.data
+        : contact;
     const contactId = String(
       contact?._id ||
-      contact?.id ||
-      contact?.contactId ||
-      raw?._id ||
-      raw?.id ||
-      raw?.contactId ||
-      contact?.phone ||
-      contact?.mobile ||
-      contact?.phoneNumber ||
-      contact?.whatsappNumber ||
-      raw?.phone ||
-      raw?.mobile ||
-      raw?.phoneNumber ||
-      raw?.whatsappNumber ||
-      ''
+        contact?.id ||
+        contact?.contactId ||
+        raw?._id ||
+        raw?.id ||
+        raw?.contactId ||
+        contact?.phone ||
+        contact?.mobile ||
+        contact?.phoneNumber ||
+        contact?.whatsappNumber ||
+        raw?.phone ||
+        raw?.mobile ||
+        raw?.phoneNumber ||
+        raw?.whatsappNumber ||
+        "",
     ).trim();
     const phone = String(
       contact?.phone ||
-      contact?.mobile ||
-      contact?.phoneNumber ||
-      contact?.whatsappNumber ||
-      raw?.phone ||
-      raw?.mobile ||
-      raw?.phoneNumber ||
-      raw?.whatsappNumber ||
-      ''
+        contact?.mobile ||
+        contact?.phoneNumber ||
+        contact?.whatsappNumber ||
+        raw?.phone ||
+        raw?.mobile ||
+        raw?.phoneNumber ||
+        raw?.whatsappNumber ||
+        "",
     ).trim();
-    const name =
-      String(contact?.name || raw?.name || contact?.displayName || raw?.contactName || phone || '')
-        .trim();
+    const name = String(
+      contact?.name ||
+        raw?.name ||
+        contact?.displayName ||
+        raw?.contactName ||
+        phone ||
+        "",
+    ).trim();
 
     return {
       phone,
       name,
       contactId: contactId || undefined,
-      sourceType: String(raw?.sourceType || contact?.sourceType || 'manual').trim() || 'manual',
+      sourceType:
+        String(raw?.sourceType || contact?.sourceType || "manual").trim() ||
+        "manual",
       variables: [],
-      data: raw && typeof raw === 'object' ? raw : { phone, name },
-      fullData: raw && typeof raw === 'object' ? raw : { phone, name }
+      data: raw && typeof raw === "object" ? raw : { phone, name },
+      fullData: raw && typeof raw === "object" ? raw : { phone, name },
     };
   };
 
-  const hasContactsAudience = Array.isArray(recipients) && recipients.some((recipient) =>
-    Boolean(String(recipient?.contactId || recipient?.data?._id || recipient?.fullData?._id || '').trim())
-  );
+  const hasContactsAudience =
+    Array.isArray(recipients) &&
+    recipients.some((recipient) =>
+      Boolean(
+        String(
+          recipient?.contactId ||
+            recipient?.data?._id ||
+            recipient?.fullData?._id ||
+            "",
+        ).trim(),
+      ),
+    );
 
-  const campaignAdditionalContacts = Array.isArray(selectedCampaignAudience?.additionalContacts)
+  const campaignAdditionalContacts = Array.isArray(
+    selectedCampaignAudience?.additionalContacts,
+  )
     ? selectedCampaignAudience.additionalContacts
     : [];
-  const campaignExcludedPhones = Array.isArray(selectedCampaignAudience?.excludedPhones)
+  const campaignSelectedRecipients = Array.isArray(
+    selectedCampaignAudience?.campaignRecipients,
+  )
+    ? selectedCampaignAudience.campaignRecipients
+        .map((contact) => normalizeContactToRecipient(contact))
+        .filter((recipient) => String(recipient?.phone || "").trim())
+    : [];
+  const campaignExcludedPhones = Array.isArray(
+    selectedCampaignAudience?.excludedPhones,
+  )
     ? selectedCampaignAudience.excludedPhones
-        .map((phone) => String(phone || '').trim())
+        .map((phone) => String(phone || "").trim())
         .filter(Boolean)
     : [];
   const selectedCampaignAudienceCount = React.useMemo(() => {
-    const baseCount = Math.max(0, Number(selectedCampaignAudience?.campaignRecipientCount || 0));
-    const excludedPhoneSet = new Set(campaignExcludedPhones.map((phone) => phone.replace(/\D/g, '')));
-    const excludedCount = excludedPhoneSet.size;
+    const excludedPhoneSet = new Set(
+      campaignExcludedPhones.map((phone) => phone.replace(/\D/g, "")),
+    );
+    const dedupedSelected = campaignSelectedRecipients
+      .map((contact) => normalizeContactToRecipient(contact))
+      .filter((recipient) => {
+        const phone = normalizePhoneForLookup(recipient?.phone || "");
+        return phone && !excludedPhoneSet.has(phone);
+      });
+    const dedupedAudience = [...dedupedSelected];
+    const seenPhones = new Set(
+      dedupedAudience
+        .map((recipient) => normalizePhoneForLookup(recipient?.phone || ""))
+        .filter(Boolean),
+    );
+    for (const contact of campaignAdditionalContacts) {
+      const normalized = normalizeContactToRecipient(contact);
+      const phone = normalizePhoneForLookup(normalized?.phone || "");
+      if (!phone || seenPhones.has(phone)) continue;
+      seenPhones.add(phone);
+      dedupedAudience.push(normalized);
+    }
+    if (dedupedAudience.length > 0) {
+      return dedupedAudience.length;
+    }
+    const baseCount = Math.max(
+      0,
+      Number(selectedCampaignAudience?.campaignRecipientCount || 0),
+    );
     const additionalCount = new Set(
       campaignAdditionalContacts
-        .map((contact) => String(contact?.phone || '').replace(/\D/g, ''))
-        .filter((phone) => Boolean(phone) && !excludedPhoneSet.has(phone))
+        .map((contact) => String(contact?.phone || "").replace(/\D/g, ""))
+        .filter((phone) => Boolean(phone) && !excludedPhoneSet.has(phone)),
     ).size;
+    const excludedCount = excludedPhoneSet.size;
     return Math.max(0, baseCount - excludedCount + additionalCount);
-  }, [campaignAdditionalContacts, campaignExcludedPhones, selectedCampaignAudience?.campaignRecipientCount]);
+  }, [
+    campaignAdditionalContacts,
+    campaignExcludedPhones,
+    campaignSelectedRecipients,
+    selectedCampaignAudience?.campaignRecipientCount,
+  ]);
 
-  const audienceSourceLabel = uploadedFile
-    ? `CSV upload: ${uploadedFile.name}`
-    : String(selectedCampaignAudience?.campaignName || '').trim() && audienceSourceMode === 'campaign'
-      ? `Campaign: ${selectedCampaignAudience.campaignName}`
-    : String(selectedCampaignAudience?.campaignBroadcastId || '').trim() && audienceSourceMode === 'campaign'
-      ? `Campaign: ${selectedCampaignAudience.campaignBroadcastId}`
-    : String(selectedAudienceMeta?.segmentName || '').trim()
-      ? `Saved segment: ${selectedAudienceMeta.segmentName}`
-    : hasContactsAudience
-      ? 'Selected CRM contacts'
-      : Array.isArray(recipients) && recipients.length > 0
-        ? 'Manual audience list'
-        : '';
+  const selectedCampaignAudienceRecipients = React.useMemo(() => {
+    const mergedRecipients = [...campaignSelectedRecipients];
+    const seenPhones = new Set(
+      mergedRecipients
+        .map((recipient) => normalizePhoneForLookup(recipient?.phone || ""))
+        .filter(Boolean),
+    );
+    for (const contact of campaignAdditionalContacts) {
+      const phone = normalizePhoneForLookup(contact?.phone || "");
+      if (!phone || seenPhones.has(phone)) continue;
+      seenPhones.add(phone);
+      mergedRecipients.push(normalizeContactToRecipient(contact));
+    }
+    return mergedRecipients;
+  }, [campaignAdditionalContacts, campaignSelectedRecipients]);
+
+  const hasSelectedCampaignAudience = Boolean(
+    String(selectedCampaignAudience?.campaignBroadcastId || "").trim(),
+  ) || Number(selectedCampaignAudienceCount || 0) > 0;
+
+  useEffect(() => {
+    if (!hasSelectedCampaignAudience) return;
+    if (audienceSourceMode === "campaign") return;
+    setAudienceSourceMode("campaign");
+  }, [audienceSourceMode, hasSelectedCampaignAudience]);
+
+  const audienceSourceLabel =
+    audienceSourceMode === "campaign"
+      ? String(selectedCampaignAudience?.campaignName || "").trim()
+        ? `Campaign: ${selectedCampaignAudience.campaignName}`
+        : String(selectedCampaignAudience?.campaignBroadcastId || "").trim()
+          ? `Campaign: ${selectedCampaignAudience.campaignBroadcastId}`
+          : "Campaign audience"
+      : uploadedFile
+        ? `CSV upload: ${uploadedFile.name}`
+        : String(selectedAudienceMeta?.segmentName || "").trim()
+          ? `Saved segment: ${selectedAudienceMeta.segmentName}`
+          : hasContactsAudience
+            ? "Selected CRM contacts"
+            : Array.isArray(recipients) && recipients.length > 0
+              ? "Manual audience list"
+              : "";
 
   const buildAudiencePayload = () => {
     const recipientCount = Array.isArray(recipients) ? recipients.length : 0;
     const selectedContactCount = Array.isArray(recipients)
       ? recipients.filter((recipient) =>
-          Boolean(String(recipient?.contactId || recipient?.data?._id || recipient?.fullData?._id || '').trim())
+          Boolean(
+            String(
+              recipient?.contactId ||
+                recipient?.data?._id ||
+                recipient?.fullData?._id ||
+                "",
+            ).trim(),
+          ),
         ).length
       : 0;
     const hasContactsSelection = selectedContactCount > 0;
-    const segmentId = String(selectedAudienceMeta?.segmentId || '').trim();
-    const segmentName = String(selectedAudienceMeta?.segmentName || '').trim();
-    const campaignBroadcastId = String(selectedCampaignAudience?.campaignBroadcastId || '').trim();
-    const campaignName = String(selectedCampaignAudience?.campaignName || '').trim();
-    const campaignStatus = String(selectedCampaignAudience?.campaignStatus || '').trim();
-    const campaignRecipientCount = Math.max(0, Number(selectedCampaignAudience?.campaignRecipientCount || 0));
+    const segmentId = String(selectedAudienceMeta?.segmentId || "").trim();
+    const segmentName = String(selectedAudienceMeta?.segmentName || "").trim();
+    const campaignBroadcastId = String(
+      selectedCampaignAudience?.campaignBroadcastId || "",
+    ).trim();
+    const campaignName = String(
+      selectedCampaignAudience?.campaignName || "",
+    ).trim();
+    const campaignStatus = String(
+      selectedCampaignAudience?.campaignStatus || "",
+    ).trim();
+    const campaignRecipientCount = Math.max(
+      0,
+      Number(selectedCampaignAudience?.campaignRecipientCount || 0),
+    );
     const excludedPhones = campaignExcludedPhones;
+    const excludedPhoneSet = new Set(
+      excludedPhones
+        .map((phone) => normalizePhoneForLookup(phone))
+        .filter(Boolean),
+    );
+    const campaignRecipients = campaignSelectedRecipients
+      .filter((recipient) => {
+        const phone = normalizePhoneForLookup(recipient?.phone || "");
+        return phone && !excludedPhoneSet.has(phone);
+      })
+      .map((recipient) => normalizeContactToRecipient(recipient));
     const additionalContacts = campaignAdditionalContacts
       .map((contact) => normalizeContactToRecipient(contact))
-      .filter((recipient) => String(recipient?.phone || '').trim());
-    const campaignSelectedCount = selectedCampaignAudienceCount;
-    const excludedPhoneSet = new Set(campaignExcludedPhones.map((phone) => phone.replace(/\D/g, '')));
+      .filter((recipient) => String(recipient?.phone || "").trim());
+    const campaignAudienceRecipients = [...campaignRecipients];
+    const seenPhones = new Set(
+      campaignAudienceRecipients
+        .map((recipient) => normalizePhoneForLookup(recipient?.phone || ""))
+        .filter(Boolean),
+    );
+    for (const contact of additionalContacts) {
+      const phone = normalizePhoneForLookup(contact?.phone || "");
+      if (!phone || seenPhones.has(phone)) continue;
+      seenPhones.add(phone);
+      campaignAudienceRecipients.push(contact);
+    }
+    const campaignSelectedCount = campaignAudienceRecipients.length;
     const sourceType = uploadedFile
-      ? 'csv'
+      ? "csv"
       : campaignBroadcastId
-        ? 'campaign'
-      : segmentId
-        ? 'saved_segment'
-        : hasContactsSelection
-          ? 'contacts'
-        : recipientCount > 0
-          ? 'manual'
-          : 'unknown';
+        ? "campaign"
+        : segmentId
+          ? "saved_segment"
+          : hasContactsSelection
+            ? "contacts"
+            : recipientCount > 0
+              ? "manual"
+              : "unknown";
 
     return {
       audienceSource: {
@@ -1341,14 +1753,33 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         campaignBroadcastId,
         sourceName:
           uploadedFile?.name ||
-          (campaignName ? `campaign:${campaignName}` : campaignBroadcastId ? `campaign:${campaignBroadcastId}` : '') ||
-          (segmentName ? `segment:${segmentName}` : hasContactsSelection ? 'crm_contacts' : 'manual_list'),
-        uploadedFileName: uploadedFile?.name || '',
-        recipientCount: sourceType === 'campaign' ? campaignSelectedCount : recipientCount,
-        selectedContactCount: sourceType === 'campaign' ? campaignSelectedCount : selectedContactCount,
-        hasContactIds: sourceType === 'campaign' ? additionalContacts.some((recipient) => Boolean(recipient.contactId)) : hasContactsSelection,
+          (campaignName
+            ? `campaign:${campaignName}`
+            : campaignBroadcastId
+              ? `campaign:${campaignBroadcastId}`
+              : "") ||
+          (segmentName
+            ? `segment:${segmentName}`
+            : hasContactsSelection
+              ? "crm_contacts"
+              : "manual_list"),
+        uploadedFileName: uploadedFile?.name || "",
+        recipientCount:
+          sourceType === "campaign"
+            ? campaignAudienceRecipients.length
+            : recipientCount,
+        selectedContactCount:
+          sourceType === "campaign"
+            ? campaignAudienceRecipients.length
+            : selectedContactCount,
+        hasContactIds:
+          sourceType === "campaign"
+            ? campaignAudienceRecipients.some((recipient) =>
+                Boolean(recipient.contactId),
+              )
+            : hasContactsSelection,
         campaignRecipientCount,
-        campaignStatus
+        campaignStatus,
       },
       audienceSnapshot: {
         mode: audienceSourceMode,
@@ -1361,31 +1792,73 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         campaignStatus,
         campaignRecipientCount,
         campaignSelectedCount,
+        campaignRecipientIds: campaignAudienceRecipients
+          .map((recipient) =>
+            String(
+              recipient?.contactId ||
+                recipient?.data?._id ||
+                recipient?.fullData?._id ||
+                "",
+            ).trim(),
+          )
+          .filter(Boolean),
         excludedPhones,
         excludedCount: excludedPhones.length,
-        additionalContactIds: sourceType === 'campaign'
-          ? additionalContacts
-              .filter((recipient) => !excludedPhoneSet.has(String(recipient?.phone || '').replace(/\D/g, '')))
-              .map((recipient) => String(recipient?.contactId || recipient?.data?._id || recipient?.fullData?._id || '').trim())
-              .filter(Boolean)
-          : [],
-        uploadedFileName: uploadedFile?.name || '',
-        recipientCount: sourceType === 'campaign' ? campaignSelectedCount : recipientCount,
-        selectedContactCount: sourceType === 'campaign' ? campaignSelectedCount : selectedContactCount,
+        additionalContactIds:
+          sourceType === "campaign"
+            ? additionalContacts
+                .filter(
+                  (recipient) =>
+                    !excludedPhoneSet.has(
+                      String(recipient?.phone || "").replace(/\D/g, ""),
+                    ),
+                )
+                .map((recipient) =>
+                  String(
+                    recipient?.contactId ||
+                      recipient?.data?._id ||
+                      recipient?.fullData?._id ||
+                      "",
+                  ).trim(),
+                )
+                .filter(Boolean)
+            : [],
+        uploadedFileName: uploadedFile?.name || "",
+        recipientCount:
+          sourceType === "campaign"
+            ? campaignAudienceRecipients.length
+            : recipientCount,
+        selectedContactCount:
+          sourceType === "campaign"
+            ? campaignAudienceRecipients.length
+            : selectedContactCount,
         contactIds: Array.isArray(recipients)
-          ? recipients
-              .map((recipient) => String(recipient?.contactId || recipient?.data?._id || recipient?.fullData?._id || '').trim())
+          ? (sourceType === "campaign"
+              ? campaignAudienceRecipients
+              : recipients)
+              .map((recipient) =>
+                String(
+                  recipient?.contactId ||
+                    recipient?.data?._id ||
+                    recipient?.fullData?._id ||
+                    "",
+                ).trim(),
+              )
               .filter(Boolean)
           : [],
         selectedPhoneCount: Array.isArray(recipients)
-          ? recipients.filter((recipient) => String(recipient?.phone || '').trim()).length
-          : 0
-      }
+          ? (sourceType === "campaign"
+              ? campaignAudienceRecipients
+              : recipients).filter((recipient) =>
+              String(recipient?.phone || "").trim(),
+            ).length
+          : 0,
+      },
     };
   };
 
   const openContactAudiencePicker = () => {
-    setContactAudiencePickerPurpose('direct');
+    setContactAudiencePickerPurpose("direct");
     setShowContactAudiencePicker(true);
   };
 
@@ -1402,46 +1875,55 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   };
 
   const openCampaignExtraContactsPicker = () => {
-    setContactAudiencePickerPurpose('campaign_extra');
+    setContactAudiencePickerPurpose("campaign_extra");
     setShowContactAudiencePicker(true);
   };
 
   const handleAudienceSourceModeChange = useCallback((nextMode) => {
     setAudienceSourceMode(nextMode);
-    if (String(nextMode || '').trim() !== 'campaign') {
+    if (String(nextMode || "").trim() !== "campaign") {
       setSelectedCampaignAudience({
-        campaignBroadcastId: '',
-        campaignName: '',
-        campaignStatus: '',
+        campaignBroadcastId: "",
+        campaignName: "",
+        campaignStatus: "",
         campaignRecipientCount: 0,
         excludedPhones: [],
-        additionalContacts: []
+        campaignRecipients: [],
+        additionalContacts: [],
       });
     }
   }, []);
 
-  const applyContactAudienceSelection = (selectedContacts = [], segmentMeta = {}) => {
+  const applyContactAudienceSelection = (
+    selectedContacts = [],
+    segmentMeta = {},
+  ) => {
     const normalized = Array.isArray(selectedContacts)
       ? selectedContacts
           .map((contact) => normalizeContactToRecipient(contact))
           .filter((recipient) => recipient.phone)
       : [];
 
-    if (contactAudiencePickerPurpose === 'campaign_extra') {
+    if (contactAudiencePickerPurpose === "campaign_extra") {
       setSelectedCampaignAudience((previous) => {
-        const existing = Array.isArray(previous?.additionalContacts) ? previous.additionalContacts : [];
+        const existing = Array.isArray(previous?.additionalContacts)
+          ? previous.additionalContacts
+          : [];
         const merged = [...existing];
         for (const contact of normalized) {
-          const contactPhone = String(contact?.phone || '').replace(/\D/g, '');
+          const contactPhone = String(contact?.phone || "").replace(/\D/g, "");
           if (!contactPhone) continue;
-          const alreadyExists = merged.some((item) => String(item?.phone || '').replace(/\D/g, '') === contactPhone);
+          const alreadyExists = merged.some(
+            (item) =>
+              String(item?.phone || "").replace(/\D/g, "") === contactPhone,
+          );
           if (!alreadyExists) {
             merged.push(contact);
           }
         }
         return {
           ...previous,
-          additionalContacts: merged
+          additionalContacts: merged,
         };
       });
     } else {
@@ -1449,10 +1931,10 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       setUploadedFile(null);
       setFileVariables([]);
       setSelectedAudienceMeta({
-        segmentId: String(segmentMeta?.segmentId || '').trim(),
-        segmentName: String(segmentMeta?.segmentName || '').trim()
+        segmentId: String(segmentMeta?.segmentId || "").trim(),
+        segmentName: String(segmentMeta?.segmentName || "").trim(),
       });
-      setAudienceSourceMode('contacts');
+      setAudienceSourceMode("contacts");
     }
 
     setShowContactAudiencePicker(false);
@@ -1461,14 +1943,22 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   const applyCampaignAudienceSelection = ({
     campaign = null,
     excludedPhones = [],
-    additionalContacts = []
+    additionalContacts = [],
+    campaignRecipients = [],
   } = {}) => {
-    const campaignBroadcastId = String(campaign?._id || campaign?.id || '').trim();
-    const campaignName = String(campaign?.name || '').trim();
-    const campaignStatus = String(campaign?.status || '').trim();
+    const campaignBroadcastId = String(
+      campaign?._id || campaign?.id || "",
+    ).trim();
+    const campaignName = String(campaign?.name || "").trim();
+    const campaignStatus = String(campaign?.status || "").trim();
     const campaignRecipientCount = Math.max(
       0,
-      Number(campaign?.recipientCount || campaign?.sentCount || campaign?.stats?.sent || 0)
+      Number(
+        campaign?.recipientCount ||
+          campaign?.sentCount ||
+          campaign?.stats?.sent ||
+          0,
+      ),
     );
 
     setSelectedCampaignAudience({
@@ -1477,34 +1967,42 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       campaignStatus,
       campaignRecipientCount,
       excludedPhones: Array.isArray(excludedPhones)
-        ? excludedPhones.map((phone) => String(phone || '').trim()).filter(Boolean)
+        ? excludedPhones
+            .map((phone) => String(phone || "").trim())
+            .filter(Boolean)
+        : [],
+      campaignRecipients: Array.isArray(campaignRecipients)
+        ? campaignRecipients
+            .map((contact) => normalizeContactToRecipient(contact))
+            .filter((recipient) => recipient.phone)
         : [],
       additionalContacts: Array.isArray(additionalContacts)
         ? additionalContacts
             .map((contact) => normalizeContactToRecipient(contact))
             .filter((recipient) => recipient.phone)
-        : []
+        : [],
     });
-    setAudienceSourceMode('campaign');
+    setAudienceSourceMode("campaign");
     setUploadedFile(null);
     setFileVariables([]);
     setRecipients([]);
-    setSelectedAudienceMeta({ segmentId: '', segmentName: '' });
+    setSelectedAudienceMeta({ segmentId: "", segmentName: "" });
     setShowCampaignAudiencePicker(false);
     setShowContactAudiencePicker(false);
   };
 
   const clearSelectedCampaignAudience = () => {
     setSelectedCampaignAudience({
-      campaignBroadcastId: '',
-      campaignName: '',
-      campaignStatus: '',
+      campaignBroadcastId: "",
+      campaignName: "",
+      campaignStatus: "",
       campaignRecipientCount: 0,
       excludedPhones: [],
-      additionalContacts: []
+      campaignRecipients: [],
+      additionalContacts: [],
     });
-    if (audienceSourceMode === 'campaign') {
-      setAudienceSourceMode('contacts');
+    if (audienceSourceMode === "campaign") {
+      setAudienceSourceMode("contacts");
     }
   };
 
@@ -1512,7 +2010,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     setRecipients([]);
     setUploadedFile(null);
     setFileVariables([]);
-    setSelectedAudienceMeta({ segmentId: '', segmentName: '' });
+    setSelectedAudienceMeta({ segmentId: "", segmentName: "" });
     setShowCampaignAudiencePicker(false);
     setShowContactAudiencePicker(false);
     clearSelectedCampaignAudience();
@@ -1520,19 +2018,18 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
   const handleAutoCleanRecipients = () => {
     if (!Array.isArray(recipients) || recipients.length === 0) {
-      alert('No recipients available to clean.');
+      alert("No recipients available to clean.");
       return;
     }
 
-    const {
-      eligibleRecipients,
-      missingPhoneCount,
-      duplicatePhoneCount
-    } = prepareRecipientsForDelivery();
+    const { eligibleRecipients, missingPhoneCount, duplicatePhoneCount } =
+      prepareRecipientsForDelivery();
     const removedCount = missingPhoneCount + duplicatePhoneCount;
 
     if (removedCount === 0) {
-      alert('Recipients are already clean. No missing or duplicate phone rows found.');
+      alert(
+        "Recipients are already clean. No missing or duplicate phone rows found.",
+      );
       return;
     }
 
@@ -1544,19 +2041,26 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     alert(`Auto-clean completed. Removed ${removedCount} issue rows.`);
   };
 
-  const validateAudienceOrAbort = async ({ recipientsPayload, selectedTemplate }) => {
+  const validateAudienceOrAbort = async ({
+    recipientsPayload,
+    selectedTemplate,
+  }) => {
     const templateCategory =
-      messageType === 'template'
-        ? String(selectedTemplate?.category || 'utility').trim().toLowerCase()
-        : '';
+      messageType === "template"
+        ? String(selectedTemplate?.category || "utility")
+            .trim()
+            .toLowerCase()
+        : "";
 
     try {
       const validationResponse = await apiClient.validateBroadcastAudience({
         recipients: Array.isArray(recipientsPayload)
-          ? recipientsPayload.map((recipient) => buildValidationRecipientPayload(recipient))
+          ? recipientsPayload.map((recipient) =>
+              buildValidationRecipientPayload(recipient),
+            )
           : [],
         messageType,
-        templateCategory
+        templateCategory,
       });
 
       const validation =
@@ -1564,13 +2068,18 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
       return {
         templateCategory,
-        validation
+        validation,
       };
     } catch (error) {
       const status = Number(error?.response?.status || 0);
-      const backendMessage = String(error?.response?.data?.error || error?.message || '').trim();
+      const backendMessage = String(
+        error?.response?.data?.error || error?.message || "",
+      ).trim();
       if (status === 403) {
-        alert(backendMessage || 'This workspace is currently read-only or does not have broadcast permission.');
+        alert(
+          backendMessage ||
+            "This workspace is currently read-only or does not have broadcast permission.",
+        );
         return null;
       }
       throw error;
@@ -1578,9 +2087,13 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   };
 
   const selectedTemplateCategory = React.useMemo(() => {
-    if (messageType !== 'template') return '';
-    const selectedTemplate = officialTemplates.find((template) => template.name === templateName);
-    return String(selectedTemplate?.category || '').trim().toLowerCase();
+    if (messageType !== "template") return "";
+    const selectedTemplate = officialTemplates.find(
+      (template) => template.name === templateName,
+    );
+    return String(selectedTemplate?.category || "")
+      .trim()
+      .toLowerCase();
   }, [messageType, officialTemplates, templateName]);
 
   const openAudienceValidationModal = (validationResult) => {
@@ -1593,107 +2106,125 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     setPendingAudienceValidation(null);
   };
 
-
-
   const createBroadcast = async () => {
-    const campaignMode = audienceSourceMode === 'campaign';
-    const campaignHasAudience = Boolean(String(selectedCampaignAudience?.campaignBroadcastId || '').trim());
-    const campaignAdditionalRecipients = Array.isArray(selectedCampaignAudience?.additionalContacts)
+    const campaignMode = audienceSourceMode === "campaign";
+    const campaignHasAudience = Boolean(
+      String(selectedCampaignAudience?.campaignBroadcastId || "").trim(),
+    );
+    const campaignSelectedRecipients = Array.isArray(
+      selectedCampaignAudience?.campaignRecipients,
+    )
+      ? selectedCampaignAudience.campaignRecipients
+          .map((contact) => normalizeContactToRecipient(contact))
+          .filter((recipient) => recipient.phone)
+      : [];
+    const campaignAdditionalRecipients = Array.isArray(
+      selectedCampaignAudience?.additionalContacts,
+    )
       ? selectedCampaignAudience.additionalContacts
           .map((contact) => normalizeContactToRecipient(contact))
           .filter((recipient) => recipient.phone)
       : [];
-    const campaignSelectedCount = selectedCampaignAudienceCount;
+    const campaignAudienceRecipients = [...campaignSelectedRecipients];
+    const seenPhones = new Set(
+      campaignAudienceRecipients
+        .map((recipient) => normalizePhoneForLookup(recipient?.phone || ""))
+        .filter(Boolean),
+    );
+    for (const recipient of campaignAdditionalRecipients) {
+      const phone = normalizePhoneForLookup(recipient?.phone || "");
+      if (!phone || seenPhones.has(phone)) continue;
+      seenPhones.add(phone);
+      campaignAudienceRecipients.push(recipient);
+    }
+    const campaignSelectedCount = campaignAudienceRecipients.length;
 
     if (broadcastSubmitInFlightRef.current) {
-      console.warn('Duplicate schedule click blocked (request already in flight)');
+      console.warn(
+        "Duplicate schedule click blocked (request already in flight)",
+      );
       return;
     }
 
-    console.log('🔍 createBroadcast called');
-    console.log('🔍 broadcastName:', broadcastName);
-    console.log('🔍 recipients.length:', recipients.length);
-    console.log('🔍 scheduledTime:', scheduledTime);
-    console.log('🔍 messageType:', messageType);
+    console.log("🔍 createBroadcast called");
+    console.log("🔍 broadcastName:", broadcastName);
+    console.log("🔍 recipients.length:", recipients.length);
+    console.log("🔍 scheduledTime:", scheduledTime);
+    console.log("🔍 messageType:", messageType);
 
-    if (!broadcastName || (!campaignMode && !recipients.length) || (campaignMode && !campaignHasAudience)) {
-
-      console.log('❌ Validation failed - missing broadcastName or recipients');
-      alert('Please provide a campaign name and select an audience');
+    if (
+      !broadcastName ||
+      (!campaignMode && !recipients.length) ||
+      (campaignMode && !campaignHasAudience)
+    ) {
+      console.log("❌ Validation failed - missing broadcastName or recipients");
+      alert("Please provide a campaign name and select an audience");
 
       return;
-
     }
 
     if (!validateScheduledTime()) {
       return;
     }
 
-
-
     try {
       await apiClient.healthCheck();
-      console.log('✅ Backend health check passed');
+      console.log("✅ Backend health check passed");
     } catch (error) {
-      console.warn('⚠️ Backend health check skipped/failed, continuing broadcast flow:', error);
+      console.warn(
+        "⚠️ Backend health check skipped/failed, continuing broadcast flow:",
+        error,
+      );
     }
 
-
-
-    let templateContent = '';
+    let templateContent = "";
     let selectedTemplate = null;
 
-    if (messageType === 'text' && !String(customMessage || '').trim()) {
-      alert('Please enter a custom message.');
+    if (messageType === "text" && !String(customMessage || "").trim()) {
+      alert("Please enter a custom message.");
       return;
     }
 
-    if (messageType === 'template') {
-
+    if (messageType === "template") {
       if (!templateName) {
-
-        alert('Please select a template');
+        alert("Please select a template");
 
         return;
-
       }
 
-
-
-      selectedTemplate = officialTemplates.find(t => t.name === templateName);
-      const selectedTemplateRequiresImageHeader = templateRequiresImageHeader(selectedTemplate);
+      selectedTemplate = officialTemplates.find((t) => t.name === templateName);
+      const selectedTemplateRequiresImageHeader =
+        templateRequiresImageHeader(selectedTemplate);
 
       // Extract template content for storing in broadcast
-      templateContent = selectedTemplate ? extractTemplateBody(selectedTemplate) : '';
+      templateContent = selectedTemplate
+        ? extractTemplateBody(selectedTemplate)
+        : "";
 
-
-
-      const approvedStatuses = ['APPROVED', 'approved', 'ACTIVE', 'active'];
+      const approvedStatuses = ["APPROVED", "approved", "ACTIVE", "active"];
 
       if (!approvedStatuses.includes(selectedTemplate?.status)) {
-
-        console.warn(`Template "${templateName}" has status "${selectedTemplate?.status || 'unknown'}". Proceeding anyway...`);
-
+        console.warn(
+          `Template "${templateName}" has status "${selectedTemplate?.status || "unknown"}". Proceeding anyway...`,
+        );
       }
-
-
 
       if (!language) {
+        alert("Template language not set. Please select the template again.");
 
-        alert('Template language not set. Please select the template again.');
-
-        return;
-
-      }
-
-      if (selectedTemplateRequiresImageHeader && !String(templateHeaderMediaUrl || '').trim()) {
-        alert('This template requires an image header. Please upload an image before sending.');
         return;
       }
 
+      if (
+        selectedTemplateRequiresImageHeader &&
+        !String(templateHeaderMediaUrl || "").trim()
+      ) {
+        alert(
+          "This template requires an image header. Please upload an image before sending.",
+        );
+        return;
+      }
     }
-
-
 
     try {
       broadcastSubmitInFlightRef.current = true;
@@ -1709,7 +2240,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         }
         audienceValidation = await validateAudienceOrAbort({
           recipientsPayload: recipientPreparation.eligibleRecipients,
-          selectedTemplate
+          selectedTemplate,
         });
         if (!audienceValidation) {
           return;
@@ -1717,240 +2248,228 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         const audienceSummary = audienceValidation.validation?.summary || {};
         const eligibleCount = Number(audienceSummary.eligible || 0);
         const invalidCount = Number(audienceSummary.invalid || 0);
+        const validatedRecipients = Array.isArray(
+          audienceValidation.validation?.eligibleRecipients,
+        )
+          ? audienceValidation.validation.eligibleRecipients.filter(
+              (recipient) => String(recipient?.phone || "").trim(),
+            )
+          : [];
         if (eligibleCount <= 0) {
           openAudienceValidationModal(audienceValidation);
           return;
         }
         if (invalidCount > 0) {
           console.warn(
-            `Audience validation found ${invalidCount} invalid recipient(s), but continuing with ${eligibleCount} eligible recipient(s).`
+            `Audience validation found ${invalidCount} invalid recipient(s), but continuing with ${eligibleCount} eligible recipient(s).`,
           );
         }
-        preparedRecipients = recipientPreparation.eligibleRecipients;
+        preparedRecipients =
+          validatedRecipients.length > 0
+            ? validatedRecipients
+            : recipientPreparation.eligibleRecipients;
       }
 
       const payload = {
-
         name: broadcastName,
 
         messageType,
 
-        recipients: campaignMode ? campaignAdditionalRecipients : preparedRecipients,
-        recipientCount: campaignMode ? campaignSelectedCount : preparedRecipients.length,
+        recipients: campaignMode
+          ? campaignAudienceRecipients
+          : preparedRecipients,
+        recipientCount: campaignMode
+          ? campaignSelectedCount
+          : preparedRecipients.length,
 
         ...buildAudiencePayload(),
 
-        ...(messageType === 'template' ? {
+        ...(messageType === "template"
+          ? {
+              templateName,
 
-          templateName,
+              language,
 
-          language,
+              templateContent,
+              templateCategory:
+                selectedTemplateCategory ||
+                audienceValidation?.templateCategory ||
+                "utility",
+              mediaUrl: String(templateHeaderMediaUrl || "").trim(),
+              mediaType: String(templateHeaderMediaUrl || "").trim()
+                ? "image"
+                : "",
+            }
+          : { customMessage }),
 
-          templateContent,
-          templateCategory: selectedTemplateCategory || audienceValidation?.templateCategory || 'utility',
-          mediaUrl: String(templateHeaderMediaUrl || '').trim(),
-          mediaType: String(templateHeaderMediaUrl || '').trim() ? 'image' : ''
-
-        } : { customMessage }),
-
-        ...(scheduledTime && getScheduledAtIso() ? {
-          scheduledAt: getScheduledAtIso()
-        } : {}),
-        ...buildPolicyPayload()
-
+        ...(scheduledTime && getScheduledAtIso()
+          ? {
+              scheduledAt: getScheduledAtIso(),
+            }
+          : {}),
+        ...buildPolicyPayload(),
       };
 
-
-
-      console.log('🚀 Sending broadcast payload:', payload);
-
-
+      console.log("🚀 Sending broadcast payload:", payload);
 
       const result = await apiClient.createBroadcast(payload);
-
-
 
       if (result.data.success) {
         const queued = Boolean(result.data.queued);
         alert(
           queued
-            ? (result.data.message || 'Broadcast queued. Sending will continue in the background.')
-            : (scheduledTime ? 'Broadcast scheduled successfully!' : 'Broadcast created successfully!')
+            ? result.data.message ||
+                "Broadcast queued. Sending will continue in the background."
+            : scheduledTime
+              ? "Broadcast scheduled successfully!"
+              : "Broadcast created successfully!",
         );
 
         await loadBroadcasts();
 
+        setBroadcastName("");
 
-
-        setBroadcastName('');
-
-        setTemplateName('');
+        setTemplateName("");
         clearTemplateHeaderMedia();
 
-        setCustomMessage('');
+        setCustomMessage("");
 
-        setScheduledTime('');
+        setScheduledTime("");
 
         setUploadedFile(null);
 
         setRecipients([]);
-        setAudienceSourceMode('contacts');
+        setAudienceSourceMode("contacts");
         setShowCampaignAudiencePicker(false);
         setShowContactAudiencePicker(false);
         setSelectedCampaignAudience({
-          campaignBroadcastId: '',
-          campaignName: '',
-          campaignStatus: '',
+          campaignBroadcastId: "",
+          campaignName: "",
+          campaignStatus: "",
           campaignRecipientCount: 0,
           excludedPhones: [],
-          additionalContacts: []
+          campaignRecipients: [],
+          additionalContacts: [],
         });
 
         setFileVariables([]);
         setQuietHoursEnabled(false);
         setQuietHoursStartHour(22);
         setQuietHoursEndHour(9);
-        setQuietHoursTimezone('Asia/Kolkata');
-        setQuietHoursAction('defer');
+        setQuietHoursTimezone("Asia/Kolkata");
+        setQuietHoursAction("defer");
         setDeliveryBatchSize(50);
         setRetryPolicyEnabled(true);
         setRetryMaxAttempts(3);
         setRetryBackoffSeconds(45);
         setRespectOptOut(true);
-        setSuppressionListRaw('');
+        setSuppressionListRaw("");
         setDeliveryBatchDelaySeconds(5);
 
-
-
         setShowNewBroadcastPopup(false);
-
       } else {
-
-        alert('Failed: ' + (result.data.error || result.data.message));
-
+        alert("Failed: " + (result.data.error || result.data.message));
       }
-
     } catch (error) {
+      console.error("Broadcast creation error:", error);
 
-      console.error('Broadcast creation error:', error);
-
-      alert('Failed to create broadcast: ' + error.message);
-
+      alert("Failed to create broadcast: " + error.message);
     } finally {
       broadcastSubmitInFlightRef.current = false;
       setIsSending(false);
     }
-
   };
-
-
 
   const handleSendBroadcast = async () => {
     if (broadcastSubmitInFlightRef.current) {
-      console.warn('Duplicate send click blocked (request already in flight)');
+      console.warn("Duplicate send click blocked (request already in flight)");
       return;
     }
 
-    if (audienceSourceMode === 'campaign') {
+    if (audienceSourceMode === "campaign") {
       await createBroadcast();
       return;
     }
 
     if (!broadcastName || !broadcastName.trim()) {
-
-      alert('Please provide a campaign name');
+      alert("Please provide a campaign name");
 
       return;
-
     }
 
     if (!recipients.length) {
-
-      alert('Please add recipients from CSV or Contacts');
+      alert("Please add recipients from CSV or Contacts");
 
       return;
-
     }
-
-
 
     try {
       await apiClient.healthCheck();
-      console.log('✅ Backend health check passed');
+      console.log("✅ Backend health check passed");
     } catch (error) {
-      console.warn('⚠️ Backend health check skipped/failed, continuing broadcast flow:', error);
+      console.warn(
+        "⚠️ Backend health check skipped/failed, continuing broadcast flow:",
+        error,
+      );
     }
 
-
-
     // Initialize templateContent with default value
-    let templateContent = '';
+    let templateContent = "";
     let selectedTemplate = null;
 
-    if (messageType === 'text' && !String(customMessage || '').trim()) {
-      alert('Please enter a custom message.');
+    if (messageType === "text" && !String(customMessage || "").trim()) {
+      alert("Please enter a custom message.");
       return;
     }
 
-    if (messageType === 'template') {
-
+    if (messageType === "template") {
       if (!templateName) {
-
-        alert('Please select a template');
+        alert("Please select a template");
 
         return;
-
       }
 
-
-
-      selectedTemplate = officialTemplates.find(t => t.name === templateName);
-      const selectedTemplateRequiresImageHeader = templateRequiresImageHeader(selectedTemplate);
-
-
+      selectedTemplate = officialTemplates.find((t) => t.name === templateName);
+      const selectedTemplateRequiresImageHeader =
+        templateRequiresImageHeader(selectedTemplate);
 
       if (!selectedTemplate) {
         console.warn(
-          `Template "${templateName}" is not in the synced list. Proceeding with the entered template name.`
+          `Template "${templateName}" is not in the synced list. Proceeding with the entered template name.`,
         );
       }
 
       // Extract template content for storing in broadcast
       templateContent = extractTemplateBody(selectedTemplate);
 
-
-      const approvedStatuses = ['APPROVED', 'approved', 'ACTIVE', 'active'];
+      const approvedStatuses = ["APPROVED", "approved", "ACTIVE", "active"];
 
       if (!approvedStatuses.includes(selectedTemplate?.status)) {
-
-        console.warn(`Template "${templateName}" has status "${selectedTemplate?.status || 'unknown'}". Proceeding anyway...`);
-
+        console.warn(
+          `Template "${templateName}" has status "${selectedTemplate?.status || "unknown"}". Proceeding anyway...`,
+        );
       }
-
-
 
       if (!language) {
+        alert("Template language not set. Please select the template again.");
 
-        alert('Template language not set. Please select the template again.');
-
-        return;
-
-      }
-
-      if (selectedTemplateRequiresImageHeader && !String(templateHeaderMediaUrl || '').trim()) {
-        alert('This template requires an image header. Please upload an image before sending.');
         return;
       }
 
+      if (
+        selectedTemplateRequiresImageHeader &&
+        !String(templateHeaderMediaUrl || "").trim()
+      ) {
+        alert(
+          "This template requires an image header. Please upload an image before sending.",
+        );
+        return;
+      }
     }
-
-
 
     broadcastSubmitInFlightRef.current = true;
     setIsSending(true);
     await new Promise((resolve) => window.requestAnimationFrame(resolve));
-
-
 
     try {
       const recipientPreparation = prepareRecipientsForDelivery();
@@ -1959,7 +2478,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       }
       const audienceValidation = await validateAudienceOrAbort({
         recipientsPayload: recipientPreparation.eligibleRecipients,
-        selectedTemplate
+        selectedTemplate,
       });
       if (!audienceValidation) {
         return;
@@ -1967,49 +2486,56 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       const audienceSummary = audienceValidation.validation?.summary || {};
       const eligibleCount = Number(audienceSummary.eligible || 0);
       const invalidCount = Number(audienceSummary.invalid || 0);
+      const validatedRecipients = Array.isArray(
+        audienceValidation.validation?.eligibleRecipients,
+      )
+        ? audienceValidation.validation.eligibleRecipients.filter((recipient) =>
+            String(recipient?.phone || "").trim(),
+          )
+        : [];
       if (eligibleCount <= 0) {
         openAudienceValidationModal(audienceValidation);
         return;
       }
       if (invalidCount > 0) {
         console.warn(
-          `Audience validation found ${invalidCount} invalid recipient(s), but continuing with ${eligibleCount} eligible recipient(s).`
+          `Audience validation found ${invalidCount} invalid recipient(s), but continuing with ${eligibleCount} eligible recipient(s).`,
         );
       }
 
-
-
       const payload = {
-
         broadcast_name: broadcastName.trim(),
 
         messageType,
 
-        recipients: recipientPreparation.eligibleRecipients,
+        recipients:
+          validatedRecipients.length > 0
+            ? validatedRecipients
+            : recipientPreparation.eligibleRecipients,
 
-        ...(messageType === 'template' ? {
-          templateName,
-          language,
-          templateContent,
-          templateCategory: selectedTemplateCategory || audienceValidation.templateCategory || 'utility',
-          mediaUrl: String(templateHeaderMediaUrl || '').trim(),
-          mediaType: String(templateHeaderMediaUrl || '').trim() ? 'image' : ''
-        } : { customMessage }),
-        ...buildPolicyPayload()
-
+        ...(messageType === "template"
+          ? {
+              templateName,
+              language,
+              templateContent,
+              templateCategory:
+                selectedTemplateCategory ||
+                audienceValidation.templateCategory ||
+                "utility",
+              mediaUrl: String(templateHeaderMediaUrl || "").trim(),
+              mediaType: String(templateHeaderMediaUrl || "").trim()
+                ? "image"
+                : "",
+            }
+          : { customMessage }),
+        ...buildPolicyPayload(),
       };
 
-
-
-      console.log('🚀 Sending broadcast payload:', payload);
-
-
+      console.log("🚀 Sending broadcast payload:", payload);
 
       const result = await apiClient.sendBulkMessages(payload);
 
       setSendResults(result.data);
-
-
 
       if (result.data.success) {
         const queued = Boolean(result.data.queued);
@@ -2019,223 +2545,167 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
 
         await loadBroadcasts();
 
-
-
         setShowNewBroadcastPopup(false);
 
+        setBroadcastName("");
 
-
-        setBroadcastName('');
-
-        setTemplateName('');
+        setTemplateName("");
         clearTemplateHeaderMedia();
 
-        setCustomMessage('');
+        setCustomMessage("");
 
-        setScheduledTime('');
+        setScheduledTime("");
 
-        setMessageType('template');
+        setMessageType("template");
         setQuietHoursEnabled(false);
         setQuietHoursStartHour(22);
         setQuietHoursEndHour(9);
-        setQuietHoursTimezone('Asia/Kolkata');
-        setQuietHoursAction('defer');
+        setQuietHoursTimezone("Asia/Kolkata");
+        setQuietHoursAction("defer");
         setDeliveryBatchSize(50);
         setRetryPolicyEnabled(true);
         setRetryMaxAttempts(3);
         setRetryBackoffSeconds(45);
         setRespectOptOut(true);
-        setSuppressionListRaw('');
+        setSuppressionListRaw("");
         setDeliveryBatchDelaySeconds(5);
-
       } else {
-
-        alert('Failed to send: ' + (result.data.error || result.data.message));
-
+        alert("Failed to send: " + (result.data.error || result.data.message));
       }
-
     } catch (error) {
-
-      console.error('Broadcast send error:', error);
+      console.error("Broadcast send error:", error);
       alert(getBroadcastErrorMessage(error));
-
     } finally {
-
       broadcastSubmitInFlightRef.current = false;
       setIsSending(false);
-
     }
-
   };
 
-
-
   const executeBroadcast = async (broadcastId) => {
-
     try {
-
       const result = await apiClient.sendBroadcast(broadcastId);
 
       if (result.data.success) {
-
-        alert('Broadcast sent successfully!');
+        alert("Broadcast sent successfully!");
 
         await loadBroadcasts();
-
       } else {
-
-        alert('Failed to send broadcast: ' + (result.data.error || result.data.message));
-
+        alert(
+          "Failed to send broadcast: " +
+            (result.data.error || result.data.message),
+        );
       }
-
     } catch (error) {
-
-      alert('Failed to send broadcast: ' + error.message);
-
+      alert("Failed to send broadcast: " + error.message);
     }
-
   };
 
-
-
   const stopBroadcast = async (broadcastId) => {
-
     try {
-
       const result = await apiClient.cancelBroadcast(broadcastId);
 
       if (result.data.success) {
-
-        alert('Broadcast stopped successfully!');
+        alert("Broadcast stopped successfully!");
 
         await loadBroadcasts();
-
       } else {
-
-        alert('Failed to stop broadcast: ' + (result.data.error || result.data.message));
-
+        alert(
+          "Failed to stop broadcast: " +
+            (result.data.error || result.data.message),
+        );
       }
-
     } catch (error) {
-
-      alert('Failed to stop broadcast: ' + error.message);
-
+      alert("Failed to stop broadcast: " + error.message);
     }
-
   };
 
-
-
   const syncBroadcastStats = async (broadcastId) => {
-
     try {
-
       await apiClient.syncBroadcastStats(broadcastId);
 
       await loadBroadcasts();
-
     } catch (error) {
-
       console.warn(`Failed to sync stats for ${broadcastId}`, error);
 
       throw error;
-
     }
-
   };
-
-
 
   const handleResultsPopupClose = () => {
-
     setShowResultsPopup(false);
-
   };
 
-
-
   const handleChooseTemplate = () => {
-
-    setMessageType('template');
+    setMessageType("template");
 
     setShowBroadcastTypeChoice(false);
 
-    navigate('/broadcast/new/template');
-
+    navigate("/broadcast/new/template");
   };
-
-
 
   const getCurrentTime = () => {
-
     const now = new Date();
 
-    return now.toLocaleTimeString('en-US', {
+    return now.toLocaleTimeString("en-US", {
+      hour: "numeric",
 
-      hour: 'numeric',
-
-      minute: '2-digit',
+      minute: "2-digit",
 
       hour12: true,
-
     });
-
   };
 
-
-
   const handleViewAnalytics = (broadcast) => {
-
-    console.log('📊 View Analytics for broadcast:', broadcast.name);
+    console.log("📊 View Analytics for broadcast:", broadcast.name);
 
     setSelectedBroadcast(broadcast);
 
     setShowAnalyticsModal(true);
-
   };
 
   const handleBackToOverview = () => {
     if (composerMode) {
-      navigate('/broadcast');
+      navigate("/broadcast");
       return;
     }
-    setActiveTab('overview');
+    setActiveTab("overview");
   };
 
   const resetComposerForm = () => {
-    setBroadcastName('');
-    setTemplateName('');
+    setBroadcastName("");
+    setTemplateName("");
     clearTemplateHeaderMedia();
-    setCustomMessage('');
-    setScheduledTime('');
+    setCustomMessage("");
+    setScheduledTime("");
     setUploadedFile(null);
     setRecipients([]);
     setShowCampaignAudiencePicker(false);
     setShowContactAudiencePicker(false);
     setFileVariables([]);
     setTemplateVariables([]);
-    setMessageType('template');
-    setSelectedAudienceMeta({ segmentId: '', segmentName: '' });
+    setMessageType("template");
+    setSelectedAudienceMeta({ segmentId: "", segmentName: "" });
     setSelectedCampaignAudience({
-      campaignBroadcastId: '',
-      campaignName: '',
-      campaignStatus: '',
+      campaignBroadcastId: "",
+      campaignName: "",
+      campaignStatus: "",
       campaignRecipientCount: 0,
       excludedPhones: [],
-      additionalContacts: []
+      campaignRecipients: [],
+      additionalContacts: [],
     });
-    setAudienceSourceMode('contacts');
+    setAudienceSourceMode("contacts");
     setQuietHoursEnabled(false);
     setQuietHoursStartHour(22);
     setQuietHoursEndHour(9);
-    setQuietHoursTimezone('Asia/Kolkata');
-    setQuietHoursAction('defer');
+    setQuietHoursTimezone("Asia/Kolkata");
+    setQuietHoursAction("defer");
     setDeliveryBatchSize(50);
     setRetryPolicyEnabled(true);
     setRetryMaxAttempts(3);
     setRetryBackoffSeconds(45);
     setRespectOptOut(true);
-    setSuppressionListRaw('');
+    setSuppressionListRaw("");
     setDeliveryBatchDelaySeconds(5);
   };
 
@@ -2243,37 +2713,43 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
     validationResult,
     recipientsPayload,
     selectedTemplate,
-    mode
+    mode,
   }) => {
-    const templateCategory = validationResult?.templateCategory || '';
+    const templateCategory = validationResult?.templateCategory || "";
 
-      return {
-      ...(mode === 'send'
+    return {
+      ...(mode === "send"
         ? {
             broadcast_name: broadcastName.trim(),
             messageType,
-            recipients: recipientsPayload
+            recipients: recipientsPayload,
           }
         : {
             name: broadcastName,
             messageType,
-            recipients: recipientsPayload
+            recipients: recipientsPayload,
           }),
       ...buildAudiencePayload(),
-      ...(messageType === 'template'
+      ...(messageType === "template"
         ? {
             templateName,
             language,
-            templateContent: selectedTemplate ? extractTemplateBody(selectedTemplate) : '',
-            templateCategory
+            templateContent: selectedTemplate
+              ? extractTemplateBody(selectedTemplate)
+              : "",
+            templateCategory,
+            mediaUrl: String(templateHeaderMediaUrl || "").trim(),
+            mediaType: String(templateHeaderMediaUrl || "").trim()
+              ? "image"
+              : "",
           }
-        : mode === 'send'
+        : mode === "send"
           ? { customMessage }
           : { customMessage }),
-      ...(mode === 'create' && getScheduledAtIso()
+      ...(mode === "create" && getScheduledAtIso()
         ? { scheduledAt: getScheduledAtIso() }
         : {}),
-      ...buildPolicyPayload()
+      ...buildPolicyPayload(),
     };
   };
 
@@ -2289,9 +2765,9 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       return;
     }
 
-    if (messageType === 'text' && !String(customMessage || '').trim()) {
+    if (messageType === "text" && !String(customMessage || "").trim()) {
       closeAudienceValidationModal();
-      alert('Please enter a custom message.');
+      alert("Please enter a custom message.");
       return;
     }
 
@@ -2300,30 +2776,45 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       closeAudienceValidationModal();
       return;
     }
-    const selectedTemplate = messageType === 'template'
-      ? officialTemplates.find((t) => t.name === templateName) || null
-      : null;
-    const mode = scheduledTime ? 'create' : 'send';
+    const validatedRecipients = Array.isArray(
+      validationResult?.validation?.eligibleRecipients,
+    )
+      ? validationResult.validation.eligibleRecipients.filter((recipient) =>
+          String(recipient?.phone || "").trim(),
+        )
+      : [];
+    const selectedTemplate =
+      messageType === "template"
+        ? officialTemplates.find((t) => t.name === templateName) || null
+        : null;
+    const mode = scheduledTime ? "create" : "send";
     const payload = buildBroadcastPayloadFromValidation({
       validationResult,
-      recipientsPayload: recipientPreparation.eligibleRecipients,
+      recipientsPayload:
+        validatedRecipients.length > 0
+          ? validatedRecipients
+          : recipientPreparation.eligibleRecipients,
       selectedTemplate,
-      mode
+      mode,
     });
 
     closeAudienceValidationModal();
 
     try {
-      if (mode === 'create') {
+      if (mode === "create") {
         const result = await apiClient.createBroadcast(payload);
         if (result.data.success) {
-          alert(scheduledTime ? 'Broadcast scheduled successfully!' : 'Broadcast created successfully!');
+          alert(
+            scheduledTime
+              ? "Broadcast scheduled successfully!"
+              : "Broadcast created successfully!",
+          );
           await loadBroadcasts();
           resetComposerForm();
           setShowNewBroadcastPopup(false);
           return;
         }
-        alert('Failed: ' + (result.data.error || result.data.message));
+        alert("Failed: " + (result.data.error || result.data.message));
         return;
       }
 
@@ -2336,10 +2827,15 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         resetComposerForm();
         return;
       }
-      alert('Failed to send: ' + (result.data.error || result.data.message));
+      alert("Failed to send: " + (result.data.error || result.data.message));
     } catch (error) {
-      console.error('Broadcast continue after validation error:', error);
-      alert(getBroadcastErrorMessage(error, 'Failed to continue broadcast. Please try again.'));
+      console.error("Broadcast continue after validation error:", error);
+      alert(
+        getBroadcastErrorMessage(
+          error,
+          "Failed to continue broadcast. Please try again.",
+        ),
+      );
     } finally {
       broadcastSubmitInFlightRef.current = false;
       setIsSending(false);
@@ -2347,21 +2843,21 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
   };
 
   const handleMetaLeadBatchSync = async ({
-    leadIdsText = '',
+    leadIdsText = "",
     enableTemplateSend = false,
-    dryRun = true
+    dryRun = true,
   } = {}) => {
     const leadIds = Array.from(
       new Set(
-        String(leadIdsText || '')
+        String(leadIdsText || "")
           .split(/[\n,\s]+/)
           .map((item) => item.trim())
-          .filter(Boolean)
-      )
+          .filter(Boolean),
+      ),
     );
 
     if (!leadIds.length) {
-      alert('Please enter at least one Meta lead ID.');
+      alert("Please enter at least one Meta lead ID.");
       return;
     }
 
@@ -2372,45 +2868,61 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
       const payload = {
         leadIds,
         mapping: {
-          phoneFieldKeys: ['phone number', 'phone', 'mobile', 'whatsapp number'],
-          nameFieldKeys: ['full name', 'name'],
-          emailFieldKeys: ['email', 'email address'],
-          consentFieldKeys: ['whatsapp consent', 'receive whatsapp updates', 'consent'],
-          consentApprovedValues: ['yes', 'true', 'checked'],
-          consentText: 'Meta lead form consent for WhatsApp marketing updates.',
-          scope: 'marketing'
+          phoneFieldKeys: [
+            "phone number",
+            "phone",
+            "mobile",
+            "whatsapp number",
+          ],
+          nameFieldKeys: ["full name", "name"],
+          emailFieldKeys: ["email", "email address"],
+          consentFieldKeys: [
+            "whatsapp consent",
+            "receive whatsapp updates",
+            "consent",
+          ],
+          consentApprovedValues: ["yes", "true", "checked"],
+          consentText: "Meta lead form consent for WhatsApp marketing updates.",
+          scope: "marketing",
         },
-        dryRun: Boolean(dryRun)
+        dryRun: Boolean(dryRun),
       };
 
       if (enableTemplateSend) {
         if (!templateName) {
-          alert('Select a template before enabling template send.');
+          alert("Select a template before enabling template send.");
           return;
         }
 
-        const selectedTemplate = officialTemplates.find((t) => t.name === templateName) || null;
-        const firstRecipientVariables = Array.isArray(recipients?.[0]?.variables)
+        const selectedTemplate =
+          officialTemplates.find((t) => t.name === templateName) || null;
+        const firstRecipientVariables = Array.isArray(
+          recipients?.[0]?.variables,
+        )
           ? recipients[0].variables
           : [];
 
         payload.sendTemplate = {
           templateName,
-          language: language || selectedTemplate?.language || 'en_US',
-          templateCategory: String(selectedTemplate?.category || 'utility').toLowerCase(),
-          variables: firstRecipientVariables
+          language: language || selectedTemplate?.language || "en_US",
+          templateCategory: String(
+            selectedTemplate?.category || "utility",
+          ).toLowerCase(),
+          variables: firstRecipientVariables,
         };
       }
 
       const result = await apiClient.syncMetaLeadConsentBatch(payload);
       if (!result?.data?.success) {
-        throw new Error(result?.data?.error || 'Batch sync failed');
+        throw new Error(result?.data?.error || "Batch sync failed");
       }
 
       setMetaLeadBatchResult(result.data?.data || null);
     } catch (error) {
-      console.error('Meta lead batch sync failed:', error);
-      alert(`Meta lead batch sync failed: ${error?.response?.data?.error || error.message}`);
+      console.error("Meta lead batch sync failed:", error);
+      alert(
+        `Meta lead batch sync failed: ${error?.response?.data?.error || error.message}`,
+      );
     } finally {
       setMetaLeadBatchLoading(false);
     }
@@ -2422,7 +2934,9 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         <div className="page-header">
           <div>
             <h2>Create Broadcast Campaign</h2>
-            <p>Compose, preview and send your WhatsApp broadcast from one page.</p>
+            <p>
+              Compose, preview and send your WhatsApp broadcast from one page.
+            </p>
           </div>
         </div>
 
@@ -2440,17 +2954,23 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           uploadedFile={uploadedFile}
           recipients={recipients}
           fileVariables={fileVariables}
+          csvUploadState={csvUploadState}
           templateHeaderMediaUrl={templateHeaderMediaUrl}
           templateHeaderMediaUploading={templateHeaderMediaUploading}
           templateHeaderMediaError={templateHeaderMediaError}
           onTemplateHeaderMediaUpload={handleTemplateHeaderMediaFileUpload}
           onClearTemplateHeaderMedia={clearTemplateHeaderMedia}
           onClearUpload={handleClearUpload}
+          onPrepareCsvReplace={handlePrepareCsvReplace}
           onOpenContactAudiencePicker={openContactAudiencePicker}
+          onOpenCampaignAudiencePicker={openCampaignAudiencePicker}
           onClearSelectedAudience={clearSelectedAudience}
           audienceSourceMode={audienceSourceMode}
           onAudienceSourceModeChange={handleAudienceSourceModeChange}
           audienceSourceLabel={audienceSourceLabel}
+          selectedCampaignAudienceLabel={selectedCampaignAudience?.campaignName || selectedCampaignAudience?.campaignBroadcastId || ""}
+          selectedCampaignAudienceCount={selectedCampaignAudienceCount}
+          selectedCampaignAudienceRecipients={selectedCampaignAudienceRecipients}
           onAutoCleanRecipients={handleAutoCleanRecipients}
           selectedTemplateCategory={selectedTemplateCategory}
           scheduledTime={scheduledTime}
@@ -2493,74 +3013,103 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
           open={showContactAudiencePicker}
           onClose={closeContactAudiencePicker}
           onConfirm={applyContactAudienceSelection}
+          initialSourceType={
+            contactAudiencePickerPurpose === "campaign_extra"
+              ? "campaign"
+              : "all"
+          }
           initialSelectedContacts={
-            contactAudiencePickerPurpose === 'campaign_extra'
+            contactAudiencePickerPurpose === "campaign_extra"
               ? selectedCampaignAudience?.additionalContacts || []
               : recipients
+          }
+        />
+        <CampaignAudiencePickerModal
+          open={showCampaignAudiencePicker}
+          onClose={closeCampaignAudiencePicker}
+          onConfirm={applyCampaignAudienceSelection}
+          onRequestAddContacts={openCampaignExtraContactsPicker}
+          additionalContacts={
+            selectedCampaignAudience?.additionalContacts || []
           }
         />
       </div>
     );
   }
 
-
-
   return (
-
     <div className="broadcast-page">
       <div className="template-pills">
         <button
           type="button"
-          className={broadcastMode === 'whatsapp' ? 'pill active' : 'pill'}
-          onClick={() => setBroadcastMode('whatsapp')}
+          className={broadcastMode === "whatsapp" ? "pill active" : "pill"}
+          onClick={() => setBroadcastMode("whatsapp")}
         >
           WhatsApp Broadcast
         </button>
         <button
           type="button"
-          className={broadcastMode === 'outbound-local' ? 'pill active' : 'pill'}
-          onClick={() => setBroadcastMode('outbound-local')}
+          className={
+            broadcastMode === "outbound-local" ? "pill active" : "pill"
+          }
+          onClick={() => setBroadcastMode("outbound-local")}
         >
           Outbound Voice
         </button>
       </div>
 
-      {broadcastMode === 'outbound-local' ? (
+      {broadcastMode === "outbound-local" ? (
         <>
           <div className="phase2-subtabs">
             <button
               type="button"
-              className={outboundPhaseTab === 'quick' ? 'phase2-subtab active' : 'phase2-subtab'}
-              onClick={() => setOutboundPhaseTab('quick')}
+              className={
+                outboundPhaseTab === "quick"
+                  ? "phase2-subtab active"
+                  : "phase2-subtab"
+              }
+              onClick={() => setOutboundPhaseTab("quick")}
             >
               Quick
             </button>
             <button
               type="button"
-              className={outboundPhaseTab === 'schedule' ? 'phase2-subtab active' : 'phase2-subtab'}
-              onClick={() => setOutboundPhaseTab('schedule')}
+              className={
+                outboundPhaseTab === "schedule"
+                  ? "phase2-subtab active"
+                  : "phase2-subtab"
+              }
+              onClick={() => setOutboundPhaseTab("schedule")}
             >
               Schedule
             </button>
             <button
               type="button"
-              className={outboundPhaseTab === 'retry' ? 'phase2-subtab active' : 'phase2-subtab'}
-              onClick={() => setOutboundPhaseTab('retry')}
+              className={
+                outboundPhaseTab === "retry"
+                  ? "phase2-subtab active"
+                  : "phase2-subtab"
+              }
+              onClick={() => setOutboundPhaseTab("retry")}
             >
               Retry
             </button>
             <button
               type="button"
-              className={outboundPhaseTab === 'abtest' ? 'phase2-subtab active' : 'phase2-subtab'}
-              onClick={() => setOutboundPhaseTab('abtest')}
+              className={
+                outboundPhaseTab === "abtest"
+                  ? "phase2-subtab active"
+                  : "phase2-subtab"
+              }
+              onClick={() => setOutboundPhaseTab("abtest")}
             >
               A/B
             </button>
           </div>
 
-          {outboundPhaseTab === 'quick' && <OutboundDialer />}
+          {outboundPhaseTab === "quick" && <OutboundDialer />}
 
-          {outboundPhaseTab === 'schedule' && (
+          {outboundPhaseTab === "schedule" && (
             <>
               <CampaignScheduler
                 onSchedule={scheduleCampaign}
@@ -2577,7 +3126,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
             </>
           )}
 
-          {outboundPhaseTab === 'retry' && (
+          {outboundPhaseTab === "retry" && (
             <RetryDashboard
               retryStats={retryStats}
               onRetry={triggerRetry}
@@ -2586,7 +3135,7 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
             />
           )}
 
-          {outboundPhaseTab === 'abtest' && (
+          {outboundPhaseTab === "abtest" && (
             <ABTestCreator
               onCreate={createABTest}
               loading={abTestLoading}
@@ -2597,430 +3146,348 @@ const Broadcast = ({ composerMode = false, composerType = null, chooserMode = fa
         </>
       ) : (
         <>
-
-      <BroadcastHeader
-
-        activeTab={activeTab}
-
-        onShowBroadcastTypeChoice={() => navigate('/broadcast/new/template')}
-
-      />
-
-      {(isSending || sendResults?.queued) && (
-        <div className="broadcast-validation-banner broadcast-validation-banner--success broadcast-send-banner">
-          <strong>{isSending ? 'Sending broadcast...' : 'Broadcast queued'}</strong>
-          <span>
-            {isSending
-              ? 'We are sending this campaign in the background. You can stay on this page and watch the broadcast list update.'
-              : 'The campaign is running in the background. You can stay here and watch the progress update.'}
-          </span>
-        </div>
-      )}
-
-
-
-      {activeTab === 'overview' && (
-
-        <>
-
-          <DateRangeFilter
-
-            startDate={startDate}
-
-            endDate={endDate}
-
-            selectedPeriod={selectedPeriod}
-
-            onStartDateChange={(e) => setStartDate(e.target.value)}
-
-            onEndDateChange={(e) => setEndDate(e.target.value)}
-
-            onPeriodChange={(e) => setSelectedPeriod(e.target.value)}
-
-            onApplyFilter={() => setCurrentPage(1)}
-
-            onExportCampaigns={() => void downloadAllCampaigns(filteredBroadcasts)}
-            isExportingCampaigns={isExportingCampaigns}
-
+          <BroadcastHeader
+            activeTab={activeTab}
+            onShowBroadcastTypeChoice={() =>
+              navigate("/broadcast/new/template")
+            }
           />
 
+          {(isSending || sendResults?.queued) && (
+            <div className="broadcast-validation-banner broadcast-validation-banner--success broadcast-send-banner">
+              <strong>
+                {isSending ? "Sending broadcast..." : "Broadcast queued"}
+              </strong>
+              <span>
+                {isSending
+                  ? "We are sending this campaign in the background. You can stay on this page and watch the broadcast list update."
+                  : "The campaign is running in the background. You can stay here and watch the progress update."}
+              </span>
+            </div>
+          )}
 
+          {activeTab === "overview" && (
+            <>
+              <DateRangeFilter
+                startDate={startDate}
+                endDate={endDate}
+                selectedPeriod={selectedPeriod}
+                onStartDateChange={(e) => setStartDate(e.target.value)}
+                onEndDateChange={(e) => setEndDate(e.target.value)}
+                onPeriodChange={(e) => setSelectedPeriod(e.target.value)}
+                onApplyFilter={() => setCurrentPage(1)}
+                onExportCampaigns={() =>
+                  void downloadAllCampaigns(filteredBroadcasts)
+                }
+                isExportingCampaigns={isExportingCampaigns}
+              />
 
-          <OverviewStats stats={mergedOverviewStats} />
-          <ReliabilityInsights data={reliabilitySummary} />
+              <OverviewStats stats={mergedOverviewStats} />
+              <ReliabilityInsights data={reliabilitySummary} />
 
+              <div className="history-section">
+                <BroadcastListControls
+                  searchTerm={searchTerm}
+                  onSearchChange={(e) => setSearchTerm(e.target.value)}
+                  statusFilter={statusFilter}
+                  onStatusFilterChange={(value) => setStatusFilter(value)}
+                  sortBy={sortBy}
+                  onSortByChange={(value) => setSortBy(value)}
+                  sortOrder={sortOrder}
+                  onSortOrderChange={(value) => setSortOrder(value)}
+                  onRefresh={() => loadBroadcasts()}
+                  totalBroadcasts={filteredBroadcasts.length}
+                  lastUpdated={
+                    broadcasts.length > 0
+                      ? Math.max(
+                          ...broadcasts.map(
+                            (b) => new Date(b.updatedAt || b.createdAt),
+                          ),
+                        )
+                      : new Date()
+                  }
+                  formatLastUpdated={formatLastUpdated}
+                />
 
-          <div className="history-section">
+                <BroadcastTable
+                  broadcasts={currentBroadcasts}
+                  selectionMode={selectionMode}
+                  selectedCampaigns={selectedCampaigns}
+                  onSelectAll={handleSelectAll}
+                  onCheckboxChange={handleCheckboxChange}
+                  getSuccessPercentage={getSuccessPercentage}
+                  getReadPercentage={getReadPercentage}
+                  getRepliedPercentage={getRepliedPercentage}
+                  getStatusClass={getStatusClass}
+                  onStopBroadcast={stopBroadcast}
+                  onDeleteClick={handleDeleteClick}
+                  onViewAnalytics={handleViewAnalytics}
+                />
 
-            <BroadcastListControls
+                {totalPages > 1 && (
+                  <div className="broadcast-pagination-bar">
+                    <div className="broadcast-pagination-info">
+                      Showing{" "}
+                      <span className="broadcast-pagination-strong">
+                        {indexOfFirstItem + 1}-
+                        {Math.min(indexOfLastItem, filteredBroadcasts.length)}
+                      </span>{" "}
+                      of{" "}
+                      <span className="broadcast-pagination-strong">
+                        {filteredBroadcasts.length}
+                      </span>{" "}
+                      campaigns
+                    </div>
 
-              searchTerm={searchTerm}
-
-              onSearchChange={(e) => setSearchTerm(e.target.value)}
-
-              statusFilter={statusFilter}
-
-              onStatusFilterChange={(value) => setStatusFilter(value)}
-
-              sortBy={sortBy}
-
-              onSortByChange={(value) => setSortBy(value)}
-
-              sortOrder={sortOrder}
-
-              onSortOrderChange={(value) => setSortOrder(value)}
-
-              onRefresh={() => loadBroadcasts()}
-
-              totalBroadcasts={filteredBroadcasts.length}
-
-              lastUpdated={broadcasts.length > 0 ? Math.max(...broadcasts.map(b => new Date(b.updatedAt || b.createdAt))) : new Date()}
-
-              formatLastUpdated={formatLastUpdated}
-
-            />
-
-
-
-            <BroadcastTable
-
-              broadcasts={currentBroadcasts}
-
-              selectionMode={selectionMode}
-
-              selectedCampaigns={selectedCampaigns}
-
-              onSelectAll={handleSelectAll}
-
-              onCheckboxChange={handleCheckboxChange}
-
-              getSuccessPercentage={getSuccessPercentage}
-
-              getReadPercentage={getReadPercentage}
-
-              getRepliedPercentage={getRepliedPercentage}
-
-              getStatusClass={getStatusClass}
-
-              onStopBroadcast={stopBroadcast}
-
-              onDeleteClick={handleDeleteClick}
-
-              onViewAnalytics={handleViewAnalytics}
-
-            />
-
-            {totalPages > 1 && (
-              <div className="broadcast-pagination-bar">
-                <div className="broadcast-pagination-info">
-                  Showing <span className="broadcast-pagination-strong">{indexOfFirstItem + 1}-{Math.min(indexOfLastItem, filteredBroadcasts.length)}</span> of <span className="broadcast-pagination-strong">{filteredBroadcasts.length}</span> campaigns
-                </div>
-
-                <div className="broadcast-pagination-controls">
-                  <button
-                    type="button"
-                    className="broadcast-pagination-btn"
-                    onClick={() => paginate(safeCurrentPage - 1)}
-                    disabled={safeCurrentPage <= 1}
-                  >
-                    Prev
-                  </button>
-
-                  <div className="broadcast-pagination-pages">
-                    {getVisiblePages().map((pageNo) => (
+                    <div className="broadcast-pagination-controls">
                       <button
-                        key={pageNo}
                         type="button"
-                        className={`broadcast-pagination-page ${pageNo === safeCurrentPage ? 'active' : ''}`}
-                        onClick={() => paginate(pageNo)}
+                        className="broadcast-pagination-btn"
+                        onClick={() => paginate(safeCurrentPage - 1)}
+                        disabled={safeCurrentPage <= 1}
                       >
-                        {pageNo}
+                        Prev
                       </button>
-                    ))}
+
+                      <div className="broadcast-pagination-pages">
+                        {getVisiblePages().map((pageNo) => (
+                          <button
+                            key={pageNo}
+                            type="button"
+                            className={`broadcast-pagination-page ${pageNo === safeCurrentPage ? "active" : ""}`}
+                            onClick={() => paginate(pageNo)}
+                          >
+                            {pageNo}
+                          </button>
+                        ))}
+                      </div>
+
+                      <button
+                        type="button"
+                        className="broadcast-pagination-btn"
+                        onClick={() => paginate(safeCurrentPage + 1)}
+                        disabled={safeCurrentPage >= totalPages}
+                      >
+                        Next
+                      </button>
+                    </div>
                   </div>
-
-                  <button
-                    type="button"
-                    className="broadcast-pagination-btn"
-                    onClick={() => paginate(safeCurrentPage + 1)}
-                    disabled={safeCurrentPage >= totalPages}
-                  >
-                    Next
-                  </button>
-                </div>
+                )}
               </div>
-            )}
+            </>
+          )}
 
-          </div>
+          {activeTab === "schedule" && (
+            <ScheduleForm
+              messageType={messageType}
+              broadcastName={broadcastName}
+              onBroadcastNameChange={(e) => setBroadcastName(e.target.value)}
+              templateName={templateName}
+              onTemplateNameChange={handleTemplateNameChange}
+              templateFilter={templateFilter}
+              onTemplateFilterChange={(value) => setTemplateFilter(value)}
+              officialTemplates={officialTemplates}
+              filteredTemplates={filteredTemplates}
+              customMessage={customMessage}
+              onFileUpload={handleFileUpload}
+              uploadedFile={uploadedFile}
+              recipients={recipients}
+              fileVariables={fileVariables}
+              csvUploadState={csvUploadState}
+              templateHeaderMediaUrl={templateHeaderMediaUrl}
+              templateHeaderMediaUploading={templateHeaderMediaUploading}
+              templateHeaderMediaError={templateHeaderMediaError}
+              onTemplateHeaderMediaUpload={handleTemplateHeaderMediaFileUpload}
+              onClearTemplateHeaderMedia={clearTemplateHeaderMedia}
+              onClearUpload={handleClearUpload}
+              onPrepareCsvReplace={handlePrepareCsvReplace}
+              onOpenContactAudiencePicker={openContactAudiencePicker}
+              onOpenCampaignAudiencePicker={openCampaignAudiencePicker}
+              onClearSelectedAudience={clearSelectedAudience}
+              audienceSourceMode={audienceSourceMode}
+              onAudienceSourceModeChange={handleAudienceSourceModeChange}
+              audienceSourceLabel={audienceSourceLabel}
+              selectedCampaignAudienceLabel={selectedCampaignAudience?.campaignName || selectedCampaignAudience?.campaignBroadcastId || ""}
+              selectedCampaignAudienceCount={selectedCampaignAudienceCount}
+              selectedCampaignAudienceRecipients={selectedCampaignAudienceRecipients}
+              onAutoCleanRecipients={handleAutoCleanRecipients}
+              selectedTemplateCategory={selectedTemplateCategory}
+              scheduledTime={scheduledTime}
+              onScheduledTimeChange={(e) => setScheduledTime(e.target.value)}
+              isSending={isSending}
+              onCreateBroadcast={createBroadcast}
+              onSendBroadcast={handleSendBroadcast}
+              sendResults={sendResults}
+              onBackToOverview={handleBackToOverview}
+              onResetForm={resetComposerForm}
+              onMetaLeadBatchSync={handleMetaLeadBatchSync}
+              metaLeadBatchLoading={metaLeadBatchLoading}
+              metaLeadBatchResult={metaLeadBatchResult}
+              quietHoursEnabled={quietHoursEnabled}
+              onQuietHoursEnabledChange={setQuietHoursEnabled}
+              quietHoursStartHour={quietHoursStartHour}
+              onQuietHoursStartHourChange={setQuietHoursStartHour}
+              quietHoursEndHour={quietHoursEndHour}
+              onQuietHoursEndHourChange={setQuietHoursEndHour}
+              quietHoursTimezone={quietHoursTimezone}
+              onQuietHoursTimezoneChange={setQuietHoursTimezone}
+              quietHoursAction={quietHoursAction}
+              onQuietHoursActionChange={setQuietHoursAction}
+              retryPolicyEnabled={retryPolicyEnabled}
+              onRetryPolicyEnabledChange={setRetryPolicyEnabled}
+              retryMaxAttempts={retryMaxAttempts}
+              onRetryMaxAttemptsChange={setRetryMaxAttempts}
+              retryBackoffSeconds={retryBackoffSeconds}
+              onRetryBackoffSecondsChange={setRetryBackoffSeconds}
+              deliveryBatchSize={deliveryBatchSize}
+              onDeliveryBatchSizeChange={setDeliveryBatchSize}
+              respectOptOut={respectOptOut}
+              onRespectOptOutChange={setRespectOptOut}
+              suppressionListRaw={suppressionListRaw}
+              onSuppressionListRawChange={setSuppressionListRaw}
+            />
+          )}
 
+          <DeleteModal
+            showDeleteModal={showDeleteModal}
+            selectedCampaigns={selectedCampaigns}
+            broadcasts={broadcasts}
+            onDeleteConfirm={handleDeleteConfirm}
+            onDeleteCancel={handleDeleteCancel}
+          />
+
+          <BroadcastTypeChoice
+            showBroadcastTypeChoice={showBroadcastTypeChoice}
+            onClose={() => {
+              setShowBroadcastTypeChoice(false);
+              if (chooserMode) navigate("/broadcast");
+            }}
+            onChooseTemplate={handleChooseTemplate}
+          />
+
+          <NewBroadcastPopup
+            showNewBroadcastPopup={showNewBroadcastPopup}
+            broadcastName={broadcastName}
+            onBroadcastNameChange={(e) => setBroadcastName(e.target.value)}
+            messageType={messageType}
+            templateName={templateName}
+            onTemplateNameChange={handleTemplateNameChange}
+            officialTemplates={officialTemplates}
+            uploadedFile={uploadedFile}
+            recipients={recipients}
+            fileVariables={fileVariables}
+            csvUploadState={csvUploadState}
+            onFileUpload={handleFileUpload}
+            onClearUpload={handleClearUpload}
+            onPrepareCsvReplace={handlePrepareCsvReplace}
+            templateHeaderMediaUrl={templateHeaderMediaUrl}
+            templateHeaderMediaUploading={templateHeaderMediaUploading}
+            templateHeaderMediaError={templateHeaderMediaError}
+            onTemplateHeaderMediaUpload={handleTemplateHeaderMediaFileUpload}
+            onClearTemplateHeaderMedia={clearTemplateHeaderMedia}
+            onOpenContactAudiencePicker={openContactAudiencePicker}
+            onOpenCampaignExtraContactsPicker={openCampaignExtraContactsPicker}
+            onOpenCampaignAudiencePicker={openCampaignAudiencePicker}
+            onClearSelectedAudience={clearSelectedAudience}
+            audienceSourceMode={audienceSourceMode}
+            onAudienceSourceModeChange={handleAudienceSourceModeChange}
+            audienceSourceLabel={audienceSourceLabel}
+            selectedCampaignAudienceLabel={
+              selectedCampaignAudience?.campaignName || ""
+            }
+            selectedCampaignAudienceCount={selectedCampaignAudienceCount}
+            selectedCampaignAudienceRecipients={selectedCampaignAudienceRecipients}
+            scheduledTime={scheduledTime}
+            onScheduledTimeChange={(value) =>
+              setScheduledTime(
+                typeof value === "string" ? value : value?.target?.value || "",
+              )
+            }
+            isSending={isSending}
+            onCreateBroadcast={createBroadcast}
+            onSendBroadcast={handleSendBroadcast}
+            onClose={() => setShowNewBroadcastPopup(false)}
+            onBackToChoice={() => {
+              setShowContactAudiencePicker(false);
+              setShowCampaignAudiencePicker(false);
+              setShowNewBroadcastPopup(false);
+
+              setShowBroadcastTypeChoice(true);
+            }}
+            getCurrentTime={getCurrentTime}
+            quietHoursEnabled={quietHoursEnabled}
+            onQuietHoursEnabledChange={setQuietHoursEnabled}
+            quietHoursStartHour={quietHoursStartHour}
+            onQuietHoursStartHourChange={setQuietHoursStartHour}
+            quietHoursEndHour={quietHoursEndHour}
+            onQuietHoursEndHourChange={setQuietHoursEndHour}
+            quietHoursTimezone={quietHoursTimezone}
+            onQuietHoursTimezoneChange={setQuietHoursTimezone}
+            quietHoursAction={quietHoursAction}
+            onQuietHoursActionChange={setQuietHoursAction}
+            retryPolicyEnabled={retryPolicyEnabled}
+            onRetryPolicyEnabledChange={setRetryPolicyEnabled}
+            retryMaxAttempts={retryMaxAttempts}
+            onRetryMaxAttemptsChange={setRetryMaxAttempts}
+            retryBackoffSeconds={retryBackoffSeconds}
+            onRetryBackoffSecondsChange={setRetryBackoffSeconds}
+            deliveryBatchSize={deliveryBatchSize}
+            onDeliveryBatchSizeChange={setDeliveryBatchSize}
+            deliveryBatchDelaySeconds={deliveryBatchDelaySeconds}
+            onDeliveryBatchDelaySecondsChange={setDeliveryBatchDelaySeconds}
+            respectOptOut={respectOptOut}
+            onRespectOptOutChange={setRespectOptOut}
+            suppressionListRaw={suppressionListRaw}
+            onSuppressionListRawChange={setSuppressionListRaw}
+          />
+
+          <CampaignAudiencePickerModal
+            open={showCampaignAudiencePicker}
+            onClose={closeCampaignAudiencePicker}
+            onConfirm={applyCampaignAudienceSelection}
+            onRequestAddContacts={openCampaignExtraContactsPicker}
+            additionalContacts={
+              selectedCampaignAudience?.additionalContacts || []
+            }
+          />
+
+          <AllCampaignsPopup
+            showAllCampaignsPopup={false}
+            broadcasts={broadcasts}
+            filteredBroadcasts={filteredBroadcasts}
+            searchTerm={searchTerm}
+            onSearchChange={(e) => setSearchTerm(e.target.value)}
+            statusFilter={statusFilter}
+            onStatusFilterChange={(value) => setStatusFilter(value)}
+            showFilterDropdown={showFilterDropdown}
+            onFilterDropdownToggle={() =>
+              setShowFilterDropdown(!showFilterDropdown)
+            }
+            onClose={() => {}}
+            getReadPercentage={getReadPercentage}
+            getStatusClass={getStatusClass}
+            onViewAnalytics={handleViewAnalytics}
+            onStopBroadcast={stopBroadcast}
+            onDeleteClick={handleDeleteClick}
+          />
+
+          <BroadcastAnalyticsModal
+            isOpen={showAnalyticsModal}
+            onClose={() => setShowAnalyticsModal(false)}
+            broadcast={selectedBroadcast}
+          />
+          <BroadcastAudienceValidationModal
+            open={audienceValidationModalOpen}
+            validation={pendingAudienceValidation?.validation || null}
+            onClose={() => {
+              closeAudienceValidationModal();
+              broadcastSubmitInFlightRef.current = false;
+              setIsSending(false);
+            }}
+            onProceed={continueBroadcastWithEligibleRecipients}
+          />
         </>
-
       )}
-
-
-
-      {activeTab === 'schedule' && (
-
-        <ScheduleForm
-
-          messageType={messageType}
-
-          broadcastName={broadcastName}
-
-          onBroadcastNameChange={(e) => setBroadcastName(e.target.value)}
-
-          templateName={templateName}
-
-          onTemplateNameChange={handleTemplateNameChange}
-
-          templateFilter={templateFilter}
-
-          onTemplateFilterChange={(value) => setTemplateFilter(value)}
-
-          officialTemplates={officialTemplates}
-
-          filteredTemplates={filteredTemplates}
-
-          customMessage={customMessage}
-
-          onFileUpload={handleFileUpload}
-
-          uploadedFile={uploadedFile}
-
-          recipients={recipients}
-
-          fileVariables={fileVariables}
-          templateHeaderMediaUrl={templateHeaderMediaUrl}
-          templateHeaderMediaUploading={templateHeaderMediaUploading}
-          templateHeaderMediaError={templateHeaderMediaError}
-          onTemplateHeaderMediaUpload={handleTemplateHeaderMediaFileUpload}
-          onClearTemplateHeaderMedia={clearTemplateHeaderMedia}
-
-          onClearUpload={handleClearUpload}
-          onOpenContactAudiencePicker={openContactAudiencePicker}
-          onClearSelectedAudience={clearSelectedAudience}
-          audienceSourceMode={audienceSourceMode}
-          onAudienceSourceModeChange={handleAudienceSourceModeChange}
-          audienceSourceLabel={audienceSourceLabel}
-          onAutoCleanRecipients={handleAutoCleanRecipients}
-          selectedTemplateCategory={selectedTemplateCategory}
-
-          scheduledTime={scheduledTime}
-
-          onScheduledTimeChange={(e) => setScheduledTime(e.target.value)}
-
-          isSending={isSending}
-
-          onCreateBroadcast={createBroadcast}
-
-          onSendBroadcast={handleSendBroadcast}
-
-          sendResults={sendResults}
-
-          onBackToOverview={handleBackToOverview}
-
-          onResetForm={resetComposerForm}
-
-          onMetaLeadBatchSync={handleMetaLeadBatchSync}
-
-          metaLeadBatchLoading={metaLeadBatchLoading}
-
-          metaLeadBatchResult={metaLeadBatchResult}
-          quietHoursEnabled={quietHoursEnabled}
-          onQuietHoursEnabledChange={setQuietHoursEnabled}
-          quietHoursStartHour={quietHoursStartHour}
-          onQuietHoursStartHourChange={setQuietHoursStartHour}
-          quietHoursEndHour={quietHoursEndHour}
-          onQuietHoursEndHourChange={setQuietHoursEndHour}
-          quietHoursTimezone={quietHoursTimezone}
-          onQuietHoursTimezoneChange={setQuietHoursTimezone}
-          quietHoursAction={quietHoursAction}
-          onQuietHoursActionChange={setQuietHoursAction}
-          retryPolicyEnabled={retryPolicyEnabled}
-          onRetryPolicyEnabledChange={setRetryPolicyEnabled}
-          retryMaxAttempts={retryMaxAttempts}
-          onRetryMaxAttemptsChange={setRetryMaxAttempts}
-          retryBackoffSeconds={retryBackoffSeconds}
-          onRetryBackoffSecondsChange={setRetryBackoffSeconds}
-          deliveryBatchSize={deliveryBatchSize}
-          onDeliveryBatchSizeChange={setDeliveryBatchSize}
-          respectOptOut={respectOptOut}
-          onRespectOptOutChange={setRespectOptOut}
-          suppressionListRaw={suppressionListRaw}
-          onSuppressionListRawChange={setSuppressionListRaw}
-
-        />
-
-      )}
-
-
-
-      <DeleteModal
-
-        showDeleteModal={showDeleteModal}
-
-        selectedCampaigns={selectedCampaigns}
-
-        broadcasts={broadcasts}
-
-        onDeleteConfirm={handleDeleteConfirm}
-
-        onDeleteCancel={handleDeleteCancel}
-
-      />
-
-
-
-      <BroadcastTypeChoice
-
-        showBroadcastTypeChoice={showBroadcastTypeChoice}
-
-        onClose={() => {
-          setShowBroadcastTypeChoice(false);
-          if (chooserMode) navigate('/broadcast');
-        }}
-
-        onChooseTemplate={handleChooseTemplate}
-
-      />
-
-
-
-      <NewBroadcastPopup
-
-        showNewBroadcastPopup={showNewBroadcastPopup}
-
-        broadcastName={broadcastName}
-
-        onBroadcastNameChange={(e) => setBroadcastName(e.target.value)}
-
-        messageType={messageType}
-
-        templateName={templateName}
-
-        onTemplateNameChange={handleTemplateNameChange}
-
-        officialTemplates={officialTemplates}
-
-        uploadedFile={uploadedFile}
-
-        recipients={recipients}
-        fileVariables={fileVariables}
-
-        onFileUpload={handleFileUpload}
-
-        onClearUpload={handleClearUpload}
-        templateHeaderMediaUrl={templateHeaderMediaUrl}
-        templateHeaderMediaUploading={templateHeaderMediaUploading}
-        templateHeaderMediaError={templateHeaderMediaError}
-        onTemplateHeaderMediaUpload={handleTemplateHeaderMediaFileUpload}
-        onClearTemplateHeaderMedia={clearTemplateHeaderMedia}
-        onOpenContactAudiencePicker={openContactAudiencePicker}
-        onOpenCampaignExtraContactsPicker={openCampaignExtraContactsPicker}
-        onOpenCampaignAudiencePicker={openCampaignAudiencePicker}
-        onClearSelectedAudience={clearSelectedAudience}
-        audienceSourceMode={audienceSourceMode}
-        onAudienceSourceModeChange={handleAudienceSourceModeChange}
-        audienceSourceLabel={audienceSourceLabel}
-        selectedCampaignAudienceLabel={selectedCampaignAudience?.campaignName || ''}
-        selectedCampaignAudienceCount={selectedCampaignAudienceCount}
-
-        scheduledTime={scheduledTime}
-
-        onScheduledTimeChange={(value) => setScheduledTime(typeof value === 'string' ? value : value?.target?.value || '')}
-
-        isSending={isSending}
-
-        onCreateBroadcast={createBroadcast}
-
-        onSendBroadcast={handleSendBroadcast}
-
-        onClose={() => setShowNewBroadcastPopup(false)}
-
-        onBackToChoice={() => {
-
-          setShowContactAudiencePicker(false);
-          setShowCampaignAudiencePicker(false);
-          setShowNewBroadcastPopup(false);
-
-          setShowBroadcastTypeChoice(true);
-
-        }}
-
-        getCurrentTime={getCurrentTime}
-        quietHoursEnabled={quietHoursEnabled}
-        onQuietHoursEnabledChange={setQuietHoursEnabled}
-        quietHoursStartHour={quietHoursStartHour}
-        onQuietHoursStartHourChange={setQuietHoursStartHour}
-        quietHoursEndHour={quietHoursEndHour}
-        onQuietHoursEndHourChange={setQuietHoursEndHour}
-        quietHoursTimezone={quietHoursTimezone}
-        onQuietHoursTimezoneChange={setQuietHoursTimezone}
-        quietHoursAction={quietHoursAction}
-        onQuietHoursActionChange={setQuietHoursAction}
-        retryPolicyEnabled={retryPolicyEnabled}
-        onRetryPolicyEnabledChange={setRetryPolicyEnabled}
-        retryMaxAttempts={retryMaxAttempts}
-        onRetryMaxAttemptsChange={setRetryMaxAttempts}
-        retryBackoffSeconds={retryBackoffSeconds}
-        onRetryBackoffSecondsChange={setRetryBackoffSeconds}
-        deliveryBatchSize={deliveryBatchSize}
-        onDeliveryBatchSizeChange={setDeliveryBatchSize}
-        deliveryBatchDelaySeconds={deliveryBatchDelaySeconds}
-        onDeliveryBatchDelaySecondsChange={setDeliveryBatchDelaySeconds}
-        respectOptOut={respectOptOut}
-        onRespectOptOutChange={setRespectOptOut}
-        suppressionListRaw={suppressionListRaw}
-        onSuppressionListRawChange={setSuppressionListRaw}
-
-      />
-
-      <CampaignAudiencePickerModal
-        open={showCampaignAudiencePicker}
-        onClose={closeCampaignAudiencePicker}
-        onConfirm={applyCampaignAudienceSelection}
-        onRequestAddContacts={openCampaignExtraContactsPicker}
-        additionalContacts={selectedCampaignAudience?.additionalContacts || []}
-      />
-
-
-
-      <AllCampaignsPopup
-        showAllCampaignsPopup={false}
-        broadcasts={broadcasts}
-        filteredBroadcasts={filteredBroadcasts}
-        searchTerm={searchTerm}
-        onSearchChange={(e) => setSearchTerm(e.target.value)}
-        statusFilter={statusFilter}
-        onStatusFilterChange={(value) => setStatusFilter(value)}
-        showFilterDropdown={showFilterDropdown}
-        onFilterDropdownToggle={() => setShowFilterDropdown(!showFilterDropdown)}
-        onClose={() => { }}
-        getReadPercentage={getReadPercentage}
-        getStatusClass={getStatusClass}
-        onViewAnalytics={handleViewAnalytics}
-        onStopBroadcast={stopBroadcast}
-        onDeleteClick={handleDeleteClick}
-      />
-
-      <BroadcastAnalyticsModal
-        isOpen={showAnalyticsModal}
-        onClose={() => setShowAnalyticsModal(false)}
-        broadcast={selectedBroadcast}
-      />
-      <BroadcastAudienceValidationModal
-        open={audienceValidationModalOpen}
-        validation={pendingAudienceValidation?.validation || null}
-        onClose={() => {
-          closeAudienceValidationModal();
-          broadcastSubmitInFlightRef.current = false;
-          setIsSending(false);
-        }}
-        onProceed={continueBroadcastWithEligibleRecipients}
-      />
-      </>
-      )}
-
     </div>
   );
 };

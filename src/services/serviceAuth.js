@@ -1,3 +1,5 @@
+import { normalizeError } from "../utils/errorUtils";
+
 const registeredAxiosInstances = new WeakSet();
 
 const resolveLoginPath = () => {
@@ -64,7 +66,7 @@ export const registerUnauthorizedAxiosInterceptor = (
         }
         handleUnauthorizedServiceError(error, message);
       }
-      return Promise.reject(error);
+      return Promise.reject(normalizeError(error, "Unauthorized request failed"));
     }
   );
 

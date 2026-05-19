@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, Send, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X, FileText, Copy, ExternalLink, MoreVertical } from 'lucide-react';
+import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, Send, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X, FileText, Copy, ExternalLink, MoreVertical, ScanLine } from 'lucide-react';
 import Papa from 'papaparse';
 import { apiClient } from '../services/whatsappapi';
 import WhatsAppOptInModal from '../components/WhatsAppOptInModal';
 import WhatsAppConsentAuditModal from '../components/WhatsAppConsentAuditModal';
+import BusinessCardScannerModal from '../components/contacts/BusinessCardScannerModal';
 import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
 import { buildPublicWhatsAppOptInDemoUrl, buildWhatsAppOutreachState } from '../utils/whatsappOutreachNavigation';
 import { getWhatsAppConversationState } from '../utils/whatsappContactState';
@@ -54,6 +55,16 @@ const parsePositiveInteger = (value, fallback) => {
     const parsed = Number.parseInt(String(value || '').trim(), 10);
     return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 };
+
+const createContactFormDraft = (contact = {}) => ({
+    name: String(contact?.name || '').trim(),
+    phone: String(contact?.phone || '').trim(),
+    email: String(contact?.email || '').trim(),
+    companyName: String(contact?.companyName || '').trim(),
+    designation: String(contact?.designation || '').trim(),
+    tags: Array.isArray(contact?.tags) ? contact.tags.join(', ') : String(contact?.tags || '').trim(),
+    status: String(contact?.status || 'Unknown').trim() || 'Unknown'
+});
 
 const readContactsRouteState = (searchParams) => {
     const params = searchParams instanceof URLSearchParams ? searchParams : new URLSearchParams();
@@ -141,7 +152,7 @@ const Contacts = () => {
     const [showEditModal, setShowEditModal] = useState(false);
     const [editingContact, setEditingContact] = useState(null);
     const [selectedContacts, setSelectedContacts] = useState(new Set());
-    const [newContact, setNewContact] = useState({ name: '', phone: '', email: '', tags: '', status: 'Unknown' });
+    const [newContact, setNewContact] = useState(() => createContactFormDraft());
     const [selectionMode, setSelectionMode] = useState(false);
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
     const [showSortDropdown, setShowSortDropdown] = useState(false);
@@ -166,6 +177,9 @@ const Contacts = () => {
     const [auditData, setAuditData] = useState(null);
     const [notification, setNotification] = useState(null);
     const [activeActionsMenuId, setActiveActionsMenuId] = useState(null);
+    const [showBusinessCardScanner, setShowBusinessCardScanner] = useState(false);
+    const [cardScannerSeedContact, setCardScannerSeedContact] = useState({});
+    const [cardScannerContext, setCardScannerContext] = useState('standalone');
     const [currentPage, setCurrentPage] = useState(initialRouteStateRef.current.currentPage);
     const [pageSize, setPageSize] = useState(initialRouteStateRef.current.pageSize);
     const fileInputRef = useRef(null);
@@ -345,6 +359,77 @@ const Contacts = () => {
         showNotification('Public opt-in page opened in a new tab.');
     }, [showNotification]);
 
+    const resetContactForm = useCallback((contact = {}) => {
+        setNewContact(createContactFormDraft(contact));
+    }, []);
+
+    const openAddContactModal = useCallback((seedContact = {}) => {
+        resetContactForm(seedContact);
+        setEditingContact(null);
+        setShowEditModal(false);
+        setShowAddModal(true);
+    }, [resetContactForm]);
+
+    const openBusinessCardScanner = useCallback((seedContact = {}, context = 'standalone') => {
+        setCardScannerContext(context);
+        setCardScannerSeedContact(createContactFormDraft(seedContact));
+        if (context === 'add') {
+            setShowAddModal(true);
+        }
+        setShowBusinessCardScanner(true);
+    }, []);
+
+    const handleFillContactFromScan = useCallback((scannedContact = {}) => {
+        const nextDraft = createContactFormDraft(scannedContact);
+        setCardScannerSeedContact(nextDraft);
+        setNewContact(nextDraft);
+        if (cardScannerContext === 'standalone') {
+            setShowAddModal(true);
+        }
+    }, [cardScannerContext]);
+
+    const handleSaveScannedContact = useCallback(async (scannedContact = {}) => {
+        const nextContact = {
+            ...createContactFormDraft(scannedContact),
+            status: 'Unknown'
+        };
+        const normalizedPhone = normalizeImportedPhone(nextContact.phone);
+        if (!normalizedPhone) {
+            throw new Error('Phone number is required');
+        }
+        if (!isValidImportedPhone(normalizedPhone)) {
+            throw new Error(`Phone number must contain ${MIN_PHONE_DIGITS}-${MAX_PHONE_DIGITS} digits.`);
+        }
+
+        const contactData = {
+            name: nextContact.name,
+            phone: normalizedPhone,
+            email: nextContact.email,
+            companyName: nextContact.companyName,
+            designation: nextContact.designation,
+            tags: nextContact.tags
+                ? String(nextContact.tags).split(',').map((tag) => tag.trim()).filter(Boolean)
+                : [],
+            whatsappOptInStatus: 'unknown',
+            isBlocked: false,
+            source: 'business_card',
+            sourceType: 'manual'
+        };
+
+        const result = await apiClient.createContact(contactData);
+        if (result?.data?.success === false) {
+            throw new Error(result?.data?.error || 'Failed to add contact');
+        }
+
+        await loadContacts({ silent: true });
+        setShowAddModal(false);
+        setShowEditModal(false);
+        setEditingContact(null);
+        resetContactForm();
+        showNotification('Business card saved to Contacts.');
+        return result;
+    }, [loadContacts, resetContactForm, showNotification]);
+
     const handleAddContact = async () => {
         const normalizedPhone = normalizeImportedPhone(newContact.phone);
         if (!normalizedPhone) {
@@ -363,6 +448,8 @@ const Contacts = () => {
             const contactData = {
                 ...newContact,
                 phone: normalizedPhone,
+                companyName: newContact.companyName,
+                designation: newContact.designation,
                 tags: newContact.tags ? newContact.tags.split(',').map(tag => tag.trim()) : [],
                 whatsappOptInStatus: 'unknown',
                 isBlocked: false
@@ -374,7 +461,7 @@ const Contacts = () => {
             }
 
             await loadContacts({ silent: true });
-            setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Unknown' });
+            resetContactForm();
             setShowAddModal(false);
             showNotification('Contact added successfully!');
         } catch (error) {
@@ -389,6 +476,8 @@ const Contacts = () => {
             name: contact.name || '',
             phone: contact.phone || '',
             email: contact.email || '',
+            companyName: contact.companyName || contact.customFields?.companyName || '',
+            designation: contact.designation || contact.customFields?.designation || '',
             tags: Array.isArray(contact.tags) ? contact.tags.join(', ') : '',
             status: optInStatus === 'opted-out'
                 ? 'Opted-out'
@@ -464,6 +553,8 @@ const Contacts = () => {
                 name: newContact.name,
                 phone: normalizedPhone,
                 email: newContact.email,
+                companyName: newContact.companyName,
+                designation: newContact.designation,
                 tags: newContact.tags
                     ? newContact.tags.split(',').map(tag => tag.trim()).filter(Boolean)
                     : [],
@@ -478,7 +569,7 @@ const Contacts = () => {
 
             await loadContacts({ silent: true });
             setEditingContact(null);
-            setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Unknown' });
+            resetContactForm();
             setShowEditModal(false);
             showNotification('Contact updated successfully!');
         } catch (error) {
@@ -489,7 +580,7 @@ const Contacts = () => {
     const handleCloseEditModal = () => {
         setShowEditModal(false);
         setEditingContact(null);
-        setNewContact({ name: '', phone: '', email: '', tags: '', status: 'Unknown' });
+        resetContactForm();
     };
 
     const handleDeleteContact = async (contact) => {
@@ -1141,11 +1232,15 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                         </>
                     ) : (
                         <>
+                            <button className="secondary-btn" onClick={() => openBusinessCardScanner({}, 'standalone')}>
+                                <ScanLine size={18} />
+                                Scan Card
+                            </button>
                             <button className="secondary-btn" onClick={() => setShowImportModal(true)}>
                                 <Upload size={18} />
                                 Import
                             </button>
-                            <button className="primary-btn" onClick={() => setShowAddModal(true)}>
+                            <button className="primary-btn" onClick={() => openAddContactModal()}>
                                 <UserPlus size={18} />
                                 Add Contact
                             </button>
@@ -1820,7 +1915,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                 </button>
                             )}
                             {!searchTerm && lastActiveFilter === 'all' && (
-                                <button className="primary-btn" onClick={() => setShowAddModal(true)}>
+                                <button className="primary-btn" onClick={() => openAddContactModal()}>
                                     <UserPlus size={18} />
                                     Add Your First Contact
                                 </button>
@@ -1836,9 +1931,33 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                     <div className="modal" role="dialog" aria-modal="true" aria-labelledby="add-contact-title">
                         <div className="modal-header">
                             <h3 id="add-contact-title">Add New Contact</h3>
-                            <button className="close-btn" type="button" aria-label="Close add contact dialog" onClick={() => setShowAddModal(false)}>{"\u00D7"}</button>
+                            <button
+                                className="close-btn"
+                                type="button"
+                                aria-label="Close add contact dialog"
+                                onClick={() => {
+                                    setShowAddModal(false);
+                                    resetContactForm();
+                                }}
+                            >
+                                {"\u00D7"}
+                            </button>
                         </div>
                         <div className="modal-body">
+                            <div className="contacts-scanner-cta">
+                                <div>
+                                    <strong>Fast lane</strong>
+                                    <span>Scan a business card to auto-fill this form in seconds.</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="secondary-btn"
+                                    onClick={() => openBusinessCardScanner(newContact, 'add')}
+                                >
+                                    <ScanLine size={16} />
+                                    Scan business card
+                                </button>
+                            </div>
                             <div className="form-group">
                                 <label>Name *</label>
                                 <input
@@ -1867,6 +1986,24 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                 />
                             </div>
                             <div className="form-group">
+                                <label>Company Name</label>
+                                <input
+                                    type="text"
+                                    value={newContact.companyName || ''}
+                                    onChange={(e) => setNewContact({...newContact, companyName: e.target.value})}
+                                    placeholder="Company name"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Designation</label>
+                                <input
+                                    type="text"
+                                    value={newContact.designation || ''}
+                                    onChange={(e) => setNewContact({...newContact, designation: e.target.value})}
+                                    placeholder="Sales Director"
+                                />
+                            </div>
+                            <div className="form-group">
                                 <label>Tags</label>
                                 <input
                                     type="text"
@@ -1880,7 +2017,13 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                             </div>
                         </div>
                         <div className="modal-footer">
-                            <button className="secondary-btn" onClick={() => setShowAddModal(false)}>
+                            <button
+                                className="secondary-btn"
+                                onClick={() => {
+                                    setShowAddModal(false);
+                                    resetContactForm();
+                                }}
+                            >
                                 Cancel
                             </button>
                             <button className="primary-btn" onClick={handleAddContact}>
@@ -1900,6 +2043,20 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                             <button className="close-btn" type="button" aria-label="Close edit contact dialog" onClick={handleCloseEditModal}>{"\u00D7"}</button>
                         </div>
                         <div className="modal-body">
+                            <div className="contacts-scanner-cta">
+                                <div>
+                                    <strong>Sync from card</strong>
+                                    <span>Capture a fresh scan and keep the edit draft in sync.</span>
+                                </div>
+                                <button
+                                    type="button"
+                                    className="secondary-btn"
+                                    onClick={() => openBusinessCardScanner(newContact, 'edit')}
+                                >
+                                    <ScanLine size={16} />
+                                    Scan business card
+                                </button>
+                            </div>
                             <div className="form-group">
                                 <label>Name *</label>
                                 <input
@@ -1925,6 +2082,24 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                     value={newContact.email}
                                     onChange={(e) => setNewContact({...newContact, email: e.target.value})}
                                     placeholder="email@example.com"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Company Name</label>
+                                <input
+                                    type="text"
+                                    value={newContact.companyName || ''}
+                                    onChange={(e) => setNewContact({...newContact, companyName: e.target.value})}
+                                    placeholder="Company name"
+                                />
+                            </div>
+                            <div className="form-group">
+                                <label>Designation</label>
+                                <input
+                                    type="text"
+                                    value={newContact.designation || ''}
+                                    onChange={(e) => setNewContact({...newContact, designation: e.target.value})}
+                                    placeholder="Sales Director"
                                 />
                             </div>
                             <div className="form-group">
@@ -2242,6 +2417,18 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                     </div>
                 </div>
             )}
+
+            <BusinessCardScannerModal
+                open={showBusinessCardScanner}
+                onClose={() => {
+                    setShowBusinessCardScanner(false);
+                    setCardScannerSeedContact({});
+                    setCardScannerContext('standalone');
+                }}
+                seedContact={cardScannerSeedContact}
+                onFillForm={handleFillContactFromScan}
+                onSave={handleSaveScannedContact}
+            />
 
             <WhatsAppOptInModal
                 open={optInModalOpen}

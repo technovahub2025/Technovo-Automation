@@ -1,4 +1,4 @@
-﻿import React from 'react';
+﻿import React from "react";
 import {
   CheckCircle,
   FileText,
@@ -8,22 +8,22 @@ import {
   Clock,
   Users,
   Download,
-  Settings
-} from 'lucide-react';
-import MessagePreview from './MessagePreview';
-import './ScheduleForm.css';
-import { downloadCsv } from '../../utils/csvExport';
+  Settings,
+} from "lucide-react";
+import MessagePreview from "./MessagePreview";
+import "./ScheduleForm.css";
+import { downloadCsv } from "../../utils/csvExport";
 
-const BROADCAST_SCHEDULE_DRAFT_KEY = 'broadcast:schedule-form:draft:v1';
-const parseSuppressionListEntries = (input = '') =>
-  String(input || '')
+const BROADCAST_SCHEDULE_DRAFT_KEY = "broadcast:schedule-form:draft:v1";
+const parseSuppressionListEntries = (input = "") =>
+  String(input || "")
     .split(/[\n,]+/)
     .map((item) => item.trim())
     .filter(Boolean);
-const isValidSuppressionPhone = (value = '') => /^\+?[1-9]\d{7,14}$/.test(String(value || '').trim());
+const isValidSuppressionPhone = (value = "") =>
+  /^\+?[1-9]\d{7,14}$/.test(String(value || "").trim());
 const canUseSessionStorage = () =>
-  typeof window !== 'undefined' &&
-  typeof window.sessionStorage !== 'undefined';
+  typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
 
 const ScheduleForm = ({
   messageType,
@@ -37,23 +37,33 @@ const ScheduleForm = ({
   filteredTemplates,
   customMessage,
   onCustomMessageChange,
-  selectedTemplateCategory = '',
+  selectedTemplateCategory = "",
   onFileUpload,
   uploadedFile,
   recipients,
   fileVariables,
   templateHeaderMediaUrl,
   templateHeaderMediaUploading = false,
-  templateHeaderMediaError = '',
+  templateHeaderMediaError = "",
   onTemplateHeaderMediaUpload,
   onClearTemplateHeaderMedia,
   onClearUpload,
+  onPrepareCsvReplace,
+  csvUploadState = {
+    phase: "idle",
+    message: "",
+    percent: 0,
+  },
   onOpenContactAudiencePicker,
+  onOpenCampaignAudiencePicker,
   onCloseContactAudiencePicker,
   onClearSelectedAudience,
-  audienceSourceMode = 'contacts',
+  audienceSourceMode = "contacts",
   onAudienceSourceModeChange,
-  audienceSourceLabel = '',
+  audienceSourceLabel = "",
+  selectedCampaignAudienceLabel = "",
+  selectedCampaignAudienceCount = 0,
+  selectedCampaignAudienceRecipients = [],
   onAutoCleanRecipients,
   scheduledTime,
   onScheduledTimeChange,
@@ -71,9 +81,9 @@ const ScheduleForm = ({
   onQuietHoursStartHourChange = () => {},
   quietHoursEndHour = 9,
   onQuietHoursEndHourChange = () => {},
-  quietHoursTimezone = 'Asia/Kolkata',
+  quietHoursTimezone = "Asia/Kolkata",
   onQuietHoursTimezoneChange = () => {},
-  quietHoursAction = 'defer',
+  quietHoursAction = "defer",
   onQuietHoursActionChange = () => {},
   retryPolicyEnabled = true,
   onRetryPolicyEnabledChange = () => {},
@@ -87,17 +97,37 @@ const ScheduleForm = ({
   onDeliveryBatchDelaySecondsChange = () => {},
   respectOptOut = true,
   onRespectOptOutChange = () => {},
-  suppressionListRaw = '',
-  onSuppressionListRawChange = () => {}
+  suppressionListRaw = "",
+  onSuppressionListRawChange = () => {},
 }) => {
   const scheduleInputRef = React.useRef(null);
+  const csvInputRef = React.useRef(null);
   const hasAppliedResetVersion = React.useRef(false);
   const [isDragOver, setIsDragOver] = React.useState(false);
-  const [isTemplateHeaderDragOver, setIsTemplateHeaderDragOver] = React.useState(false);
+  const [isTemplateHeaderDragOver, setIsTemplateHeaderDragOver] =
+    React.useState(false);
   const [draftSavedAt, setDraftSavedAt] = React.useState(null);
   const [hasStoredDraft, setHasStoredDraft] = React.useState(false);
   const hasRestoredDraftRef = React.useRef(false);
-  const lastDraftPayloadRef = React.useRef('');
+  const lastDraftPayloadRef = React.useRef("");
+  const csvUploadPhase = String(csvUploadState?.phase || "idle");
+  const csvUploadMessage = String(csvUploadState?.message || "").trim();
+  const csvUploadPercent = Math.max(
+    0,
+    Math.min(100, Number(csvUploadState?.percent || 0)),
+  );
+  const isCsvUploadBusy = [
+    "parsing",
+    "validating",
+    "processing",
+    "uploading",
+  ].includes(csvUploadPhase);
+  const hasCampaignAudience =
+    Boolean(String(selectedCampaignAudienceLabel || "").trim()) ||
+    Number(selectedCampaignAudienceCount || 0) > 0;
+  const campaignAudienceRows = Array.isArray(selectedCampaignAudienceRecipients)
+    ? selectedCampaignAudienceRecipients
+    : [];
 
   React.useEffect(() => {
     if (!hasAppliedResetVersion.current) {
@@ -108,7 +138,7 @@ const ScheduleForm = ({
     setDraftSavedAt(null);
     setHasStoredDraft(false);
     hasRestoredDraftRef.current = false;
-    lastDraftPayloadRef.current = '';
+    lastDraftPayloadRef.current = "";
     if (!canUseSessionStorage()) return;
     try {
       window.sessionStorage.removeItem(BROADCAST_SCHEDULE_DRAFT_KEY);
@@ -122,11 +152,11 @@ const ScheduleForm = ({
     hasRestoredDraftRef.current = true;
 
     const hasExistingData =
-      String(broadcastName || '').trim().length > 0 ||
-      String(templateName || '').trim().length > 0 ||
-      String(customMessage || '').trim().length > 0 ||
-      String(scheduledTime || '').trim().length > 0 ||
-      String(suppressionListRaw || '').trim().length > 0 ||
+      String(broadcastName || "").trim().length > 0 ||
+      String(templateName || "").trim().length > 0 ||
+      String(customMessage || "").trim().length > 0 ||
+      String(scheduledTime || "").trim().length > 0 ||
+      String(suppressionListRaw || "").trim().length > 0 ||
       quietHoursEnabled ||
       (Array.isArray(recipients) && recipients.length > 0);
     if (hasExistingData) return;
@@ -136,54 +166,54 @@ const ScheduleForm = ({
       if (!raw) return;
       setHasStoredDraft(true);
       const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') return;
+      if (!parsed || typeof parsed !== "object") return;
 
-      if (typeof parsed.broadcastName === 'string') {
+      if (typeof parsed.broadcastName === "string") {
         onBroadcastNameChange?.({ target: { value: parsed.broadcastName } });
       }
-      if (typeof parsed.templateName === 'string') {
+      if (typeof parsed.templateName === "string") {
         onTemplateNameChange?.({ target: { value: parsed.templateName } });
       }
-      if (typeof parsed.templateFilter === 'string') {
+      if (typeof parsed.templateFilter === "string") {
         onTemplateFilterChange?.(parsed.templateFilter);
       }
-      if (typeof parsed.customMessage === 'string') {
+      if (typeof parsed.customMessage === "string") {
         onCustomMessageChange?.({ target: { value: parsed.customMessage } });
       }
-      if (typeof parsed.scheduledTime === 'string') {
+      if (typeof parsed.scheduledTime === "string") {
         onScheduledTimeChange?.({ target: { value: parsed.scheduledTime } });
       }
-      if (typeof parsed.quietHoursEnabled === 'boolean') {
+      if (typeof parsed.quietHoursEnabled === "boolean") {
         onQuietHoursEnabledChange?.(parsed.quietHoursEnabled);
       }
-      if (typeof parsed.quietHoursStartHour !== 'undefined') {
+      if (typeof parsed.quietHoursStartHour !== "undefined") {
         onQuietHoursStartHourChange?.(String(parsed.quietHoursStartHour));
       }
-      if (typeof parsed.quietHoursEndHour !== 'undefined') {
+      if (typeof parsed.quietHoursEndHour !== "undefined") {
         onQuietHoursEndHourChange?.(String(parsed.quietHoursEndHour));
       }
-      if (typeof parsed.quietHoursTimezone === 'string') {
+      if (typeof parsed.quietHoursTimezone === "string") {
         onQuietHoursTimezoneChange?.(parsed.quietHoursTimezone);
       }
-      if (typeof parsed.quietHoursAction === 'string') {
+      if (typeof parsed.quietHoursAction === "string") {
         onQuietHoursActionChange?.(parsed.quietHoursAction);
       }
-      if (typeof parsed.retryPolicyEnabled === 'boolean') {
+      if (typeof parsed.retryPolicyEnabled === "boolean") {
         onRetryPolicyEnabledChange?.(parsed.retryPolicyEnabled);
       }
-      if (typeof parsed.retryMaxAttempts !== 'undefined') {
+      if (typeof parsed.retryMaxAttempts !== "undefined") {
         onRetryMaxAttemptsChange?.(String(parsed.retryMaxAttempts));
       }
-      if (typeof parsed.retryBackoffSeconds !== 'undefined') {
+      if (typeof parsed.retryBackoffSeconds !== "undefined") {
         onRetryBackoffSecondsChange?.(String(parsed.retryBackoffSeconds));
       }
-      if (typeof parsed.deliveryBatchSize !== 'undefined') {
+      if (typeof parsed.deliveryBatchSize !== "undefined") {
         onDeliveryBatchSizeChange?.(String(parsed.deliveryBatchSize));
       }
-      if (typeof parsed.respectOptOut === 'boolean') {
+      if (typeof parsed.respectOptOut === "boolean") {
         onRespectOptOutChange?.(parsed.respectOptOut);
       }
-      if (typeof parsed.suppressionListRaw === 'string') {
+      if (typeof parsed.suppressionListRaw === "string") {
         onSuppressionListRawChange?.(parsed.suppressionListRaw);
       }
     } catch {
@@ -212,55 +242,60 @@ const ScheduleForm = ({
     onRetryBackoffSecondsChange,
     onDeliveryBatchSizeChange,
     onRespectOptOutChange,
-    onSuppressionListRawChange
+    onSuppressionListRawChange,
   ]);
 
-  const buildDraftPayload = React.useCallback(() => ({
-    broadcastName: String(broadcastName || ''),
-    templateName: String(templateName || ''),
-    templateFilter: String(templateFilter || ''),
-    customMessage: String(customMessage || ''),
-    scheduledTime: String(scheduledTime || ''),
-    quietHoursEnabled: Boolean(quietHoursEnabled),
-    quietHoursStartHour,
-    quietHoursEndHour,
-    quietHoursTimezone: String(quietHoursTimezone || ''),
-    quietHoursAction: String(quietHoursAction || ''),
-    retryPolicyEnabled: Boolean(retryPolicyEnabled),
-    retryMaxAttempts,
-    retryBackoffSeconds,
-    deliveryBatchSize,
-    respectOptOut: Boolean(respectOptOut),
-    suppressionListRaw: String(suppressionListRaw || '')
-  }), [
-    broadcastName,
-    templateName,
-    templateFilter,
-    customMessage,
-    scheduledTime,
-    quietHoursEnabled,
-    quietHoursStartHour,
-    quietHoursEndHour,
-    quietHoursTimezone,
-    quietHoursAction,
-    retryPolicyEnabled,
-    retryMaxAttempts,
-    retryBackoffSeconds,
-    deliveryBatchSize,
-    respectOptOut,
-    suppressionListRaw
-  ]);
+  const buildDraftPayload = React.useCallback(
+    () => ({
+      broadcastName: String(broadcastName || ""),
+      templateName: String(templateName || ""),
+      templateFilter: String(templateFilter || ""),
+      customMessage: String(customMessage || ""),
+      scheduledTime: String(scheduledTime || ""),
+      quietHoursEnabled: Boolean(quietHoursEnabled),
+      quietHoursStartHour,
+      quietHoursEndHour,
+      quietHoursTimezone: String(quietHoursTimezone || ""),
+      quietHoursAction: String(quietHoursAction || ""),
+      retryPolicyEnabled: Boolean(retryPolicyEnabled),
+      retryMaxAttempts,
+      retryBackoffSeconds,
+      deliveryBatchSize,
+      respectOptOut: Boolean(respectOptOut),
+      suppressionListRaw: String(suppressionListRaw || ""),
+    }),
+    [
+      broadcastName,
+      templateName,
+      templateFilter,
+      customMessage,
+      scheduledTime,
+      quietHoursEnabled,
+      quietHoursStartHour,
+      quietHoursEndHour,
+      quietHoursTimezone,
+      quietHoursAction,
+      retryPolicyEnabled,
+      retryMaxAttempts,
+      retryBackoffSeconds,
+      deliveryBatchSize,
+      respectOptOut,
+      suppressionListRaw,
+    ],
+  );
 
   const hasFormProgress = React.useMemo(() => {
     const hasCampaignMeta =
-      String(broadcastName || '').trim().length > 0 ||
-      String(templateName || '').trim().length > 0 ||
-      String(customMessage || '').trim().length > 0;
-    const hasUploadOrRecipients = Boolean(uploadedFile) || (Array.isArray(recipients) && recipients.length > 0);
+      String(broadcastName || "").trim().length > 0 ||
+      String(templateName || "").trim().length > 0 ||
+      String(customMessage || "").trim().length > 0;
+    const hasUploadOrRecipients =
+      Boolean(uploadedFile) ||
+      (Array.isArray(recipients) && recipients.length > 0);
     const hasScheduleOrPolicy =
-      String(scheduledTime || '').trim().length > 0 ||
+      String(scheduledTime || "").trim().length > 0 ||
       quietHoursEnabled ||
-      String(suppressionListRaw || '').trim().length > 0;
+      String(suppressionListRaw || "").trim().length > 0;
     return hasCampaignMeta || hasUploadOrRecipients || hasScheduleOrPolicy;
   }, [
     broadcastName,
@@ -270,13 +305,15 @@ const ScheduleForm = ({
     recipients,
     scheduledTime,
     quietHoursEnabled,
-    suppressionListRaw
+    suppressionListRaw,
   ]);
 
-  const templateHeaderUploadInputId = 'schedule-template-header-upload';
+  const templateHeaderUploadInputId = "schedule-template-header-upload";
   const handleTemplateHeaderUploadClick = () => {
     const input = document.getElementById(templateHeaderUploadInputId);
-    if (input) input.click();
+    if (!input) return;
+    input.value = "";
+    input.click();
   };
 
   const handleTemplateHeaderDragOver = (event) => {
@@ -296,7 +333,7 @@ const ScheduleForm = ({
     event.stopPropagation();
     setIsTemplateHeaderDragOver(false);
     const file = event.dataTransfer?.files?.[0];
-    if (file && typeof onTemplateHeaderMediaUpload === 'function') {
+    if (file && typeof onTemplateHeaderMediaUpload === "function") {
       await onTemplateHeaderMediaUpload(file);
     }
   };
@@ -309,7 +346,7 @@ const ScheduleForm = ({
       } catch {
         // ignore storage errors
       }
-      lastDraftPayloadRef.current = '';
+      lastDraftPayloadRef.current = "";
       if (hasStoredDraft || draftSavedAt) {
         setHasStoredDraft(false);
         setDraftSavedAt(null);
@@ -322,48 +359,60 @@ const ScheduleForm = ({
     if (serializedPayload === lastDraftPayloadRef.current) return;
 
     try {
-      window.sessionStorage.setItem(BROADCAST_SCHEDULE_DRAFT_KEY, serializedPayload);
+      window.sessionStorage.setItem(
+        BROADCAST_SCHEDULE_DRAFT_KEY,
+        serializedPayload,
+      );
       lastDraftPayloadRef.current = serializedPayload;
       setHasStoredDraft(true);
       setDraftSavedAt(new Date());
     } catch {
       // ignore storage errors
     }
-  }, [
-    buildDraftPayload,
-    hasFormProgress,
-    hasStoredDraft,
-    draftSavedAt
-  ]);
+  }, [buildDraftPayload, hasFormProgress, hasStoredDraft, draftSavedAt]);
 
   const extractTemplateBody = (template) => {
-    if (!template || typeof template !== 'object') return '';
+    if (!template || typeof template !== "object") return "";
 
-    if (typeof template.templateContent === 'string' && template.templateContent.trim()) {
+    if (
+      typeof template.templateContent === "string" &&
+      template.templateContent.trim()
+    ) {
       return template.templateContent.trim();
     }
 
-    if (typeof template.content === 'string' && template.content.trim()) {
+    if (typeof template.content === "string" && template.content.trim()) {
       return template.content.trim();
     }
 
-    if (template.content && typeof template.content === 'object') {
-      if (typeof template.content.body === 'string' && template.content.body.trim()) {
+    if (template.content && typeof template.content === "object") {
+      if (
+        typeof template.content.body === "string" &&
+        template.content.body.trim()
+      ) {
         return template.content.body.trim();
       }
-      if (typeof template.content.text === 'string' && template.content.text.trim()) {
+      if (
+        typeof template.content.text === "string" &&
+        template.content.text.trim()
+      ) {
         return template.content.text.trim();
       }
     }
 
     if (Array.isArray(template.components)) {
-      const bodyComponent = template.components.find((comp) => String(comp?.type || '').toUpperCase() === 'BODY');
-      if (typeof bodyComponent?.text === 'string' && bodyComponent.text.trim()) {
+      const bodyComponent = template.components.find(
+        (comp) => String(comp?.type || "").toUpperCase() === "BODY",
+      );
+      if (
+        typeof bodyComponent?.text === "string" &&
+        bodyComponent.text.trim()
+      ) {
         return bodyComponent.text.trim();
       }
     }
 
-    return '';
+    return "";
   };
 
   const getTemplateVariableCount = React.useCallback((template) => {
@@ -372,96 +421,109 @@ const ScheduleForm = ({
 
     const matches = bodyText.match(/\{\{(\d+)\}\}/g) || [];
     const numbers = matches
-      .map((token) => Number(token.replace(/[{}]/g, '')))
+      .map((token) => Number(token.replace(/[{}]/g, "")))
       .filter((value) => Number.isFinite(value) && value > 0);
 
     return numbers.length > 0 ? Math.max(...numbers) : 0;
   }, []);
 
   const selectedTemplate = React.useMemo(
-    () => (officialTemplates || []).find((t) => t.name === templateName) || null,
-    [officialTemplates, templateName]
+    () =>
+      (officialTemplates || []).find((t) => t.name === templateName) || null,
+    [officialTemplates, templateName],
   );
   const selectedTemplateHeader =
     selectedTemplate?.content?.header ||
     selectedTemplate?.header ||
     (Array.isArray(selectedTemplate?.components)
       ? selectedTemplate.components.find(
-          (component) => String(component?.type || '').trim().toUpperCase() === 'HEADER'
+          (component) =>
+            String(component?.type || "")
+              .trim()
+              .toUpperCase() === "HEADER",
         ) || null
       : null);
   const selectedTemplateHeaderType = String(
     selectedTemplateHeader?.type ||
-    selectedTemplateHeader?.format ||
-    selectedTemplate?.type ||
-    selectedTemplate?.mediaType ||
-    selectedTemplate?.headerType ||
-    selectedTemplate?.templateType ||
-    ''
+      selectedTemplateHeader?.format ||
+      selectedTemplate?.type ||
+      selectedTemplate?.mediaType ||
+      selectedTemplate?.headerType ||
+      selectedTemplate?.templateType ||
+      "",
   ).toLowerCase();
   const selectedTemplateHasImageHeader =
-    selectedTemplateHeaderType === 'image' ||
-    (
-      Boolean(
-        selectedTemplateHeader?.mediaUrl ||
-        selectedTemplateHeader?.example?.header_handle?.[0] ||
-        selectedTemplateHeader?.header_handle?.[0]
-      ) &&
-      !String(selectedTemplateHeader?.text || '').trim()
-    );
+    selectedTemplateHeaderType === "image" ||
+    (Boolean(
+      selectedTemplateHeader?.mediaUrl ||
+      selectedTemplateHeader?.example?.header_handle?.[0] ||
+      selectedTemplateHeader?.header_handle?.[0],
+    ) &&
+      !String(selectedTemplateHeader?.text || "").trim());
   const selectedTemplateHeaderMediaUrl = String(
     templateHeaderMediaUrl ||
-    selectedTemplateHeader?.mediaUrl ||
-    selectedTemplateHeader?.example?.header_handle?.[0] ||
-    selectedTemplateHeader?.header_handle?.[0] ||
-    ''
+      selectedTemplateHeader?.mediaUrl ||
+      selectedTemplateHeader?.example?.header_handle?.[0] ||
+      selectedTemplateHeader?.header_handle?.[0] ||
+      "",
   ).trim();
 
   const buildSampleCsvRows = React.useCallback(() => {
-    const variableCount = messageType === 'template' ? getTemplateVariableCount(selectedTemplate) : 0;
+    const variableCount =
+      messageType === "template"
+        ? getTemplateVariableCount(selectedTemplate)
+        : 0;
 
-    const headers = ['phone'];
+    const headers = ["phone"];
     for (let i = 1; i <= variableCount; i += 1) {
       headers.push(`var${i}`);
     }
 
-    const firstDataRow = [''];
+    const firstDataRow = [""];
     for (let i = 1; i <= variableCount; i += 1) {
-      firstDataRow.push('');
+      firstDataRow.push("");
     }
 
-    const secondDataRow = [''];
+    const secondDataRow = [""];
     for (let i = 1; i <= variableCount; i += 1) {
-      secondDataRow.push('');
+      secondDataRow.push("");
     }
 
-    return [
-      headers.join(','),
-      firstDataRow.join(','),
-      secondDataRow.join(',')
-    ];
+    return [headers.join(","), firstDataRow.join(","), secondDataRow.join(",")];
   }, [selectedTemplate, messageType, getTemplateVariableCount]);
 
   const downloadSampleCsv = () => {
     const csvRows = buildSampleCsvRows();
     const [headerLine, ...dataLines] = csvRows;
-    const headers = String(headerLine || '').split(',');
-    const rows = dataLines.map((line) => String(line || '').split(','));
+    const headers = String(headerLine || "").split(",");
+    const rows = dataLines.map((line) => String(line || "").split(","));
     downloadCsv({
-      filename: 'broadcast_contacts_sample.csv',
+      filename: "broadcast_contacts_sample.csv",
       headers,
       rows,
-      exportType: 'broadcast_contacts_sample'
+      exportType: "broadcast_contacts_sample",
     });
   };
 
   const triggerCsvPicker = () => {
-    const input = document.getElementById('broadcast-csv-upload');
-    if (input) input.click();
+    const input = csvInputRef.current;
+    if (!input) return;
+    input.value = "";
+    input.click();
+  };
+
+  const handleReplaceCsv = () => {
+    if (typeof onPrepareCsvReplace === "function") {
+      onPrepareCsvReplace();
+    }
+    triggerCsvPicker();
   };
 
   const triggerAudienceSelection = () => {
-    if (audienceSourceMode === 'contacts' && typeof onOpenContactAudiencePicker === 'function') {
+    if (
+      audienceSourceMode === "contacts" &&
+      typeof onOpenContactAudiencePicker === "function"
+    ) {
       onOpenContactAudiencePicker();
       return;
     }
@@ -485,8 +547,12 @@ const ScheduleForm = ({
     const droppedFile = event.dataTransfer?.files?.[0];
     if (!droppedFile) return;
 
-    if (!String(droppedFile.name || '').toLowerCase().endsWith('.csv')) {
-      onToast?.('Please drop a valid CSV file.', 'error');
+    if (
+      !String(droppedFile.name || "")
+        .toLowerCase()
+        .endsWith(".csv")
+    ) {
+      onToast?.("Please drop a valid CSV file.", "error");
       return;
     }
 
@@ -504,7 +570,7 @@ const ScheduleForm = ({
   };
 
   const clearScheduleTime = () => {
-    onScheduledTimeChange({ target: { value: '' } });
+    onScheduledTimeChange({ target: { value: "" } });
   };
 
   const clampNumber = (value, min, max, fallback) => {
@@ -536,8 +602,8 @@ const ScheduleForm = ({
   };
 
   const normalizeQuietTimezone = () => {
-    const trimmed = String(quietHoursTimezone || '').trim();
-    onQuietHoursTimezoneChange(trimmed || 'Asia/Kolkata');
+    const trimmed = String(quietHoursTimezone || "").trim();
+    onQuietHoursTimezoneChange(trimmed || "Asia/Kolkata");
   };
 
   const getCurrentDateTimeLocal = () => {
@@ -553,13 +619,13 @@ const ScheduleForm = ({
       const fullData = raw.fullData || raw || {};
       const phone = String(
         recipient?.phone ||
-        raw.phone ||
-        fullData.phone ||
-        fullData.mobile ||
-        fullData.number ||
-        ''
+          raw.phone ||
+          fullData.phone ||
+          fullData.mobile ||
+          fullData.number ||
+          "",
       ).trim();
-      if (!phone || phone === '-') return;
+      if (!phone || phone === "-") return;
       phoneCountMap.set(phone, (phoneCountMap.get(phone) || 0) + 1);
     });
 
@@ -568,33 +634,43 @@ const ScheduleForm = ({
       const fullData = raw.fullData || raw || {};
       const normalizedPhone = String(
         recipient?.phone ||
-        raw.phone ||
-        fullData.phone ||
-        fullData.mobile ||
-        fullData.number ||
-        ''
+          raw.phone ||
+          fullData.phone ||
+          fullData.mobile ||
+          fullData.number ||
+          "",
       ).trim();
-      const phone = normalizedPhone || '-';
+      const phone = normalizedPhone || "-";
       const name = raw.name || fullData.name || `Contact ${index + 1}`;
-      const customFieldCount = Object.keys(fullData).filter((key) => !['phone', 'mobile', 'number', 'name', 'variables'].includes(String(key).toLowerCase())).length;
-      const isMissingPhone = !normalizedPhone || normalizedPhone === '-';
-      const isDuplicatePhone = !isMissingPhone && (phoneCountMap.get(normalizedPhone) || 0) > 1;
+      const customFieldCount = Object.keys(fullData).filter(
+        (key) =>
+          !["phone", "mobile", "number", "name", "variables"].includes(
+            String(key).toLowerCase(),
+          ),
+      ).length;
+      const isMissingPhone = !normalizedPhone || normalizedPhone === "-";
+      const isDuplicatePhone =
+        !isMissingPhone && (phoneCountMap.get(normalizedPhone) || 0) > 1;
       const optInStatus = String(
         recipient?.whatsappOptInStatus ||
-        raw.whatsappOptInStatus ||
-        fullData.whatsappOptInStatus ||
-        raw.optInStatus ||
-        fullData.optInStatus ||
-        ''
-      ).trim().toLowerCase();
+          raw.whatsappOptInStatus ||
+          fullData.whatsappOptInStatus ||
+          raw.optInStatus ||
+          fullData.optInStatus ||
+          "",
+      )
+        .trim()
+        .toLowerCase();
       const optInScope = String(
         recipient?.whatsappOptInScope ||
-        raw.whatsappOptInScope ||
-        fullData.whatsappOptInScope ||
-        raw.scope ||
-        fullData.scope ||
-        ''
-      ).trim().toLowerCase();
+          raw.whatsappOptInScope ||
+          fullData.whatsappOptInScope ||
+          raw.scope ||
+          fullData.scope ||
+          "",
+      )
+        .trim()
+        .toLowerCase();
       const consentEvidence = Boolean(
         raw.whatsappOptInAt ||
         fullData.whatsappOptInAt ||
@@ -613,75 +689,91 @@ const ScheduleForm = ({
         raw.whatsappOptInProofUrl ||
         fullData.whatsappOptInProofUrl ||
         raw.proofUrl ||
-        fullData.proofUrl
+        fullData.proofUrl,
       );
-      const hasOptIn = optInStatus === 'opted_in' || consentEvidence;
-      const hasMarketingScope = optInScope === 'marketing' || optInScope === 'both';
+      const hasOptIn = optInStatus === "opted_in" || consentEvidence;
+      const hasMarketingScope =
+        optInScope === "marketing" || optInScope === "both";
       const recentlyInteracted = Boolean(
         raw.lastInboundMessageAt ||
         fullData.lastInboundMessageAt ||
         raw.serviceWindowClosesAt ||
-        fullData.serviceWindowClosesAt
+        fullData.serviceWindowClosesAt,
       );
-      const hasCrmMatch = Boolean(String(
-        recipient?.contactId ||
-        raw?.contactId ||
-        raw?._id ||
-        fullData?._id ||
-        raw?.crmContactId ||
-        fullData?.crmContactId ||
-        ''
-      ).trim());
-      const isMarketingTemplate = String(selectedTemplateCategory || '').trim().toLowerCase() === 'marketing';
+      const hasCrmMatch = Boolean(
+        String(
+          recipient?.contactId ||
+            raw?.contactId ||
+            raw?._id ||
+            fullData?._id ||
+            raw?.crmContactId ||
+            fullData?.crmContactId ||
+            "",
+        ).trim(),
+      );
+      const isMarketingTemplate =
+        String(selectedTemplateCategory || "")
+          .trim()
+          .toLowerCase() === "marketing";
       const hasMarketingEligibility = hasOptIn || recentlyInteracted;
-      const missingOptIn = messageType === 'template' && isMarketingTemplate && !hasMarketingEligibility;
+      const missingOptIn =
+        messageType === "template" &&
+        isMarketingTemplate &&
+        !hasMarketingEligibility;
       const eligibilityLabel = isMissingPhone
-        ? 'N/A'
+        ? "N/A"
         : !isMarketingTemplate
-          ? 'Template eligible'
+          ? "Template eligible"
           : hasMarketingEligibility
-            ? 'Marketing eligible'
+            ? "Marketing eligible"
             : recentlyInteracted
-              ? 'Service only'
-              : 'Opt-in missing';
+              ? "Service only"
+              : "Opt-in missing";
       const eligibilityTone = isMissingPhone
-        ? 'muted'
-        : eligibilityLabel === 'Marketing eligible' || eligibilityLabel === 'Template eligible'
-          ? 'ok'
-          : eligibilityLabel === 'Service only'
-            ? 'info'
-            : 'issue';
+        ? "muted"
+        : eligibilityLabel === "Marketing eligible" ||
+            eligibilityLabel === "Template eligible"
+          ? "ok"
+          : eligibilityLabel === "Service only"
+            ? "info"
+            : "issue";
 
       return {
         index,
         phone,
         name,
         customFieldCount,
-        qualityLabel: isMissingPhone ? 'Missing phone' : isDuplicatePhone ? 'Duplicate phone' : 'Valid',
-        qualityTone: isMissingPhone || isDuplicatePhone ? 'issue' : 'ok',
+        qualityLabel: isMissingPhone
+          ? "Missing phone"
+          : isDuplicatePhone
+            ? "Duplicate phone"
+            : "Valid",
+        qualityTone: isMissingPhone || isDuplicatePhone ? "issue" : "ok",
         optInLabel: isMissingPhone
-          ? 'N/A'
+          ? "N/A"
           : missingOptIn
-            ? 'Opt-in missing'
+            ? "Opt-in missing"
             : hasMarketingScope
-              ? 'Opted in'
-              : 'Consent unknown',
-        optInTone: isMissingPhone
-          ? 'muted'
-          : missingOptIn
-            ? 'issue'
-            : 'ok',
-        crmMatchLabel: hasCrmMatch ? 'CRM matched' : 'CRM not matched',
-        crmMatchTone: hasCrmMatch ? 'ok' : 'issue',
+              ? "Opted in"
+              : "Consent unknown",
+        optInTone: isMissingPhone ? "muted" : missingOptIn ? "issue" : "ok",
+        crmMatchLabel: hasCrmMatch ? "CRM matched" : "CRM not matched",
+        crmMatchTone: hasCrmMatch ? "ok" : "issue",
         eligibilityLabel,
-        eligibilityTone
+        eligibilityTone,
       };
     });
 
-    const missingPhoneCount = rows.filter((row) => row.qualityLabel === 'Missing phone').length;
-    const duplicatePhoneCount = rows.filter((row) => row.qualityLabel === 'Duplicate phone').length;
-    const missingOptInCount = rows.filter((row) => row.optInTone === 'issue').length;
-    const validCount = rows.filter((row) => row.qualityTone === 'ok').length;
+    const missingPhoneCount = rows.filter(
+      (row) => row.qualityLabel === "Missing phone",
+    ).length;
+    const duplicatePhoneCount = rows.filter(
+      (row) => row.qualityLabel === "Duplicate phone",
+    ).length;
+    const missingOptInCount = rows.filter(
+      (row) => row.optInTone === "issue",
+    ).length;
+    const validCount = rows.filter((row) => row.qualityTone === "ok").length;
     const skippedCount = missingPhoneCount + duplicatePhoneCount;
 
     return {
@@ -692,50 +784,65 @@ const ScheduleForm = ({
         missingPhoneCount,
         duplicatePhoneCount,
         missingOptInCount,
-        hasIssues: skippedCount > 0
-      }
+        hasIssues: skippedCount > 0,
+      },
     };
   }, [recipients, messageType, selectedTemplateCategory]);
 
-  const recipientDiagnostics = React.useMemo(() => getRecipientDiagnostics(), [getRecipientDiagnostics]);
+  const recipientDiagnostics = React.useMemo(
+    () => getRecipientDiagnostics(),
+    [getRecipientDiagnostics],
+  );
   const contactRows = React.useMemo(
     () => recipientDiagnostics.rows.slice(0, 5),
-    [recipientDiagnostics]
+    [recipientDiagnostics],
   );
   const recipientQualitySummary = recipientDiagnostics.summary;
 
   const downloadRecipientIssueCsv = () => {
-    const issueRows = recipientDiagnostics.rows.filter((row) => row.qualityTone === 'issue');
+    const issueRows = recipientDiagnostics.rows.filter(
+      (row) => row.qualityTone === "issue",
+    );
     if (!issueRows.length) {
-      onToast?.('No issue rows available for export.', 'info');
+      onToast?.("No issue rows available for export.", "info");
       return;
     }
 
     downloadCsv({
-      filename: `recipient_quality_issues_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')}.csv`,
-      headers: ['rowNumber', 'phone', 'name', 'issueType'],
-      rows: issueRows.map((row) => [row.index + 1, row.phone, row.name, row.qualityLabel]),
-      exportType: 'recipient_quality_issues'
+      filename: `recipient_quality_issues_${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}.csv`,
+      headers: ["rowNumber", "phone", "name", "issueType"],
+      rows: issueRows.map((row) => [
+        row.index + 1,
+        row.phone,
+        row.name,
+        row.qualityLabel,
+      ]),
+      exportType: "recipient_quality_issues",
     });
   };
 
   const requiredColumnsLabel = React.useMemo(() => {
-    const variableCount = messageType === 'template' ? getTemplateVariableCount(selectedTemplate) : 0;
-    const columns = ['phone'];
+    const variableCount =
+      messageType === "template"
+        ? getTemplateVariableCount(selectedTemplate)
+        : 0;
+    const columns = ["phone"];
     for (let i = 1; i <= variableCount; i += 1) {
       columns.push(`var${i}`);
     }
-    return columns.join(', ');
+    return columns.join(", ");
   }, [selectedTemplate, messageType, getTemplateVariableCount]);
 
   const getSelectedTemplatePreview = () => {
-    if (!templateName) return 'Select a template';
+    if (!templateName) return "Select a template";
     if (!selectedTemplate) return `Template: ${templateName}`;
 
-    let text = extractTemplateBody(selectedTemplate) || `Template: ${templateName}`;
+    let text =
+      extractTemplateBody(selectedTemplate) || `Template: ${templateName}`;
 
     const firstRecipient = recipients?.[0];
-    const replacementVars = firstRecipient?.variables || firstRecipient?.data?.variables || [];
+    const replacementVars =
+      firstRecipient?.variables || firstRecipient?.data?.variables || [];
     if (Array.isArray(replacementVars) && replacementVars.length > 0) {
       text = text.replace(/\{\{(\d+)\}\}/g, (_, n) => {
         const index = Number(n) - 1;
@@ -749,16 +856,18 @@ const ScheduleForm = ({
   const suppressionListMeta = React.useMemo(() => {
     const entries = parseSuppressionListEntries(suppressionListRaw);
     const uniqueEntries = Array.from(new Set(entries));
-    const invalidEntries = uniqueEntries.filter((entry) => !isValidSuppressionPhone(entry));
+    const invalidEntries = uniqueEntries.filter(
+      (entry) => !isValidSuppressionPhone(entry),
+    );
     return {
       total: uniqueEntries.length,
-      invalidEntries
+      invalidEntries,
     };
   }, [suppressionListRaw]);
   const hasRecipientIssues = recipientQualitySummary.hasIssues;
   const policyValidation = React.useMemo(() => {
     if (!quietHoursEnabled && !retryPolicyEnabled) {
-      return { isInvalid: false, reason: '' };
+      return { isInvalid: false, reason: "" };
     }
 
     const toInteger = (value) => {
@@ -770,16 +879,29 @@ const ScheduleForm = ({
       const startHour = toInteger(quietHoursStartHour);
       const endHour = toInteger(quietHoursEndHour);
       if (Number.isNaN(startHour) || startHour < 0 || startHour > 23) {
-        return { isInvalid: true, reason: 'Quiet hours start must be between 0 and 23.' };
+        return {
+          isInvalid: true,
+          reason: "Quiet hours start must be between 0 and 23.",
+        };
       }
       if (Number.isNaN(endHour) || endHour < 0 || endHour > 23) {
-        return { isInvalid: true, reason: 'Quiet hours end must be between 0 and 23.' };
+        return {
+          isInvalid: true,
+          reason: "Quiet hours end must be between 0 and 23.",
+        };
       }
       if (startHour === endHour) {
-        return { isInvalid: true, reason: 'Quiet hours start and end cannot be the same.' };
+        return {
+          isInvalid: true,
+          reason: "Quiet hours start and end cannot be the same.",
+        };
       }
-      if (!String(quietHoursTimezone || '').trim()) {
-        return { isInvalid: true, reason: 'Quiet hours timezone is required when quiet hours are enabled.' };
+      if (!String(quietHoursTimezone || "").trim()) {
+        return {
+          isInvalid: true,
+          reason:
+            "Quiet hours timezone is required when quiet hours are enabled.",
+        };
       }
     }
 
@@ -787,33 +909,45 @@ const ScheduleForm = ({
       const attempts = toInteger(retryMaxAttempts);
       const backoff = toInteger(retryBackoffSeconds);
       if (Number.isNaN(attempts) || attempts < 1 || attempts > 10) {
-        return { isInvalid: true, reason: 'Retry max attempts must be between 1 and 10.' };
+        return {
+          isInvalid: true,
+          reason: "Retry max attempts must be between 1 and 10.",
+        };
       }
       if (Number.isNaN(backoff) || backoff < 5 || backoff > 600) {
-        return { isInvalid: true, reason: 'Retry backoff must be between 5 and 600 seconds.' };
+        return {
+          isInvalid: true,
+          reason: "Retry backoff must be between 5 and 600 seconds.",
+        };
       }
     }
 
     const batchSize = toInteger(deliveryBatchSize);
     if (Number.isNaN(batchSize) || batchSize < 1 || batchSize > 50) {
-      return { isInvalid: true, reason: 'Delivery batch size must be between 1 and 50.' };
+      return {
+        isInvalid: true,
+        reason: "Delivery batch size must be between 1 and 50.",
+      };
     }
 
     const batchDelay = toInteger(deliveryBatchDelaySeconds);
     if (Number.isNaN(batchDelay) || batchDelay < 0 || batchDelay > 3600) {
-      return { isInvalid: true, reason: 'Batch delay must be between 0 and 3600 seconds.' };
+      return {
+        isInvalid: true,
+        reason: "Batch delay must be between 0 and 3600 seconds.",
+      };
     }
 
     if (suppressionListMeta.invalidEntries.length > 0) {
       return {
         isInvalid: true,
-        reason: `Invalid suppression numbers: ${suppressionListMeta.invalidEntries.slice(0, 3).join(', ')}${
-          suppressionListMeta.invalidEntries.length > 3 ? '...' : ''
-        }`
+        reason: `Invalid suppression numbers: ${suppressionListMeta.invalidEntries.slice(0, 3).join(", ")}${
+          suppressionListMeta.invalidEntries.length > 3 ? "..." : ""
+        }`,
       };
     }
 
-    return { isInvalid: false, reason: '' };
+    return { isInvalid: false, reason: "" };
   }, [
     quietHoursEnabled,
     quietHoursStartHour,
@@ -824,51 +958,57 @@ const ScheduleForm = ({
     retryBackoffSeconds,
     deliveryBatchSize,
     deliveryBatchDelaySeconds,
-    suppressionListMeta
+    suppressionListMeta,
   ]);
 
   const scheduleValidation = React.useMemo(() => {
-    const raw = String(scheduledTime || '').trim();
+    const raw = String(scheduledTime || "").trim();
     if (!raw) {
-      return { isInvalid: false, reason: '' };
+      return { isInvalid: false, reason: "" };
     }
 
     const parsed = new Date(raw);
     if (Number.isNaN(parsed.getTime())) {
-      return { isInvalid: true, reason: 'Selected schedule date/time is invalid.' };
+      return {
+        isInvalid: true,
+        reason: "Selected schedule date/time is invalid.",
+      };
     }
 
     const now = new Date();
     if (parsed.getTime() <= now.getTime()) {
-      return { isInvalid: true, reason: 'Schedule time must be in the future.' };
+      return {
+        isInvalid: true,
+        reason: "Schedule time must be in the future.",
+      };
     }
 
-    return { isInvalid: false, reason: '' };
+    return { isInvalid: false, reason: "" };
   }, [scheduledTime]);
 
   const canSubmitCampaign = React.useMemo(() => {
     const hasRecipients = Array.isArray(recipients) && recipients.length > 0;
-    const hasName = String(broadcastName || '').trim().length > 0;
+    const hasName = String(broadcastName || "").trim().length > 0;
     if (!hasRecipients || !hasName) return false;
 
-    if (messageType === 'template') {
-      return String(templateName || '').trim().length > 0;
+    if (messageType === "template") {
+      return String(templateName || "").trim().length > 0;
     }
 
-    return String(customMessage || '').trim().length > 0;
+    return String(customMessage || "").trim().length > 0;
   }, [recipients, broadcastName, messageType, templateName, customMessage]);
 
   React.useEffect(() => {
-    if (!hasFormProgress || typeof window === 'undefined') return undefined;
+    if (!hasFormProgress || typeof window === "undefined") return undefined;
 
     const handleBeforeUnload = (event) => {
       event.preventDefault();
-      event.returnValue = '';
+      event.returnValue = "";
     };
 
-    window.addEventListener('beforeunload', handleBeforeUnload);
+    window.addEventListener("beforeunload", handleBeforeUnload);
     return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
     };
   }, [hasFormProgress]);
 
@@ -879,8 +1019,9 @@ const ScheduleForm = ({
     }
 
     const message =
-      'Reset will clear campaign name, message/template, contacts, schedule and policy settings. Continue?';
-    const shouldReset = typeof window === 'undefined' ? true : window.confirm(message);
+      "Reset will clear campaign name, message/template, contacts, schedule and policy settings. Continue?";
+    const shouldReset =
+      typeof window === "undefined" ? true : window.confirm(message);
     if (!shouldReset) return;
     if (canUseSessionStorage()) {
       try {
@@ -891,7 +1032,7 @@ const ScheduleForm = ({
     }
     setHasStoredDraft(false);
     setDraftSavedAt(null);
-    lastDraftPayloadRef.current = '';
+    lastDraftPayloadRef.current = "";
     onResetForm?.();
   };
 
@@ -902,8 +1043,10 @@ const ScheduleForm = ({
       return;
     }
 
-    const message = 'You have unsaved campaign changes. Leave this page and go back to overview?';
-    const shouldLeave = typeof window === 'undefined' ? true : window.confirm(message);
+    const message =
+      "You have unsaved campaign changes. Leave this page and go back to overview?";
+    const shouldLeave =
+      typeof window === "undefined" ? true : window.confirm(message);
     if (!shouldLeave) return;
     onCloseContactAudiencePicker?.();
     onBackToOverview?.();
@@ -915,7 +1058,7 @@ const ScheduleForm = ({
       window.sessionStorage.removeItem(BROADCAST_SCHEDULE_DRAFT_KEY);
       setHasStoredDraft(false);
       setDraftSavedAt(null);
-      lastDraftPayloadRef.current = '';
+      lastDraftPayloadRef.current = "";
     } catch {
       // ignore storage errors
     }
@@ -927,20 +1070,20 @@ const ScheduleForm = ({
       window.sessionStorage.removeItem(BROADCAST_SCHEDULE_DRAFT_KEY);
       setHasStoredDraft(false);
       setDraftSavedAt(null);
-      lastDraftPayloadRef.current = '';
-      onToast?.('Saved draft cleared.', 'success');
+      lastDraftPayloadRef.current = "";
+      onToast?.("Saved draft cleared.", "success");
     } catch {
-      onToast?.('Unable to clear saved draft right now.', 'error');
+      onToast?.("Unable to clear saved draft right now.", "error");
     }
   };
 
   const handleSaveDraftNow = React.useCallback(() => {
     if (!canUseSessionStorage()) {
-      onToast?.('Draft save is unavailable in this environment.', 'error');
+      onToast?.("Draft save is unavailable in this environment.", "error");
       return;
     }
     if (!hasFormProgress) {
-      onToast?.('Nothing to save yet. Fill campaign details first.', 'info');
+      onToast?.("Nothing to save yet. Fill campaign details first.", "info");
       return;
     }
 
@@ -948,44 +1091,49 @@ const ScheduleForm = ({
 
     try {
       const serializedPayload = JSON.stringify(payload);
-      window.sessionStorage.setItem(BROADCAST_SCHEDULE_DRAFT_KEY, serializedPayload);
+      window.sessionStorage.setItem(
+        BROADCAST_SCHEDULE_DRAFT_KEY,
+        serializedPayload,
+      );
       lastDraftPayloadRef.current = serializedPayload;
       setHasStoredDraft(true);
       setDraftSavedAt(new Date());
-      onToast?.('Draft saved.', 'success');
+      onToast?.("Draft saved.", "success");
     } catch {
-      onToast?.('Unable to save draft right now.', 'error');
+      onToast?.("Unable to save draft right now.", "error");
     }
   }, [buildDraftPayload, hasFormProgress, onToast]);
 
   React.useEffect(() => {
-    if (typeof window === 'undefined') return undefined;
+    if (typeof window === "undefined") return undefined;
     const onKeyDown = (event) => {
-      const isSaveCombo = (event.ctrlKey || event.metaKey) && String(event.key || '').toLowerCase() === 's';
+      const isSaveCombo =
+        (event.ctrlKey || event.metaKey) &&
+        String(event.key || "").toLowerCase() === "s";
       if (!isSaveCombo) return;
       if (!hasFormProgress) return;
       event.preventDefault();
       handleSaveDraftNow();
     };
 
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, [handleSaveDraftNow, hasFormProgress]);
 
   const handleCreateBroadcastClick = () => {
     if (hasRecipientIssues) {
       onToast?.(
         `Please resolve recipient issues before scheduling (${recipientQualitySummary.missingPhoneCount} missing phone, ${recipientQualitySummary.duplicatePhoneCount} duplicates).`,
-        'error'
+        "error",
       );
       return;
     }
     if (scheduleValidation.isInvalid) {
-      onToast?.(scheduleValidation.reason, 'error');
+      onToast?.(scheduleValidation.reason, "error");
       return;
     }
     if (policyValidation.isInvalid) {
-      onToast?.(policyValidation.reason, 'error');
+      onToast?.(policyValidation.reason, "error");
       return;
     }
     onCreateBroadcast?.();
@@ -995,12 +1143,12 @@ const ScheduleForm = ({
     if (hasRecipientIssues) {
       onToast?.(
         `Please resolve recipient issues before sending (${recipientQualitySummary.missingPhoneCount} missing phone, ${recipientQualitySummary.duplicatePhoneCount} duplicates).`,
-        'error'
+        "error",
       );
       return;
     }
     if (policyValidation.isInvalid) {
-      onToast?.(policyValidation.reason, 'error');
+      onToast?.(policyValidation.reason, "error");
       return;
     }
     onSendBroadcast?.();
@@ -1022,7 +1170,7 @@ const ScheduleForm = ({
             />
           </div>
 
-          {messageType === 'template' ? (
+          {messageType === "template" ? (
             <>
               <div className="form-group">
                 <div className="template-header-row">
@@ -1032,26 +1180,26 @@ const ScheduleForm = ({
 
                   <div className="template-filters">
                     <button
-                      className={`filter-btn ${templateFilter === 'all' ? 'active' : ''}`}
-                      onClick={() => onTemplateFilterChange('all')}
+                      className={`filter-btn ${templateFilter === "all" ? "active" : ""}`}
+                      onClick={() => onTemplateFilterChange("all")}
                     >
                       All
                     </button>
                     <button
-                      className={`filter-btn ${templateFilter === 'marketing' ? 'active' : ''}`}
-                      onClick={() => onTemplateFilterChange('marketing')}
+                      className={`filter-btn ${templateFilter === "marketing" ? "active" : ""}`}
+                      onClick={() => onTemplateFilterChange("marketing")}
                     >
                       Marketing
                     </button>
                     <button
-                      className={`filter-btn ${templateFilter === 'utility' ? 'active' : ''}`}
-                      onClick={() => onTemplateFilterChange('utility')}
+                      className={`filter-btn ${templateFilter === "utility" ? "active" : ""}`}
+                      onClick={() => onTemplateFilterChange("utility")}
                     >
                       Utility
                     </button>
                     <button
-                      className={`filter-btn ${templateFilter === 'authentication' ? 'active' : ''}`}
-                      onClick={() => onTemplateFilterChange('authentication')}
+                      className={`filter-btn ${templateFilter === "authentication" ? "active" : ""}`}
+                      onClick={() => onTemplateFilterChange("authentication")}
                     >
                       Authentication
                     </button>
@@ -1063,40 +1211,51 @@ const ScheduleForm = ({
                     <option value="">Select template...</option>
                     {filteredTemplates.map((template) => (
                       <option key={template.name} value={template.name}>
-                        {template.name} ({template.language}) - {template.status}
+                        {template.name} ({template.language}) -{" "}
+                        {template.status}
                       </option>
                     ))}
                   </select>
 
-                  {templateName && (() => {
-                    const variableCount = selectedTemplate
-                      ? (selectedTemplate.content?.body?.match(/\{\{\d+\}\}/g) || []).length
-                      : 0;
-                    return variableCount > 0 ? (
-                      <div className="variable-count-indicator">
-                        {variableCount} variable{variableCount !== 1 ? 's' : ''} required
-                      </div>
-                    ) : null;
-                  })()}
+                  {templateName &&
+                    (() => {
+                      const variableCount = selectedTemplate
+                        ? (
+                            selectedTemplate.content?.body?.match(
+                              /\{\{\d+\}\}/g,
+                            ) || []
+                          ).length
+                        : 0;
+                      return variableCount > 0 ? (
+                        <div className="variable-count-indicator">
+                          {variableCount} variable
+                          {variableCount !== 1 ? "s" : ""} required
+                        </div>
+                      ) : null;
+                    })()}
                 </div>
 
                 {selectedTemplate ? (
                   <div className="template-header-hint">
                     <span className="template-header-hint__label">Header</span>
-                    <span className={`template-header-hint__chip ${selectedTemplateHasImageHeader ? 'is-image' : 'is-text'}`}>
-                      {selectedTemplateHasImageHeader ? 'Image template' : 'Text template'}
+                    <span
+                      className={`template-header-hint__chip ${selectedTemplateHasImageHeader ? "is-image" : "is-text"}`}
+                    >
+                      {selectedTemplateHasImageHeader
+                        ? "Image template"
+                        : "Text template"}
                     </span>
                     <span className="template-header-hint__text">
                       {selectedTemplateHasImageHeader
-                        ? 'This template requires an image header. Upload one before sending.'
-                        : 'This approved template uses text-only header content.'}
+                        ? "This template requires an image header. Upload one before sending."
+                        : "This approved template uses text-only header content."}
                     </span>
                   </div>
                 ) : null}
 
                 {selectedTemplateHasImageHeader ? (
                   <div
-                    className={`template-media-upload-box${isTemplateHeaderDragOver ? ' is-drag-over' : ''}`}
+                    className={`template-media-upload-box${isTemplateHeaderDragOver ? " is-drag-over" : ""}`}
                     onDragOver={handleTemplateHeaderDragOver}
                     onDragLeave={handleTemplateHeaderDragLeave}
                     onDrop={handleTemplateHeaderDrop}
@@ -1104,7 +1263,7 @@ const ScheduleForm = ({
                     role="button"
                     tabIndex={0}
                     onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
+                      if (event.key === "Enter" || event.key === " ") {
                         event.preventDefault();
                         handleTemplateHeaderUploadClick();
                       }
@@ -1115,22 +1274,30 @@ const ScheduleForm = ({
                         <Upload size={18} />
                       </div>
                       <div className="template-media-upload-box__copy">
-                        <strong>{selectedTemplateHeaderMediaUrl ? 'Replace the image header' : 'Drop image here'}</strong>
+                        <strong>
+                          {selectedTemplateHeaderMediaUrl
+                            ? "Replace the image header"
+                            : "Drop image here"}
+                        </strong>
                         <span>
                           {isTemplateHeaderDragOver
-                            ? 'Release to upload this image for the template header.'
-                            : 'PNG or JPG works best. You can also click to browse.'}
+                            ? "Release to upload this image for the template header."
+                            : "PNG or JPG works best. You can also click to browse."}
                         </span>
                       </div>
                     </div>
                     <div className="template-media-upload-box__header">
                       <strong>Image Header</strong>
-                      <span>{selectedTemplateHeaderMediaUrl ? 'Ready to send' : 'Upload required'}</span>
+                      <span>
+                        {selectedTemplateHeaderMediaUrl
+                          ? "Ready to send"
+                          : "Upload required"}
+                      </span>
                     </div>
                     <div className="template-media-upload-box__dropzone-copy">
                       {isTemplateHeaderDragOver
-                        ? 'Drop the image here to upload it for this template.'
-                        : 'Drag and drop an image here, or choose one from your device.'}
+                        ? "Drop the image here to upload it for this template."
+                        : "Drag and drop an image here, or choose one from your device."}
                     </div>
                     <div className="template-media-upload-box__actions">
                       <input
@@ -1150,7 +1317,11 @@ const ScheduleForm = ({
                         }}
                         disabled={templateHeaderMediaUploading}
                       >
-                        {templateHeaderMediaUploading ? 'Uploading...' : selectedTemplateHeaderMediaUrl ? 'Replace Image' : 'Upload Image'}
+                        {templateHeaderMediaUploading
+                          ? "Uploading..."
+                          : selectedTemplateHeaderMediaUrl
+                            ? "Replace Image"
+                            : "Upload Image"}
                       </button>
                       <button
                         type="button"
@@ -1159,23 +1330,34 @@ const ScheduleForm = ({
                           event.stopPropagation();
                           onClearTemplateHeaderMedia?.();
                         }}
-                        disabled={templateHeaderMediaUploading || !selectedTemplateHeaderMediaUrl}
+                        disabled={
+                          templateHeaderMediaUploading ||
+                          !selectedTemplateHeaderMediaUrl
+                        }
                       >
                         Clear
                       </button>
                     </div>
                     {selectedTemplateHeaderMediaUrl ? (
                       <div className="template-media-upload-box__preview">
-                        <img src={selectedTemplateHeaderMediaUrl} alt={`${templateName} header`} />
+                        <img
+                          src={selectedTemplateHeaderMediaUrl}
+                          alt={`${templateName} header`}
+                        />
                       </div>
                     ) : null}
                     {templateHeaderMediaError ? (
-                      <div className="template-media-upload-box__error">{templateHeaderMediaError}</div>
+                      <div className="template-media-upload-box__error">
+                        {templateHeaderMediaError}
+                      </div>
                     ) : null}
                   </div>
                 ) : null}
 
-                <small>These are your approved templates from WhatsApp Business Manager</small>
+                <small>
+                  These are your approved templates from WhatsApp Business
+                  Manager
+                </small>
               </div>
             </>
           ) : (
@@ -1295,25 +1477,33 @@ const ScheduleForm = ({
             <div className="audience-source-toggle">
               <button
                 type="button"
-                className={`audience-source-toggle__btn${audienceSourceMode === 'contacts' ? ' is-active' : ''}`}
-                onClick={() => typeof onAudienceSourceModeChange === 'function' && onAudienceSourceModeChange('contacts')}
+                className={`audience-source-toggle__btn${audienceSourceMode === "contacts" ? " is-active" : ""}`}
+                onClick={() =>
+                  typeof onAudienceSourceModeChange === "function" &&
+                  onAudienceSourceModeChange("contacts")
+                }
               >
                 <Users size={16} />
                 Contacts first
               </button>
               <button
                 type="button"
-                className={`audience-source-toggle__btn${audienceSourceMode === 'csv' ? ' is-active' : ''}`}
-                onClick={() => typeof onAudienceSourceModeChange === 'function' && onAudienceSourceModeChange('csv')}
+                className={`audience-source-toggle__btn${audienceSourceMode === "csv" ? " is-active" : ""}`}
+                onClick={() =>
+                  typeof onAudienceSourceModeChange === "function" &&
+                  onAudienceSourceModeChange("csv")
+                }
               >
                 <Upload size={16} />
                 CSV first
               </button>
             </div>
             <p className="audience-source-helper">
-              {audienceSourceMode === 'contacts'
-                ? 'Audience source: CRM contacts'
-                : 'Audience source: CSV upload'}
+              {audienceSourceMode === "contacts"
+                ? "Audience source: CRM contacts"
+                : audienceSourceMode === "campaign" || hasCampaignAudience
+                  ? "Audience source: Past campaign contacts"
+                  : "Audience source: CSV upload"}
             </p>
 
             <div className="voice-style-upload-wrapper">
@@ -1321,109 +1511,65 @@ const ScheduleForm = ({
                 type="file"
                 accept=".csv"
                 onChange={onFileUpload}
-                onClick={(e) => { e.target.value = ''; }}
                 id="broadcast-csv-upload"
                 className="csv-input"
+                ref={csvInputRef}
+                disabled={isCsvUploadBusy}
               />
 
-              {recipients.length === 0 ? (
-                <>
-                  {typeof onOpenContactAudiencePicker === 'function' ? (
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
-                      <button
-                        type="button"
-                        className="contacts-clean-btn"
-                        onClick={onOpenContactAudiencePicker}
-                      >
-                        <Users size={16} />
-                        Select from Contacts
-                      </button>
-                      {typeof onClearSelectedAudience === 'function' ? (
-                        <button
-                          type="button"
-                          className="contacts-clean-btn"
-                          onClick={onClearSelectedAudience}
-                        >
-                          Clear Selected Contacts
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
-
-                  <div
-                    className={`voice-upload-dropzone ${isDragOver ? 'drag-over' : ''}`}
-                    onClick={triggerAudienceSelection}
-                    onDragOver={handleCsvDragOver}
-                    onDragLeave={handleCsvDragLeave}
-                    onDrop={handleCsvDrop}
-                  >
-                    <Upload size={48} />
-                    <h3>{audienceSourceMode === 'contacts' ? 'Select contacts from CRM' : 'Upload CSV contacts'}</h3>
-                    <p>{audienceSourceMode === 'contacts' ? 'Click here to open your contacts and build the audience from CRM.' : 'Click here to upload a CSV list. CRM contacts remain available.'}</p>
-                    <small>
-                      {audienceSourceMode === 'contacts'
-                        ? 'Use CRM contacts now. CSV remains available as fallback.'
-                        : 'CSV must include "phone" or "mobile" column when used'}
-                    </small>
-                    {audienceSourceMode === 'csv' ? (
-                      <small className="csv-consent-hint">
-                        For marketing templates, include opt-in fields when available:
-                        <strong> whatsappOptInStatus</strong>, <strong>whatsappOptInScope</strong>,
-                        <strong> consentText</strong>, <strong>proofType</strong>,
-                        <strong> proofId</strong>, and <strong>proofUrl</strong>.
-                        Phone-only CSVs can be imported, but marketing sends will still require a valid opted-in contact.
-                      </small>
-                    ) : null}
-                  </div>
-
-                  <button
-                    type="button"
-                    className="download-sample-btn"
-                    onClick={downloadSampleCsv}
-                  >
-                    <Download size={16} />
-                    Download Sample CSV
-                  </button>
-                </>
-              ) : (
+              {hasCampaignAudience ? (
                 <div className="contacts-preview-panel">
                   <div className="contacts-preview-header">
                     <div className="contacts-preview-info">
                       <Users size={20} />
                       <span>
-                        {audienceSourceLabel ? `${recipients.length} contacts selected` : `${recipients.length} recipients loaded`}
+                        {selectedCampaignAudienceCount.toLocaleString()} contacts
+                        selected
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      className="contacts-clear-btn"
-                      onClick={onClearUpload}
-                      title="Clear contacts"
-                    >
-                      ×
-                    </button>
-                  </div>
-
-                  {typeof onOpenContactAudiencePicker === 'function' ? (
-                    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+                    {typeof onClearSelectedAudience === "function" ? (
                       <button
                         type="button"
-                        className="contacts-clean-btn"
+                        className="contacts-clear-btn"
+                        onClick={onClearSelectedAudience}
+                        title="Clear campaign audience"
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="contacts-source-toggle">
+                    {typeof onOpenContactAudiencePicker === "function" ? (
+                      <button
+                        type="button"
+                        className={`contacts-source-toggle__btn${audienceSourceMode === "contacts" ? " is-active" : ""}`}
                         onClick={onOpenContactAudiencePicker}
                       >
-                        Select from Contacts
+                        <Users size={16} />
+                        From CRM
                       </button>
-                      {typeof onClearSelectedAudience === 'function' ? (
-                        <button
-                          type="button"
-                          className="contacts-clean-btn"
-                          onClick={onClearSelectedAudience}
-                        >
-                          Clear Selected Contacts
-                        </button>
-                      ) : null}
-                    </div>
-                  ) : null}
+                    ) : null}
+                    {typeof onOpenCampaignAudiencePicker === "function" ? (
+                      <button
+                        type="button"
+                        className={`contacts-source-toggle__btn${audienceSourceMode === "campaign" ? " is-active" : ""}`}
+                        onClick={onOpenCampaignAudiencePicker}
+                      >
+                        <Calendar size={16} />
+                        From Past Campaigns
+                      </button>
+                    ) : null}
+                    {typeof onClearSelectedAudience === "function" ? (
+                      <button
+                        type="button"
+                        className="contacts-source-toggle__btn is-secondary"
+                        onClick={onClearSelectedAudience}
+                      >
+                        Clear Selected Contacts
+                      </button>
+                    ) : null}
+                  </div>
 
                   {audienceSourceLabel ? (
                     <p className="contacts-more-row" style={{ marginTop: 0 }}>
@@ -1431,44 +1577,12 @@ const ScheduleForm = ({
                     </p>
                   ) : null}
 
-                  <div className={`recipient-quality-summary ${recipientQualitySummary.hasIssues ? 'has-issues' : 'is-clean'}`}>
-                    {recipientQualitySummary.hasIssues ? (
-                      <>
-                        <strong>{recipientQualitySummary.validCount} valid contacts ready.</strong>{' '}
-                        Skipping {recipientQualitySummary.skippedCount} rows
-                        ({recipientQualitySummary.missingPhoneCount} missing phone, {recipientQualitySummary.duplicatePhoneCount} duplicates).
-                      </>
-                    ) : (
-                      <>
-                        <strong>All {recipientQualitySummary.validCount} contacts are valid.</strong> No missing or duplicate phone rows detected.
-                      </>
-                    )}
-                  </div>
-
-                  {audienceSourceMode === 'csv' && recipientQualitySummary.missingOptInCount > 0 ? (
-                    <div className="csv-optin-warning">
-                      <strong>{recipientQualitySummary.missingOptInCount} CSV rows are missing WhatsApp opt-in.</strong>{' '}
-                      Marketing templates can only send to opted-in contacts.
-                    </div>
-                  ) : null}
-
-                  <div className="recipient-quality-actions">
-                    <button
-                      type="button"
-                      className="contacts-clean-btn"
-                      onClick={onAutoCleanRecipients}
-                      disabled={!recipientQualitySummary.hasIssues || typeof onAutoCleanRecipients !== 'function'}
-                    >
-                      Auto-clean rows
-                    </button>
-                    <button
-                      type="button"
-                      className="contacts-clean-btn"
-                      onClick={downloadRecipientIssueCsv}
-                      disabled={!recipientQualitySummary.hasIssues}
-                    >
-                      Download issue rows
-                    </button>
+                  <div className="recipient-quality-summary is-clean">
+                    <strong>
+                      All {selectedCampaignAudienceCount.toLocaleString()} contacts
+                      are selected.
+                    </strong>{" "}
+                    Past campaign contacts are ready to send.
                   </div>
 
                   <div className="contacts-preview-table-wrap">
@@ -1478,66 +1592,425 @@ const ScheduleForm = ({
                           <th>#</th>
                           <th>Phone</th>
                           <th>Name</th>
-                          {audienceSourceMode === 'csv' ? <th>Opt-in</th> : null}
-                          <th>Custom Fields</th>
+                          <th>Status</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {contactRows.map((row) => (
-                          <tr
-                            key={`${row.phone}-${row.index}`}
-                            className={row.qualityTone === 'issue' ? 'contact-row-issue' : ''}
-                          >
-                            <td>{row.index + 1}</td>
+                        {(campaignAudienceRows.length > 0
+                          ? campaignAudienceRows
+                          : Array.from({
+                              length: Math.max(
+                                0,
+                                Number(selectedCampaignAudienceCount || 0),
+                              ),
+                            }).map((_, index) => ({
+                              _id: `campaign-row-${index}`,
+                              phone: "",
+                              name: "",
+                              status: "selected",
+                            }))
+                        ).map((row, index) => (
+                          <tr key={row?._id || `${row?.phone || "row"}-${index}`}>
+                            <td>{index + 1}</td>
                             <td className="phone-cell">
-                              <span>{row.phone}</span>
-                              <span className={`phone-quality-badge ${row.qualityTone}`}>
-                                {row.qualityLabel}
+                              <span>{row?.phone || "—"}</span>
+                              <span className="phone-quality-badge valid">
+                                Selected
                               </span>
                             </td>
-                            <td>{row.name}</td>
-                            {audienceSourceMode === 'csv' ? (
-                              <td>
-                                <div className="status-badge-stack">
-                                  <span className={`phone-quality-badge ${row.optInTone}`}>
-                                    {row.optInLabel}
-                                  </span>
-                                  <span className={`phone-quality-badge ${row.crmMatchTone}`}>
-                                    {row.crmMatchLabel}
-                                  </span>
-                                  <span className={`phone-quality-badge ${row.eligibilityTone}`}>
-                                    {row.eligibilityLabel}
-                                  </span>
-                                </div>
-                              </td>
-                            ) : null}
+                            <td>{row?.name || "Campaign contact"}</td>
                             <td>
-                              {row.customFieldCount > 0 ? (
-                                <span className="field-badge">{row.customFieldCount} fields</span>
-                              ) : (
-                                <span className="muted-text">None</span>
-                              )}
+                              <span className="phone-quality-badge valid">
+                                {row?.status || "selected"}
+                              </span>
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                    {recipients.length > 5 && (
-                      <p className="contacts-more-row">... and {recipients.length - 5} more contacts</p>
-                    )}
+                    {selectedCampaignAudienceCount > 5 ? (
+                      <p className="contacts-more-row">
+                        ... and {selectedCampaignAudienceCount - 5} more contacts
+                      </p>
+                    ) : null}
                   </div>
 
-                  <button type="button" className="replace-csv-btn" onClick={triggerCsvPicker}>
-                    <Upload size={16} />
-                    Replace CSV
+                  <button
+                    type="button"
+                    className="replace-csv-btn"
+                    onClick={onOpenCampaignAudiencePicker}
+                  >
+                    <Users size={16} />
+                    Review Campaign Audience
                   </button>
                 </div>
+              ) : recipients.length === 0 ? (
+                <>
+                  <div className="contacts-source-toggle">
+                    {typeof onOpenContactAudiencePicker === "function" ? (
+                      <button
+                        type="button"
+                        className={`contacts-source-toggle__btn${audienceSourceMode === "contacts" ? " is-active" : ""}`}
+                        onClick={onOpenContactAudiencePicker}
+                      >
+                        <Users size={16} />
+                        From CRM
+                      </button>
+                    ) : null}
+                    {typeof onOpenCampaignAudiencePicker === "function" ? (
+                      <button
+                        type="button"
+                        className={`contacts-source-toggle__btn${audienceSourceMode === "campaign" ? " is-active" : ""}`}
+                        onClick={onOpenCampaignAudiencePicker}
+                      >
+                        <Calendar size={16} />
+                        From Past Campaigns
+                      </button>
+                    ) : null}
+                    {typeof onClearSelectedAudience === "function" ? (
+                      <button
+                        type="button"
+                        className="contacts-source-toggle__btn is-secondary"
+                        onClick={onClearSelectedAudience}
+                      >
+                        Clear Selected Contacts
+                      </button>
+                    ) : null}
+                  </div>
+
+                  {audienceSourceMode === "contacts" ? (
+                    <>
+                      <div
+                        className={`voice-upload-dropzone ${isDragOver ? "drag-over" : ""} ${csvUploadPhase !== "idle" ? `is-${csvUploadPhase}` : ""}`}
+                        onClick={
+                          isCsvUploadBusy ? undefined : triggerAudienceSelection
+                        }
+                        onDragOver={
+                          isCsvUploadBusy ? undefined : handleCsvDragOver
+                        }
+                        onDragLeave={
+                          isCsvUploadBusy ? undefined : handleCsvDragLeave
+                        }
+                        onDrop={isCsvUploadBusy ? undefined : handleCsvDrop}
+                        aria-busy={isCsvUploadBusy}
+                        aria-disabled={isCsvUploadBusy}
+                      >
+                        <Upload size={48} />
+                        <h3>Select contacts from CRM</h3>
+                        <p>
+                          Click here to open your contacts and build the
+                          audience from CRM.
+                        </p>
+                        <small>
+                          Use CRM contacts now. CSV remains available as
+                          fallback.
+                        </small>
+                        {csvUploadPhase !== "idle" ? (
+                          <div
+                            className={`csv-upload-overlay is-${csvUploadPhase}`}
+                          >
+                            <div
+                              className="csv-upload-overlay__spinner"
+                              aria-hidden="true"
+                            />
+                            <div className="csv-upload-overlay__content">
+                              <strong>
+                                {csvUploadMessage || "Processing CSV..."}
+                              </strong>
+                              <span>{csvUploadPercent}%</span>
+                            </div>
+                            <div
+                              className="csv-upload-overlay__progress"
+                              aria-hidden="true"
+                            >
+                              <span style={{ width: `${csvUploadPercent}%` }} />
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <button
+                        type="button"
+                        className="download-sample-btn"
+                        onClick={downloadSampleCsv}
+                      >
+                        <Download size={16} />
+                        Download Sample CSV
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <div
+                        className={`voice-upload-dropzone ${isDragOver ? "drag-over" : ""} ${csvUploadPhase !== "idle" ? `is-${csvUploadPhase}` : ""}`}
+                        onClick={
+                          isCsvUploadBusy ? undefined : triggerAudienceSelection
+                        }
+                        onDragOver={
+                          isCsvUploadBusy ? undefined : handleCsvDragOver
+                        }
+                        onDragLeave={
+                          isCsvUploadBusy ? undefined : handleCsvDragLeave
+                        }
+                        onDrop={isCsvUploadBusy ? undefined : handleCsvDrop}
+                        aria-busy={isCsvUploadBusy}
+                        aria-disabled={isCsvUploadBusy}
+                      >
+                        <Upload size={48} />
+                        <h3>Upload CSV contacts</h3>
+                        <p>
+                          Click here to upload a CSV list. CRM contacts remain
+                          available.
+                        </p>
+                        <small>
+                          CSV must include "phone" or "mobile" column when used
+                        </small>
+                        {csvUploadPhase !== "idle" ? (
+                          <div
+                            className={`csv-upload-overlay is-${csvUploadPhase}`}
+                          >
+                            <div
+                              className="csv-upload-overlay__spinner"
+                              aria-hidden="true"
+                            />
+                            <div className="csv-upload-overlay__content">
+                              <strong>
+                                {csvUploadMessage || "Processing CSV..."}
+                              </strong>
+                              <span>{csvUploadPercent}%</span>
+                            </div>
+                            <div
+                              className="csv-upload-overlay__progress"
+                              aria-hidden="true"
+                            >
+                              <span style={{ width: `${csvUploadPercent}%` }} />
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+
+                      <button
+                        type="button"
+                        className="download-sample-btn"
+                        onClick={downloadSampleCsv}
+                      >
+                        <Download size={16} />
+                        Download Sample CSV
+                      </button>
+                    </>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="contacts-preview-panel">
+                    <div className="contacts-preview-header">
+                      <div className="contacts-preview-info">
+                        <Users size={20} />
+                        <span>
+                          {audienceSourceLabel
+                            ? `${recipients.length} contacts selected`
+                            : `${recipients.length} recipients loaded`}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="contacts-clear-btn"
+                        onClick={onClearUpload}
+                        title="Clear contacts"
+                      >
+                        ×
+                      </button>
+                    </div>
+
+                    {csvUploadPhase !== "idle" ? (
+                      <div
+                        className={`csv-upload-inline-banner ${csvUploadPhase === "completed" ? "is-completed" : csvUploadPhase === "failed" ? "is-failed" : ""}`}
+                        aria-live="polite"
+                      >
+                        <strong>
+                          {csvUploadMessage || "Replacing CSV..."}
+                        </strong>
+                        <span>{csvUploadPercent}%</span>
+                      </div>
+                    ) : null}
+
+                    <div className="contacts-source-toggle">
+                      {typeof onOpenContactAudiencePicker === "function" ? (
+                        <button
+                          type="button"
+                          className={`contacts-source-toggle__btn${audienceSourceMode === "contacts" ? " is-active" : ""}`}
+                          onClick={onOpenContactAudiencePicker}
+                        >
+                          <Users size={16} />
+                          From CRM
+                        </button>
+                      ) : null}
+                      {typeof onOpenCampaignAudiencePicker === "function" ? (
+                        <button
+                          type="button"
+                          className={`contacts-source-toggle__btn${audienceSourceMode === "campaign" ? " is-active" : ""}`}
+                          onClick={onOpenCampaignAudiencePicker}
+                        >
+                          <Calendar size={16} />
+                          From Past Campaigns
+                        </button>
+                      ) : null}
+                      {typeof onClearSelectedAudience === "function" ? (
+                        <button
+                          type="button"
+                          className="contacts-source-toggle__btn is-secondary"
+                          onClick={onClearSelectedAudience}
+                        >
+                          Clear Selected Contacts
+                        </button>
+                      ) : null}
+                    </div>
+
+                    {audienceSourceLabel ? (
+                      <p className="contacts-more-row" style={{ marginTop: 0 }}>
+                        Audience source: {audienceSourceLabel}
+                      </p>
+                    ) : null}
+
+                    <div
+                      className={`recipient-quality-summary ${recipientQualitySummary.hasIssues ? "has-issues" : "is-clean"}`}
+                    >
+                      {recipientQualitySummary.hasIssues ? (
+                        <>
+                          <strong>
+                            {recipientQualitySummary.validCount} valid contacts
+                            ready.
+                          </strong>{" "}
+                          Skipping {recipientQualitySummary.skippedCount} rows (
+                          {recipientQualitySummary.missingPhoneCount} missing
+                          phone, {recipientQualitySummary.duplicatePhoneCount}{" "}
+                          duplicates).
+                        </>
+                      ) : (
+                        <>
+                          <strong>
+                            All {recipientQualitySummary.validCount} contacts
+                            are valid.
+                          </strong>{" "}
+                          No missing or duplicate phone rows detected.
+                        </>
+                      )}
+                    </div>
+
+                    {audienceSourceMode === "csv" &&
+                    recipientQualitySummary.missingOptInCount > 0 ? (
+                      <div className="csv-optin-warning">
+                        <strong>
+                          {recipientQualitySummary.missingOptInCount} CSV rows
+                          are missing WhatsApp opt-in.
+                        </strong>{" "}
+                        Marketing templates can only send to opted-in contacts.
+                      </div>
+                    ) : null}
+
+                    <div className="recipient-quality-actions">
+                      <button
+                        type="button"
+                        className="contacts-clean-btn"
+                        onClick={onAutoCleanRecipients}
+                        disabled={
+                          !recipientQualitySummary.hasIssues ||
+                          typeof onAutoCleanRecipients !== "function"
+                        }
+                      >
+                        Auto-clean rows
+                      </button>
+                      <button
+                        type="button"
+                        className="contacts-clean-btn"
+                        onClick={downloadRecipientIssueCsv}
+                        disabled={!recipientQualitySummary.hasIssues}
+                      >
+                        Download issue rows
+                      </button>
+                    </div>
+
+                    <div className="contacts-preview-table-wrap">
+                      <table className="contacts-preview-table">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Phone</th>
+                            <th>Name</th>
+                            {audienceSourceMode === "csv" ? (
+                              <th>Opt-in</th>
+                            ) : (
+                              <th>Custom Fields</th>
+                            )}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {contactRows.map((row) => (
+                            <tr
+                              key={`${row.phone}-${row.index}`}
+                              className={
+                                row.qualityTone === "issue"
+                                  ? "contact-row-issue"
+                                  : ""
+                              }
+                            >
+                              <td>{row.index + 1}</td>
+                              <td className="phone-cell">
+                                <span>{row.phone}</span>
+                                <span
+                                  className={`phone-quality-badge ${row.qualityTone}`}
+                                >
+                                  {row.qualityLabel}
+                                </span>
+                              </td>
+                              <td>{row.name}</td>
+                              {audienceSourceMode === "csv" ? (
+                                <td>
+                                  <span
+                                    className={`phone-quality-badge ${row.optInTone}`}
+                                  >
+                                    {row.optInLabel}
+                                  </span>
+                                </td>
+                              ) : null}
+                              {audienceSourceMode !== "csv" ? (
+                                <td>
+                                  {row.customFieldCount > 0 ? (
+                                    <span className="field-badge">
+                                      {row.customFieldCount} fields
+                                    </span>
+                                  ) : (
+                                    <span className="muted-text">None</span>
+                                  )}
+                                </td>
+                              ) : null}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                      {recipients.length > 5 ? (
+                        <p className="contacts-more-row">
+                          ... and {recipients.length - 5} more contacts below
+                        </p>
+                      ) : null}
+                    </div>
+
+                    <button
+                      type="button"
+                      className="replace-csv-btn"
+                      onClick={handleReplaceCsv}
+                    >
+                      <Upload size={16} />
+                      Replace CSV
+                    </button>
+                  </div>
+                </>
               )}
             </div>
 
             <div className="upload-format-info">
               <small>
-                <strong>Supported format:</strong> CSV columns: {requiredColumnsLabel}.
+                <strong>Supported format:</strong> CSV columns:{" "}
+                {requiredColumnsLabel}.
               </small>
             </div>
           </div>
@@ -1573,10 +2046,13 @@ const ScheduleForm = ({
                 </div>
 
                 <small>
-                  Select date/time to schedule. Use <strong>Clear</strong> for immediate send.
+                  Select date/time to schedule. Use <strong>Clear</strong> for
+                  immediate send.
                 </small>
                 {scheduleValidation.isInvalid ? (
-                  <small className="schedule-validation-error">{scheduleValidation.reason}</small>
+                  <small className="schedule-validation-error">
+                    {scheduleValidation.reason}
+                  </small>
                 ) : null}
               </div>
             </details>
@@ -1593,7 +2069,9 @@ const ScheduleForm = ({
                   <input
                     type="checkbox"
                     checked={quietHoursEnabled}
-                    onChange={(event) => onQuietHoursEnabledChange(event.target.checked)}
+                    onChange={(event) =>
+                      onQuietHoursEnabledChange(event.target.checked)
+                    }
                   />
                   <span>Enable quiet hours</span>
                 </label>
@@ -1607,7 +2085,9 @@ const ScheduleForm = ({
                         min="0"
                         max="23"
                         value={quietHoursStartHour}
-                        onChange={(event) => onQuietHoursStartHourChange(event.target.value)}
+                        onChange={(event) =>
+                          onQuietHoursStartHourChange(event.target.value)
+                        }
                         onBlur={normalizeQuietStartHour}
                       />
                     </div>
@@ -1618,7 +2098,9 @@ const ScheduleForm = ({
                         min="0"
                         max="23"
                         value={quietHoursEndHour}
-                        onChange={(event) => onQuietHoursEndHourChange(event.target.value)}
+                        onChange={(event) =>
+                          onQuietHoursEndHourChange(event.target.value)
+                        }
                         onBlur={normalizeQuietEndHour}
                       />
                     </div>
@@ -1627,7 +2109,9 @@ const ScheduleForm = ({
                       <input
                         type="text"
                         value={quietHoursTimezone}
-                        onChange={(event) => onQuietHoursTimezoneChange(event.target.value)}
+                        onChange={(event) =>
+                          onQuietHoursTimezoneChange(event.target.value)
+                        }
                         onBlur={normalizeQuietTimezone}
                         placeholder="Asia/Kolkata"
                       />
@@ -1636,7 +2120,9 @@ const ScheduleForm = ({
                       <span>Action</span>
                       <select
                         value={quietHoursAction}
-                        onChange={(event) => onQuietHoursActionChange(event.target.value)}
+                        onChange={(event) =>
+                          onQuietHoursActionChange(event.target.value)
+                        }
                       >
                         <option value="defer">Defer send</option>
                         <option value="skip">Skip send</option>
@@ -1649,7 +2135,9 @@ const ScheduleForm = ({
                   <input
                     type="checkbox"
                     checked={retryPolicyEnabled}
-                    onChange={(event) => onRetryPolicyEnabledChange(event.target.checked)}
+                    onChange={(event) =>
+                      onRetryPolicyEnabledChange(event.target.checked)
+                    }
                   />
                   <span>Enable retry policy</span>
                 </label>
@@ -1663,7 +2151,9 @@ const ScheduleForm = ({
                       max="10"
                       value={retryMaxAttempts}
                       disabled={!retryPolicyEnabled}
-                      onChange={(event) => onRetryMaxAttemptsChange(event.target.value)}
+                      onChange={(event) =>
+                        onRetryMaxAttemptsChange(event.target.value)
+                      }
                       onBlur={normalizeRetryAttempts}
                     />
                   </div>
@@ -1675,7 +2165,9 @@ const ScheduleForm = ({
                       max="600"
                       value={retryBackoffSeconds}
                       disabled={!retryPolicyEnabled}
-                      onChange={(event) => onRetryBackoffSecondsChange(event.target.value)}
+                      onChange={(event) =>
+                        onRetryBackoffSecondsChange(event.target.value)
+                      }
                       onBlur={normalizeRetryBackoff}
                     />
                   </div>
@@ -1688,10 +2180,24 @@ const ScheduleForm = ({
                     min="1"
                     max="50"
                     value={deliveryBatchSize}
-                    onChange={(event) => onDeliveryBatchSizeChange(event.target.value)}
-                    onBlur={() => onDeliveryBatchSizeChange(String(Math.min(50, Math.max(1, Number(deliveryBatchSize) || 50))))}
+                    onChange={(event) =>
+                      onDeliveryBatchSizeChange(event.target.value)
+                    }
+                    onBlur={() =>
+                      onDeliveryBatchSizeChange(
+                        String(
+                          Math.min(
+                            50,
+                            Math.max(1, Number(deliveryBatchSize) || 50),
+                          ),
+                        ),
+                      )
+                    }
                   />
-                  <small>Controls how many recipients the backend processes before moving to the next batch.</small>
+                  <small>
+                    Controls how many recipients the backend processes before
+                    moving to the next batch.
+                  </small>
                 </div>
 
                 <div className="policy-field">
@@ -1701,17 +2207,32 @@ const ScheduleForm = ({
                     min="0"
                     max="3600"
                     value={deliveryBatchDelaySeconds}
-                    onChange={(event) => onDeliveryBatchDelaySecondsChange(event.target.value)}
-                    onBlur={() => onDeliveryBatchDelaySecondsChange(String(Math.min(3600, Math.max(0, Number(deliveryBatchDelaySeconds) || 0))))}
+                    onChange={(event) =>
+                      onDeliveryBatchDelaySecondsChange(event.target.value)
+                    }
+                    onBlur={() =>
+                      onDeliveryBatchDelaySecondsChange(
+                        String(
+                          Math.min(
+                            3600,
+                            Math.max(0, Number(deliveryBatchDelaySeconds) || 0),
+                          ),
+                        ),
+                      )
+                    }
                   />
-                  <small>How long the backend waits before sending the next batch.</small>
+                  <small>
+                    How long the backend waits before sending the next batch.
+                  </small>
                 </div>
 
                 <label className="policy-checkbox-row">
                   <input
                     type="checkbox"
                     checked={respectOptOut}
-                    onChange={(event) => onRespectOptOutChange(event.target.checked)}
+                    onChange={(event) =>
+                      onRespectOptOutChange(event.target.checked)
+                    }
                   />
                   <span>Respect opted-out recipients</span>
                 </label>
@@ -1721,23 +2242,32 @@ const ScheduleForm = ({
                   <textarea
                     rows={3}
                     value={suppressionListRaw}
-                    onChange={(event) => onSuppressionListRawChange(event.target.value)}
+                    onChange={(event) =>
+                      onSuppressionListRawChange(event.target.value)
+                    }
                     placeholder="+919999999999, +919888888888"
                   />
                   <small className="suppression-list-meta">
                     {suppressionListMeta.total > 0
-                      ? `${suppressionListMeta.total} unique number${suppressionListMeta.total === 1 ? '' : 's'}`
-                      : 'No suppression numbers added'}
+                      ? `${suppressionListMeta.total} unique number${suppressionListMeta.total === 1 ? "" : "s"}`
+                      : "No suppression numbers added"}
                   </small>
                   {suppressionListMeta.invalidEntries.length > 0 ? (
                     <small className="suppression-list-error">
-                      Invalid format: {suppressionListMeta.invalidEntries.slice(0, 5).join(', ')}
-                      {suppressionListMeta.invalidEntries.length > 5 ? '...' : ''}
+                      Invalid format:{" "}
+                      {suppressionListMeta.invalidEntries
+                        .slice(0, 5)
+                        .join(", ")}
+                      {suppressionListMeta.invalidEntries.length > 5
+                        ? "..."
+                        : ""}
                     </small>
                   ) : null}
                 </div>
                 {policyValidation.isInvalid ? (
-                  <small className="policy-validation-error">{policyValidation.reason}</small>
+                  <small className="policy-validation-error">
+                    {policyValidation.reason}
+                  </small>
                 ) : null}
               </div>
             </details>
@@ -1745,13 +2275,20 @@ const ScheduleForm = ({
 
           {uploadedFile && fileVariables.length > 0 && (
             <div className="variable-file-info">
-              Variables detected: {fileVariables.join(', ')}
+              Variables detected: {fileVariables.join(", ")}
             </div>
           )}
 
-          {uploadedFile && messageType === 'template' && selectedTemplate && getTemplateVariableCount(selectedTemplate) > 0 && fileVariables.length === 0 ? (
+          {uploadedFile &&
+          messageType === "template" &&
+          selectedTemplate &&
+          getTemplateVariableCount(selectedTemplate) > 0 &&
+          fileVariables.length === 0 ? (
             <div className="submit-block-warning" style={{ marginTop: 12 }}>
-              <strong>CSV needs template variables:</strong> this template requires {getTemplateVariableCount(selectedTemplate)} variable column(s) like <code>var1</code>, <code>var2</code>. Your CSV does not include them yet.
+              <strong>CSV needs template variables:</strong> this template
+              requires {getTemplateVariableCount(selectedTemplate)} variable
+              column(s) like <code>var1</code>, <code>var2</code>. Your CSV does
+              not include them yet.
             </div>
           ) : null}
 
@@ -1760,22 +2297,32 @@ const ScheduleForm = ({
               <div className="draft-status-meta">
                 {draftSavedAt
                   ? `Draft auto-saved at ${draftSavedAt.toLocaleTimeString()}`
-                  : 'Draft auto-save is enabled'}
+                  : "Draft auto-save is enabled"}
               </div>
             ) : null}
 
             {hasRecipientIssues ? (
               <div className="submit-block-warning">
-                <strong>Broadcast blocked:</strong> fix recipient issues first ({recipientQualitySummary.missingPhoneCount} missing phone, {recipientQualitySummary.duplicatePhoneCount} duplicates).
+                <strong>Broadcast blocked:</strong> fix recipient issues first (
+                {recipientQualitySummary.missingPhoneCount} missing phone,{" "}
+                {recipientQualitySummary.duplicatePhoneCount} duplicates).
               </div>
             ) : null}
 
-            <button type="button" className="secondary-btn" onClick={handleSaveDraftNow}>
+            <button
+              type="button"
+              className="secondary-btn"
+              onClick={handleSaveDraftNow}
+            >
               Save Draft Now
             </button>
 
             {hasStoredDraft ? (
-              <button type="button" className="secondary-btn" onClick={handleClearSavedDraft}>
+              <button
+                type="button"
+                className="secondary-btn"
+                onClick={handleClearSavedDraft}
+              >
                 Clear Saved Draft
               </button>
             ) : null}
@@ -1784,7 +2331,10 @@ const ScheduleForm = ({
               Reset
             </button>
 
-            <button className="secondary-btn" onClick={handleBackToOverviewClick}>
+            <button
+              className="secondary-btn"
+              onClick={handleBackToOverviewClick}
+            >
               Back to Overview
             </button>
 
@@ -1792,16 +2342,29 @@ const ScheduleForm = ({
               <button
                 className="primary-btn"
                 onClick={handleCreateBroadcastClick}
-                disabled={isSending || !canSubmitCampaign || hasRecipientIssues || scheduleValidation.isInvalid || policyValidation.isInvalid}
+                disabled={
+                  isSending ||
+                  !canSubmitCampaign ||
+                  hasRecipientIssues ||
+                  scheduleValidation.isInvalid ||
+                  policyValidation.isInvalid
+                }
               >
                 <Calendar size={16} />
-                {isSending ? 'Scheduling...' : `Schedule Broadcast (${recipients.length} contacts)`}
+                {isSending
+                  ? "Scheduling..."
+                  : `Schedule Broadcast (${recipients.length} contacts)`}
               </button>
             ) : (
               <button
                 className="primary-btn"
                 onClick={handleSendBroadcastClick}
-                disabled={isSending || !canSubmitCampaign || hasRecipientIssues || policyValidation.isInvalid}
+                disabled={
+                  isSending ||
+                  !canSubmitCampaign ||
+                  hasRecipientIssues ||
+                  policyValidation.isInvalid
+                }
               >
                 {isSending ? (
                   <>
@@ -1830,35 +2393,39 @@ const ScheduleForm = ({
 
                 <div className="stat">
                   <span className="label">Successful:</span>
-                  <span className="value success">{sendResults.successful}</span>
+                  <span className="value success">
+                    {sendResults.successful}
+                  </span>
                 </div>
 
                 <div className="stat">
                   <span className="label">Failed:</span>
                   <span className="value failed">
-                    {sendResults.failed ?? ((sendResults.total_sent || 0) - (sendResults.successful || 0))}
+                    {sendResults.failed ??
+                      (sendResults.total_sent || 0) -
+                        (sendResults.successful || 0)}
                   </span>
                 </div>
               </div>
             </div>
           )}
         </div>
+      </div>
 
-        <div id="broadcast-message-preview">
-          <MessagePreview
-            messageType={messageType}
-            templateName={templateName}
-            selectedTemplate={selectedTemplate}
-            templateHeaderMediaUrl={selectedTemplateHeaderMediaUrl}
-            customMessage={customMessage}
-            recipients={recipients}
-            getTemplatePreview={getSelectedTemplatePreview}
-            getMessagePreview={() => {
-              if (!customMessage) return 'Enter your custom message';
-              return customMessage;
-            }}
-          />
-        </div>
+      <div id="broadcast-message-preview">
+        <MessagePreview
+          messageType={messageType}
+          templateName={templateName}
+          selectedTemplate={selectedTemplate}
+          templateHeaderMediaUrl={selectedTemplateHeaderMediaUrl}
+          customMessage={customMessage}
+          recipients={recipients}
+          getTemplatePreview={getSelectedTemplatePreview}
+          getMessagePreview={() => {
+            if (!customMessage) return "Enter your custom message";
+            return customMessage;
+          }}
+        />
       </div>
     </div>
   );

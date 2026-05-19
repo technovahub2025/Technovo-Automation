@@ -1,19 +1,18 @@
-/* Side-by-side layout for campaign configuration */
+/* Legacy preview styles kept for older surfaces.
+   The Broadcast page now controls the main two-column layout. */
 .campaign-config-wrapper {
-    display: flex;
-    gap: 2rem;
-    align-items: flex-start;
+    display: block;
 }
 
 .form-section {
-    flex: 1;
     min-width: 0;
 }
 
 .preview-section {
-    flex: 0 0 380px;
-    position: sticky;
-    top: 2rem;
+    position: static;
+    width: 100%;
+    max-width: none;
+    margin-left: 0;
 }
 
 /* Original WhatsApp Message Preview Styles */
@@ -26,7 +25,8 @@
     border-radius: 0;
     padding: 0;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-    max-width: 375px;
+    width: 100%;
+    max-width: 100%;
     margin: 0 auto;
     overflow: hidden;
     border: 1px solid #e5e5e5;
@@ -503,11 +503,10 @@
 /* Responsive adjustments */
 @media (max-width: 1200px) {
     .campaign-config-wrapper {
-        flex-direction: column;
+        display: block;
     }
     
     .preview-section {
-        flex: 1;
         position: static;
         margin-top: 2rem;
     }

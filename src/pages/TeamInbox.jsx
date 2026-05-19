@@ -1157,6 +1157,13 @@ const TeamInbox = () => {
   }, [conversationPageMeta.hasMore, conversationLoadingMore, loadScopedConversations]);
 
   useEffect(() => {
+    const normalizedUserId = String(currentUserId || '').trim();
+    if (!normalizedUserId) return;
+
+    void loadScopedConversations({ silent: true, append: false }).catch(() => undefined);
+  }, [currentUserId, loadScopedConversations]);
+
+  useEffect(() => {
     const querySignature = `${normalizedConversationSearchTerm.toLowerCase()}::${normalizedConversationFilter}`;
     if (!conversationQueryInitializedRef.current) {
       conversationQueryInitializedRef.current = true;

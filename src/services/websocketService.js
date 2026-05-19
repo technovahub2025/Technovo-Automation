@@ -1,5 +1,7 @@
 import { resolveApiBaseUrl } from './apiBaseUrl';
 
+import { normalizeError } from "../utils/errorUtils";
+
 class EventEmitter {
   constructor() {
     this.events = {};
@@ -230,7 +232,7 @@ class WebSocketService extends EventEmitter {
         }, this.connectionTimeoutMs);
       } catch (error) {
         this.connecting = false;
-        reject(error);
+        reject(normalizeError(error, "WebSocket connection failed"));
       }
     }).finally(() => {
       this.connectionPromise = null;
@@ -278,7 +280,7 @@ class WebSocketService extends EventEmitter {
     this.connecting = false;
     this.emit('error', { type: 'websocket_error', error });
     this.emit('connect_error', error);
-    if (reject && wasConnecting) reject(error);
+    if (reject && wasConnecting) reject(normalizeError(error, "WebSocket connection failed"));
   }
 
   handleClose(event) {
@@ -330,7 +332,7 @@ class WebSocketService extends EventEmitter {
     this.reconnectTimer = setTimeout(() => {
       this.reconnectAttempts += 1;
       this.connect(this.currentUserId, this.messageHandler).catch((error) => {
-        console.error('Reconnection failed:', error);
+        console.error('Reconnection failed:', normalizeError(error, 'WebSocket reconnection failed'));
         if (this.reconnectAttempts >= 5) {
           this.circuitOpenUntil = Date.now() + 15000;
         }

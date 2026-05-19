@@ -17,6 +17,7 @@ import { toAppPath } from '../utils/appRouteBase';
 
 const DASHBOARD_LOADING_TIMEOUT_MS = 8000;
 const BROADCAST_DASHBOARD_CACHE_TTL_MS = 10 * 60 * 1000;
+const BROADCAST_DASHBOARD_FALLBACK_COOLDOWN_MS = 30 * 1000;
 const BROADCAST_DASHBOARD_CACHE_NAMESPACE = 'broadcast-dashboard';
 
 const sanitizeDashboardAnalytics = (analytics = {}) => {
@@ -204,13 +205,6 @@ const BroadcastDashboard = () => {
 
     const getDeliveredCount = () => {
         return analytics.messagesDelivered || 0;
-    };
-
-    const getReadRate = () => {
-        const total = analytics.messagesSent || 0;
-        const read = analytics.messagesRead || 0;
-        if (total === 0) return '0%';
-        return `${Math.round((read / total) * 100)}%`;
     };
 
     const getReadCount = () => {

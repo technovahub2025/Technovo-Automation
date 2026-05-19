@@ -1,8 +1,19 @@
-import React from 'react';
-import { X, Upload, Calendar, Send, Clock, ArrowLeft, RefreshCw, Trash2, Users, Download } from 'lucide-react';
-import MessagePreview from './MessagePreview';
-import { downloadCsv } from '../../utils/csvExport';
-import './Modal.css';
+import React from "react";
+import {
+  X,
+  Upload,
+  Calendar,
+  Send,
+  Clock,
+  ArrowLeft,
+  RefreshCw,
+  Trash2,
+  Users,
+  Download,
+} from "lucide-react";
+import MessagePreview from "./MessagePreview";
+import { downloadCsv } from "../../utils/csvExport";
+import "./Modal.css";
 
 const NewBroadcastPopup = ({
   showNewBroadcastPopup,
@@ -19,17 +30,22 @@ const NewBroadcastPopup = ({
   onClearUpload,
   templateHeaderMediaUrl,
   templateHeaderMediaUploading = false,
-  templateHeaderMediaError = '',
+  templateHeaderMediaError = "",
   onTemplateHeaderMediaUpload,
   onClearTemplateHeaderMedia,
+  csvUploadState = {
+    phase: "idle",
+    message: "",
+    percent: 0,
+  },
   onOpenContactAudiencePicker,
   onOpenCampaignExtraContactsPicker,
   onOpenCampaignAudiencePicker,
   onClearSelectedAudience,
-  audienceSourceMode = 'contacts',
+  audienceSourceMode = "contacts",
   onAudienceSourceModeChange,
-  audienceSourceLabel = '',
-  selectedCampaignAudienceLabel = '',
+  audienceSourceLabel = "",
+  selectedCampaignAudienceLabel = "",
   selectedCampaignAudienceCount = 0,
   scheduledTime,
   onScheduledTimeChange,
@@ -62,74 +78,105 @@ const NewBroadcastPopup = ({
   respectOptOut,
   onRespectOptOutChange,
   suppressionListRaw,
-  onSuppressionListRawChange
+  onSuppressionListRawChange,
 }) => {
-  const [isTemplateHeaderDragOver, setIsTemplateHeaderDragOver] = React.useState(false);
-  const selectedTemplate = (officialTemplates || []).find((template) => template.name === templateName) || null;
+  const [isTemplateHeaderDragOver, setIsTemplateHeaderDragOver] =
+    React.useState(false);
+  const selectedTemplate =
+    (officialTemplates || []).find(
+      (template) => template.name === templateName,
+    ) || null;
   const selectedTemplateHeader =
     selectedTemplate?.content?.header ||
     selectedTemplate?.header ||
     (Array.isArray(selectedTemplate?.components)
       ? selectedTemplate.components.find(
-          (component) => String(component?.type || '').trim().toUpperCase() === 'HEADER'
+          (component) =>
+            String(component?.type || "")
+              .trim()
+              .toUpperCase() === "HEADER",
         ) || null
       : null);
   const selectedTemplateHeaderType = String(
     selectedTemplateHeader?.type ||
-    selectedTemplateHeader?.format ||
-    selectedTemplate?.type ||
-    selectedTemplate?.mediaType ||
-    selectedTemplate?.headerType ||
-    selectedTemplate?.templateType ||
-    ''
+      selectedTemplateHeader?.format ||
+      selectedTemplate?.type ||
+      selectedTemplate?.mediaType ||
+      selectedTemplate?.headerType ||
+      selectedTemplate?.templateType ||
+      "",
   ).toLowerCase();
   const selectedTemplateHasImageHeader =
-    selectedTemplateHeaderType === 'image' ||
-    (
-      Boolean(
-        selectedTemplateHeader?.mediaUrl ||
-        selectedTemplateHeader?.example?.header_handle?.[0] ||
-        selectedTemplateHeader?.header_handle?.[0]
-      ) &&
-      !String(selectedTemplateHeader?.text || '').trim()
-    );
+    selectedTemplateHeaderType === "image" ||
+    (Boolean(
+      selectedTemplateHeader?.mediaUrl ||
+      selectedTemplateHeader?.example?.header_handle?.[0] ||
+      selectedTemplateHeader?.header_handle?.[0],
+    ) &&
+      !String(selectedTemplateHeader?.text || "").trim());
   const selectedTemplateHeaderMediaUrl = String(
     templateHeaderMediaUrl ||
-    selectedTemplateHeader?.mediaUrl ||
-    selectedTemplateHeader?.example?.header_handle?.[0] ||
-    selectedTemplateHeader?.header_handle?.[0] ||
-    ''
+      selectedTemplateHeader?.mediaUrl ||
+      selectedTemplateHeader?.example?.header_handle?.[0] ||
+      selectedTemplateHeader?.header_handle?.[0] ||
+      "",
   ).trim();
-  const templateHeaderUploadInputId = 'new-broadcast-template-header-upload';
+  const templateHeaderUploadInputId = "new-broadcast-template-header-upload";
+  const csvUploadPhase = String(csvUploadState?.phase || "idle");
+  const csvUploadMessage = String(csvUploadState?.message || "").trim();
+  const csvUploadPercent = Math.max(
+    0,
+    Math.min(100, Number(csvUploadState?.percent || 0)),
+  );
+  const isCsvUploadBusy = [
+    "parsing",
+    "validating",
+    "processing",
+    "uploading",
+  ].includes(csvUploadPhase);
 
   const extractTemplateBody = (template) => {
-    if (!template || typeof template !== 'object') return '';
+    if (!template || typeof template !== "object") return "";
 
-    if (typeof template.templateContent === 'string' && template.templateContent.trim()) {
+    if (
+      typeof template.templateContent === "string" &&
+      template.templateContent.trim()
+    ) {
       return template.templateContent.trim();
     }
 
-    if (typeof template.content === 'string' && template.content.trim()) {
+    if (typeof template.content === "string" && template.content.trim()) {
       return template.content.trim();
     }
 
-    if (template.content && typeof template.content === 'object') {
-      if (typeof template.content.body === 'string' && template.content.body.trim()) {
+    if (template.content && typeof template.content === "object") {
+      if (
+        typeof template.content.body === "string" &&
+        template.content.body.trim()
+      ) {
         return template.content.body.trim();
       }
-      if (typeof template.content.text === 'string' && template.content.text.trim()) {
+      if (
+        typeof template.content.text === "string" &&
+        template.content.text.trim()
+      ) {
         return template.content.text.trim();
       }
     }
 
     if (Array.isArray(template.components)) {
-      const bodyComponent = template.components.find((component) => String(component?.type || '').toUpperCase() === 'BODY');
-      if (typeof bodyComponent?.text === 'string' && bodyComponent.text.trim()) {
+      const bodyComponent = template.components.find(
+        (component) => String(component?.type || "").toUpperCase() === "BODY",
+      );
+      if (
+        typeof bodyComponent?.text === "string" &&
+        bodyComponent.text.trim()
+      ) {
         return bodyComponent.text.trim();
       }
     }
 
-    return '';
+    return "";
   };
 
   const getTemplateVariableCount = React.useCallback((template) => {
@@ -138,40 +185,46 @@ const NewBroadcastPopup = ({
 
     const matches = bodyText.match(/\{\{(\d+)\}\}/g) || [];
     const numbers = matches
-      .map((token) => Number(token.replace(/[{}]/g, '')))
+      .map((token) => Number(token.replace(/[{}]/g, "")))
       .filter((value) => Number.isFinite(value) && value > 0);
 
     return numbers.length > 0 ? Math.max(...numbers) : 0;
   }, []);
 
   const downloadSampleCsv = () => {
-    const variableCount = messageType === 'template' ? getTemplateVariableCount(selectedTemplate) : 0;
-    const headers = ['phone'];
+    const variableCount =
+      messageType === "template"
+        ? getTemplateVariableCount(selectedTemplate)
+        : 0;
+    const headers = ["phone"];
     for (let i = 1; i <= variableCount; i += 1) {
       headers.push(`var${i}`);
     }
 
-    const emptyRow = headers.map(() => '');
+    const emptyRow = headers.map(() => "");
     downloadCsv({
-      filename: 'broadcast_contacts_sample.csv',
+      filename: "broadcast_contacts_sample.csv",
       headers,
       rows: [emptyRow, emptyRow],
-      exportType: 'broadcast_contacts_sample'
+      exportType: "broadcast_contacts_sample",
     });
   };
 
-  const selectedTemplateVariableCount = messageType === 'template' ? getTemplateVariableCount(selectedTemplate) : 0;
+  const selectedTemplateVariableCount =
+    messageType === "template" ? getTemplateVariableCount(selectedTemplate) : 0;
   const missingTemplateVariables = Boolean(
     uploadedFile &&
-    messageType === 'template' &&
+    messageType === "template" &&
     selectedTemplate &&
     selectedTemplateVariableCount > 0 &&
-    fileVariables.length === 0
+    fileVariables.length === 0,
   );
 
   const handleTemplateHeaderUploadClick = () => {
     const input = document.getElementById(templateHeaderUploadInputId);
-    if (input) input.click();
+    if (!input) return;
+    input.value = "";
+    input.click();
   };
 
   const handleTemplateHeaderDragOver = (event) => {
@@ -191,22 +244,28 @@ const NewBroadcastPopup = ({
     event.stopPropagation();
     setIsTemplateHeaderDragOver(false);
     const file = event.dataTransfer?.files?.[0];
-    if (file && typeof onTemplateHeaderMediaUpload === 'function') {
+    if (file && typeof onTemplateHeaderMediaUpload === "function") {
       await onTemplateHeaderMediaUpload(file);
     }
   };
 
   const triggerCsvPicker = () => {
-    const input = document.getElementById('csv-file-popup');
+    const input = document.getElementById("csv-file-popup");
     if (input) input.click();
   };
 
   const triggerAudienceSelection = () => {
-    if (audienceSourceMode === 'contacts' && typeof onOpenContactAudiencePicker === 'function') {
+    if (
+      audienceSourceMode === "contacts" &&
+      typeof onOpenContactAudiencePicker === "function"
+    ) {
       onOpenContactAudiencePicker();
       return;
     }
-    if (audienceSourceMode === 'campaign' && typeof onOpenCampaignAudiencePicker === 'function') {
+    if (
+      audienceSourceMode === "campaign" &&
+      typeof onOpenCampaignAudiencePicker === "function"
+    ) {
       onOpenCampaignAudiencePicker();
       return;
     }
@@ -214,13 +273,13 @@ const NewBroadcastPopup = ({
   };
 
   const audienceCountLabel =
-    audienceSourceMode === 'campaign'
+    audienceSourceMode === "campaign"
       ? `${Number(selectedCampaignAudienceCount || 0).toLocaleString()} contacts selected`
       : recipients.length > 0
         ? audienceSourceLabel
           ? `${recipients.length} contacts selected`
           : `${recipients.length} recipients loaded`
-        : '';
+        : "";
 
   if (!showNewBroadcastPopup) return null;
 
@@ -229,17 +288,17 @@ const NewBroadcastPopup = ({
       <div className="popup-container new-broadcast-popup">
         <div className="popup-header">
           <div className="popup-title">
-            <button 
-              className="back-btn" 
+            <button
+              className="back-btn"
               onClick={onBackToChoice}
-              style={{ 
-                background: 'none', 
-                border: 'none', 
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                padding: '4px',
-                marginRight: '8px'
+              style={{
+                background: "none",
+                border: "none",
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                padding: "4px",
+                marginRight: "8px",
               }}
             >
               <ArrowLeft size={24} />
@@ -263,7 +322,7 @@ const NewBroadcastPopup = ({
             />
           </div>
 
-          {messageType === 'template' && (
+          {messageType === "template" && (
             <div className="form-group">
               <label>Template *</label>
               <select
@@ -280,97 +339,121 @@ const NewBroadcastPopup = ({
               </select>
               {selectedTemplate ? (
                 <>
-                <div className="template-header-hint">
-                  <span className="template-header-hint__label">Header</span>
-                  <span className={`template-header-hint__chip ${selectedTemplateHasImageHeader ? 'is-image' : 'is-text'}`}>
-                    {selectedTemplateHasImageHeader ? 'Image template' : 'Text template'}
-                  </span>
-                  <span className="template-header-hint__text">
-                    {selectedTemplateHasImageHeader
-                      ? 'This template requires an image header. Upload one before sending.'
-                      : 'This template does not use an image header.'}
-                  </span>
-                </div>
-                {selectedTemplateHasImageHeader ? (
-                  <div
-                    className={`template-media-upload-box template-media-upload-box--compact${isTemplateHeaderDragOver ? ' is-drag-over' : ''}`}
-                    onDragOver={handleTemplateHeaderDragOver}
-                    onDragLeave={handleTemplateHeaderDragLeave}
-                    onDrop={handleTemplateHeaderDrop}
-                    onClick={handleTemplateHeaderUploadClick}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(event) => {
-                      if (event.key === 'Enter' || event.key === ' ') {
-                        event.preventDefault();
-                        handleTemplateHeaderUploadClick();
-                      }
-                    }}
-                  >
-                    <div className="template-media-upload-box__empty-state">
-                      <div className="template-media-upload-box__icon-shell">
-                        <Upload size={18} />
+                  <div className="template-header-hint">
+                    <span className="template-header-hint__label">Header</span>
+                    <span
+                      className={`template-header-hint__chip ${selectedTemplateHasImageHeader ? "is-image" : "is-text"}`}
+                    >
+                      {selectedTemplateHasImageHeader
+                        ? "Image template"
+                        : "Text template"}
+                    </span>
+                    <span className="template-header-hint__text">
+                      {selectedTemplateHasImageHeader
+                        ? "This template requires an image header. Upload one before sending."
+                        : "This template does not use an image header."}
+                    </span>
+                  </div>
+                  {selectedTemplateHasImageHeader ? (
+                    <div
+                      className={`template-media-upload-box template-media-upload-box--compact${isTemplateHeaderDragOver ? " is-drag-over" : ""}`}
+                      onDragOver={handleTemplateHeaderDragOver}
+                      onDragLeave={handleTemplateHeaderDragLeave}
+                      onDrop={handleTemplateHeaderDrop}
+                      onClick={handleTemplateHeaderUploadClick}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          handleTemplateHeaderUploadClick();
+                        }
+                      }}
+                    >
+                      <div className="template-media-upload-box__empty-state">
+                        <div className="template-media-upload-box__icon-shell">
+                          <Upload size={18} />
+                        </div>
+                        <div className="template-media-upload-box__copy">
+                          <strong>
+                            {selectedTemplateHeaderMediaUrl
+                              ? "Replace the image header"
+                              : "Drop image here"}
+                          </strong>
+                          <span>
+                            {isTemplateHeaderDragOver
+                              ? "Release to upload this image for the template header."
+                              : "PNG or JPG works best. You can also click to browse."}
+                          </span>
+                        </div>
                       </div>
-                      <div className="template-media-upload-box__copy">
-                        <strong>{selectedTemplateHeaderMediaUrl ? 'Replace the image header' : 'Drop image here'}</strong>
+                      <div className="template-media-upload-box__header">
+                        <strong>Image Header</strong>
                         <span>
-                          {isTemplateHeaderDragOver
-                            ? 'Release to upload this image for the template header.'
-                            : 'PNG or JPG works best. You can also click to browse.'}
+                          {selectedTemplateHeaderMediaUrl
+                            ? "Ready to send"
+                            : "Upload required"}
                         </span>
                       </div>
-                    </div>
-                    <div className="template-media-upload-box__header">
-                      <strong>Image Header</strong>
-                      <span>{selectedTemplateHeaderMediaUrl ? 'Ready to send' : 'Upload required'}</span>
-                    </div>
-                    <div className="template-media-upload-box__dropzone-copy">
-                      {isTemplateHeaderDragOver
-                        ? 'Drop the image here to upload it for this template.'
-                        : 'Drag and drop an image here, or choose one from your device.'}
-                    </div>
-                    <div className="template-media-upload-box__actions">
-                      <input
-                        id={templateHeaderUploadInputId}
-                        type="file"
-                        accept="image/*"
-                        className="template-media-upload-box__input"
-                        onChange={onTemplateHeaderMediaUpload}
-                        disabled={templateHeaderMediaUploading}
-                      />
-                      <button
-                        type="button"
-                        className="secondary-btn"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          handleTemplateHeaderUploadClick();
-                        }}
-                        disabled={templateHeaderMediaUploading}
-                      >
-                        {templateHeaderMediaUploading ? 'Uploading...' : selectedTemplateHeaderMediaUrl ? 'Replace Image' : 'Upload Image'}
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-btn"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onClearTemplateHeaderMedia?.();
-                        }}
-                        disabled={templateHeaderMediaUploading || !selectedTemplateHeaderMediaUrl}
-                      >
-                        Clear
-                      </button>
-                    </div>
-                    {selectedTemplateHeaderMediaUrl ? (
-                      <div className="template-media-upload-box__preview">
-                        <img src={selectedTemplateHeaderMediaUrl} alt={`${templateName} header`} />
+                      <div className="template-media-upload-box__dropzone-copy">
+                        {isTemplateHeaderDragOver
+                          ? "Drop the image here to upload it for this template."
+                          : "Drag and drop an image here, or choose one from your device."}
                       </div>
-                    ) : null}
-                    {templateHeaderMediaError ? (
-                      <div className="template-media-upload-box__error">{templateHeaderMediaError}</div>
-                    ) : null}
-                  </div>
-                ) : null}
+                      <div className="template-media-upload-box__actions">
+                        <input
+                          id={templateHeaderUploadInputId}
+                          type="file"
+                          accept="image/*"
+                          className="template-media-upload-box__input"
+                          onChange={onTemplateHeaderMediaUpload}
+                          disabled={templateHeaderMediaUploading}
+                        />
+                        <button
+                          type="button"
+                          className="secondary-btn"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            handleTemplateHeaderUploadClick();
+                          }}
+                          disabled={templateHeaderMediaUploading}
+                        >
+                          {templateHeaderMediaUploading
+                            ? "Uploading..."
+                            : selectedTemplateHeaderMediaUrl
+                              ? "Replace Image"
+                              : "Upload Image"}
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-btn"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            onClearTemplateHeaderMedia?.();
+                          }}
+                          disabled={
+                            templateHeaderMediaUploading ||
+                            !selectedTemplateHeaderMediaUrl
+                          }
+                        >
+                          Clear
+                        </button>
+                      </div>
+                      {selectedTemplateHeaderMediaUrl ? (
+                        <div className="template-media-upload-box__preview">
+                          <img
+                            src={selectedTemplateHeaderMediaUrl}
+                            alt={`${templateName} header`}
+                          />
+                        </div>
+                      ) : null}
+                      {templateHeaderMediaError ? (
+                        <div className="template-media-upload-box__error">
+                          {templateHeaderMediaError}
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </>
               ) : null}
             </div>
@@ -381,41 +464,50 @@ const NewBroadcastPopup = ({
             <div className="audience-source-toggle">
               <button
                 type="button"
-                className={`audience-source-toggle__btn${audienceSourceMode === 'contacts' ? ' is-active' : ''}`}
-                onClick={() => typeof onAudienceSourceModeChange === 'function' && onAudienceSourceModeChange('contacts')}
+                className={`audience-source-toggle__btn${audienceSourceMode === "contacts" ? " is-active" : ""}`}
+                onClick={() =>
+                  typeof onAudienceSourceModeChange === "function" &&
+                  onAudienceSourceModeChange("contacts")
+                }
               >
                 <Users size={16} />
                 Contacts first
               </button>
               <button
                 type="button"
-                className={`audience-source-toggle__btn${audienceSourceMode === 'campaign' ? ' is-active' : ''}`}
-                onClick={() => typeof onAudienceSourceModeChange === 'function' && onAudienceSourceModeChange('campaign')}
+                className={`audience-source-toggle__btn${audienceSourceMode === "campaign" ? " is-active" : ""}`}
+                onClick={() =>
+                  typeof onAudienceSourceModeChange === "function" &&
+                  onAudienceSourceModeChange("campaign")
+                }
               >
                 <Calendar size={16} />
                 Campaign first
               </button>
               <button
                 type="button"
-                className={`audience-source-toggle__btn${audienceSourceMode === 'csv' ? ' is-active' : ''}`}
-                onClick={() => typeof onAudienceSourceModeChange === 'function' && onAudienceSourceModeChange('csv')}
+                className={`audience-source-toggle__btn${audienceSourceMode === "csv" ? " is-active" : ""}`}
+                onClick={() =>
+                  typeof onAudienceSourceModeChange === "function" &&
+                  onAudienceSourceModeChange("csv")
+                }
               >
                 <Upload size={16} />
                 CSV first
               </button>
             </div>
             <p className="audience-source-helper">
-              {audienceSourceMode === 'contacts'
-                ? 'Audience source: CRM contacts'
-                : audienceSourceMode === 'campaign'
-                  ? 'Audience source: previous campaign'
-                  : 'Audience source: CSV upload'}
+              {audienceSourceMode === "contacts"
+                ? "Audience source: CRM contacts"
+                : audienceSourceMode === "campaign"
+                  ? "Audience source: previous campaign"
+                  : "Audience source: CSV upload"}
             </p>
 
-            <div style={{ display: 'grid', gap: 12 }}>
-              {audienceSourceMode === 'contacts' ? (
+            <div style={{ display: "grid", gap: 12 }}>
+              {audienceSourceMode === "contacts" ? (
                 <>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
                       type="button"
                       className="replace-upload-btn"
@@ -424,7 +516,7 @@ const NewBroadcastPopup = ({
                       <Users size={16} />
                       Select from Contacts
                     </button>
-                    {typeof onClearSelectedAudience === 'function' ? (
+                    {typeof onClearSelectedAudience === "function" ? (
                       <button
                         type="button"
                         className="clear-upload-btn"
@@ -435,52 +527,134 @@ const NewBroadcastPopup = ({
                     ) : null}
                   </div>
 
-                  <div className="file-upload-area" onClick={triggerAudienceSelection} style={{ cursor: 'pointer' }}>
+                  <div
+                    className={`file-upload-area ${csvUploadPhase !== "idle" ? `is-${csvUploadPhase}` : ""}`}
+                    onClick={
+                      isCsvUploadBusy ? undefined : triggerAudienceSelection
+                    }
+                    style={{ cursor: isCsvUploadBusy ? "progress" : "pointer" }}
+                  >
                     <input
                       type="file"
                       accept=".csv"
                       onChange={onFileUpload}
                       id="csv-file-popup"
-                      style={{ display: 'none' }}
+                      style={{ display: "none" }}
+                      disabled={isCsvUploadBusy}
                     />
-                    <label htmlFor="csv-file-popup" className="file-upload-label" style={{ pointerEvents: 'none' }}>
+                    <label
+                      htmlFor="csv-file-popup"
+                      className="file-upload-label"
+                      style={{ pointerEvents: "none" }}
+                    >
                       <Upload size={20} />
                       <span>
-                        {uploadedFile ? uploadedFile.name : 'Select contacts from CRM'}
+                        {uploadedFile
+                          ? uploadedFile.name
+                          : "Select contacts from CRM"}
                       </span>
                     </label>
+                    {csvUploadPhase !== "idle" ? (
+                      <div
+                        className={`csv-upload-overlay is-${csvUploadPhase}`}
+                      >
+                        <div
+                          className="csv-upload-overlay__spinner"
+                          aria-hidden="true"
+                        />
+                        <div className="csv-upload-overlay__content">
+                          <strong>
+                            {csvUploadMessage || "Processing CSV..."}
+                          </strong>
+                          <span>{csvUploadPercent}%</span>
+                        </div>
+                        <div
+                          className="csv-upload-overlay__progress"
+                          aria-hidden="true"
+                        >
+                          <span style={{ width: `${csvUploadPercent}%` }} />
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
+
+                  {csvUploadPhase !== "idle" ? (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        background:
+                          csvUploadPhase === "failed"
+                            ? "#fef2f2"
+                            : csvUploadPhase === "completed"
+                              ? "#f0fdf4"
+                              : "#eff6ff",
+                        border: `1px solid ${
+                          csvUploadPhase === "failed"
+                            ? "#fecaca"
+                            : csvUploadPhase === "completed"
+                              ? "#bbf7d0"
+                              : "#bfdbfe"
+                        }`,
+                        color:
+                          csvUploadPhase === "failed"
+                            ? "#b91c1c"
+                            : csvUploadPhase === "completed"
+                              ? "#166534"
+                              : "#1d4ed8",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {csvUploadMessage || "Processing CSV..."}
+                      {csvUploadPhase !== "completed" &&
+                      csvUploadPhase !== "failed"
+                        ? ` ${csvUploadPercent}%`
+                        : ""}
+                    </div>
+                  ) : null}
                 </>
-              ) : audienceSourceMode === 'campaign' ? (
+              ) : audienceSourceMode === "campaign" ? (
                 <>
                   <div className="campaign-audience-summary-card">
-                    <div className="campaign-audience-summary-card__label">Selected campaign</div>
+                    <div className="campaign-audience-summary-card__label">
+                      Selected campaign
+                    </div>
                     <div className="campaign-audience-summary-card__title">
-                      {selectedCampaignAudienceLabel || 'Choose a completed campaign'}
+                      {selectedCampaignAudienceLabel ||
+                        "Choose a completed campaign"}
                     </div>
                     <div className="campaign-audience-summary-card__meta">
-                      {audienceCountLabel || 'Campaign audience will load instantly and can be edited.'}
+                      {audienceCountLabel ||
+                        "Campaign audience will load instantly and can be edited."}
                     </div>
                   </div>
 
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
                       type="button"
                       className="replace-upload-btn"
                       onClick={triggerAudienceSelection}
                     >
                       <Calendar size={16} />
-                      {selectedCampaignAudienceLabel ? 'Change Campaign' : 'Select from Campaign'}
+                      {selectedCampaignAudienceLabel
+                        ? "Change Campaign"
+                        : "Select from Campaign"}
                     </button>
                     <button
                       type="button"
                       className="replace-upload-btn"
-                      onClick={() => typeof onOpenCampaignExtraContactsPicker === 'function' && onOpenCampaignExtraContactsPicker()}
+                      onClick={() =>
+                        typeof onOpenCampaignExtraContactsPicker ===
+                          "function" && onOpenCampaignExtraContactsPicker()
+                      }
                     >
                       <Users size={16} />
                       Add CRM Contacts
                     </button>
-                    {typeof onClearSelectedAudience === 'function' ? (
+                    {typeof onClearSelectedAudience === "function" ? (
                       <button
                         type="button"
                         className="clear-upload-btn"
@@ -493,7 +667,48 @@ const NewBroadcastPopup = ({
                 </>
               ) : (
                 <>
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {csvUploadPhase !== "idle" ? (
+                    <div
+                      className={`csv-upload-status-card is-${csvUploadPhase}`}
+                    >
+                      <div className="csv-upload-status-card__icon">
+                        <Upload size={18} />
+                      </div>
+                      <div className="csv-upload-status-card__body">
+                        <div className="csv-upload-status-card__header">
+                          <strong>
+                            {csvUploadMessage || "Processing CSV..."}
+                          </strong>
+                          <span>{csvUploadPercent}%</span>
+                        </div>
+                        <p>
+                          {csvUploadPhase === "parsing"
+                            ? "Reading the file in the background."
+                            : csvUploadPhase === "validating"
+                              ? "Checking phone numbers and rows."
+                              : csvUploadPhase === "processing"
+                                ? "Preparing contacts for broadcast."
+                                : csvUploadPhase === "completed"
+                                  ? "CSV upload completed successfully."
+                                  : csvUploadPhase === "failed"
+                                    ? "CSV upload failed. Please try again."
+                                    : "Working on the CSV upload."}
+                        </p>
+                        <div className="csv-upload-status-card__progress">
+                          <span style={{ width: `${csvUploadPercent}%` }} />
+                        </div>
+                        <small>
+                          {csvUploadPhase === "completed"
+                            ? "You can continue editing or send the broadcast now."
+                            : csvUploadPhase === "failed"
+                              ? "Please replace the file or retry after fixing the CSV."
+                              : "Keep this tab open while the file is processed."}
+                        </small>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     <button
                       type="button"
                       className="replace-upload-btn"
@@ -502,7 +717,7 @@ const NewBroadcastPopup = ({
                       <Users size={16} />
                       Select from Contacts
                     </button>
-                    {typeof onClearSelectedAudience === 'function' ? (
+                    {typeof onClearSelectedAudience === "function" ? (
                       <button
                         type="button"
                         className="clear-upload-btn"
@@ -513,21 +728,92 @@ const NewBroadcastPopup = ({
                     ) : null}
                   </div>
 
-                  <div className="file-upload-area" onClick={triggerCsvPicker} style={{ cursor: 'pointer' }}>
+                  <div
+                    className={`file-upload-area ${csvUploadPhase !== "idle" ? `is-${csvUploadPhase}` : ""}`}
+                    onClick={isCsvUploadBusy ? undefined : triggerCsvPicker}
+                    style={{ cursor: isCsvUploadBusy ? "progress" : "pointer" }}
+                  >
                     <input
                       type="file"
                       accept=".csv"
                       onChange={onFileUpload}
                       id="csv-file-popup"
-                      style={{ display: 'none' }}
+                      style={{ display: "none" }}
+                      disabled={isCsvUploadBusy}
                     />
-                    <label htmlFor="csv-file-popup" className="file-upload-label" style={{ pointerEvents: 'none' }}>
+                    <label
+                      htmlFor="csv-file-popup"
+                      className="file-upload-label"
+                      style={{ pointerEvents: "none" }}
+                    >
                       <Upload size={20} />
                       <span>
-                        {uploadedFile ? uploadedFile.name : 'Upload CSV contacts'}
+                        {uploadedFile
+                          ? uploadedFile.name
+                          : "Upload CSV contacts"}
                       </span>
                     </label>
+                    {csvUploadPhase !== "idle" ? (
+                      <div
+                        className={`csv-upload-overlay is-${csvUploadPhase}`}
+                      >
+                        <div
+                          className="csv-upload-overlay__spinner"
+                          aria-hidden="true"
+                        />
+                        <div className="csv-upload-overlay__content">
+                          <strong>
+                            {csvUploadMessage || "Processing CSV..."}
+                          </strong>
+                          <span>{csvUploadPercent}%</span>
+                        </div>
+                        <div
+                          className="csv-upload-overlay__progress"
+                          aria-hidden="true"
+                        >
+                          <span style={{ width: `${csvUploadPercent}%` }} />
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
+
+                  {csvUploadPhase !== "idle" ? (
+                    <div
+                      style={{
+                        marginTop: 12,
+                        padding: "10px 12px",
+                        borderRadius: 10,
+                        background:
+                          csvUploadPhase === "failed"
+                            ? "#fef2f2"
+                            : csvUploadPhase === "completed"
+                              ? "#f0fdf4"
+                              : "#eff6ff",
+                        border: `1px solid ${
+                          csvUploadPhase === "failed"
+                            ? "#fecaca"
+                            : csvUploadPhase === "completed"
+                              ? "#bbf7d0"
+                              : "#bfdbfe"
+                        }`,
+                        color:
+                          csvUploadPhase === "failed"
+                            ? "#b91c1c"
+                            : csvUploadPhase === "completed"
+                              ? "#166534"
+                              : "#1d4ed8",
+                        fontSize: 12,
+                        fontWeight: 600,
+                        lineHeight: 1.5,
+                      }}
+                    >
+                      {csvUploadMessage || "Processing CSV..."}
+                      {csvUploadPhase !== "completed" &&
+                      csvUploadPhase !== "failed"
+                        ? ` ${csvUploadPercent}%`
+                        : ""}
+                    </div>
+                  ) : null}
 
                   <button
                     type="button"
@@ -543,25 +829,29 @@ const NewBroadcastPopup = ({
 
             {uploadedFile && fileVariables.length > 0 ? (
               <div className="variable-file-info">
-                Variables detected: {fileVariables.join(', ')}
+                Variables detected: {fileVariables.join(", ")}
               </div>
             ) : null}
 
             {missingTemplateVariables ? (
               <div className="submit-block-warning" style={{ marginTop: 12 }}>
-                <strong>CSV needs template variables:</strong> this template requires {selectedTemplateVariableCount} variable column(s) like <code>var1</code>, <code>var2</code>. Your CSV does not include them yet.
+                <strong>CSV needs template variables:</strong> this template
+                requires {selectedTemplateVariableCount} variable column(s) like{" "}
+                <code>var1</code>, <code>var2</code>. Your CSV does not include
+                them yet.
               </div>
             ) : null}
 
             {uploadedFile && (
               <div className="file-action-buttons">
-                <button 
+                <button
                   type="button"
                   className="replace-upload-btn"
+                  disabled={isCsvUploadBusy}
                   onClick={() => {
-                    const fileInput = document.getElementById('csv-file-popup');
-                    if (fileInput) {
-                      fileInput.value = '';
+                    const fileInput = document.getElementById("csv-file-popup");
+                    if (fileInput && !isCsvUploadBusy) {
+                      fileInput.value = "";
                       fileInput.click();
                     }
                   }}
@@ -569,9 +859,10 @@ const NewBroadcastPopup = ({
                   <RefreshCw size={16} />
                   Replace
                 </button>
-                <button 
+                <button
                   type="button"
                   className="clear-upload-btn"
+                  disabled={isCsvUploadBusy}
                   onClick={onClearUpload}
                 >
                   <Trash2 size={16} />
@@ -580,16 +871,20 @@ const NewBroadcastPopup = ({
               </div>
             )}
 
-            {audienceSourceMode === 'campaign' ? (
+            {audienceSourceMode === "campaign" ? (
               <p className="recipients-count">
                 {selectedCampaignAudienceLabel
                   ? `${Number(selectedCampaignAudienceCount || 0).toLocaleString()} contacts selected from campaign`
-                  : 'Select a campaign to reuse its audience'}
+                  : "Select a campaign to reuse its audience"}
               </p>
-            ) : recipients.length > 0 && (
-              <p className="recipients-count">
-                {audienceSourceLabel ? `${recipients.length} contacts selected` : `${recipients.length} recipients loaded`}
-              </p>
+            ) : (
+              recipients.length > 0 && (
+                <p className="recipients-count">
+                  {audienceSourceLabel
+                    ? `${recipients.length} contacts selected`
+                    : `${recipients.length} recipients loaded`}
+                </p>
+              )
             )}
 
             {audienceSourceLabel ? (
@@ -607,7 +902,9 @@ const NewBroadcastPopup = ({
                 <input
                   type="checkbox"
                   checked={quietHoursEnabled}
-                  onChange={(event) => onQuietHoursEnabledChange(event.target.checked)}
+                  onChange={(event) =>
+                    onQuietHoursEnabledChange(event.target.checked)
+                  }
                 />
                 <span>Enable quiet hours</span>
               </label>
@@ -622,7 +919,9 @@ const NewBroadcastPopup = ({
                     min="0"
                     max="23"
                     value={quietHoursStartHour}
-                    onChange={(event) => onQuietHoursStartHourChange(event.target.value)}
+                    onChange={(event) =>
+                      onQuietHoursStartHourChange(event.target.value)
+                    }
                     className="form-input"
                   />
                 </div>
@@ -633,7 +932,9 @@ const NewBroadcastPopup = ({
                     min="0"
                     max="23"
                     value={quietHoursEndHour}
-                    onChange={(event) => onQuietHoursEndHourChange(event.target.value)}
+                    onChange={(event) =>
+                      onQuietHoursEndHourChange(event.target.value)
+                    }
                     className="form-input"
                   />
                 </div>
@@ -642,7 +943,9 @@ const NewBroadcastPopup = ({
                   <input
                     type="text"
                     value={quietHoursTimezone}
-                    onChange={(event) => onQuietHoursTimezoneChange(event.target.value)}
+                    onChange={(event) =>
+                      onQuietHoursTimezoneChange(event.target.value)
+                    }
                     className="form-input"
                     placeholder="Asia/Kolkata"
                   />
@@ -651,7 +954,9 @@ const NewBroadcastPopup = ({
                   <span>Action</span>
                   <select
                     value={quietHoursAction}
-                    onChange={(event) => onQuietHoursActionChange(event.target.value)}
+                    onChange={(event) =>
+                      onQuietHoursActionChange(event.target.value)
+                    }
                     className="form-input"
                   >
                     <option value="defer">Defer send</option>
@@ -666,7 +971,9 @@ const NewBroadcastPopup = ({
                 <input
                   type="checkbox"
                   checked={retryPolicyEnabled}
-                  onChange={(event) => onRetryPolicyEnabledChange(event.target.checked)}
+                  onChange={(event) =>
+                    onRetryPolicyEnabledChange(event.target.checked)
+                  }
                 />
                 <span>Enable retry policy</span>
               </label>
@@ -681,7 +988,9 @@ const NewBroadcastPopup = ({
                   max="10"
                   value={retryMaxAttempts}
                   disabled={!retryPolicyEnabled}
-                  onChange={(event) => onRetryMaxAttemptsChange(event.target.value)}
+                  onChange={(event) =>
+                    onRetryMaxAttemptsChange(event.target.value)
+                  }
                   className="form-input"
                 />
               </div>
@@ -693,7 +1002,9 @@ const NewBroadcastPopup = ({
                   max="600"
                   value={retryBackoffSeconds}
                   disabled={!retryPolicyEnabled}
-                  onChange={(event) => onRetryBackoffSecondsChange(event.target.value)}
+                  onChange={(event) =>
+                    onRetryBackoffSecondsChange(event.target.value)
+                  }
                   className="form-input"
                 />
               </div>
@@ -706,10 +1017,14 @@ const NewBroadcastPopup = ({
                 min="1"
                 max="50"
                 value={deliveryBatchSize}
-                onChange={(event) => onDeliveryBatchSizeChange(event.target.value)}
+                onChange={(event) =>
+                  onDeliveryBatchSizeChange(event.target.value)
+                }
                 className="form-input"
               />
-              <small>How many recipients to process before moving to the next batch.</small>
+              <small>
+                How many recipients to process before moving to the next batch.
+              </small>
             </div>
 
             <div className="policy-field">
@@ -719,10 +1034,14 @@ const NewBroadcastPopup = ({
                 min="0"
                 max="3600"
                 value={deliveryBatchDelaySeconds}
-                onChange={(event) => onDeliveryBatchDelaySecondsChange(event.target.value)}
+                onChange={(event) =>
+                  onDeliveryBatchDelaySecondsChange(event.target.value)
+                }
                 className="form-input"
               />
-              <small>How long the backend waits before sending the next batch.</small>
+              <small>
+                How long the backend waits before sending the next batch.
+              </small>
             </div>
 
             <div className="policy-toggle">
@@ -730,7 +1049,9 @@ const NewBroadcastPopup = ({
                 <input
                   type="checkbox"
                   checked={respectOptOut}
-                  onChange={(event) => onRespectOptOutChange(event.target.checked)}
+                  onChange={(event) =>
+                    onRespectOptOutChange(event.target.checked)
+                  }
                 />
                 <span>Respect opted-out recipients</span>
               </label>
@@ -740,7 +1061,9 @@ const NewBroadcastPopup = ({
               <span>Suppression list (comma/newline separated)</span>
               <textarea
                 value={suppressionListRaw}
-                onChange={(event) => onSuppressionListRawChange(event.target.value)}
+                onChange={(event) =>
+                  onSuppressionListRawChange(event.target.value)
+                }
                 className="form-textarea policy-textarea"
                 rows="3"
                 placeholder="+919999999999, +919888888888"
@@ -762,7 +1085,7 @@ const NewBroadcastPopup = ({
                 <button
                   type="button"
                   className="clear-date-btn-external"
-                  onClick={() => onScheduledTimeChange('')}
+                  onClick={() => onScheduledTimeChange("")}
                   title="Clear schedule"
                 >
                   <X size={16} />
@@ -770,11 +1093,10 @@ const NewBroadcastPopup = ({
                 </button>
               )}
             </div>
-            <p className={`schedule-hint ${scheduledTime ? 'scheduled' : ''}`}>
-              {scheduledTime 
+            <p className={`schedule-hint ${scheduledTime ? "scheduled" : ""}`}>
+              {scheduledTime
                 ? `Scheduled for ${new Date(scheduledTime).toLocaleString()}`
-                : 'Send immediately'
-              }
+                : "Send immediately"}
             </p>
           </div>
         </div>
@@ -786,17 +1108,17 @@ const NewBroadcastPopup = ({
           <button
             className="primary-btn"
             onClick={() => {
-              console.log('🔍 Button clicked');
-              console.log('🔍 scheduledTime:', scheduledTime);
-              console.log('🔍 isSending:', isSending);
-              console.log('🔍 broadcastName:', broadcastName);
-              console.log('🔍 recipients.length:', recipients.length);
-              
+              console.log("🔍 Button clicked");
+              console.log("🔍 scheduledTime:", scheduledTime);
+              console.log("🔍 isSending:", isSending);
+              console.log("🔍 broadcastName:", broadcastName);
+              console.log("🔍 recipients.length:", recipients.length);
+
               if (scheduledTime) {
-                console.log('🔍 Calling onCreateBroadcast');
+                console.log("🔍 Calling onCreateBroadcast");
                 onCreateBroadcast();
               } else {
-                console.log('🔍 Calling onSendBroadcast');
+                console.log("🔍 Calling onSendBroadcast");
                 onSendBroadcast();
               }
             }}
@@ -808,9 +1130,9 @@ const NewBroadcastPopup = ({
                 Sending...
               </>
             ) : scheduledTime ? (
-              'Schedule Broadcast'
+              "Schedule Broadcast"
             ) : (
-              'Send Now'
+              "Send Now"
             )}
           </button>
         </div>

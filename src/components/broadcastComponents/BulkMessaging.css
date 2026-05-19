@@ -136,8 +136,12 @@
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .csv-upload-header {
@@ -181,6 +185,68 @@
   background: rgba(37, 211, 102, 0.02);
 }
 
+.csv-upload-area.is-drag-over {
+  border-color: var(--color-primary);
+  background: rgba(37, 211, 102, 0.08);
+  box-shadow: 0 0 0 3px rgba(37, 211, 102, 0.08);
+}
+
+.csv-upload-area.is-busy,
+.csv-upload-label.is-busy {
+  cursor: progress;
+}
+
+.csv-upload-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  padding: 20px;
+  border-radius: 12px;
+  background: linear-gradient(
+    135deg,
+    rgba(15, 23, 42, 0.78),
+    rgba(30, 41, 59, 0.66)
+  );
+  backdrop-filter: blur(3px);
+  color: #fff;
+  text-align: left;
+}
+
+.csv-upload-overlay__spinner {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  border: 3px solid rgba(255, 255, 255, 0.22);
+  border-top-color: #38bdf8;
+  animation: csv-upload-spin 0.9s linear infinite;
+  flex: 0 0 auto;
+}
+
+.csv-upload-overlay__text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.csv-upload-overlay__text strong {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.csv-upload-overlay__text span {
+  font-size: 12px;
+  opacity: 0.86;
+}
+
+.csv-upload-label.is-busy .upload-text {
+  color: var(--color-primary);
+}
+
 .csv-input {
   position: absolute;
   opacity: 0;
@@ -201,6 +267,16 @@
   width: 48px;
   height: 48px;
   color: var(--color-text-muted);
+}
+
+@keyframes csv-upload-spin {
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .upload-text {
@@ -250,6 +326,11 @@
 .remove-file-btn:hover {
   background: var(--color-bg-surface);
   color: #ef4444;
+}
+
+.remove-file-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .csv-preview {
@@ -479,24 +560,24 @@
   .bulk-messaging {
     padding: 16px;
   }
-  
+
   .radio-group {
     flex-direction: column;
     gap: 12px;
   }
-  
+
   .csv-upload-header {
     flex-direction: column;
     align-items: flex-start;
     gap: 12px;
   }
-  
+
   .results-header {
     flex-direction: column;
     gap: 16px;
     align-items: flex-start;
   }
-  
+
   .results-stats {
     grid-template-columns: 1fr;
   }

@@ -1,9 +1,9 @@
-import React, { memo } from 'react';
-import { LineChart, Trash } from 'lucide-react';
-import './BroadcastCampaignMeta.css';
-import './BroadcastPolicyChip.css';
-import './AudienceBadge.css';
-import './BroadcastCard.css';
+import React, { memo } from "react";
+import { LineChart, Trash } from "lucide-react";
+import "./BroadcastCampaignMeta.css";
+import "./BroadcastPolicyChip.css";
+import "./AudienceBadge.css";
+import "./BroadcastCard.css";
 
 const BroadcastCard = ({
   broadcast,
@@ -15,7 +15,7 @@ const BroadcastCard = ({
   getRepliedPercentage,
   getStatusClass,
   onDeleteClick,
-  onViewAnalytics
+  onViewAnalytics,
 }) => {
   const toNumber = (value) => {
     const parsed = Number(value || 0);
@@ -23,34 +23,42 @@ const BroadcastCard = ({
   };
 
   const getProgressClass = (percentage) => {
-    if (percentage === 0) return 'zero';
-    if (percentage >= 80) return 'high';
-    if (percentage >= 40) return 'medium';
-    return 'low';
+    if (percentage === 0) return "zero";
+    if (percentage >= 80) return "high";
+    if (percentage >= 40) return "medium";
+    return "low";
   };
 
   const audienceSource = broadcast?.audienceSource || {};
   const audienceSnapshot = broadcast?.audienceSnapshot || {};
-  const audienceMode = String(audienceSource?.type || audienceSnapshot?.sourceType || '').trim().toLowerCase();
+  const audienceMode = String(
+    audienceSource?.type || audienceSnapshot?.sourceType || "",
+  )
+    .trim()
+    .toLowerCase();
   const audienceLabel = (() => {
-    const explicitLabel = String(audienceSource?.label || audienceSnapshot?.label || '').trim();
+    const explicitLabel = String(
+      audienceSource?.label || audienceSnapshot?.label || "",
+    ).trim();
     if (explicitLabel) return explicitLabel;
-    const segmentName = String(audienceSnapshot?.segmentName || audienceSource?.segmentName || '').trim();
+    const segmentName = String(
+      audienceSnapshot?.segmentName || audienceSource?.segmentName || "",
+    ).trim();
     if (segmentName) return `Saved segment: ${segmentName}`;
-    if (audienceMode === 'csv') return 'CSV upload';
-    if (audienceMode === 'saved_segment') return 'Saved segment';
-    if (audienceMode === 'contacts') return 'CRM contacts';
-    if (audienceMode === 'manual') return 'Manual audience';
-    return '';
+    if (audienceMode === "csv") return "CSV upload";
+    if (audienceMode === "saved_segment") return "Saved segment";
+    if (audienceMode === "contacts") return "CRM contacts";
+    if (audienceMode === "manual") return "Manual audience";
+    return "";
   })();
   const audienceChipLabel = (() => {
-    if (audienceMode === 'csv') return 'CSV';
-    if (audienceMode === 'saved_segment') return 'Segment';
-    if (audienceMode === 'contacts') return 'Contacts';
-    if (audienceMode === 'manual') return 'Manual';
-    return 'Audience';
+    if (audienceMode === "csv") return "CSV";
+    if (audienceMode === "saved_segment") return "Segment";
+    if (audienceMode === "contacts") return "Contacts";
+    if (audienceMode === "manual") return "Manual";
+    return "Audience";
   })();
-  const audienceChipClass = audienceMode || 'unknown';
+  const audienceChipClass = audienceMode || "unknown";
 
   const getDisplayDateTime = (currentBroadcast) => {
     const dateValue =
@@ -58,99 +66,125 @@ const BroadcastCard = ({
       currentBroadcast.startedAt ||
       currentBroadcast.createdAt;
 
-    if (!dateValue) return '-';
+    if (!dateValue) return "-";
     const parsed = new Date(dateValue);
-    if (Number.isNaN(parsed.getTime())) return '-';
+    if (Number.isNaN(parsed.getTime())) return "-";
     return parsed.toLocaleString();
   };
 
   const getMetricTooltip = (metricType, currentBroadcast) => {
     const stats = currentBroadcast?.stats || {};
-    const sent = toNumber(stats.sent);
+    const totalRecipients =
+      currentBroadcast?.recipientCount ||
+      currentBroadcast?.recipients?.length ||
+      0;
     const delivered = Math.max(toNumber(stats.delivered), toNumber(stats.read));
     const read = toNumber(stats.read);
     const replied = toNumber(stats.replied);
 
-    if (metricType === 'successful') {
+    if (metricType === "successful") {
       return {
-        title: 'Successful',
+        title: "Successful",
         lines: [
-          { label: 'Sent', value: sent },
-          { label: 'Delivered', value: delivered }
-        ]
+          { label: "Recipients", value: totalRecipients },
+          { label: "Delivered", value: delivered },
+        ],
       };
     }
-    if (metricType === 'read') {
+    if (metricType === "read") {
       return {
-        title: 'Read',
+        title: "Read",
         lines: [
-          { label: 'Read', value: read },
-          { label: 'Sent', value: sent }
-        ]
+          { label: "Read", value: read },
+          { label: "Recipients", value: totalRecipients },
+        ],
       };
     }
-    if (metricType === 'replied') {
+    if (metricType === "replied") {
       return {
-        title: 'Replied',
+        title: "Replied",
         lines: [
-          { label: 'Replied', value: replied },
-          { label: 'Sent', value: sent }
-        ]
+          { label: "Replied", value: replied },
+          { label: "Recipients", value: totalRecipients },
+        ],
       };
     }
-    return { title: '', lines: [] };
+    return { title: "", lines: [] };
   };
 
   const reliabilityAnalytics = broadcast?.retrySummary?.analytics || {};
-  const retryPolicy = broadcast?.retrySummary?.retryPolicy || broadcast?.retryPolicy || {};
-  const deliveryPolicy = broadcast?.retrySummary?.deliveryPolicy || broadcast?.deliveryPolicy || {};
-  const compliancePolicy = broadcast?.retrySummary?.compliancePolicy || broadcast?.compliancePolicy || {};
+  const retryPolicy =
+    broadcast?.retrySummary?.retryPolicy || broadcast?.retryPolicy || {};
+  const deliveryPolicy =
+    broadcast?.retrySummary?.deliveryPolicy || broadcast?.deliveryPolicy || {};
+  const compliancePolicy =
+    broadcast?.retrySummary?.compliancePolicy ||
+    broadcast?.compliancePolicy ||
+    {};
   const quietHours = deliveryPolicy?.quietHours || {};
   const suppressedCount = toNumber(reliabilityAnalytics.suppressed);
   const deferredCount = toNumber(reliabilityAnalytics.deferred);
   const retriedCount = toNumber(reliabilityAnalytics.retried);
-  const suppressionListCount = Array.isArray(compliancePolicy?.suppressionListPhones)
+  const suppressionListCount = Array.isArray(
+    compliancePolicy?.suppressionListPhones,
+  )
     ? compliancePolicy.suppressionListPhones.length
     : toNumber(compliancePolicy?.suppressionListCount);
 
   const quietHoursLabel = (() => {
-    if (!quietHours?.enabled) return 'Quiet Hrs Off';
+    if (!quietHours?.enabled) return "Quiet Hrs Off";
     const start = toNumber(quietHours?.startHour);
     const end = toNumber(quietHours?.endHour);
     return `Quiet ${start}:00-${end}:00`;
   })();
 
-  const retryLabel = retryPolicy?.enabled === false
-    ? 'Retry Off'
-    : `Retry x${Math.max(1, toNumber(retryPolicy?.maxAttempts || 1))}`;
+  const retryLabel =
+    retryPolicy?.enabled === false
+      ? "Retry Off"
+      : `Retry x${Math.max(1, toNumber(retryPolicy?.maxAttempts || 1))}`;
 
-  const optOutLabel = compliancePolicy?.respectOptOut === false ? 'Opt-out Off' : 'Opt-out On';
+  const optOutLabel =
+    compliancePolicy?.respectOptOut === false ? "Opt-out Off" : "Opt-out On";
 
   const getReliabilityTooltip = (type, count) => {
-    if (type === 'suppressed') {
+    if (type === "suppressed") {
       return `Suppressed: ${count}. Recipients skipped due to suppression list or opt-out policy.`;
     }
-    if (type === 'deferred') {
+    if (type === "deferred") {
       return `Deferred: ${count}. Messages delayed due to quiet-hours policy.`;
     }
     return `Retried: ${count}. Attempts retried after temporary send failures.`;
   };
 
   const renderReliabilityBadge = (type, count) => (
-    <span className={`reliability-pill ${type}`} title={getReliabilityTooltip(type, count)}>
+    <span
+      className={`reliability-pill ${type}`}
+      title={getReliabilityTooltip(type, count)}
+    >
       {count}
     </span>
   );
 
-  const renderProgressCircle = (percentage, tooltip = { title: '', lines: [] }) => {
+  const renderProgressCircle = (
+    percentage,
+    tooltip = { title: "", lines: [] },
+  ) => {
     const progressClass = getProgressClass(percentage);
     const radius = 20;
     const circumference = 2 * Math.PI * radius;
     const strokeDashoffset = circumference - (percentage / 100) * circumference;
 
     return (
-      <div className="progress-indicator metric-hover" aria-label={tooltip?.title || 'Metric details'} tabIndex={0}>
-        <svg className={`progress-circle ${progressClass}`} width="48" height="48">
+      <div
+        className="progress-indicator metric-hover"
+        aria-label={tooltip?.title || "Metric details"}
+        tabIndex={0}
+      >
+        <svg
+          className={`progress-circle ${progressClass}`}
+          width="48"
+          height="48"
+        >
           <circle
             className="progress-background"
             cx="24"
@@ -186,7 +220,7 @@ const BroadcastCard = ({
           </text>
         </svg>
         <div className="metric-hover-card" role="tooltip">
-          <div className="metric-hover-title">{tooltip?.title || 'Metric'}</div>
+          <div className="metric-hover-title">{tooltip?.title || "Metric"}</div>
           {(tooltip?.lines || []).map((line) => (
             <div key={line.label} className="metric-hover-row">
               <span>{line.label}</span>
@@ -212,9 +246,13 @@ const BroadcastCard = ({
 
       <td className="col-name">
         <div className="broadcast-campaign-meta">
-          <span className="broadcast-campaign-meta__title">{broadcast.name}</span>
+          <span className="broadcast-campaign-meta__title">
+            {broadcast.name}
+          </span>
           {audienceLabel ? (
-            <span className={`audience-badge audience-badge--${audienceChipClass}`}>
+            <span
+              className={`audience-badge audience-badge--${audienceChipClass}`}
+            >
               <span className="audience-badge__label">{audienceChipLabel}</span>
               <span className="audience-badge__text">{audienceLabel}</span>
             </span>
@@ -224,32 +262,69 @@ const BroadcastCard = ({
 
       <td className="col-time">{getDisplayDateTime(broadcast)}</td>
 
-      <td>{renderProgressCircle(getSuccessPercentage(broadcast), getMetricTooltip('successful', broadcast))}</td>
+      <td>
+        {renderProgressCircle(
+          getSuccessPercentage(broadcast),
+          getMetricTooltip("successful", broadcast),
+        )}
+      </td>
 
-      <td>{renderProgressCircle(getReadPercentage(broadcast), getMetricTooltip('read', broadcast))}</td>
+      <td>
+        {renderProgressCircle(
+          getReadPercentage(broadcast),
+          getMetricTooltip("read", broadcast),
+        )}
+      </td>
 
-      <td>{renderProgressCircle(getRepliedPercentage(broadcast), getMetricTooltip('replied', broadcast))}</td>
+      <td>
+        {renderProgressCircle(
+          getRepliedPercentage(broadcast),
+          getMetricTooltip("replied", broadcast),
+        )}
+      </td>
 
       <td className="col-recipients">
-        {broadcast.recipientCount || broadcast.recipients?.length || 0} Contact{(broadcast.recipientCount || broadcast.recipients?.length || 0) !== 1 ? 's' : ''}
+        {broadcast.recipientCount || broadcast.recipients?.length || 0} Contact
+        {(broadcast.recipientCount || broadcast.recipients?.length || 0) !== 1
+          ? "s"
+          : ""}
       </td>
 
       <td className="col-failed">
-        {broadcast.stats?.failed || 0} Contact{(broadcast.stats?.failed || 0) !== 1 ? 's' : ''}
+        {broadcast.stats?.failed || 0} Contact
+        {(broadcast.stats?.failed || 0) !== 1 ? "s" : ""}
       </td>
 
-      <td className="col-reliability">{renderReliabilityBadge('suppressed', suppressedCount)}</td>
+      <td className="col-reliability">
+        {renderReliabilityBadge("suppressed", suppressedCount)}
+      </td>
 
-      <td className="col-reliability">{renderReliabilityBadge('deferred', deferredCount)}</td>
+      <td className="col-reliability">
+        {renderReliabilityBadge("deferred", deferredCount)}
+      </td>
 
-      <td className="col-reliability">{renderReliabilityBadge('retried', retriedCount)}</td>
+      <td className="col-reliability">
+        {renderReliabilityBadge("retried", retriedCount)}
+      </td>
 
       <td className="col-status status-with-policy">
-        <span className={`badge ${getStatusClass(broadcast.status)}`}>{broadcast.status}</span>
+        <span className={`badge ${getStatusClass(broadcast.status)}`}>
+          {broadcast.status}
+        </span>
         <div className="status-policy-row">
-          <span className={`policy-chip ${quietHours?.enabled ? 'on' : 'off'}`}>{quietHoursLabel}</span>
-          <span className={`policy-chip ${retryPolicy?.enabled === false ? 'off' : 'on'}`}>{retryLabel}</span>
-          <span className={`policy-chip ${compliancePolicy?.respectOptOut === false ? 'off' : 'on'}`}>{optOutLabel}</span>
+          <span className={`policy-chip ${quietHours?.enabled ? "on" : "off"}`}>
+            {quietHoursLabel}
+          </span>
+          <span
+            className={`policy-chip ${retryPolicy?.enabled === false ? "off" : "on"}`}
+          >
+            {retryLabel}
+          </span>
+          <span
+            className={`policy-chip ${compliancePolicy?.respectOptOut === false ? "off" : "on"}`}
+          >
+            {optOutLabel}
+          </span>
           {suppressionListCount > 0 && (
             <span className="policy-chip neutral">{`Suppression ${suppressionListCount}`}</span>
           )}
@@ -258,11 +333,19 @@ const BroadcastCard = ({
 
       <td className="col-actions">
         <div className="action-buttons">
-          <button className="action-btn" title="View Analytics" onClick={() => onViewAnalytics?.(broadcast)}>
+          <button
+            className="action-btn"
+            title="View Analytics"
+            onClick={() => onViewAnalytics?.(broadcast)}
+          >
             <LineChart size={10} />
           </button>
 
-          <button className="action-btn delete-btn" title="Delete Campaign" onClick={() => onDeleteClick?.(broadcast)}>
+          <button
+            className="action-btn delete-btn"
+            title="Delete Campaign"
+            onClick={() => onDeleteClick?.(broadcast)}
+          >
             <Trash size={10} />
           </button>
         </div>
@@ -281,10 +364,18 @@ const areEqual = (prevProps, nextProps) => {
     prev._id === next._id &&
     prev.status === next.status &&
     prev.name === next.name &&
-    String(prev?.audienceSource?.label || prev?.audienceSnapshot?.label || '') ===
-      String(next?.audienceSource?.label || next?.audienceSnapshot?.label || '') &&
-    String(prev?.audienceSource?.type || prev?.audienceSnapshot?.sourceType || '') ===
-      String(next?.audienceSource?.type || next?.audienceSnapshot?.sourceType || '') &&
+    String(
+      prev?.audienceSource?.label || prev?.audienceSnapshot?.label || "",
+    ) ===
+      String(
+        next?.audienceSource?.label || next?.audienceSnapshot?.label || "",
+      ) &&
+    String(
+      prev?.audienceSource?.type || prev?.audienceSnapshot?.sourceType || "",
+    ) ===
+      String(
+        next?.audienceSource?.type || next?.audienceSnapshot?.sourceType || "",
+      ) &&
     prev.scheduledAt === next.scheduledAt &&
     prev.startedAt === next.startedAt &&
     prev.createdAt === next.createdAt &&
@@ -294,37 +385,89 @@ const areEqual = (prevProps, nextProps) => {
     prevStats.read === nextStats.read &&
     prevStats.replied === nextStats.replied &&
     prevStats.failed === nextStats.failed &&
-    Number(prev?.retrySummary?.analytics?.suppressed || 0) === Number(next?.retrySummary?.analytics?.suppressed || 0) &&
-    Number(prev?.retrySummary?.analytics?.deferred || 0) === Number(next?.retrySummary?.analytics?.deferred || 0) &&
-    Number(prev?.retrySummary?.analytics?.retried || 0) === Number(next?.retrySummary?.analytics?.retried || 0) &&
-    Boolean(prev?.retrySummary?.deliveryPolicy?.quietHours?.enabled ?? prev?.deliveryPolicy?.quietHours?.enabled) ===
-      Boolean(next?.retrySummary?.deliveryPolicy?.quietHours?.enabled ?? next?.deliveryPolicy?.quietHours?.enabled) &&
-    Number(prev?.retrySummary?.deliveryPolicy?.quietHours?.startHour ?? prev?.deliveryPolicy?.quietHours?.startHour ?? 0) ===
-      Number(next?.retrySummary?.deliveryPolicy?.quietHours?.startHour ?? next?.deliveryPolicy?.quietHours?.startHour ?? 0) &&
-    Number(prev?.retrySummary?.deliveryPolicy?.quietHours?.endHour ?? prev?.deliveryPolicy?.quietHours?.endHour ?? 0) ===
-      Number(next?.retrySummary?.deliveryPolicy?.quietHours?.endHour ?? next?.deliveryPolicy?.quietHours?.endHour ?? 0) &&
-    Boolean(prev?.retrySummary?.retryPolicy?.enabled ?? prev?.retryPolicy?.enabled ?? true) ===
-      Boolean(next?.retrySummary?.retryPolicy?.enabled ?? next?.retryPolicy?.enabled ?? true) &&
-    Number(prev?.retrySummary?.retryPolicy?.maxAttempts ?? prev?.retryPolicy?.maxAttempts ?? 0) ===
-      Number(next?.retrySummary?.retryPolicy?.maxAttempts ?? next?.retryPolicy?.maxAttempts ?? 0) &&
-    Boolean(prev?.retrySummary?.compliancePolicy?.respectOptOut ?? prev?.compliancePolicy?.respectOptOut ?? true) ===
-      Boolean(next?.retrySummary?.compliancePolicy?.respectOptOut ?? next?.compliancePolicy?.respectOptOut ?? true) &&
+    Number(prev?.retrySummary?.analytics?.suppressed || 0) ===
+      Number(next?.retrySummary?.analytics?.suppressed || 0) &&
+    Number(prev?.retrySummary?.analytics?.deferred || 0) ===
+      Number(next?.retrySummary?.analytics?.deferred || 0) &&
+    Number(prev?.retrySummary?.analytics?.retried || 0) ===
+      Number(next?.retrySummary?.analytics?.retried || 0) &&
+    Boolean(
+      prev?.retrySummary?.deliveryPolicy?.quietHours?.enabled ??
+      prev?.deliveryPolicy?.quietHours?.enabled,
+    ) ===
+      Boolean(
+        next?.retrySummary?.deliveryPolicy?.quietHours?.enabled ??
+        next?.deliveryPolicy?.quietHours?.enabled,
+      ) &&
+    Number(
+      prev?.retrySummary?.deliveryPolicy?.quietHours?.startHour ??
+        prev?.deliveryPolicy?.quietHours?.startHour ??
+        0,
+    ) ===
+      Number(
+        next?.retrySummary?.deliveryPolicy?.quietHours?.startHour ??
+          next?.deliveryPolicy?.quietHours?.startHour ??
+          0,
+      ) &&
+    Number(
+      prev?.retrySummary?.deliveryPolicy?.quietHours?.endHour ??
+        prev?.deliveryPolicy?.quietHours?.endHour ??
+        0,
+    ) ===
+      Number(
+        next?.retrySummary?.deliveryPolicy?.quietHours?.endHour ??
+          next?.deliveryPolicy?.quietHours?.endHour ??
+          0,
+      ) &&
+    Boolean(
+      prev?.retrySummary?.retryPolicy?.enabled ??
+      prev?.retryPolicy?.enabled ??
+      true,
+    ) ===
+      Boolean(
+        next?.retrySummary?.retryPolicy?.enabled ??
+        next?.retryPolicy?.enabled ??
+        true,
+      ) &&
+    Number(
+      prev?.retrySummary?.retryPolicy?.maxAttempts ??
+        prev?.retryPolicy?.maxAttempts ??
+        0,
+    ) ===
+      Number(
+        next?.retrySummary?.retryPolicy?.maxAttempts ??
+          next?.retryPolicy?.maxAttempts ??
+          0,
+      ) &&
+    Boolean(
+      prev?.retrySummary?.compliancePolicy?.respectOptOut ??
+      prev?.compliancePolicy?.respectOptOut ??
+      true,
+    ) ===
+      Boolean(
+        next?.retrySummary?.compliancePolicy?.respectOptOut ??
+        next?.compliancePolicy?.respectOptOut ??
+        true,
+      ) &&
     Number(
       Array.isArray(prev?.retrySummary?.compliancePolicy?.suppressionListPhones)
         ? prev.retrySummary.compliancePolicy.suppressionListPhones.length
         : Array.isArray(prev?.compliancePolicy?.suppressionListPhones)
           ? prev.compliancePolicy.suppressionListPhones.length
-          : 0
+          : 0,
     ) ===
       Number(
-        Array.isArray(next?.retrySummary?.compliancePolicy?.suppressionListPhones)
+        Array.isArray(
+          next?.retrySummary?.compliancePolicy?.suppressionListPhones,
+        )
           ? next.retrySummary.compliancePolicy.suppressionListPhones.length
           : Array.isArray(next?.compliancePolicy?.suppressionListPhones)
             ? next.compliancePolicy.suppressionListPhones.length
-            : 0
+            : 0,
       ) &&
     prevProps.selectionMode === nextProps.selectionMode &&
-    prevProps.selectedCampaigns.includes(prev._id) === nextProps.selectedCampaigns.includes(next._id)
+    prevProps.selectedCampaigns.includes(prev._id) ===
+      nextProps.selectedCampaigns.includes(next._id)
   );
 };
 

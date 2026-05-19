@@ -19,7 +19,9 @@
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
-  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  box-shadow:
+    0 20px 25px -5px rgba(0, 0, 0, 0.1),
+    0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
 .analytics-header {
@@ -74,6 +76,16 @@
   color: #6b7280;
 }
 
+.failure-summary-line {
+  margin-top: 8px !important;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff7ed;
+  color: #9a3412 !important;
+  border: 1px solid #fed7aa;
+  font-weight: 600;
+}
+
 .retry-actions {
   margin-top: 12px;
   display: flex;
@@ -100,6 +112,31 @@
 
 .retry-failed-btn:disabled {
   background: #d1d5db;
+  cursor: not-allowed;
+}
+
+.repair-header-btn {
+  border: 1px solid #c7d2fe;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1d4ed8;
+  background: #eff6ff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.repair-header-btn:hover:not(:disabled) {
+  background: #dbeafe;
+  border-color: #93c5fd;
+}
+
+.repair-header-btn:disabled {
+  opacity: 0.7;
   cursor: not-allowed;
 }
 
@@ -195,7 +232,9 @@
 }
 
 .analytics-modal .metric-card:hover {
-  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  box-shadow:
+    0 4px 6px -1px rgba(0, 0, 0, 0.1),
+    0 2px 4px -1px rgba(0, 0, 0, 0.06);
 }
 
 .metric-icon {
@@ -398,6 +437,68 @@
   overflow: hidden;
 }
 
+.failure-alert {
+  margin: 0 0 12px 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #fed7aa;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.hidden-file-input {
+  display: none;
+}
+
+.failure-code-item,
+.failure-reason-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  border-bottom: 1px solid #f3f4f6;
+}
+
+.failure-code-item:last-child,
+.failure-reason-item:last-child {
+  border-bottom: none;
+}
+
+.failure-code-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.failure-code-label,
+.failure-reason-label {
+  font-size: 13px;
+  color: #111827;
+}
+
+.failure-code-count,
+.failure-reason-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: #374151;
+}
+
+.failure-reason-list {
+  border: 1px solid #f3f4f6;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
 .recipient-details-section {
   width: 100%;
 }
@@ -412,7 +513,7 @@
 
 .recipient-table {
   width: 100%;
-  min-width: 980px;
+  min-width: 1140px;
   border-collapse: collapse;
 }
 
@@ -424,6 +525,13 @@
   font-size: 13px;
   color: #111827;
   white-space: nowrap;
+}
+
+.recipient-failure-cell {
+  white-space: normal !important;
+  min-width: 220px;
+  max-width: 320px;
+  color: #374151;
 }
 
 .recipient-table th {

@@ -3,6 +3,7 @@ import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
 import { registerUnauthorizedAxiosInterceptor } from "./serviceAuth";
 import { isNotFoundError, runFallbackSequence } from "./messageFallback.js";
+import { normalizeError } from "../utils/errorUtils";
 
 const API_BASE_URL = resolveApiBaseUrl();
 registerUnauthorizedAxiosInterceptor(axios);
@@ -99,7 +100,8 @@ const describeAxiosError = (error, fallbackMessage) => {
 };
 
 const logAxiosServiceError = (label, error, fallbackMessage) => {
-  const details = describeAxiosError(error, fallbackMessage);
+  const normalizedError = normalizeError(error, fallbackMessage);
+  const details = describeAxiosError(normalizedError, fallbackMessage);
   const signature = [
     label,
     details.status || 'no-status',
@@ -111,7 +113,12 @@ const logAxiosServiceError = (label, error, fallbackMessage) => {
   const lastLoggedAt = Number(recentServiceErrorLogs.get(signature) || 0);
   if (!lastLoggedAt || now - lastLoggedAt >= SERVICE_ERROR_LOG_COOLDOWN_MS) {
     recentServiceErrorLogs.set(signature, now);
-    console.error(`${label}:`, details);
+    const isTimeout =
+      (Number(details.status || 0) === 0 &&
+        String(details.code || '').toUpperCase() === 'ECONNABORTED') ||
+      String(details.message || '').toLowerCase().includes('timeout');
+    const logFn = isTimeout ? console.warn : console.error;
+    logFn(`${label}:`, details);
   }
   return details;
 };
@@ -121,8 +128,8 @@ const toBase64Url = (value = '') => {
   if (typeof btoa === 'function') {
     return btoa(normalizedValue).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
   }
-  if (typeof Buffer !== 'undefined') {
-    return Buffer.from(normalizedValue, 'utf8').toString('base64url');
+  if (typeof globalThis.Buffer !== 'undefined') {
+    return globalThis.Buffer.from(normalizedValue, 'utf8').toString('base64url');
   }
   return '';
 };
@@ -188,7 +195,7 @@ const postWith404Retry = async (url, data, config = {}, { retryOn404 = true } = 
   } catch (error) {
     const is404 = Number(error?.response?.status || 0) === 404;
     if (!retryOn404 || !is404) {
-      throw error;
+      throw normalizeError(error, 'Request failed');
     }
 
     // If the backend has just restarted or the route table is catching up, a short retry
@@ -539,7 +546,7 @@ export const whatsappService = {
     }
   },
 
-  async deleteAttachmentMessage(messageId, options = {}) {
+  async deleteAttachmentMessage(messageId) {
     try {
       const response = await axios.delete(`${API_BASE_URL}/api/messages/attachments/${messageId}`, {
         headers: getAuthHeaders(false)

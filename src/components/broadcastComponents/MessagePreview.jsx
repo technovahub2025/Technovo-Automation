@@ -1,7 +1,7 @@
-import React from 'react';
-import './MessagePreview.css';
-import { FileText, Users } from 'lucide-react';
-import whatsappLogo from '../../assets/WhatsApp.svg.webp';
+import React from "react";
+import "./MessagePreview.css";
+import { FileText, Users } from "lucide-react";
+import whatsappLogo from "../../assets/WhatsApp.svg.webp";
 
 const MessagePreview = ({
   messageType,
@@ -11,28 +11,32 @@ const MessagePreview = ({
   customMessage,
   recipients,
   getTemplatePreview,
-  getMessagePreview
+  getMessagePreview,
 }) => {
   const templateHeader = selectedTemplate?.content?.header || null;
-  const templateHeaderType = String(templateHeader?.type || templateHeader?.format || '').trim().toLowerCase();
+  const templateHeaderType = String(
+    templateHeader?.type || templateHeader?.format || "",
+  )
+    .trim()
+    .toLowerCase();
   const resolvedTemplateHeaderMediaUrl = String(
-    templateHeaderMediaUrl || templateHeader?.mediaUrl || ''
+    templateHeaderMediaUrl || templateHeader?.mediaUrl || "",
   ).trim();
 
   const getCurrentTime = () => {
     const now = new Date();
-    return now.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
+    return now.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
       hour12: true,
     });
   };
 
   const getCurrentPhoneTime = () => {
     const now = new Date();
-    return now.toLocaleTimeString('en-US', {
-      hour: 'numeric',
-      minute: '2-digit',
+    return now.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
       hour12: false,
     });
   };
@@ -57,7 +61,11 @@ const MessagePreview = ({
 
             <div className="contact-info">
               <div className="contact-avatar">
-                <img src={whatsappLogo} alt="WhatsApp Business" className="contact-avatar-img" />
+                <img
+                  src={whatsappLogo}
+                  alt="WhatsApp Business"
+                  className="contact-avatar-img"
+                />
               </div>
 
               <div className="contact-details">
@@ -80,21 +88,26 @@ const MessagePreview = ({
           </div>
 
           <div className="message-bubble sent">
-            {messageType === 'template' ? (
+            {messageType === "template" ? (
               templateName ? (
                 <>
-                  {templateHeaderType === 'image' && resolvedTemplateHeaderMediaUrl ? (
+                  {templateHeaderType === "image" &&
+                  resolvedTemplateHeaderMediaUrl ? (
                     <div className="template-media-preview">
                       <img
                         src={resolvedTemplateHeaderMediaUrl}
                         alt={`${templateName} header`}
                         className="template-media-preview__image"
                       />
-                      <span className="template-media-preview__label">Image header from template</span>
+                      <span className="template-media-preview__label">
+                        Image header from template
+                      </span>
                     </div>
-                  ) : templateHeaderType === 'image' ? (
+                  ) : templateHeaderType === "image" ? (
                     <div className="template-media-preview template-media-preview--missing">
-                      <span className="template-media-preview__label">Image header required. Upload one to preview.</span>
+                      <span className="template-media-preview__label">
+                        Image header required. Upload one to preview.
+                      </span>
                     </div>
                   ) : null}
                   <p className="template-content">{getTemplatePreview()}</p>
@@ -105,7 +118,9 @@ const MessagePreview = ({
             ) : customMessage ? (
               <p className="custom-content">{getMessagePreview()}</p>
             ) : (
-              <p className="placeholder-text">Enter your custom message to preview</p>
+              <p className="placeholder-text">
+                Enter your custom message to preview
+              </p>
             )}
 
             {recipients.length > 0 && (
@@ -127,7 +142,12 @@ const MessagePreview = ({
         <div className="chat-input">
           <div className="input-container">
             <span className="emoji-icon">😊</span>
-            <input type="text" className="message-input" placeholder="Type a message" readOnly />
+            <input
+              type="text"
+              className="message-input"
+              placeholder="Type a message"
+              readOnly
+            />
             <span className="attachment-icon">📎</span>
             <span className="camera-icon">📷</span>
             <span className="mic-icon">🎤</span>
@@ -135,24 +155,21 @@ const MessagePreview = ({
         </div>
       </div>
 
-      <div className="preview-info">
-        {messageType === 'template' ? (
-          <div className="info-badge official">WhatsApp Template</div>
-        ) : (
-          <div className="info-badge custom">
-            <FileText size={12} />
-            Custom Text Message
-          </div>
-        )}
+      <div className="preview-info preview-info--legacy">
+        <div
+          className={`info-badge ${messageType === "template" ? "official" : "custom"}`}
+        >
+          {messageType === "template" ? "WHATSAPP TEMPLATE" : "CUSTOM MESSAGE"}
+        </div>
 
-        <div className="preview-stats">
+        <div className="preview-stats preview-stats--legacy">
           <span className="stat-item">
             <Users size={12} />
             {recipients.length} recipients
           </span>
           <span className="stat-item">
             <FileText size={12} />
-            {messageType === 'template' ? 'Template' : 'Custom'}
+            {messageType === "template" ? "Template" : "Message"}
           </span>
         </div>
       </div>

@@ -1,6 +1,7 @@
 ﻿import axios from 'axios';
 import { whatsappService } from '../../services/whatsappService';
 import { startLoadingTimeoutGuard } from '../../utils/loadingGuard';
+import { normalizeError } from '../../utils/errorUtils';
 import {
   mergeMessagePreservingReplyContext,
   mergeOrderedMessagesPreservingReplyContext,
@@ -42,6 +43,15 @@ const recordInboxDebugEvent = (setInboxDebugInfo, lastEvent, extra = {}) => {
     messageId: String(extra?.messageId || '').trim(),
     details: String(extra?.details || '').trim()
   });
+};
+
+const isTimeoutLikeError = (error) => {
+  const message = String(error?.message || error || '').toLowerCase();
+  return (
+    String(error?.code || '').toUpperCase() === 'ECONNABORTED' ||
+    message.includes('timeout') ||
+    message.includes('aborted')
+  );
 };
 
 const createMediaPipelineRequestId = () => {
@@ -352,7 +362,9 @@ export const createInboxDataActions = ({
 
       return await loadPromise;
     } catch (error) {
-      console.error('Failed to load conversations:', error);
+      const normalizedError = normalizeError(error, 'Failed to load conversations');
+      const logFn = isTimeoutLikeError(normalizedError) ? console.warn : console.error;
+      logFn('Failed to load conversations:', normalizedError);
       if (conversationLoadRequestIdRef && !append && Number(conversationLoadRequestIdRef.current || 0) === requestId) {
         const restoredMeta = {
           ...(conversationPageMetaRef?.current || {}),
@@ -677,13 +689,15 @@ export const createInboxDataActions = ({
           String(activeMessagesConversationIdRef.current || '').trim() === normalizedConversationId &&
           (!loadOlder ? messageLoadRequestIdRef.current === requestId : true)
         ) {
-          console.error('Failed to load messages:', error);
+          const normalizedError = normalizeError(error, 'Failed to load messages');
+          const logFn = isTimeoutLikeError(normalizedError) ? console.warn : console.error;
+          logFn('Failed to load messages:', normalizedError);
         }
         traceTeamInbox('loadMessages:error', {
           conversationId: normalizedConversationId,
           loadOlder,
           requestId,
-          message: String(error?.message || error || 'Unknown error')
+          message: String(normalizeError(error, 'Failed to load messages').message || 'Unknown error')
         });
         recordInboxDebugEvent(
           setInboxDebugInfo,
