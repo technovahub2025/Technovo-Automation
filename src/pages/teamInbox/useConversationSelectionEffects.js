@@ -61,7 +61,29 @@ export const useConversationSelectionEffects = ({
       if (typeof markAsRead === 'function' && getUnreadCount(matchedConversation) > 0) {
         markAsRead(routeConversationId);
       }
-      pendingHydrationConversationIdRef.current = '';
+
+      if (
+        typeof loadConversationById === 'function' &&
+        pendingHydrationConversationIdRef.current !== routeConversationId
+      ) {
+        pendingHydrationConversationIdRef.current = routeConversationId;
+        void Promise.resolve(loadConversationById(routeConversationId, { silent: true }))
+          .then((hydratedConversation) => {
+            const hydratedConversationId = getConversationId(hydratedConversation);
+            if (hydratedConversationId !== routeConversationId) return;
+            setSelectedConversation((current) => {
+              const currentConversationId = getConversationId(current);
+              if (currentConversationId !== routeConversationId) return current;
+              return hydratedConversation || current;
+            });
+          })
+          .finally(() => {
+            if (pendingHydrationConversationIdRef.current === routeConversationId) {
+              pendingHydrationConversationIdRef.current = '';
+            }
+          });
+      }
+
       return;
     }
 
@@ -128,5 +150,19 @@ export const useConversationSelectionEffects = ({
     if (typeof loadMessages === 'function') {
       loadMessages(activeConversationId);
     }
-  }, [isConversationSwitchRef, loadMessages, selectedConversationId]);
+
+    if (
+      typeof loadConversationById === 'function' &&
+      pendingHydrationConversationIdRef.current !== activeConversationId
+    ) {
+      pendingHydrationConversationIdRef.current = activeConversationId;
+      void Promise.resolve(loadConversationById(activeConversationId, { silent: true })).finally(
+        () => {
+          if (pendingHydrationConversationIdRef.current === activeConversationId) {
+            pendingHydrationConversationIdRef.current = '';
+          }
+        }
+      );
+    }
+  }, [isConversationSwitchRef, loadConversationById, loadMessages, selectedConversationId, setSelectedConversation]);
 };

@@ -121,7 +121,7 @@ const TeamInbox = () => {
   const { user } = useContext(AuthContext);
   const [conversations, setConversations] = useState([]);
   const [conversationPageMeta, setConversationPageMeta] = useState({
-    limit: 100,
+    limit: 25,
     hasMore: false,
     nextCursor: null,
     exhausted: false,
@@ -253,7 +253,7 @@ const TeamInbox = () => {
   const threadCacheDisplaySourceRef = useRef('unknown');
   const threadFreshSyncAtRef = useRef(0);
   const conversationPageMetaRef = useRef({
-    limit: 100,
+    limit: 25,
     hasMore: false,
     nextCursor: null,
     exhausted: false,

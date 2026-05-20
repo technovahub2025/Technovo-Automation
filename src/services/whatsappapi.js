@@ -183,7 +183,16 @@ api.interceptors.response.use(
     return response;
   },
   (error) => {
-    console.error("❌ API Error:", error.response?.data || error.message);
+    const status = error.response?.status;
+    const responseData = error.response?.data;
+    const responseMessage =
+      typeof responseData === "string"
+        ? responseData
+        : responseData?.error || responseData?.message || error.message;
+    console.error(
+      `API Error${status ? ` [${status}]` : ""}: ${responseMessage}`,
+      responseData || error,
+    );
 
     // Handle common error scenarios
     if (error.response) {
@@ -628,6 +637,13 @@ export const apiClient = {
     api.get(`/broadcasts/${id}/audience/recipients`, {
       params,
       timeout: LONG_TIMEOUT_MS,
+    }),
+
+  getBroadcastOverviewSummary: (params = {}) =>
+    api.get("/broadcasts/analytics/overview", {
+      params,
+      timeout: LONG_TIMEOUT_MS,
+      validateStatus: (status) => status < 500,
     }),
 
   getBroadcastReliabilitySummary: (params = {}) =>

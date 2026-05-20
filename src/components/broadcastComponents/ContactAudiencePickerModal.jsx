@@ -287,8 +287,12 @@ const ContactAudiencePickerModal = ({
         const response = await apiClient.getContacts(params);
         const payload = response?.data?.data ?? response?.data ?? [];
         const nextContacts = Array.isArray(payload) ? payload : [];
-        const totalCount = Number(response?.headers?.["x-total-count"] || 0);
         const meta = response?.data?.meta || {};
+        const totalCount = Number(
+          response?.headers?.["x-total-count"] ??
+            meta?.totalCount ??
+            0,
+        );
 
         if (cancelled || requestSeq !== contactsLoadSeqRef.current) return;
 
@@ -381,6 +385,7 @@ const ContactAudiencePickerModal = ({
         const params = {
           marketingEligible: marketingEligibleOnly ? "true" : "false",
           recentlyInteractedOnly: recentlyInteractedOnly ? "true" : "false",
+          includeTotalCount: "false",
           limit: CONTACT_SELECT_ALL_LIMIT,
         };
         if (requestCursor) {
@@ -396,11 +401,11 @@ const ContactAudiencePickerModal = ({
         const payload = response?.data?.data ?? response?.data ?? [];
         const matchedContacts = Array.isArray(payload) ? payload : [];
         const meta = response?.data?.meta || {};
+        const responseMeta = response?.data?.meta || {};
         totalCount = Number(
-          response?.headers?.["x-total-count"] ||
-            totalCount ||
-            matchedContacts.length ||
-            0,
+          response?.headers?.["x-total-count"] ??
+            responseMeta?.totalCount ??
+            totalCount,
         );
         allMatchedContacts.push(...matchedContacts);
         pageToken = String(meta?.nextCursor || "").trim();
@@ -426,7 +431,7 @@ const ContactAudiencePickerModal = ({
         return merged;
       });
       setMatchedContactsCount(
-        Number.isFinite(totalCount) ? totalCount : normalizedContacts.length,
+        Number.isFinite(totalCount) && totalCount > 0 ? totalCount : normalizedContacts.length,
       );
     } catch (selectError) {
       setError(

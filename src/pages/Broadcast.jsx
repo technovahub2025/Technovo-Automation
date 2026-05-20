@@ -128,6 +128,8 @@ const Broadcast = ({
     setTemplateFilter,
 
     broadcasts,
+    broadcastPageMeta,
+    loadingMoreBroadcasts,
 
     recipients,
     setRecipients,
@@ -216,6 +218,7 @@ const Broadcast = ({
     loadTemplates,
 
     loadBroadcasts,
+    loadMoreBroadcasts,
 
     formatLastUpdated,
 
@@ -300,6 +303,7 @@ const Broadcast = ({
     failureCodeBreakdown: {},
     topFailureCode: null,
   });
+  const [overviewSummary, setOverviewSummary] = useState(null);
   const broadcastSubmitInFlightRef = useRef(false);
   const reliabilitySummaryTimerRef = useRef(null);
   const csvRecipientRefreshContextRef = useRef({
@@ -491,9 +495,21 @@ const Broadcast = ({
   useEffect(() => {
     setCurrentPage((prev) => Math.min(prev, totalPages));
   }, [totalPages]);
-  const stats = getCachedOverviewStats(broadcasts);
+  const cachedOverviewStats = getCachedOverviewStats(broadcasts);
+  const overviewStats = overviewSummary
+    ? {
+        sent: Number(overviewSummary.sent || 0),
+        delivered: Number(overviewSummary.delivered || 0),
+        read: Number(overviewSummary.read || 0),
+        replied: Number(overviewSummary.replied || 0),
+        sending: Number(overviewSummary.sending || 0),
+        failed: Number(overviewSummary.failed || 0),
+        processing: Number(overviewSummary.processing || 0),
+        queued: Number(overviewSummary.queued || 0),
+      }
+    : cachedOverviewStats;
   const mergedOverviewStats = {
-    ...stats,
+    ...overviewStats,
     suppressed: Number(reliabilitySummary?.suppressed || 0),
     deferred: Number(reliabilitySummary?.deferred || 0),
     retried: Number(reliabilitySummary?.retried || 0),
@@ -503,7 +519,7 @@ const Broadcast = ({
   useEffect(() => {
     let isAlive = true;
 
-    const loadReliabilitySummary = async () => {
+    const loadBroadcastSummaries = async () => {
       const params = {};
       if (statusFilter && statusFilter !== "all") {
         params.status = statusFilter;
@@ -516,29 +532,64 @@ const Broadcast = ({
       }
 
       try {
-        const response = await apiClient.getBroadcastReliabilitySummary(params);
-        const payload = response?.data?.data || {};
         if (!isAlive) return;
-        setReliabilitySummary({
-          campaigns: Number(payload?.campaigns || 0),
-          recipientCount: Number(payload?.recipientCount || 0),
-          suppressed: Number(payload?.suppressed || 0),
-          deferred: Number(payload?.deferred || 0),
-          retried: Number(payload?.retried || 0),
-          skippedQuietHours: Number(payload?.skippedQuietHours || 0),
-          failureCodeBreakdown:
-            payload?.failureCodeBreakdown &&
-            typeof payload.failureCodeBreakdown === "object"
-              ? payload.failureCodeBreakdown
-              : {},
-          topFailureCode:
-            payload?.topFailureCode &&
-            typeof payload.topFailureCode === "object"
-              ? payload.topFailureCode
-              : null,
-        });
-      } catch (_error) {
+
+        const [overviewResult, reliabilityResult] = await Promise.allSettled([
+          apiClient.getBroadcastOverviewSummary(params),
+          apiClient.getBroadcastReliabilitySummary(params),
+        ]);
+
+        const overviewPayload =
+          overviewResult.status === "fulfilled" &&
+          Number(overviewResult.value?.status || 0) === 200
+            ? overviewResult.value?.data?.data || {}
+            : null;
+        const reliabilityPayload =
+          reliabilityResult.status === "fulfilled"
+            ? reliabilityResult.value?.data?.data || {}
+            : null;
+
+        if (overviewPayload) {
+          setOverviewSummary({
+            campaigns: Number(overviewPayload?.campaigns || 0),
+            recipientCount: Number(overviewPayload?.recipientCount || 0),
+            sent: Number(overviewPayload?.sent || 0),
+            delivered: Number(overviewPayload?.delivered || 0),
+            read: Number(overviewPayload?.read || 0),
+            replied: Number(overviewPayload?.replied || 0),
+            failed: Number(overviewPayload?.failed || 0),
+            sending: Number(overviewPayload?.sending || 0),
+            processing: Number(overviewPayload?.processing || 0),
+            queued: Number(overviewPayload?.queued || 0),
+          });
+        }
+
+        if (reliabilityPayload) {
+          setReliabilitySummary({
+            campaigns: Number(reliabilityPayload?.campaigns || 0),
+            recipientCount: Number(reliabilityPayload?.recipientCount || 0),
+            suppressed: Number(reliabilityPayload?.suppressed || 0),
+            deferred: Number(reliabilityPayload?.deferred || 0),
+            retried: Number(reliabilityPayload?.retried || 0),
+            skippedQuietHours: Number(
+              reliabilityPayload?.skippedQuietHours || 0,
+            ),
+            failureCodeBreakdown:
+              reliabilityPayload?.failureCodeBreakdown &&
+              typeof reliabilityPayload.failureCodeBreakdown === "object"
+                ? reliabilityPayload.failureCodeBreakdown
+                : {},
+            topFailureCode:
+              reliabilityPayload?.topFailureCode &&
+              typeof reliabilityPayload.topFailureCode === "object"
+                ? reliabilityPayload.topFailureCode
+                : null,
+          });
+        }
+      } catch (error) {
         if (!isAlive) return;
+        console.warn("Failed to load broadcast summaries:", error);
+        setOverviewSummary(null);
         setReliabilitySummary({
           campaigns: 0,
           recipientCount: 0,
@@ -556,7 +607,7 @@ const Broadcast = ({
       window.clearTimeout(reliabilitySummaryTimerRef.current);
     }
     reliabilitySummaryTimerRef.current = window.setTimeout(() => {
-      loadReliabilitySummary();
+      loadBroadcastSummaries();
     }, 180);
 
     return () => {
@@ -636,9 +687,39 @@ const Broadcast = ({
     if (selectedCampaigns.length === 0) return;
 
     try {
-      await Promise.all(
+      const settledResults = await Promise.allSettled(
         selectedCampaigns.map((id) => apiClient.deleteBroadcast(id)),
       );
+
+      const deletedIds = [];
+      const missingIds = [];
+      const failedItems = [];
+
+      settledResults.forEach((result, index) => {
+        const id = selectedCampaigns[index];
+        if (result.status === "fulfilled") {
+          deletedIds.push(id);
+          return;
+        }
+
+        const status = Number(result.reason?.response?.status || 0);
+        const backendMessage = String(
+          result.reason?.response?.data?.error ||
+            result.reason?.response?.data?.message ||
+            result.reason?.message ||
+            "",
+        ).trim();
+
+        if (status === 404) {
+          missingIds.push(id);
+          return;
+        }
+
+        failedItems.push({
+          id,
+          message: backendMessage || "Delete request failed",
+        });
+      });
 
       await loadBroadcasts();
 
@@ -647,6 +728,28 @@ const Broadcast = ({
       setSelectedCampaigns([]);
 
       setSelectionMode(false);
+
+      if (failedItems.length > 0) {
+        const failureSummary =
+          failedItems.length === 1
+            ? `Could not delete campaign ${failedItems[0].id}: ${failedItems[0].message}`
+            : `Deleted ${deletedIds.length} campaign${deletedIds.length === 1 ? "" : "s"}, ${missingIds.length} already missing, and ${failedItems.length} failed.`;
+        alert(failureSummary);
+        return;
+      }
+
+      if (missingIds.length > 0 && deletedIds.length === 0) {
+        alert(
+          "The selected campaign(s) were already removed or are no longer available.",
+        );
+        return;
+      }
+
+      if (missingIds.length > 0) {
+        alert(
+          `Deleted ${deletedIds.length} campaign${deletedIds.length === 1 ? "" : "s"}; ${missingIds.length} campaign${missingIds.length === 1 ? "" : "s"} were already missing.`,
+        );
+      }
     } catch (error) {
       console.error("Failed to delete campaigns:", error);
 
@@ -3197,6 +3300,9 @@ const Broadcast = ({
                   onSortOrderChange={(value) => setSortOrder(value)}
                   onRefresh={() => loadBroadcasts()}
                   totalBroadcasts={filteredBroadcasts.length}
+                  hasMoreCampaigns={Boolean(broadcastPageMeta?.hasMore)}
+                  isLoadingMoreCampaigns={Boolean(loadingMoreBroadcasts)}
+                  onLoadMoreCampaigns={() => loadMoreBroadcasts()}
                   lastUpdated={
                     broadcasts.length > 0
                       ? Math.max(
@@ -3273,6 +3379,7 @@ const Broadcast = ({
                     </div>
                   </div>
                 )}
+
               </div>
             </>
           )}

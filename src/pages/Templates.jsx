@@ -56,23 +56,8 @@ const Templates = () => {
   const [deletingTemplateName, setDeletingTemplateName] = useState('');
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
+  const initialLoadKeyRef = React.useRef('');
   const currentUserId = resolveCacheUserId();
-
-  useEffect(() => {
-    const cachedTemplates = readSidebarPageCache(TEMPLATES_CACHE_NAMESPACE, {
-      currentUserId,
-      allowStale: true
-    });
-
-    if (Array.isArray(cachedTemplates?.data?.officialTemplates)) {
-      setOfficialTemplates(cachedTemplates.data.officialTemplates);
-      setIsLoading(false);
-      loadTemplates({ silent: true });
-      return;
-    }
-
-    loadTemplates();
-  }, [currentUserId]);
 
   useEffect(() => {
     if (!toast?.message) return undefined;
@@ -132,15 +117,42 @@ const Templates = () => {
       if (!silent) {
         const message = extractErrorMessage(err, 'Failed to load templates. Please try again.');
         setError(message);
-        setOfficialTemplates([]);
+        if (!Array.isArray(officialTemplates) || officialTemplates.length === 0) {
+          setOfficialTemplates([]);
+        }
       } else {
-        console.error('Failed to refresh templates:', err);
+        const timeoutLike =
+          String(err?.code || '').toUpperCase() === 'ECONNABORTED' ||
+          String(err?.message || '').toLowerCase().includes('timeout');
+        if (!timeoutLike) {
+          console.error('Failed to refresh templates:', err);
+        }
       }
     } finally {
       releaseLoadingGuard();
       if (!silent) setIsLoading(false);
     }
-  }, [persistTemplatesCache]);
+  }, [officialTemplates, persistTemplatesCache]);
+
+  useEffect(() => {
+    const loadKey = String(currentUserId || 'anonymous');
+    if (initialLoadKeyRef.current === loadKey) return;
+    initialLoadKeyRef.current = loadKey;
+
+    const cachedTemplates = readSidebarPageCache(TEMPLATES_CACHE_NAMESPACE, {
+      currentUserId,
+      allowStale: true
+    });
+
+    if (Array.isArray(cachedTemplates?.data?.officialTemplates)) {
+      setOfficialTemplates(cachedTemplates.data.officialTemplates);
+      setIsLoading(false);
+      loadTemplates({ silent: true });
+      return;
+    }
+
+    loadTemplates();
+  }, [currentUserId, loadTemplates]);
 
   const syncTemplates = async () => {
     setIsSyncing(true);

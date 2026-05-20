@@ -553,7 +553,8 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
           <p>Suppressed: {Number(reliabilityAnalytics.suppressed || 0)}</p>
           <p>Deferred: {Number(reliabilityAnalytics.deferred || 0)}</p>
           <p>Retried: {Number(reliabilityAnalytics.retried || 0)}</p>
-          {broadcast.status === "completed_with_errors" ? (
+          {broadcast.status === "completed_with_errors" &&
+          Number(stats.failed || 0) > 0 ? (
             <p className="failure-summary-line">
               Completed with errors. {Number(stats.failed || 0)} recipient
               {Number(stats.failed || 0) === 1 ? "" : "s"} failed

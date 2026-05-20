@@ -14,7 +14,7 @@ import {
 import { upsertConversationInOrderedList } from './teamInboxUtils';
 
 const DEFAULT_CONVERSATION_PAGE_LIMIT = 20;
-const DEFAULT_MESSAGES_PAGE_LIMIT = 30;
+const DEFAULT_MESSAGES_PAGE_LIMIT = 20;
 const CONVERSATION_LIST_LOADING_TIMEOUT_MS = 8000;
 const VALID_CONVERSATION_FILTERS = new Set(['all', 'unread', 'read']);
 

@@ -15,6 +15,9 @@ const BroadcastListControls = ({
   onSortOrderChange,
   onRefresh,
   totalBroadcasts = 0,
+  hasMoreCampaigns = false,
+  isLoadingMoreCampaigns = false,
+  onLoadMoreCampaigns,
   formatLastUpdated,
   selectedPreset = 'all',
   onApplyPreset
@@ -130,6 +133,17 @@ const BroadcastListControls = ({
               <RefreshCw size={14} />
             </button>
           </div>
+
+          {hasMoreCampaigns && (
+            <button
+              type="button"
+              className="broadcast-load-more-btn"
+              onClick={() => onLoadMoreCampaigns?.()}
+              disabled={isLoadingMoreCampaigns}
+            >
+              {isLoadingMoreCampaigns ? 'Loading more...' : 'Load more'}
+            </button>
+          )}
         </div>
       </div>
     </div>

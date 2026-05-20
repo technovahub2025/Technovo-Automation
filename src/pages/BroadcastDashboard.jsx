@@ -29,6 +29,81 @@ const sanitizeDashboardAnalytics = (analytics = {}) => {
     }
 };
 
+const getBroadcastMetricValue = (broadcast = {}, key) => {
+    const directValue = Number(broadcast?.[key]);
+    if (Number.isFinite(directValue)) {
+        return directValue;
+    }
+    const nestedStats = broadcast?.stats && typeof broadcast.stats === 'object'
+        ? broadcast.stats
+        : {};
+    const nestedValue = Number(nestedStats?.[key] || nestedStats?.[`${key}Count`] || 0);
+    return Number.isFinite(nestedValue) ? nestedValue : 0;
+};
+
+const getBroadcastSentCount = (broadcast = {}) => {
+    const statsSent = getBroadcastMetricValue(broadcast, 'sent');
+    return statsSent;
+};
+
+const aggregateBroadcastMetrics = (broadcasts = []) => {
+    const totals = Array.isArray(broadcasts) ? broadcasts.reduce(
+        (accumulator, broadcast) => {
+            accumulator.messagesSent += getBroadcastSentCount(broadcast);
+            accumulator.messagesDelivered += getBroadcastMetricValue(broadcast, 'delivered');
+            accumulator.messagesRead += getBroadcastMetricValue(broadcast, 'read');
+            accumulator.messagesFailed += getBroadcastMetricValue(broadcast, 'failed');
+            accumulator.messagesReplied += getBroadcastMetricValue(broadcast, 'replied');
+            return accumulator;
+        },
+        {
+            messagesSent: 0,
+            messagesDelivered: 0,
+            messagesRead: 0,
+            messagesFailed: 0,
+            messagesReplied: 0
+        }
+    ) : {
+        messagesSent: 0,
+        messagesDelivered: 0,
+        messagesRead: 0,
+        messagesFailed: 0,
+        messagesReplied: 0
+    };
+
+    const deliveryRate =
+        totals.messagesSent > 0
+            ? (totals.messagesDelivered / totals.messagesSent) * 100
+            : 0;
+    const readRate =
+        totals.messagesSent > 0
+            ? (totals.messagesRead / totals.messagesSent) * 100
+            : 0;
+    const failureRate =
+        totals.messagesSent > 0
+            ? (totals.messagesFailed / totals.messagesSent) * 100
+            : 0;
+
+    return {
+        ...totals,
+        performanceMetrics: {
+            deliveryRate: `${deliveryRate.toFixed(1)}%`,
+            readRate: `${readRate.toFixed(1)}%`,
+            avgDeliveryTime: 'N/A',
+            avgReadTime: 'N/A',
+            peakHour: 'N/A',
+            bestDay: 'N/A'
+        },
+        responseRate: Number(readRate.toFixed(1)),
+        customerSatisfaction: 0,
+        failedGrowth: '0',
+        sentGrowth: '0',
+        deliveredGrowth: '0',
+        readRateGrowth: '0',
+        failureRate
+    };
+};
+
 const createEmptyAnalytics = () => ({
     totalConversations: 0,
     activeConversations: 0,
@@ -58,11 +133,85 @@ const createEmptyAnalytics = () => ({
 });
 
 const isMeaningfulAnalytics = (analytics = {}) => {
-    const sent = Number(analytics?.messagesSent || 0);
-    const delivered = Number(analytics?.messagesDelivered || 0);
-    const read = Number(analytics?.messagesRead || 0);
-    const failed = Number(analytics?.messagesFailed || 0);
+    const source = analytics?.overview && typeof analytics.overview === 'object'
+        ? analytics.overview
+        : analytics;
+    const sent = Number(source?.messagesSent || 0);
+    const delivered = Number(source?.messagesDelivered || 0);
+    const read = Number(source?.messagesRead || 0);
+    const failed = Number(source?.messagesFailed || source?.failedMessages || 0);
     return sent > 0 || delivered > 0 || read > 0 || failed > 0;
+};
+
+const normalizeDashboardAnalytics = (raw = {}, broadcastMetrics = {}) => {
+    const source = raw?.overview && typeof raw.overview === 'object'
+        ? raw.overview
+        : raw;
+    const performanceMetrics =
+        raw?.performanceMetrics && typeof raw.performanceMetrics === 'object'
+            ? raw.performanceMetrics
+            : {};
+    const growth =
+        raw?.growth && typeof raw.growth === 'object'
+            ? raw.growth
+            : {};
+
+    return {
+        ...createEmptyAnalytics(),
+        ...raw,
+        ...source,
+        messagesSent: Number(
+            broadcastMetrics?.messagesSent ??
+            source?.messagesSent ??
+            source?.sentMessages ??
+            0
+        ),
+        messagesDelivered: Number(
+            broadcastMetrics?.messagesDelivered ??
+            source?.messagesDelivered ??
+            0
+        ),
+        messagesRead: Number(
+            broadcastMetrics?.messagesRead ??
+            source?.messagesRead ??
+            0
+        ),
+        messagesFailed: Number(
+            broadcastMetrics?.messagesFailed ??
+            source?.messagesFailed ??
+            source?.failedMessages ??
+            0
+        ),
+        activeConversations: Number(source?.activeConversations || 0),
+        totalConversations: Number(source?.totalConversations || 0),
+        messagesReceived: Number(source?.messagesReceived || 0),
+        avgResponseTime: source?.avgResponseTime || raw?.avgResponseTime || 'N/A',
+        responseRate: Number(source?.responseRate || raw?.responseRate || 0),
+        customerSatisfaction: Number(source?.customerSatisfaction || raw?.customerSatisfaction || 0),
+        sentGrowth: String(growth?.sentGrowth ?? raw?.sentGrowth ?? '0'),
+        deliveredGrowth: String(growth?.deliveredGrowth ?? raw?.deliveredGrowth ?? '0'),
+        readRateGrowth: String(growth?.readRateGrowth ?? raw?.readRateGrowth ?? '0'),
+        failedGrowth: String(growth?.failedGrowth ?? raw?.failedGrowth ?? '0'),
+        dailyTrends: Array.isArray(raw?.dailyTrends) ? raw.dailyTrends : [],
+        hourlyActivity: Array.isArray(raw?.hourlyActivity) ? raw.hourlyActivity : [],
+        messageTypes: Array.isArray(raw?.messageTypes) ? raw.messageTypes : [],
+        performanceMetrics: {
+            ...createEmptyAnalytics().performanceMetrics,
+            ...performanceMetrics,
+            avgDeliveryTime: performanceMetrics.avgDeliveryTime || source?.avgDeliveryTime || 'N/A',
+            avgReadTime: performanceMetrics.avgReadTime || source?.avgReadTime || 'N/A',
+            peakHour: performanceMetrics.peakHour || source?.peakHour || 'N/A',
+            bestDay: performanceMetrics.bestDay || source?.bestDay || 'N/A',
+            deliveryRate:
+                performanceMetrics.deliveryRate ||
+                broadcastMetrics?.performanceMetrics?.deliveryRate ||
+                `${Number(source?.responseRate || 0)}%`,
+            readRate:
+                performanceMetrics.readRate ||
+                broadcastMetrics?.performanceMetrics?.readRate ||
+                `${Number(source?.readRate || 0)}%`
+        }
+    };
 };
 
 const BroadcastDashboard = () => {
@@ -102,8 +251,18 @@ const BroadcastDashboard = () => {
             if (silent) setRefreshing(true);
             else setLoading(true);
 
-            const analyticsData = await whatsappService.getAnalytics();
-            let nextAnalytics = analyticsData || {};
+            const [analyticsResult, broadcastsResult] = await Promise.allSettled([
+                whatsappService.getAnalytics(),
+                whatsappService.getBroadcasts()
+            ]);
+            const analyticsData =
+                analyticsResult.status === 'fulfilled' ? analyticsResult.value : {};
+            const broadcastsData =
+                broadcastsResult.status === 'fulfilled' && Array.isArray(broadcastsResult.value)
+                    ? broadcastsResult.value
+                    : [];
+            const broadcastMetrics = aggregateBroadcastMetrics(broadcastsData);
+            let nextAnalytics = normalizeDashboardAnalytics(analyticsData || {}, broadcastMetrics);
             const fallbackCooldownActive =
                 Date.now() - Number(fallbackFailureAtRef.current || 0) < BROADCAST_DASHBOARD_FALLBACK_COOLDOWN_MS;
             if (!isMeaningfulAnalytics(nextAnalytics)) {
@@ -111,10 +270,10 @@ const BroadcastDashboard = () => {
                     return;
                 }
                 if (fallbackCooldownActive) {
-                    nextAnalytics = createEmptyAnalytics();
+                    nextAnalytics = normalizeDashboardAnalytics(createEmptyAnalytics(), broadcastMetrics);
                 } else {
                     fallbackFailureAtRef.current = Date.now();
-                    nextAnalytics = createEmptyAnalytics();
+                    nextAnalytics = normalizeDashboardAnalytics(createEmptyAnalytics(), broadcastMetrics);
                 }
             }
             setAnalytics(nextAnalytics);
@@ -180,6 +339,14 @@ const BroadcastDashboard = () => {
         };
 
         const socket = webSocketService.connect(currentUserId || 'broadcast-dashboard');
+        if (socket && typeof socket.catch === 'function') {
+            socket.catch((error) => {
+                console.warn(
+                    'Broadcast dashboard WebSocket connect failed:',
+                    error?.message || error,
+                );
+            });
+        }
         if (!socket) return undefined;
 
         const handleRealtimeUpdate = () => scheduleRefresh();
@@ -199,25 +366,37 @@ const BroadcastDashboard = () => {
         };
     }, [currentUserId, loadDashboardData]);
 
+    const getAnalyticsSource = () => {
+        if (analytics?.overview && typeof analytics.overview === 'object') {
+            return analytics.overview;
+        }
+        return analytics || {};
+    };
+
     const getMessageSentCount = () => {
-        return analytics.messagesSent || 0;
+        const source = getAnalyticsSource();
+        return Number(source.messagesSent || 0);
     };
 
     const getDeliveredCount = () => {
-        return analytics.messagesDelivered || 0;
+        const source = getAnalyticsSource();
+        return Number(source.messagesDelivered || 0);
     };
 
     const getReadCount = () => {
-        return analytics.messagesRead || 0;
+        const source = getAnalyticsSource();
+        return Number(source.messagesRead || 0);
     };
 
     const getFailedCount = () => {
-        return analytics.messagesFailed || 0;
+        const source = getAnalyticsSource();
+        return Number(source.messagesFailed || source.failedMessages || 0);
     };
 
     const getSuccessRate = () => {
-        const total = analytics.messagesSent || 0;
-        const failed = analytics.messagesFailed || 0;
+        const source = getAnalyticsSource();
+        const total = Number(source.messagesSent || 0);
+        const failed = Number(source.messagesFailed || source.failedMessages || 0);
         if (total === 0) return '0%';
         const success = total - failed;
         return `${Math.round((success / total) * 100)}%`;
@@ -295,15 +474,15 @@ const BroadcastDashboard = () => {
                             <div className="dashboard-metrics-grid">
                                 <div className="dashboard-metric-item">
                                     <div className="dashboard-metric-label">Avg Response Time</div>
-                                    <div className="dashboard-metric-value">{analytics.avgResponseTime || 'N/A'}</div>
+                                    <div className="dashboard-metric-value">{getAnalyticsSource().avgResponseTime || 'N/A'}</div>
                                 </div>
                                 <div className="dashboard-metric-item">
                                     <div className="dashboard-metric-label">Response Rate</div>
-                                    <div className="dashboard-metric-value">{analytics.responseRate || 0}%</div>
+                                    <div className="dashboard-metric-value">{getAnalyticsSource().responseRate || 0}%</div>
                                 </div>
                                 <div className="dashboard-metric-item">
                                     <div className="dashboard-metric-label">Customer Satisfaction</div>
-                                    <div className="dashboard-metric-value">{analytics.customerSatisfaction || 0}/5</div>
+                                    <div className="dashboard-metric-value">{getAnalyticsSource().customerSatisfaction || 0}/5</div>
                                 </div>
                             </div>
                         </div>

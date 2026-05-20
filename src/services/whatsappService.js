@@ -118,7 +118,10 @@ const logAxiosServiceError = (label, error, fallbackMessage) => {
         String(details.code || '').toUpperCase() === 'ECONNABORTED') ||
       String(details.message || '').toLowerCase().includes('timeout');
     const logFn = isTimeout ? console.warn : console.error;
-    logFn(`${label}:`, details);
+    logFn(
+      `${label}: ${details.message}${details.status ? ` (status ${details.status})` : ''}${details.code ? ` [${details.code}]` : ''}`,
+      details,
+    );
   }
   return details;
 };
@@ -567,6 +570,32 @@ export const whatsappService = {
 
 
   // ============ CONVERSATION ENDPOINTS ============
+
+  async getUnreadConversationCount(filters = {}) {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/conversations/unread-count`, {
+        headers: getAuthHeaders(false),
+        params: filters,
+        timeout: 8000
+      });
+      const payload = response?.data?.data || response?.data || {};
+      return {
+        ok: true,
+        data: {
+          unreadConversationCount: Number(payload?.unreadConversationCount || 0)
+        }
+      };
+    } catch (error) {
+      logAxiosServiceError('Failed to fetch unread conversation count', error, 'Failed to fetch unread conversation count');
+      return {
+        ok: false,
+        error: normalizeServiceErrorMessage(
+          error?.response?.data?.error || error?.message,
+          'Failed to fetch unread conversation count'
+        )
+      };
+    }
+  },
 
   
 

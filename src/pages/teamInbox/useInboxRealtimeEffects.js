@@ -372,14 +372,26 @@ export const useInboxRealtimeEffects = ({
     const handlePresenceUpdate = (data = {}) => {
       const userId = String(data?.userId || '').trim();
       if (!userId || typeof setUserPresenceMap !== 'function') return;
-      setUserPresenceMap((prev) => ({
-        ...prev,
-        [userId]: {
-          ...(prev?.[userId] || {}),
-          status: String(data?.status || '').trim(),
-          updatedAt: data?.updatedAt || new Date().toISOString()
+      const nextStatus = String(data?.status || '').trim();
+      const nextUpdatedAt = String(data?.updatedAt || new Date().toISOString()).trim();
+      setUserPresenceMap((prev) => {
+        const previousEntry = prev?.[userId] || {};
+        if (
+          String(previousEntry?.status || '').trim() === nextStatus &&
+          String(previousEntry?.updatedAt || '').trim() === nextUpdatedAt
+        ) {
+          return prev;
         }
-      }));
+
+        return {
+          ...prev,
+          [userId]: {
+            ...previousEntry,
+            status: nextStatus,
+            updatedAt: nextUpdatedAt
+          }
+        };
+      });
     };
 
     const handleTypingUpdate = (data = {}) => {
@@ -388,15 +400,31 @@ export const useInboxRealtimeEffects = ({
       if (!conversationId || !userId || typeof setConversationTypingState !== 'function') return;
       setConversationTypingState((prev) => {
         const current = Array.isArray(prev?.[conversationId]) ? prev[conversationId] : [];
+        const nextIsTyping = Boolean(data?.isTyping);
+        const nextUpdatedAt = String(data?.updatedAt || new Date().toISOString()).trim();
+        const nextDisplayName = String(data?.displayName || data?.name || '').trim();
+        const existingIndex = current.findIndex((entry) => String(entry?.userId || '') === userId);
+        const existingEntry = existingIndex >= 0 ? current[existingIndex] : null;
+        if (
+          existingEntry &&
+          Boolean(existingEntry?.isTyping) === nextIsTyping &&
+          String(existingEntry?.displayName || '').trim() === nextDisplayName &&
+          String(existingEntry?.updatedAt || '').trim() === nextUpdatedAt
+        ) {
+          return prev;
+        }
         const nextEntries = current.filter((entry) => String(entry?.userId || '') !== userId);
-        if (Boolean(data?.isTyping)) {
+        if (nextIsTyping) {
           nextEntries.push({
             userId,
             conversationId,
-            displayName: String(data?.displayName || data?.name || '').trim(),
+            displayName: nextDisplayName,
             isTyping: true,
-            updatedAt: data?.updatedAt || new Date().toISOString()
+            updatedAt: nextUpdatedAt
           });
+        }
+        if (existingIndex < 0 && !nextIsTyping) {
+          return prev;
         }
         return {
           ...(prev || {}),

@@ -15,6 +15,16 @@ import {
 
 const BROADCAST_PAGE_CACHE_NAMESPACE = "broadcast-page";
 const BROADCAST_PAGE_CACHE_TTL_MS = 10 * 60 * 1000;
+const BROADCAST_PAGE_LIMIT = 25;
+
+const normalizeBroadcastStatus = (broadcast = {}) => {
+  const status = String(broadcast?.status || "").trim().toLowerCase();
+  const failedCount = Number(broadcast?.stats?.failed || 0);
+  if (status === "completed_with_errors" && failedCount <= 0) {
+    return "completed";
+  }
+  return status;
+};
 
 const dedupeTemplatesById = (items = []) => {
   const seen = new Set();
@@ -73,7 +83,7 @@ const sanitizeBroadcastForCache = (broadcast = {}) => ({
   _id: String(broadcast?._id || "").trim(),
   id: String(broadcast?.id || "").trim(),
   name: String(broadcast?.name || "").trim(),
-  status: String(broadcast?.status || "").trim(),
+  status: normalizeBroadcastStatus(broadcast),
   messageType: String(broadcast?.messageType || "").trim(),
   templateName: String(broadcast?.templateName || "").trim(),
   language: String(broadcast?.language || "").trim(),
@@ -134,6 +144,12 @@ export const useBroadcast = () => {
   const [language, setLanguage] = useState("en_US");
   const [templateFilter, setTemplateFilter] = useState("all");
   const [broadcasts, setBroadcasts] = useState([]);
+  const [broadcastPageMeta, setBroadcastPageMeta] = useState({
+    hasMore: false,
+    nextCursor: "",
+    limit: BROADCAST_PAGE_LIMIT,
+  });
+  const [loadingMoreBroadcasts, setLoadingMoreBroadcasts] = useState(false);
   const [recipients, setRecipients] = useState([]);
   const [uploadedFile, setUploadedFile] = useState(null);
   const [isSending, setIsSending] = useState(false);
@@ -156,6 +172,7 @@ export const useBroadcast = () => {
   const broadcastRefreshTimerRef = useRef(null);
   const currentUserId = resolveCacheUserId();
   const broadcastPageCacheRef = useRef(null);
+  const broadcastsRef = useRef([]);
 
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState("");
@@ -207,6 +224,26 @@ export const useBroadcast = () => {
           : Array.isArray(previousCache.officialTemplates)
             ? previousCache.officialTemplates
             : [],
+        broadcastPageMeta: {
+          hasMore: Boolean(
+            patch.broadcastPageMeta?.hasMore ??
+              previousCache.broadcastPageMeta?.hasMore ??
+              false,
+          ),
+          nextCursor: String(
+            patch.broadcastPageMeta?.nextCursor ??
+              previousCache.broadcastPageMeta?.nextCursor ??
+              "",
+          ).trim(),
+          limit: Math.max(
+            1,
+            Number(
+              patch.broadcastPageMeta?.limit ??
+                previousCache.broadcastPageMeta?.limit ??
+                BROADCAST_PAGE_LIMIT,
+            ) || BROADCAST_PAGE_LIMIT,
+          ),
+        },
         lastUpdated:
           patch.lastUpdated instanceof Date
             ? patch.lastUpdated.toISOString()
@@ -223,6 +260,10 @@ export const useBroadcast = () => {
     },
     [currentUserId],
   );
+
+  useEffect(() => {
+    broadcastsRef.current = Array.isArray(broadcasts) ? broadcasts : [];
+  }, [broadcasts]);
 
   // API functions
   const loadTemplates = useCallback(async () => {
@@ -251,57 +292,71 @@ export const useBroadcast = () => {
     }
   }, [currentUserId, persistBroadcastPageCache]);
 
-  const loadBroadcasts = useCallback(async () => {
+  const loadBroadcasts = useCallback(async ({ append = false, cursor = "" } = {}) => {
     const requestSeq = ++loadRequestSeqRef.current;
     try {
-      let cursor = "";
-      let hasMore = true;
-      let aggregatedBroadcasts = [];
-      while (hasMore) {
-        if (requestSeq !== loadRequestSeqRef.current) {
-          return;
-        }
-
-        const result = await apiClient.getBroadcasts({
-          limit: 100,
-          ...(cursor ? { cursor } : {}),
-        });
-        const responseData = result?.data?.data ?? result?.data ?? [];
-        const broadcastItems = Array.isArray(responseData?.items)
-          ? responseData.items
-          : Array.isArray(responseData)
-            ? responseData
-            : [];
-        const meta = responseData?.meta || {};
-
-        aggregatedBroadcasts = dedupeBroadcastsById([
-          ...aggregatedBroadcasts,
-          ...broadcastItems,
-        ]);
-
-        if (requestSeq !== loadRequestSeqRef.current) {
-          return;
-        }
-
-        latestAppliedSeqRef.current = requestSeq;
-        setBroadcasts(aggregatedBroadcasts);
-        const nextUpdatedAt = new Date();
-        setLastUpdated(nextUpdatedAt);
-        persistBroadcastPageCache({
-          broadcasts: aggregatedBroadcasts,
-          lastUpdated: nextUpdatedAt,
-        });
-
-        cursor = String(meta?.nextCursor || "").trim();
-        hasMore = Boolean(meta?.hasMore) && Boolean(cursor);
-        if (hasMore) {
-          await new Promise((resolve) => window.setTimeout(resolve, 0));
-        }
+      if (append) {
+        setLoadingMoreBroadcasts(true);
       }
+
+      const result = await apiClient.getBroadcasts({
+        limit: BROADCAST_PAGE_LIMIT,
+        ...(cursor ? { cursor } : {}),
+      });
+      const responseData = result?.data?.data ?? result?.data ?? [];
+      const broadcastItems = Array.isArray(responseData?.items)
+        ? responseData.items
+        : Array.isArray(responseData)
+          ? responseData
+          : [];
+      const meta = responseData?.meta || {};
+      const nextMeta = {
+        hasMore: Boolean(meta?.hasMore),
+        nextCursor: String(meta?.nextCursor || "").trim(),
+        limit: Number(meta?.limit || BROADCAST_PAGE_LIMIT) || BROADCAST_PAGE_LIMIT,
+      };
+
+      if (requestSeq !== loadRequestSeqRef.current) {
+        return false;
+      }
+
+      latestAppliedSeqRef.current = requestSeq;
+      const nextBroadcasts = append
+        ? dedupeBroadcastsById([...broadcastsRef.current, ...broadcastItems])
+        : broadcastItems;
+      const normalizedBroadcasts = nextBroadcasts.map((broadcast) => ({
+        ...broadcast,
+        status: normalizeBroadcastStatus(broadcast),
+      }));
+      setBroadcasts(normalizedBroadcasts);
+      setBroadcastPageMeta(nextMeta);
+      const nextUpdatedAt = new Date();
+      setLastUpdated(nextUpdatedAt);
+      persistBroadcastPageCache({
+        broadcasts: normalizedBroadcasts,
+        lastUpdated: nextUpdatedAt,
+        broadcastPageMeta: nextMeta,
+      });
+
+      return true;
     } catch (error) {
       console.error("Failed to load broadcasts:", error);
+      return false;
+    } finally {
+      if (append) {
+        setLoadingMoreBroadcasts(false);
+      }
     }
   }, [persistBroadcastPageCache]);
+
+  const loadMoreBroadcasts = useCallback(async () => {
+    const nextCursor = String(broadcastPageMeta?.nextCursor || "").trim();
+    if (!broadcastPageMeta?.hasMore || !nextCursor || loadingMoreBroadcasts) {
+      return false;
+    }
+
+    return loadBroadcasts({ append: true, cursor: nextCursor });
+  }, [broadcastPageMeta, loadBroadcasts, loadingMoreBroadcasts]);
 
   const syncTemplates = useCallback(async () => {
     try {
@@ -365,6 +420,10 @@ export const useBroadcast = () => {
 
             return {
               ...broadcast,
+              status: normalizeBroadcastStatus({
+                ...broadcast,
+                stats: updatedStats,
+              }),
               stats: updatedStats,
             };
           }
@@ -408,7 +467,11 @@ export const useBroadcast = () => {
               toNumber(stats.delivered),
               toNumber(stats.read),
             );
-            return { ...broadcast, stats };
+            return {
+              ...broadcast,
+              stats,
+              status: normalizeBroadcastStatus({ ...broadcast, stats }),
+            };
           }),
         );
 
@@ -500,6 +563,15 @@ export const useBroadcast = () => {
 
       if (Array.isArray(cachedBroadcastPage.data.broadcasts)) {
         setBroadcasts(cachedBroadcastPage.data.broadcasts);
+      }
+      if (cachedBroadcastPage.data.broadcastPageMeta) {
+        setBroadcastPageMeta({
+          hasMore: Boolean(cachedBroadcastPage.data.broadcastPageMeta.hasMore),
+          nextCursor: String(cachedBroadcastPage.data.broadcastPageMeta.nextCursor || "").trim(),
+          limit:
+            Number(cachedBroadcastPage.data.broadcastPageMeta.limit || BROADCAST_PAGE_LIMIT) ||
+            BROADCAST_PAGE_LIMIT,
+        });
       }
       if (Array.isArray(cachedBroadcastPage.data.templates)) {
         setTemplates(cachedBroadcastPage.data.templates);
@@ -1164,6 +1236,9 @@ export const useBroadcast = () => {
     setTemplateFilter,
     broadcasts,
     setBroadcasts,
+    broadcastPageMeta,
+    setBroadcastPageMeta,
+    loadingMoreBroadcasts,
     recipients,
     setRecipients,
     uploadedFile,
@@ -1235,6 +1310,7 @@ export const useBroadcast = () => {
     // Functions
     loadTemplates,
     loadBroadcasts,
+    loadMoreBroadcasts,
     syncTemplates,
     formatLastUpdated,
     getSuccessPercentage,

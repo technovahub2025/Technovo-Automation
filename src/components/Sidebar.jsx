@@ -696,19 +696,17 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         }
 
         try {
-            const [conversations, taskSummary, dealMetrics, ownerDashboard] = await Promise.all([
-                canUseBroadcast ? whatsappService.getConversations({ limit: 200 }) : Promise.resolve([]),
+            const [unreadResponse, taskSummary, dealMetrics, ownerDashboard] = await Promise.all([
+                canUseBroadcast ? whatsappService.getUnreadConversationCount() : Promise.resolve({ ok: true, data: { unreadConversationCount: 0 } }),
                 canUseCrm ? crmService.getTaskSummary() : Promise.resolve(null),
                 canUseCrm ? crmService.getDealMetrics() : Promise.resolve(null),
                 canUseCrm ? crmService.getOwnerDashboard() : Promise.resolve(null)
             ]);
 
-            const unreadCount = Array.isArray(conversations)
-                ? conversations.reduce(
-                    (total, conversation) => total + Math.max(0, Number(conversation?.unreadCount || 0)),
-                    0
-                )
-                : 0;
+            const unreadCount = Math.max(
+                0,
+                Number(unreadResponse?.data?.unreadConversationCount || 0)
+            );
 
             const overdueTasks = Math.max(0, Number(taskSummary?.data?.overdue || 0));
             const openDeals = Math.max(0, Number(dealMetrics?.data?.open || 0));

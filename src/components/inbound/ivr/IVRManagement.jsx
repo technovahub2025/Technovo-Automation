@@ -81,7 +81,13 @@ const IVRManagement = () => {
 
   const playAudio = (audioUrl) => {
     const audio = new Audio(audioUrl);
-    audio.play();
+    const playback = audio.play();
+    if (playback && typeof playback.catch === 'function') {
+      playback.catch((error) => {
+        if (String(error?.name || '') === 'AbortError') return;
+        console.warn('Failed to start audio playback:', error);
+      });
+    }
   };
 
   const createNewPrompt = async () => {
