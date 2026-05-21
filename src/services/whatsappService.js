@@ -126,6 +126,30 @@ const logAxiosServiceError = (label, error, fallbackMessage) => {
   return details;
 };
 
+const getTemplateMergeKey = (template = {}) => {
+  const metaId = String(template?.whatsappTemplateId || template?.metaTemplateId || template?.id || '').trim();
+  if (metaId) return `id:${metaId}`;
+  const localId = String(template?._id || '').trim();
+  if (localId) return `local:${localId}`;
+  const name = String(template?.name || '').trim().toLowerCase();
+  const language = String(template?.language || '').trim().toLowerCase();
+  return name ? `name:${name}:${language}` : '';
+};
+
+const mergeTemplateLists = (primary = [], secondary = []) => {
+  const merged = [];
+  const seen = new Set();
+
+  for (const template of [...(Array.isArray(primary) ? primary : []), ...(Array.isArray(secondary) ? secondary : [])]) {
+    const key = getTemplateMergeKey(template);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    merged.push(template);
+  }
+
+  return merged;
+};
+
 const toBase64Url = (value = '') => {
   const normalizedValue = String(value || '');
   if (typeof btoa === 'function') {
@@ -1546,25 +1570,61 @@ export const whatsappService = {
 
   
 
-  // Get all templates from Meta WhatsApp Business API
+  // Get all templates from Meta and local DB, merged so saved drafts stay visible.
   async getTemplates() {
-    try {
+    const fetchMetaTemplates = async () => {
       const response = await axios.get(`${API_BASE_URL}/api/templates/meta`, {
         headers: getAuthHeaders(false),
         timeout: WHATSAPP_DEFAULT_TIMEOUT_MS
       });
       const data = response.data;
-      
-      // Return the templates array from Meta API response
-      return data.data || data || [];
+      return Array.isArray(data) ? data : data.data || [];
+    };
+
+    const fetchLocalTemplates = async () => {
+      const response = await axios.get(`${API_BASE_URL}/api/templates`, {
+        headers: getAuthHeaders(false),
+        timeout: WHATSAPP_DEFAULT_TIMEOUT_MS
+      });
+      const data = response.data;
+      return Array.isArray(data) ? data : data.data || [];
+    };
+
+    try {
+      const [metaResult, localResult] = await Promise.allSettled([
+        fetchMetaTemplates(),
+        fetchLocalTemplates()
+      ]);
+
+      const metaTemplates = metaResult.status === 'fulfilled' ? metaResult.value : [];
+      const localTemplates = localResult.status === 'fulfilled' ? localResult.value : [];
+
+      if (metaTemplates.length || localTemplates.length) {
+        return mergeTemplateLists(metaTemplates, localTemplates);
+      }
+
+      const failure =
+        metaResult.status === 'rejected'
+          ? metaResult.reason
+          : localResult.status === 'rejected'
+            ? localResult.reason
+            : null;
+      throw failure || new Error('Failed to fetch templates');
     } catch (error) {
-      console.error('Failed to fetch templates from Meta:', error);
-      const backendMessage =
-        error?.response?.data?.error ||
-        error?.response?.data?.message ||
-        error?.message ||
-        "Failed to fetch templates";
-      throw new Error(backendMessage);
+      console.error('Failed to fetch templates from Meta/local DB:', error);
+      try {
+        return await fetchLocalTemplates();
+      } catch (localError) {
+        const backendMessage =
+          localError?.response?.data?.error ||
+          localError?.response?.data?.message ||
+          localError?.message ||
+          error?.response?.data?.error ||
+          error?.response?.data?.message ||
+          error?.message ||
+          'Failed to fetch templates';
+        throw new Error(backendMessage);
+      }
     }
   },
 
@@ -1612,6 +1672,27 @@ export const whatsappService = {
       return {
         success: false,
         error: metaUserMessage,
+        details: error?.response?.data || null
+      };
+    }
+  },
+
+  async updateTemplate(templateId, templateData) {
+    try {
+      const response = await axios.put(`${API_BASE_URL}/api/templates/${templateId}`, templateData, {
+        headers: getAuthHeaders()
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to update template:', error);
+      const backendMessage =
+        error?.response?.data?.error ||
+        error?.response?.data?.message ||
+        error?.message ||
+        'Failed to update template';
+      return {
+        success: false,
+        error: backendMessage,
         details: error?.response?.data || null
       };
     }

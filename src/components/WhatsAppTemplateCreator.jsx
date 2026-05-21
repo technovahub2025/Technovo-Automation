@@ -1,10 +1,13 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Upload, X, Plus, Send, CheckCircle, Clock, ChevronDown } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import { whatsappService } from '../services/whatsappService';
 import whatsappLogo from '../assets/WhatsApp.svg.webp';
 import './WhatsAppTemplateCreator.css';
 
-const WhatsAppTemplateCreator = () => {
+const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
+  const navigate = useNavigate();
+
   const getReadableErrorMessage = (value, fallback = 'Unknown error') => {
     if (!value) return fallback;
     if (typeof value === 'string') return value;
@@ -23,6 +26,76 @@ const WhatsAppTemplateCreator = () => {
   const buildFriendlySubmitErrorMessage = (actualError) => {
     const reason = getReadableErrorMessage(actualError, 'The template could not be submitted.');
     return `Template submission failed.\n\nReason: ${reason}\n\nThis may happen because of wrong input, a server issue, or a Meta WhatsApp approval/API issue. Kindly reach out to customer service if you need help.`;
+  };
+
+  const prepareMetaTemplateText = (value) => {
+    const normalized = String(value || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/^\n+|\n+$/g, '');
+    if (!normalized) return { text: '', examples: [] };
+
+    const placeholderExamples = [];
+    let placeholderIndex = 1;
+    const hasExplicitPlaceholders = /\{\{\d+\}\}/.test(normalized);
+    if (hasExplicitPlaceholders) {
+      return { text: normalized, examples: [] };
+    }
+
+    const metaBodyPattern = /(?:https?:\/\/[^\s]+|www\.[^\s]+|\+?\d[\d\s().-]{7,}\d)/g;
+    const text = normalized.replace(metaBodyPattern, (match) => {
+      placeholderExamples.push(match.trim());
+      const placeholder = `{{${placeholderIndex}}}`;
+      placeholderIndex += 1;
+      return placeholder;
+    });
+
+    return { text, examples: placeholderExamples };
+  };
+
+  const getTemplateBodyText = (template = {}) => {
+    if (template?.content?.body) return template.content.body;
+    if (template?.message) return template.message;
+    const bodyComponent = Array.isArray(template?.components)
+      ? template.components.find((component) => String(component?.type || '').trim().toUpperCase() === 'BODY')
+      : null;
+    return bodyComponent?.text || '';
+  };
+
+  const getTemplateHeader = (template = {}) => {
+    const contentHeader = template?.content?.header;
+    if (contentHeader && typeof contentHeader === 'object') {
+      return {
+        type: String(contentHeader.type || 'text').toLowerCase(),
+        text: String(contentHeader.text || ''),
+        mediaUrl: String(contentHeader.mediaUrl || '')
+      };
+    }
+
+    const headerComponent = Array.isArray(template?.components)
+      ? template.components.find((component) => String(component?.type || '').trim().toUpperCase() === 'HEADER')
+      : null;
+
+    return {
+      type: String(headerComponent?.format || 'text').toLowerCase(),
+      text: String(headerComponent?.text || ''),
+      mediaUrl: String(headerComponent?.example?.header_handle?.[0] || '')
+    };
+  };
+
+  const getTemplateFooterText = (template = {}) => {
+    if (template?.content?.footer) return template.content.footer;
+    const footerComponent = Array.isArray(template?.components)
+      ? template.components.find((component) => String(component?.type || '').trim().toUpperCase() === 'FOOTER')
+      : null;
+    return footerComponent?.text || '';
+  };
+
+  const getTemplateButtons = (template = {}) => {
+    if (Array.isArray(template?.content?.buttons)) return template.content.buttons;
+    const buttonsComponent = Array.isArray(template?.components)
+      ? template.components.find((component) => String(component?.type || '').trim().toUpperCase() === 'BUTTONS')
+      : null;
+    return Array.isArray(buttonsComponent?.buttons) ? buttonsComponent.buttons : [];
   };
 
   const [templateData, setTemplateData] = useState({
@@ -53,6 +126,8 @@ const WhatsAppTemplateCreator = () => {
   });
   const [variableType, setVariableType] = useState('number');
   const [variableExamples, setVariableExamples] = useState({});
+  const editingTemplateId = initialTemplate?._id || initialTemplate?.id || '';
+  const isEditingTemplate = Boolean(editingTemplateId);
 
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
@@ -92,7 +167,7 @@ const WhatsAppTemplateCreator = () => {
     ['Body', 'Max 1,024 chars (550 for Marketing)'],
     ['Header', 'Max 60 chars; 1 variable max'],
     ['Footer', 'Max 60 chars, no variables, no emojis'],
-    ['Variables', 'Sequential {{1}}, {{2}}... with 15+ words around each'],
+    ['Variables', 'Sequential {{1}}, {{2}}...'],
     ['Emojis', 'Max 10 total, body only'],
     ['Buttons', '3 Quick Reply OR 2 CTA (1 Phone + 1 URL)'],
     ['URLs', 'Valid HTTPS matching Business Manager domain'],
@@ -102,7 +177,7 @@ const WhatsAppTemplateCreator = () => {
   const guideDosDonts = [
     ['Pick correct category (Marketing is not Utility)', 'Submit marketing content as Utility'],
     ['Use sequential {{1}}, {{2}}, {{3}}', 'Skip numbers, like {{1}}, {{3}}'],
-    ['Surround variables with 15+ words', 'Put {{1}} alone on a line'],
+    ['Keep placeholder order consistent', 'Reuse the wrong sample for a different placeholder'],
     ['Use valid HTTPS URLs matching your domain', 'Use shortened or masked URLs'],
     ['Keep footer static text only', 'Put variables or emojis in footer'],
     ['Use max 10 emojis in body only', 'Use emojis in header, footer, or CTA buttons'],
@@ -114,7 +189,6 @@ const WhatsAppTemplateCreator = () => {
     'Correct category selected',
     'Template name: lowercase + underscores',
     'Variables: {{1}}, {{2}}, {{3}} (no skipping)',
-    'Each variable has 15+ words around it',
     'Body under 1,024 chars (550 for Marketing)',
     'Footer: under 60 chars, no variables, no emojis',
     'Max 10 emojis total (body only)',
@@ -248,6 +322,53 @@ const WhatsAppTemplateCreator = () => {
     }));
   };
 
+  useEffect(() => {
+    if (!initialTemplate) return;
+
+    const bodyText = getTemplateBodyText(initialTemplate);
+    const preparedBody = prepareMetaTemplateText(bodyText);
+    const header = getTemplateHeader(initialTemplate);
+    const footerText = getTemplateFooterText(initialTemplate);
+    const buttons = getTemplateButtons(initialTemplate);
+
+    setTemplateData({
+      name: String(initialTemplate.name || ''),
+      category: String(initialTemplate.category || 'marketing').toLowerCase(),
+      language: String(initialTemplate.language || 'en_US'),
+      content: {
+        header: {
+          type: header.type || 'text',
+          text: header.text || '',
+          mediaUrl: header.mediaUrl || ''
+        },
+        body: bodyText || '',
+        footer: footerText || '',
+        buttons
+      }
+    });
+
+    const nextExamples = {};
+    if (Array.isArray(initialTemplate.variables) && initialTemplate.variables.length > 0) {
+      initialTemplate.variables.forEach((variable, index) => {
+        const example = String(variable?.example || '').trim();
+        if (example) {
+          nextExamples[index + 1] = example;
+        }
+      });
+    }
+    if (Object.keys(nextExamples).length === 0 && preparedBody.examples.length > 0) {
+      preparedBody.examples.forEach((example, index) => {
+        if (example) {
+          nextExamples[index + 1] = example;
+        }
+      });
+    }
+    setVariableExamples(nextExamples);
+    setImagePreview(header.mediaUrl || '');
+    setHeaderImage(null);
+    setSubmitStatus(null);
+  }, [initialTemplate]);
+
   const extractVariableNumbers = (text) => {
     const matches = text.match(/\{\{(\d+)\}\}/g);
     if (!matches) return [];
@@ -338,6 +459,29 @@ const WhatsAppTemplateCreator = () => {
     });
   };
 
+  const renderMultilinePreviewText = (rawText) => {
+    const prepared = prepareMetaTemplateText(rawText);
+    const text = String(prepared.text || '').replace(/\{\{(\d+)\}\}/g, (_, number) => {
+      const explicitValue = variableExamples[Number(number)];
+      const autoValue = prepared.examples[Number(number) - 1];
+      return explicitValue && String(explicitValue).trim()
+        ? String(explicitValue).trim()
+        : autoValue && String(autoValue).trim()
+          ? String(autoValue).trim()
+          : `{{${number}}}`;
+    });
+    if (!text) return '';
+
+    return String(text)
+      .split('\n')
+      .map((line, index) => (
+        <React.Fragment key={`${index}-${line}`}>
+          {index > 0 && <br />}
+          {line || '\u00A0'}
+        </React.Fragment>
+      ));
+  };
+
   const getSequentialMissingNumbers = (numbers) => {
     if (!numbers.length) return [];
     const max = Math.max(...numbers);
@@ -358,23 +502,6 @@ const WhatsAppTemplateCreator = () => {
     const textWithoutValidPlaceholders = text.replace(/\{\{\d+\}\}/g, '');
     return /[{}]/.test(textWithoutValidPlaceholders);
   };
-
-  const containsStandaloneVariableLine = (text) => {
-    if (!text) return false;
-    return text
-      .split(/\r?\n/)
-      .some((line) => /^\s*\{\{\d+\}\}\s*$/.test(line));
-  };
-
-  const buildMetaSafeText = (text) =>
-    String(text || '')
-      .replace(/\r\n/g, '\n')
-      .split('\n')
-      .map((line) => line.trim())
-      .filter(Boolean)
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
 
   const validateTemplateRules = () => {
     const errors = {};
@@ -400,12 +527,6 @@ const WhatsAppTemplateCreator = () => {
       errors.body = 'Body content is required.';
     } else if (containsInvalidBraceVariable(body)) {
       errors.body = 'Variables must use numeric format: {{1}}, {{2}}.';
-    } else if (containsStandaloneVariableLine(body)) {
-      errors.body = 'Variables cannot be alone on a line. Put text before or after the variable.';
-    } else if (/^\s*\{\{\d+\}\}/.test(body)) {
-      errors.body = 'Variable cannot be at the start of body.';
-    } else if (/\{\{\d+\}\}\s*$/.test(body)) {
-      errors.body = 'Variable cannot be at the end of body.';
     } else if (missingNumbers.length > 0) {
       errors.body = `Variables must be sequential. Missing ${missingNumbers.map((n) => `{{${n}}}`).join(', ')}.`;
     }
@@ -429,8 +550,6 @@ const WhatsAppTemplateCreator = () => {
 
     if (footer.length > 60) {
       errors.footer = 'Footer must be 60 characters or fewer.';
-    } else if (/\{\{(\d+)\}\}/.test(footer)) {
-      errors.footer = 'Footer cannot contain variables.';
     }
 
     const quickReplyCount = templateData.content.buttons.filter((btn) => btn.type === 'quick_reply').length;
@@ -472,10 +591,27 @@ const WhatsAppTemplateCreator = () => {
     setSubmitStatus(null);
 
     try {
-      const sanitizedBody = String(templateData.content.body || '').trim();
-      const sanitizedHeaderText = String(templateData.content.header.text || '').trim();
-      const sanitizedFooter = String(templateData.content.footer || '').trim();
-      const metaSafeBody = buildMetaSafeText(sanitizedBody);
+      const preparedBody = prepareMetaTemplateText(templateData.content.body);
+      const sanitizedBody = preparedBody.text;
+      const sanitizedHeaderText = prepareMetaTemplateText(templateData.content.header.text).text;
+      const sanitizedFooter = prepareMetaTemplateText(templateData.content.footer).text;
+      const editorPayload = {
+        name: templateData.name,
+        category: templateData.category,
+        language: templateData.language,
+        content: {
+          header: {
+            type: templateData.content.header.type,
+            text: sanitizedHeaderText,
+            mediaUrl: templateData.content.header.mediaUrl || ''
+          },
+          body: sanitizedBody,
+          footer: sanitizedFooter,
+          buttons: templateData.content.buttons
+        },
+        components: [],
+        variables: []
+      };
 
       // Convert to Meta API format for consistency
       const metaFormatData = {
@@ -486,17 +622,21 @@ const WhatsAppTemplateCreator = () => {
       };
 
       // Add body component
-      if (metaSafeBody) {
+      if (sanitizedBody) {
         const bodyComponent = {
           type: "BODY",
-          text: metaSafeBody
+          text: sanitizedBody
         };
         
         // Add examples if variables are present
         const variableNumbers = extractVariableNumbers(sanitizedBody);
         if (variableNumbers.length > 0) {
           // Use the actual variable examples from the state
-          const exampleValues = variableNumbers.map(num => variableExamples[num] || `Example ${num}`);
+          const exampleValues = variableNumbers.map((num, index) =>
+            variableExamples[num] ||
+            preparedBody.examples[index] ||
+            `Example ${num}`
+          );
           
           bodyComponent.example = {
             body_text: [exampleValues]
@@ -551,12 +691,28 @@ const WhatsAppTemplateCreator = () => {
         });
       }
 
+      editorPayload.components = metaFormatData.components;
+      editorPayload.variables = detectedVariables.map((number, index) => ({
+        name: `var${number}`,
+        example: variableExamples[number] || preparedBody.examples[index] || `Example ${number}`,
+        required: false
+      }));
+
       console.log('Submitting template in Meta format:', JSON.stringify(metaFormatData, null, 2));
 
-      const response = await whatsappService.createTemplate(metaFormatData);
+      const response = isEditingTemplate && editingTemplateId
+        ? await whatsappService.updateTemplate(editingTemplateId, editorPayload)
+        : await whatsappService.createTemplate(metaFormatData);
 
       if (response.success) {
         setSubmitStatus('success');
+        if (isEditingTemplate) {
+          setTimeout(() => {
+            navigate('/templates');
+          }, 1200);
+          return;
+        }
+
         // Reset form after successful submission
         setTimeout(() => {
           setTemplateData({
@@ -660,19 +816,19 @@ const WhatsAppTemplateCreator = () => {
                       <img src={imagePreview} alt="Header" className="template-header-image" />
                     )}
                     {templateData.content.header.type === 'text' && templateData.content.header.text && (
-                      <div className="template-header-text">{renderPreviewText(templateData.content.header.text)}</div>
+                      <div className="template-header-text">{renderMultilinePreviewText(templateData.content.header.text)}</div>
                     )}
                   </div>
                 )}
 
                 <div className="template-msg-body">
                   {templateData.content.body
-                    ? renderPreviewText(templateData.content.body)
+                    ? renderMultilinePreviewText(templateData.content.body)
                     : 'Type message body to preview'}
                 </div>
 
                 {templateData.content.footer && (
-                  <div className="template-msg-footer">{renderPreviewText(templateData.content.footer)}</div>
+                  <div className="template-msg-footer">{renderMultilinePreviewText(templateData.content.footer)}</div>
                 )}
 
                 {templateData.content.buttons.length > 0 && (
@@ -1154,7 +1310,7 @@ const WhatsAppTemplateCreator = () => {
                 ) : (
                   <>
                     <Send size={20} />
-                    Submit for Approval
+                    {isEditingTemplate ? 'Save Changes' : 'Submit for Approval'}
                   </>
                 )}
               </button>
@@ -1162,7 +1318,9 @@ const WhatsAppTemplateCreator = () => {
               {submitStatus === 'success' && (
                 <div className="status-message success">
                   <CheckCircle size={20} />
-                  Template submitted successfully! It will be reviewed by WhatsApp.
+                  {isEditingTemplate
+                    ? 'Template updated successfully.'
+                    : 'Template submitted successfully! It will be reviewed by WhatsApp.'}
                 </div>
               )}
               

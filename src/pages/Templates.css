@@ -400,9 +400,19 @@
     justify-content: center;
 }
 
+.icon-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+}
+
 .icon-btn:hover {
     background-color: rgba(15, 118, 110, 0.15);
     color: rgba(15, 118, 110, 1);
+}
+
+.icon-btn.edit-btn:hover {
+    background-color: rgba(37, 99, 235, 0.15);
+    color: #2563eb;
 }
 
 .icon-btn.delete-btn:hover {

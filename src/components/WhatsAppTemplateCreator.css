@@ -773,12 +773,15 @@
 .template-header-text {
   font-size: 13px;
   font-weight: 600;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .template-msg-body {
   font-size: 13px;
   line-height: 1.4;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .template-msg-footer {
@@ -787,6 +790,8 @@
   padding-top: 6px;
   font-size: 11px;
   color: #6b7280;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .template-msg-buttons {

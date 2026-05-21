@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { FileText, CheckCircle, Clock, AlertCircle, RefreshCw, Search, Plus, Trash2 } from 'lucide-react';
+import { FileText, CheckCircle, Clock, AlertCircle, RefreshCw, Search, Plus, Trash2, PencilLine } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { whatsappService } from '../services/whatsappService';
 import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
@@ -45,6 +45,18 @@ const sanitizeTemplatesCache = (templates = []) =>
   (Array.isArray(templates) ? templates : []).map(sanitizeTemplateForCache).filter((template) => (
     template._id || template.id || template.name
   ));
+
+const renderMultilineText = (value) =>
+  String(value || '')
+    .replace(/\r\n/g, '\n')
+    .trim()
+    .split('\n')
+    .map((line, index) => (
+      <React.Fragment key={`${index}-${line}`}>
+        {index > 0 && <br />}
+        {line || '\u00A0'}
+      </React.Fragment>
+    ));
 
 const Templates = () => {
   const navigate = useNavigate();
@@ -222,6 +234,23 @@ const Templates = () => {
     }
   };
 
+  const handleEditTemplate = (template) => {
+    const templateId = template?._id;
+    if (!templateId) {
+      showToast('This template is synced from Meta and cannot be edited here.', 'error');
+      return;
+    }
+    navigate('/templates/create', {
+      state: {
+        template: {
+          ...template,
+          _id: template._id,
+          id: template.id || template._id
+        }
+      }
+    });
+  };
+
   const filteredTemplates = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
     return officialTemplates.filter((template) => {
@@ -339,12 +368,23 @@ const Templates = () => {
                 </span>
               </div>
               <div className="template-content">
-                {getTemplateBody(template) || 'No content available'}
+                {getTemplateBody(template)
+                  ? renderMultilineText(getTemplateBody(template))
+                  : 'No content available'}
               </div>
               <div className="card-footer">
                 <span className="lang-tag">{template.language}</span>
                 <span className="category-tag">{template.category}</span>
                 <div className="template-actions">
+                  <button
+                    type="button"
+                    className="icon-btn edit-btn"
+                    onClick={() => handleEditTemplate(template)}
+                    disabled={!template._id}
+                    title="Edit template"
+                  >
+                    <PencilLine size={14} />
+                  </button>
                   <button
                     type="button"
                     className="icon-btn delete-btn"

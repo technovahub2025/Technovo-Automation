@@ -4,6 +4,44 @@ import { whatsappService } from '../services/whatsappService';
 import './TemplateManagement.css';
 
 const TemplateManagement = () => {
+  const prepareMetaTemplateText = (value) => {
+    const lines = String(value || '')
+      .replace(/\r\n/g, '\n')
+      .trim()
+      .split('\n')
+      .map((line) => line.trim());
+
+    const collapsedLines = [];
+    let previousWasBlank = false;
+
+    lines.forEach((line) => {
+      const isBlank = line === '';
+      if (isBlank && previousWasBlank) return;
+      collapsedLines.push(line);
+      previousWasBlank = isBlank;
+    });
+
+    const normalized = collapsedLines.join('\n').trim();
+    if (!normalized) return { text: '', examples: [] };
+
+    const placeholderExamples = [];
+    let placeholderIndex = 1;
+    const hasExplicitPlaceholders = /\{\{\d+\}\}/.test(normalized);
+    if (hasExplicitPlaceholders) {
+      return { text: normalized, examples: [] };
+    }
+
+    const metaBodyPattern = /(?:https?:\/\/[^\s]+|www\.[^\s]+|\+?\d[\d\s().-]{7,}\d)/g;
+    const text = normalized.replace(metaBodyPattern, (match) => {
+      placeholderExamples.push(match.trim());
+      const placeholder = `{{${placeholderIndex}}}`;
+      placeholderIndex += 1;
+      return placeholder;
+    });
+
+    return { text, examples: placeholderExamples };
+  };
+
   const [templates, setTemplates] = useState([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -66,15 +104,24 @@ const TemplateManagement = () => {
     setLoading(true);
     
     try {
+      const normalizedFormData = {
+        ...formData,
+        content: {
+          ...formData.content,
+          body: prepareMetaTemplateText(formData.content.body).text,
+          footer: prepareMetaTemplateText(formData.content.footer).text
+        }
+      };
+
       if (editingTemplate) {
-        const result = await whatsappService.updateTemplate(editingTemplate._id, formData);
+        const result = await whatsappService.updateTemplate(editingTemplate._id, normalizedFormData);
         if (result.success) {
           alert('Template updated successfully!');
         } else {
           throw new Error(result.error || result.message);
         }
       } else {
-        const result = await whatsappService.saveTemplate(formData.name, formData.content.body);
+        const result = await whatsappService.saveTemplate(formData.name, normalizedFormData.content.body);
         if (result.success) {
           alert('Template created successfully!');
         } else {
@@ -211,7 +258,7 @@ const TemplateManagement = () => {
   const categories = [...new Set(templates.map(t => t.category).filter(Boolean))];
 
   const renderTemplatePreview = (template) => {
-    let preview = template.content?.body || '';
+    let preview = prepareMetaTemplateText(template.content?.body || '').text;
     
     // Replace variables with examples
     template.variables?.forEach((variable, index) => {
@@ -220,7 +267,14 @@ const TemplateManagement = () => {
       preview = preview.replace(new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'), replacement);
     });
 
-    return preview;
+    return String(preview)
+      .split('\n')
+      .map((line, index) => (
+        <React.Fragment key={`${template._id || template.name || 'template'}-${index}-${line}`}>
+          {index > 0 && <br />}
+          {line || '\u00A0'}
+        </React.Fragment>
+      ));
   };
 
   return (

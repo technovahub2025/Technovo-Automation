@@ -294,15 +294,9 @@
   color: var(--color-text-primary);
   line-height: 1.5;
   margin-bottom: 8px;
-  display: -webkit-box;
-  -webkit-line-clamp: 3;
-  -webkit-box-orient: vertical;
+  white-space: pre-wrap;
+  word-break: break-word;
   overflow: hidden;
-  /* Fallback for browsers that don't support -webkit-line-clamp */
-  display: -moz-box;
-  -moz-line-clamp: 3;
-  -moz-box-orient: vertical;
-  line-clamp: 3;
   max-height: 4.5em;
 }
 
@@ -649,6 +643,8 @@
   font-weight: 600;
   color: var(--color-text-primary);
   margin-bottom: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .message-body {
@@ -656,6 +652,8 @@
   line-height: 1.5;
   color: var(--color-text-primary);
   margin-bottom: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .message-footer {
@@ -663,6 +661,8 @@
   color: var(--color-text-muted);
   border-top: 1px solid var(--color-border);
   padding-top: 8px;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .preview-variables h4 {
