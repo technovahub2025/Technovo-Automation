@@ -696,17 +696,23 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         }
 
         try {
-            const [unreadResponse, taskSummary, dealMetrics, ownerDashboard] = await Promise.all([
-                canUseBroadcast ? whatsappService.getUnreadConversationCount() : Promise.resolve({ ok: true, data: { unreadConversationCount: 0 } }),
+            const [conversationsPage, taskSummary, dealMetrics, ownerDashboard] = await Promise.all([
+                canUseBroadcast ? whatsappService.getConversationsPage({ limit: 100 }) : Promise.resolve({ data: [] }),
                 canUseCrm ? crmService.getTaskSummary() : Promise.resolve(null),
                 canUseCrm ? crmService.getDealMetrics() : Promise.resolve(null),
                 canUseCrm ? crmService.getOwnerDashboard() : Promise.resolve(null)
             ]);
 
-            const unreadCount = Math.max(
-                0,
-                Number(unreadResponse?.data?.unreadConversationCount || 0)
-            );
+            const conversations = Array.isArray(conversationsPage?.data) ? conversationsPage.data : [];
+            const unreadCount = conversations.reduce((sum, conversation) => {
+                const unreadValue = Number(
+                    conversation?.unreadCount ??
+                    conversation?.unread_count ??
+                    conversation?.unreadMessages ??
+                    0
+                );
+                return sum + (Number.isFinite(unreadValue) ? Math.max(0, unreadValue) : 0);
+            }, 0);
 
             const overdueTasks = Math.max(0, Number(taskSummary?.data?.overdue || 0));
             const openDeals = Math.max(0, Number(dealMetrics?.data?.open || 0));
@@ -1689,13 +1695,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
 
                                 <div className="bulk-lead-scoring-keywords-header">
                                     <h4>Keyword Rules</h4>
-                                    <button
-                                        type="button"
-                                        className="bulk-lead-scoring-add-btn"
-                                        onClick={addLeadKeywordRule}
-                                    >
-                                        Add Keyword
-                                    </button>
                                 </div>
 
                                 <div className="bulk-lead-scoring-keyword-list">

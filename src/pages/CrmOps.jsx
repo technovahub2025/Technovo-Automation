@@ -1,12 +1,25 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  useTransition
+} from "react";
 import { useSearchParams } from "react-router-dom";
 import {
   BadgeDollarSign,
+  Activity,
   BellRing,
   Clock3,
   GitBranch,
+  LayoutGrid,
+  Layers3,
   RefreshCw,
   Send,
+  ChevronDown,
+  SlidersHorizontal,
   Target,
   Users,
   Zap
@@ -241,7 +254,12 @@ const sanitizeOwnerAlert = (item = {}) => ({
     _id: String(item?.contact?._id || "").trim(),
     name: String(item?.contact?.name || "").trim(),
     phone: String(item?.contact?.phone || "").trim(),
-    stage: String(item?.contact?.stage || "").trim()
+    stage: String(item?.contact?.stage || "").trim(),
+    ownerId: String(item?.contact?.ownerId || "").trim(),
+    leadScore:
+      Number.isFinite(Number(item?.contact?.leadScore)) && Number(item?.contact?.leadScore) >= 0
+        ? Number(item.contact.leadScore)
+        : 0
   }
 });
 
@@ -306,8 +324,60 @@ const toLabel = (value) =>
     .replace(/_/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase()) || "-";
 
+const CRM_OPS_VIEWS = {
+  overview: {
+    label: "Overview",
+    actionLabel: "Snapshot overview",
+    helper: "Track owner workload, follow-up pressure, automation health, and scoring settings in one place."
+  },
+  "owner-workload": {
+    label: "Owner Workload",
+    actionLabel: "Expanded owner view",
+    helper: "Inspect the live owner slice and pipeline balance."
+  },
+  "owner-alerts": {
+    label: "Owner Alerts",
+    actionLabel: "Alert feed focus",
+    helper: "Review unread prompts and recent owner notifications."
+  },
+  "rules-runs": {
+    label: "Rules & Runs",
+    actionLabel: "Automation review",
+    helper: "Preview and run automation, then inspect generated changes."
+  },
+  history: {
+    label: "History",
+    actionLabel: "Automation history",
+    helper: "Review recent scheduler and manual runs."
+  },
+  "lead-scoring": {
+    label: "Lead Scoring",
+    actionLabel: "Lead scoring controls",
+    helper: "Tune thresholds, templates, and follow-up prompts."
+  }
+};
+
+const getShortTimestamp = (value) => {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "numeric",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true
+  }).format(parsed);
+};
+
 const CrmOps = () => {
   const [searchParams, setSearchParams] = useSearchParams();
+  const requestedHistoryStatus = String(searchParams.get("historyStatus") || "all")
+    .trim()
+    .toLowerCase();
+  const requestedView = String(searchParams.get("view") || "overview").trim().toLowerCase();
   const [dashboard, setDashboard] = useState(null);
   const [automationResult, setAutomationResult] = useState(null);
   const [leadScoringSettings, setLeadScoringSettings] = useState(() =>
@@ -321,18 +391,36 @@ const CrmOps = () => {
   const [leadScoringLoading, setLeadScoringLoading] = useState(false);
   const [leadScoringSaving, setLeadScoringSaving] = useState(false);
   const [ownerAlerts, setOwnerAlerts] = useState([]);
+  const [ownerAlertStatusFilter, setOwnerAlertStatusFilter] = useState("unread");
+  const [ownerAlertSort, setOwnerAlertSort] = useState("newest");
+  const [ownerAlertFetchLimit, setOwnerAlertFetchLimit] = useState("60");
+  const [ownerAlertRenderLimit, setOwnerAlertRenderLimit] = useState(12);
+  const [ownerAlertFiltersOpen, setOwnerAlertFiltersOpen] = useState(false);
+  const [automationDatasetView, setAutomationDatasetView] = useState("all");
+  const [automationDatasetSearch, setAutomationDatasetSearch] = useState("");
+  const [leadScoringDatasetView, setLeadScoringDatasetView] = useState("all");
   const [automationHistory, setAutomationHistory] = useState([]);
   const [error, setError] = useState("");
   const [automationMessage, setAutomationMessage] = useState("");
   const [leadScoringMessage, setLeadScoringMessage] = useState("");
   const [automationLimit, setAutomationLimit] = useState("25");
   const [historyStatusFilter, setHistoryStatusFilter] = useState("all");
+    const [historySearch, setHistorySearch] = useState("");
+    const [historyFetchLimit, setHistoryFetchLimit] = useState("24");
+    const [historyRenderLimit, setHistoryRenderLimit] = useState(8);
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const [ownerAlertSearch, setOwnerAlertSearch] = useState("");
+  const [activeView, setActiveView] = useState(() =>
+    Object.prototype.hasOwnProperty.call(CRM_OPS_VIEWS, requestedView) ? requestedView : "overview"
+  );
+  const [isPending, startTransition] = useTransition();
   const [toast, setToast] = useState(null);
   const currentUserId = resolveCacheUserId();
-  const hasLoadedFromCacheRef = useRef(false);
-  const requestedHistoryStatus = String(searchParams.get("historyStatus") || "all")
-    .trim()
-    .toLowerCase();
+    const hasLoadedFromCacheRef = useRef(false);
+    const hasLoadedInitialDataRef = useRef(false);
+    const ownerAlertsRequestIdRef = useRef(0);
+    const automationHistoryRequestIdRef = useRef(0);
+    const historyLoadMoreRef = useRef(null);
 
   useEffect(() => {
     if (!toast?.message) return undefined;
@@ -363,13 +451,13 @@ const CrmOps = () => {
   }, []);
 
   useEffect(() => {
-    if (!["all", "success", "error"].includes(requestedHistoryStatus)) return;
+    if (!["all", "success", "error", "preview", "live"].includes(requestedHistoryStatus)) return;
     setHistoryStatusFilter(requestedHistoryStatus);
   }, [requestedHistoryStatus]);
 
   useEffect(() => {
     const desiredStatus = String(historyStatusFilter || "all").trim().toLowerCase();
-    if (!["all", "success", "error"].includes(desiredStatus)) return;
+    if (!["all", "success", "error", "preview", "live"].includes(desiredStatus)) return;
 
     const currentStatus = String(searchParams.get("historyStatus") || "all")
       .trim()
@@ -385,15 +473,27 @@ const CrmOps = () => {
     setSearchParams(nextParams, { replace: true });
   }, [historyStatusFilter, searchParams, setSearchParams]);
 
+  useEffect(() => {
+    if (!Object.prototype.hasOwnProperty.call(CRM_OPS_VIEWS, requestedView)) return;
+    setActiveView((currentView) => (currentView === requestedView ? currentView : requestedView));
+  }, [requestedView]);
+
   const persistCache = useCallback(
-    (nextDashboard, nextAutomationResult = automationResult) => {
+    ({
+      nextDashboard = dashboard,
+      nextAutomationResult = automationResult,
+      nextOwnerAlerts = ownerAlerts
+    } = {}) => {
       writeSidebarPageCache(
         CRM_OPS_CACHE_NAMESPACE,
         {
           dashboard: nextDashboard ? sanitizeDashboard(nextDashboard) : null,
           automationResult: nextAutomationResult
             ? sanitizeAutomationResult(nextAutomationResult)
-            : null
+            : null,
+          ownerAlerts: Array.isArray(nextOwnerAlerts)
+            ? nextOwnerAlerts.map(sanitizeOwnerAlert)
+            : []
         },
         {
           currentUserId,
@@ -401,7 +501,7 @@ const CrmOps = () => {
         }
       );
     },
-    [automationResult, currentUserId]
+    [automationResult, dashboard, currentUserId, ownerAlerts]
   );
 
   const loadLeadScoringSettings = useCallback(async () => {
@@ -441,32 +541,13 @@ const CrmOps = () => {
         if (!silent) setLoading(true);
         setError("");
 
-        const [result, ownerNotificationResult, historyResult] = await Promise.all([
-          crmService.getOwnerDashboard(),
-          crmService.getOwnerNotifications({ status: "all", limit: 20 }),
-          crmService.getAutomationHistory({ limit: 12 })
-        ]);
+        const result = await crmService.getOwnerDashboard();
         if (result?.success === false) {
           throw new Error(result?.error || "Failed to load CRM ops dashboard");
         }
 
         const nextDashboard = sanitizeDashboard(result?.data || {});
         setDashboard(nextDashboard);
-        if (ownerNotificationResult?.success !== false) {
-          setOwnerAlerts(
-            Array.isArray(ownerNotificationResult?.data)
-              ? ownerNotificationResult.data.map(sanitizeOwnerAlert)
-              : []
-          );
-        }
-        if (historyResult?.success !== false) {
-          setAutomationHistory(
-            Array.isArray(historyResult?.data)
-              ? historyResult.data.map(sanitizeAutomationHistoryItem)
-              : []
-          );
-        }
-        persistCache(nextDashboard);
       } catch (loadError) {
         setError(loadError?.message || "Failed to load CRM ops dashboard");
       } finally {
@@ -474,12 +555,77 @@ const CrmOps = () => {
         setLoading(false);
       }
     },
-    [persistCache]
+    []
+  );
+
+  const loadAutomationHistory = useCallback(
+    async ({ silent = false, limit: limitOverride } = {}) => {
+      const requestId = automationHistoryRequestIdRef.current + 1;
+      automationHistoryRequestIdRef.current = requestId;
+
+      try {
+        if (!silent) setError("");
+
+        const nextHistoryLimit = Math.min(Math.max(Number(limitOverride ?? historyFetchLimit) || 24, 6), 50);
+        const result = await crmService.getAutomationHistory({ limit: nextHistoryLimit });
+        if (result?.success === false) {
+          throw new Error(result?.error || "Failed to load CRM automation history");
+        }
+
+        if (automationHistoryRequestIdRef.current !== requestId) return;
+        setAutomationHistory(
+          Array.isArray(result?.data) ? result.data.map(sanitizeAutomationHistoryItem) : []
+        );
+      } catch (loadError) {
+        if (automationHistoryRequestIdRef.current !== requestId) return;
+        if (!silent) {
+          setError(loadError?.message || "Failed to load CRM automation history");
+        }
+      }
+    },
+    [historyFetchLimit]
+  );
+
+  const loadOwnerAlerts = useCallback(
+    async ({ silent = false } = {}) => {
+      const requestId = ownerAlertsRequestIdRef.current + 1;
+      ownerAlertsRequestIdRef.current = requestId;
+
+      try {
+        if (!silent) {
+          setError("");
+        }
+
+        const nextLimit = Math.min(Math.max(Number(ownerAlertFetchLimit) || 60, 10), 150);
+        const apiStatus = ownerAlertStatusFilter === "read" ? "all" : ownerAlertStatusFilter;
+        const result = await crmService.getOwnerNotifications({
+          status: apiStatus,
+          limit: nextLimit
+        });
+
+        if (result?.success === false) {
+          throw new Error(result?.error || "Failed to load owner alerts");
+        }
+
+        const nextAlerts = Array.isArray(result?.data)
+          ? result.data.map(sanitizeOwnerAlert)
+          : [];
+        if (ownerAlertsRequestIdRef.current !== requestId) return;
+        setOwnerAlerts(nextAlerts);
+      } catch (loadError) {
+        if (ownerAlertsRequestIdRef.current !== requestId) return;
+        if (!silent) {
+          setError(loadError?.message || "Failed to load owner alerts");
+        }
+      }
+    },
+    [ownerAlertFetchLimit, ownerAlertStatusFilter]
   );
 
   const handleRealtimeRefresh = useCallback(() => {
     loadDashboard({ silent: true });
-  }, [loadDashboard]);
+    loadOwnerAlerts({ silent: true });
+  }, [loadDashboard, loadOwnerAlerts]);
 
   const crmRealtime = useCrmRealtimeRefresh({
     currentUserId,
@@ -502,15 +648,26 @@ const CrmOps = () => {
           ? sanitizeAutomationResult(cachedOps.data.automationResult)
           : null
       );
+      setOwnerAlerts(
+        Array.isArray(cachedOps?.data?.ownerAlerts)
+          ? cachedOps.data.ownerAlerts.map(sanitizeOwnerAlert)
+          : []
+      );
       setLoading(false);
       loadDashboard({ silent: true });
+      loadAutomationHistory({ silent: true });
+      loadOwnerAlerts({ silent: true });
       loadLeadScoringSettings();
+      hasLoadedInitialDataRef.current = true;
       return;
     }
 
     loadDashboard();
+    loadAutomationHistory();
+    loadOwnerAlerts();
     loadLeadScoringSettings();
-  }, [currentUserId, loadDashboard, loadLeadScoringSettings]);
+    hasLoadedInitialDataRef.current = true;
+  }, [currentUserId, loadAutomationHistory, loadDashboard, loadLeadScoringSettings, loadOwnerAlerts]);
 
   const runAutomation = useCallback(
     async (dryRun) => {
@@ -531,7 +688,6 @@ const CrmOps = () => {
 
         const nextAutomationResult = sanitizeAutomationResult(result?.data || {});
         setAutomationResult(nextAutomationResult);
-        persistCache(dashboard, nextAutomationResult);
 
         if (dryRun) {
           setAutomationMessage(
@@ -546,6 +702,7 @@ const CrmOps = () => {
                 ? `Preview ready with ${nextAutomationResult.candidateCount} candidate(s).`
                 : "Preview completed with no candidates."
           });
+          await loadAutomationHistory({ silent: true });
         } else {
           setAutomationMessage(
             nextAutomationResult.createdCount > 0
@@ -560,6 +717,8 @@ const CrmOps = () => {
                 : "Automation run completed with no new changes."
           });
           await loadDashboard({ silent: true });
+          await loadAutomationHistory({ silent: true });
+          await loadOwnerAlerts({ silent: true });
         }
       } catch (runError) {
         setError(runError?.message || "Failed to run CRM automation");
@@ -572,7 +731,7 @@ const CrmOps = () => {
         setRunning(false);
       }
     },
-    [automationLimit, dashboard, loadDashboard, persistCache]
+    [automationLimit, dashboard, loadAutomationHistory, loadDashboard, loadOwnerAlerts]
   );
 
   const updateLeadScoringForm = useCallback((field, value) => {
@@ -627,13 +786,370 @@ const CrmOps = () => {
   const summary = dashboard?.summary || {};
   const owners = Array.isArray(dashboard?.owners) ? dashboard.owners : [];
   const automationEntries = Object.entries(automationResult?.byRule || {});
-  const visibleAutomationHistory = useMemo(() => {
-    if (historyStatusFilter === "all") return automationHistory;
-    return automationHistory.filter((item) => item.status === historyStatusFilter);
-  }, [automationHistory, historyStatusFilter]);
+  const deferredOwnerSearch = useDeferredValue(String(ownerSearch || "").trim().toLowerCase());
   const leadScoringKeywordCount = useMemo(
     () => (Array.isArray(leadScoringSettings?.keywordRules) ? leadScoringSettings.keywordRules.length : 0),
     [leadScoringSettings]
+  );
+  const leadScoringKeywordRules = useMemo(
+    () =>
+      (Array.isArray(leadScoringSettings?.keywordRules) ? leadScoringSettings.keywordRules : [])
+        .slice(0, 12)
+        .map((item) => ({
+          keyword: String(item?.keyword || item?.term || item || "").trim(),
+          score: Number.isFinite(Number(item?.score)) ? Number(item.score) : null,
+          stage: String(item?.stage || item?.stageOnMatch || "").trim()
+        }))
+        .filter((item) => item.keyword),
+    [leadScoringSettings]
+  );
+  const leadScoringConfigCards = useMemo(
+    () => [
+      { label: "Read score", value: `+${leadScoringSettings.readScore}` },
+      { label: "Reply score", value: `+${leadScoringSettings.replyScore}` },
+      { label: "Keywords", value: leadScoringKeywordCount },
+      { label: "Automation", value: leadScoringForm.automationEnabled ? "On" : "Off" }
+    ],
+    [
+      leadScoringForm.automationEnabled,
+      leadScoringKeywordCount,
+      leadScoringSettings.readScore,
+      leadScoringSettings.replyScore
+    ]
+  );
+  const leadScoringDatasetTabs = useMemo(
+    () => [
+      {
+        key: "all",
+        label: "All datasets",
+        count: leadScoringKeywordRules.length + 3
+      },
+      {
+        key: "config",
+        label: "Configuration",
+        count: 1
+      },
+      {
+        key: "preview",
+        label: "Automation preview",
+        count: 3
+      },
+      {
+        key: "coverage",
+        label: "Rule coverage",
+        count: leadScoringKeywordRules.length || 6
+      }
+    ],
+    [leadScoringKeywordRules.length]
+  );
+  const deferredOwnerAlertSearch = useDeferredValue(String(ownerAlertSearch || "").trim().toLowerCase());
+  const ownerAlertCounts = useMemo(
+    () =>
+      ownerAlerts.reduce(
+        (counts, item) => {
+          counts.total += 1;
+          if (item.isRead) counts.read += 1;
+          else counts.unread += 1;
+          return counts;
+        },
+        { total: 0, unread: 0, read: 0 }
+      ),
+    [ownerAlerts]
+  );
+  const visibleOwnerAlerts = useMemo(() => {
+    const normalizedStatus = String(ownerAlertStatusFilter || "unread").toLowerCase();
+    const normalizedSort = String(ownerAlertSort || "newest").toLowerCase();
+
+    const baseAlerts = ownerAlerts.filter((item) => {
+      if (normalizedStatus === "read" && !item.isRead) return false;
+      if (normalizedStatus === "unread" && item.isRead) return false;
+
+      if (!deferredOwnerAlertSearch) return true;
+
+      const searchableText = [
+        item?._id,
+        item?.contact?.name,
+        item?.contact?.phone,
+        item?.contact?.stage,
+        item?.contact?.ownerId,
+        item?.ownerId,
+        item?.automationRule,
+        item?.recommendedTemplate,
+        item?.createdAt,
+        item?.readAt
+      ]
+        .map((value) => String(value ?? "").toLowerCase())
+        .join(" ");
+
+      return searchableText.includes(deferredOwnerAlertSearch);
+    });
+
+    baseAlerts.sort((left, right) => {
+      const leftTime = new Date(left?.createdAt || 0).getTime();
+      const rightTime = new Date(right?.createdAt || 0).getTime();
+      const safeLeft = Number.isFinite(leftTime) ? leftTime : 0;
+      const safeRight = Number.isFinite(rightTime) ? rightTime : 0;
+
+      if (normalizedSort === "oldest") return safeLeft - safeRight;
+      if (normalizedSort === "unread-first") {
+        if (left.isRead !== right.isRead) return left.isRead ? 1 : -1;
+        return safeRight - safeLeft;
+      }
+      return safeRight - safeLeft;
+    });
+
+    return baseAlerts;
+  }, [deferredOwnerAlertSearch, ownerAlertSort, ownerAlertStatusFilter, ownerAlerts]);
+  const displayedOwnerAlerts = useMemo(
+    () => visibleOwnerAlerts.slice(0, ownerAlertRenderLimit),
+    [ownerAlertRenderLimit, visibleOwnerAlerts]
+  );
+  const visibleAutomationTasks = useMemo(
+    () => (automationResult?.tasks || []).slice(0, 12),
+    [automationResult]
+  );
+  const visibleAutomationUpdates = useMemo(
+    () => (automationResult?.contactUpdates || []).slice(0, 12),
+    [automationResult]
+  );
+  const visibleOwnerNotifications = useMemo(
+    () => (automationResult?.ownerNotifications || []).slice(0, 12),
+    [automationResult]
+  );
+  const unreadOwnerAlerts = useMemo(
+    () => ownerAlertCounts.unread,
+    [ownerAlertCounts.unread]
+  );
+  useEffect(() => {
+    if (loading && !dashboard && !automationResult && ownerAlerts.length === 0) return;
+    persistCache({
+      nextDashboard: dashboard,
+      nextAutomationResult: automationResult,
+      nextOwnerAlerts: ownerAlerts
+    });
+  }, [automationResult, dashboard, loading, ownerAlerts, persistCache]);
+  const readyForAutomationCount = Number(
+    automationResult?.candidateCount ?? summary?.readyForAutomation ?? 25
+  );
+  const activeViewConfig = CRM_OPS_VIEWS[activeView] || CRM_OPS_VIEWS.overview;
+  const topRightActionLabel = activeViewConfig.actionLabel;
+  const handleViewChange = useCallback(
+    (nextView) => {
+      const normalizedView = Object.prototype.hasOwnProperty.call(CRM_OPS_VIEWS, nextView)
+        ? nextView
+        : "overview";
+
+      startTransition(() => {
+        setActiveView(normalizedView);
+
+        const nextParams = new URLSearchParams(searchParams);
+        if (normalizedView === "overview") {
+          nextParams.delete("view");
+        } else {
+          nextParams.set("view", normalizedView);
+        }
+        setSearchParams(nextParams, { replace: true });
+      });
+    },
+    [searchParams, setSearchParams, startTransition]
+  );
+  const statusChips = [
+    {
+      icon: Users,
+      label: `${owners.length || summary.ownerRowsLoaded || 0} owner rows loaded`
+    },
+    {
+      icon: Clock3,
+      label: `Response SLA ${dashboard?.slaHours || 4}h`
+    },
+    {
+      icon: Layers3,
+      label: `${readyForAutomationCount} ready for automation`
+    },
+    {
+      icon: RefreshCw,
+      label: `Updated ${getShortTimestamp(dashboard?.generatedAt)}`
+    }
+  ];
+  const primaryMetrics = [
+    { icon: Users, value: summary.myLeads ?? 0, label: "Assigned to Me" },
+    { icon: Clock3, value: summary.overdueFollowUps ?? 0, label: "Follow-ups Overdue" },
+    { icon: Send, value: summary.responseSlaBreaches ?? 0, label: "SLA Breaches" },
+    { icon: BadgeDollarSign, value: summary.openDeals ?? 0, label: "Open Deals" },
+    { icon: Layers3, value: summary.unassignedLeads ?? 0, label: "Unassigned" },
+    { icon: SlidersHorizontal, value: summary.dueTodayTasks ?? 0, label: "Due Today" }
+  ];
+  const secondaryMetrics = [
+    { value: summary.needsReply ?? 0, label: "Replies Needed" },
+    { value: summary.overdueTasks ?? 0, label: "Tasks Overdue" },
+    { value: readyForAutomationCount, label: "Ready for Automation" },
+    { value: unreadOwnerAlerts, label: "Unread Alerts" }
+  ];
+  const filteredOwners = useMemo(() => {
+    if (!deferredOwnerSearch) return owners;
+
+    return owners.filter((owner) => {
+      const searchableText = [
+        owner?.ownerName,
+        owner?.ownerId,
+        owner?.contactCount,
+        owner?.overdueFollowUps,
+        owner?.needsReply,
+        owner?.responseSlaBreaches,
+        owner?.openDeals,
+        owner?.openTasks
+      ]
+        .map((value) => String(value ?? "").toLowerCase())
+        .join(" ");
+
+      return searchableText.includes(deferredOwnerSearch);
+    });
+  }, [deferredOwnerSearch, owners]);
+  const visibleRules = useMemo(() => automationEntries.slice(0, 6), [automationEntries]);
+  const currentRunState = automationResult?.dryRun ? "Preview" : automationResult ? "Live" : "Idle";
+  const currentRunCount = automationResult?.createdCount ?? 0;
+  const currentCandidateCount = automationResult?.candidateCount ?? 0;
+  const deferredHistorySearch = useDeferredValue(String(historySearch || "").trim().toLowerCase());
+  const filteredAutomationHistory = useMemo(() => {
+    const normalizedFilter = String(historyStatusFilter || "all").trim().toLowerCase();
+
+    return automationHistory.filter((item) => {
+      if (normalizedFilter === "success" && item.status !== "success") return false;
+      if (normalizedFilter === "error" && item.status !== "error") return false;
+      if (normalizedFilter === "preview" && !item.dryRun) return false;
+      if (normalizedFilter === "live" && item.dryRun) return false;
+
+      if (!deferredHistorySearch) return true;
+
+      const searchableText = [
+        item?._id,
+        item?.triggerSource,
+        item?.automationActor,
+        item?.status,
+        item?.errorMessage,
+        item?.generatedAt,
+        item?.candidateCount,
+        item?.createdCount,
+        item?.emailNotifications?.attempted,
+        item?.emailNotifications?.delivered
+      ]
+        .map((value) => String(value ?? "").toLowerCase())
+        .join(" ");
+
+      return searchableText.includes(deferredHistorySearch);
+    });
+  }, [automationHistory, deferredHistorySearch, historyStatusFilter]);
+  const displayedAutomationHistory = useMemo(
+    () => filteredAutomationHistory.slice(0, historyRenderLimit),
+    [filteredAutomationHistory, historyRenderLimit]
+  );
+  const automationHistoryCounts = useMemo(
+    () =>
+      automationHistory.reduce(
+        (counts, item) => {
+          counts.total += 1;
+          if (item.status === "success") counts.success += 1;
+          if (item.status === "error") counts.error += 1;
+          if (item.dryRun) counts.preview += 1;
+          else counts.live += 1;
+          return counts;
+        },
+        { total: 0, success: 0, error: 0, preview: 0, live: 0 }
+      ),
+    [automationHistory]
+  );
+  const deferredAutomationDatasetSearch = useDeferredValue(
+    String(automationDatasetSearch || "").trim().toLowerCase()
+  );
+  const filteredAutomationTasks = useMemo(() => {
+    if (!deferredAutomationDatasetSearch) return visibleAutomationTasks;
+
+    return visibleAutomationTasks.filter((task) => {
+      const searchableText = [
+        task?.title,
+        task?.contactName,
+        task?.phone,
+        task?.automationRule,
+        task?.recommendedTemplate,
+        task?.dueAt,
+        task?.leadScore
+      ]
+        .map((value) => String(value ?? "").toLowerCase())
+        .join(" ");
+
+      return searchableText.includes(deferredAutomationDatasetSearch);
+    });
+  }, [deferredAutomationDatasetSearch, visibleAutomationTasks]);
+  const filteredAutomationUpdates = useMemo(() => {
+    if (!deferredAutomationDatasetSearch) return visibleAutomationUpdates;
+
+    return visibleAutomationUpdates.filter((item) => {
+      const searchableText = [
+        item?.contactName,
+        item?.phone,
+        item?.automationRule,
+        item?.previousStage,
+        item?.nextStage,
+        item?.recommendedTemplate,
+        item?.leadScore
+      ]
+        .map((value) => String(value ?? "").toLowerCase())
+        .join(" ");
+
+      return searchableText.includes(deferredAutomationDatasetSearch);
+    });
+  }, [deferredAutomationDatasetSearch, visibleAutomationUpdates]);
+  const filteredOwnerNotifications = useMemo(() => {
+    if (!deferredAutomationDatasetSearch) return visibleOwnerNotifications;
+
+    return visibleOwnerNotifications.filter((item) => {
+      const searchableText = [
+        item?.contactName,
+        item?.ownerId,
+        item?.automationRule,
+        item?.recommendedTemplate,
+        item?.leadScore
+      ]
+        .map((value) => String(value ?? "").toLowerCase())
+        .join(" ");
+
+      return searchableText.includes(deferredAutomationDatasetSearch);
+    });
+  }, [deferredAutomationDatasetSearch, visibleOwnerNotifications]);
+  const automationDatasetTabs = useMemo(
+    () => [
+      {
+        key: "all",
+        label: "All datasets",
+        icon: LayoutGrid,
+        count: filteredAutomationTasks.length + filteredAutomationUpdates.length + filteredOwnerNotifications.length + 1
+      },
+      {
+        key: "tasks",
+        label: "Task preview",
+        icon: Target,
+        count: filteredAutomationTasks.length
+      },
+      {
+        key: "stage",
+        label: "Stage moves",
+        icon: GitBranch,
+        count: filteredAutomationUpdates.length
+      },
+      {
+        key: "owner",
+        label: "Owner notifications",
+        icon: BellRing,
+        count: filteredOwnerNotifications.length
+      },
+      {
+        key: "email",
+        label: "Email delivery",
+        icon: Send,
+        count: 1
+      }
+    ],
+    [filteredAutomationTasks.length, filteredAutomationUpdates.length, filteredOwnerNotifications.length]
   );
 
   const markOwnerAlertRead = useCallback(async (notificationId) => {
@@ -661,16 +1177,114 @@ const CrmOps = () => {
       });
     }
   }, []);
+  const markVisibleOwnerAlertsRead = useCallback(async () => {
+    const unreadVisibleAlerts = displayedOwnerAlerts.filter((item) => !item.isRead);
+    if (!unreadVisibleAlerts.length) return;
+
+    try {
+      const results = await Promise.allSettled(
+        unreadVisibleAlerts.map((item) => crmService.markOwnerNotificationRead(item._id))
+      );
+      const succeededIds = [];
+
+      results.forEach((result, index) => {
+        if (result.status !== "fulfilled" || result.value?.success === false) return;
+        succeededIds.push(unreadVisibleAlerts[index]._id);
+      });
+
+      if (succeededIds.length > 0) {
+        const timestamp = new Date().toISOString();
+        setOwnerAlerts((previous) =>
+          previous.map((item) =>
+            succeededIds.includes(item._id)
+              ? {
+                  ...item,
+                  isRead: true,
+                  readAt: timestamp
+                }
+              : item
+          )
+        );
+        setToast({
+          type: "success",
+          message: `${succeededIds.length} owner alert${succeededIds.length === 1 ? "" : "s"} marked read.`
+        });
+      }
+
+      if (succeededIds.length !== unreadVisibleAlerts.length) {
+        const failedCount = unreadVisibleAlerts.length - succeededIds.length;
+        setToast({
+          type: failedCount ? "error" : "success",
+          message:
+            failedCount > 0
+              ? `${succeededIds.length} alert(s) updated, ${failedCount} failed.`
+              : `${succeededIds.length} owner alert(s) marked read.`
+        });
+      }
+    } catch (error) {
+      setToast({
+        type: "error",
+        message: error?.message || "Failed to update owner alerts"
+      });
+    }
+  }, [displayedOwnerAlerts]);
+
+  useEffect(() => {
+    setOwnerAlertRenderLimit(12);
+  }, [deferredOwnerAlertSearch, ownerAlertSort, ownerAlertStatusFilter]);
+
+    useEffect(() => {
+      setHistoryRenderLimit(8);
+    }, [deferredHistorySearch, historyStatusFilter, historyFetchLimit]);
+
+    useEffect(() => {
+      if (!historyLoadMoreRef.current) return undefined;
+      if (displayedAutomationHistory.length >= filteredAutomationHistory.length) return undefined;
+
+      const rootNode = historyLoadMoreRef.current.closest(".crm-history-list--scrollable");
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (!entries.some((entry) => entry.isIntersecting)) return;
+          setHistoryRenderLimit((current) =>
+            Math.min(current + 8, filteredAutomationHistory.length)
+          );
+        },
+        {
+          root: rootNode instanceof HTMLElement ? rootNode : null,
+          rootMargin: "120px 0px",
+          threshold: 0
+        }
+      );
+
+      observer.observe(historyLoadMoreRef.current);
+      return () => observer.disconnect();
+    }, [displayedAutomationHistory.length, filteredAutomationHistory.length]);
 
   return (
-    <div className="crm-workspace">
+    <div className={`crm-workspace crm-workspace--ops crm-workspace--view-${activeView}`}>
       <CrmToast toast={toast} />
       <div className="crm-workspace-header">
         <div>
-          <h1>CRM Ops</h1>
-          <p>Monitor owner queues, response SLA pressure, pipeline automation rules, and lead scoring triggers.</p>
+          <h1>CRM Operations</h1>
+          <p>Track owner workload, follow-up risk, automation runs, and lead scoring from one live workspace.</p>
         </div>
         <CrmRealtimeStatus status={crmRealtime.connectionStatus} />
+      </div>
+
+      <div className="crm-viewbar crm-viewbar--header">
+        <div className="crm-tab-list">
+          {Object.entries(CRM_OPS_VIEWS).map(([key, view]) => (
+            <button
+              key={key}
+              type="button"
+              className={`crm-tab-pill ${activeView === key ? "active" : ""}`}
+              onClick={() => handleViewChange(key)}
+            >
+              {key === "overview" ? <LayoutGrid size={14} /> : <Layers3 size={14} />}
+              {view.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="crm-metric-grid">
@@ -678,21 +1292,21 @@ const CrmOps = () => {
           <Users size={18} />
           <div>
             <strong>{summary.myLeads ?? 0}</strong>
-            <span>My Leads</span>
+            <span>Assigned to Me</span>
           </div>
         </div>
         <div className="crm-metric-card">
           <Clock3 size={18} />
           <div>
             <strong>{summary.overdueFollowUps ?? 0}</strong>
-            <span>Overdue Follow-ups</span>
+            <span>Follow-ups Overdue</span>
           </div>
         </div>
         <div className="crm-metric-card">
           <Send size={18} />
           <div>
             <strong>{summary.responseSlaBreaches ?? 0}</strong>
-            <span>Reply SLA Breaches</span>
+            <span>SLA Breaches</span>
           </div>
         </div>
         <div className="crm-metric-card">
@@ -702,44 +1316,105 @@ const CrmOps = () => {
             <span>Open Deals</span>
           </div>
         </div>
+        <div className="crm-metric-card">
+          <Layers3 size={18} />
+          <div>
+            <strong>{summary.unassignedLeads ?? 0}</strong>
+            <span>Unassigned</span>
+          </div>
+        </div>
+        <div className="crm-metric-card">
+          <SlidersHorizontal size={18} />
+          <div>
+            <strong>{summary.dueTodayTasks ?? 0}</strong>
+            <span>Due Today</span>
+          </div>
+        </div>
       </div>
 
       <div className="crm-summary-grid crm-summary-grid--compact">
         <div className="crm-summary-card">
-          <strong>{summary.unassignedLeads ?? 0}</strong>
-          <span>Unassigned Leads</span>
-        </div>
-        <div className="crm-summary-card">
           <strong>{summary.needsReply ?? 0}</strong>
-          <span>Needs Reply</span>
+          <span>Replies Needed</span>
         </div>
         <div className="crm-summary-card">
           <strong>{summary.overdueTasks ?? 0}</strong>
-          <span>Overdue Tasks</span>
+          <span>Tasks Overdue</span>
         </div>
         <div className="crm-summary-card">
-          <strong>{summary.dueTodayTasks ?? 0}</strong>
-          <span>Tasks Due Today</span>
+          <strong>{automationResult?.candidateCount ?? summary.readyForAutomation ?? 25}</strong>
+          <span>Ready for Automation</span>
+        </div>
+        <div className="crm-summary-card">
+          <strong>{ownerAlerts.filter((item) => !item.isRead).length}</strong>
+          <span>Unread Alerts</span>
         </div>
       </div>
 
       {error && <div className="crm-alert crm-alert-error">{error}</div>}
       {automationMessage && <div className="crm-alert crm-alert-success">{automationMessage}</div>}
       {leadScoringMessage && <div className="crm-alert crm-alert-success">{leadScoringMessage}</div>}
+      {activeView === "overview" && (
+        <section className="crm-ops-panel crm-ops-panel--overview">
+          <div className="crm-drawer-card-header">
+            <div>
+              <h3>Overview</h3>
+              <span className="crm-drawer-helper-text">
+                Pick a section above to open just that workspace.
+              </span>
+            </div>
+          </div>
+          <div className="crm-overview-grid">
+            <button type="button" className="crm-overview-card" onClick={() => handleViewChange("owner-workload")}>
+              <strong>Owner Workload</strong>
+              <span>Open the live owner table only.</span>
+            </button>
+            <button type="button" className="crm-overview-card" onClick={() => handleViewChange("owner-alerts")}>
+              <strong>Owner Alerts</strong>
+              <span>Open the alert feed only.</span>
+            </button>
+            <button type="button" className="crm-overview-card" onClick={() => handleViewChange("rules-runs")}>
+              <strong>Rules &amp; Runs</strong>
+              <span>Open automation preview and history only.</span>
+            </button>
+            <button type="button" className="crm-overview-card" onClick={() => handleViewChange("lead-scoring")}>
+              <strong>Lead Scoring</strong>
+              <span>Open scoring controls only.</span>
+            </button>
+          </div>
+        </section>
+      )}
       {loading && <CrmPageSkeleton variant="ops" />}
 
       {!loading && (
-        <>
+        <div key={activeView} className={`crm-ops-stage ${isPending ? "is-switching" : ""}`}>
           <div className="crm-ops-layout">
-            <section className="crm-ops-panel">
+            <section className="crm-ops-panel" data-view="owner-workload">
               <div className="crm-drawer-card-header">
                 <div>
-                  <h3>Owner Performance</h3>
+                  <h3>Owner Workload</h3>
                   <div className="crm-ops-meta">
                     <span>Reply SLA: {dashboard?.slaHours ?? 0} hours</span>
-                    <span>Updated: {formatDateTime(dashboard?.generatedAt)}</span>
+                    <span>Updated: {getShortTimestamp(dashboard?.generatedAt)}</span>
                   </div>
                 </div>
+                <div className="crm-owner-toolbar">
+                  <label className="crm-field crm-field--inline">
+                    <span>Search</span>
+                    <input
+                      type="search"
+                      className="crm-input crm-input--small"
+                      placeholder="Owner, id, or metric"
+                      value={ownerSearch}
+                      onChange={(event) => setOwnerSearch(event.target.value)}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              <div className="crm-owner-summary-strip">
+                <span className="crm-ops-chip">Owners: {owners.length}</span>
+                <span className="crm-ops-chip">Filtered: {filteredOwners.length}</span>
               </div>
 
               <div className="crm-owner-table-wrap">
@@ -760,11 +1435,18 @@ const CrmOps = () => {
                     {owners.length === 0 && (
                       <tr>
                         <td className="crm-empty-row" colSpan={8}>
-                          No owner performance data yet.
+                          No owner workload data yet.
                         </td>
                       </tr>
                     )}
-                    {owners.map((owner) => (
+                    {owners.length > 0 && filteredOwners.length === 0 && (
+                      <tr>
+                        <td className="crm-empty-row" colSpan={8}>
+                          No owners match the current search.
+                        </td>
+                      </tr>
+                    )}
+                    {filteredOwners.map((owner) => (
                       <tr key={owner.ownerId || owner.ownerName}>
                         <td>
                           <strong>{owner.ownerName || "Unassigned"}</strong>
@@ -784,66 +1466,178 @@ const CrmOps = () => {
               </div>
             </section>
 
-            <section className="crm-ops-panel">
+            <section className="crm-ops-panel crm-ops-panel--fullheight" data-view="owner-alerts">
               <div className="crm-drawer-card-header">
-                <div>
-                  <h3>Owner Alert Feed</h3>
+                <div className="crm-owner-alerts-heading">
+                  <h3>Owner Alerts</h3>
                   <span className="crm-drawer-helper-text">
-                    Automation-generated owner notifications and follow-up prompts.
+                    Owner prompts generated by follow-up and scoring automation.
                   </span>
+                  <div className="crm-owner-summary-strip crm-owner-summary-strip--inline">
+                    <span className="crm-ops-chip">Loaded: {ownerAlertCounts.total}</span>
+                    <span className="crm-ops-chip">Unread: {ownerAlertCounts.unread}</span>
+                    <span className="crm-ops-chip">Read: {ownerAlertCounts.read}</span>
+                    <span className="crm-ops-chip">Filtered: {visibleOwnerAlerts.length}</span>
+                    <span className="crm-ops-chip">Showing: {displayedOwnerAlerts.length}</span>
+                  </div>
+                </div>
+                <div className="crm-owner-toolbar crm-owner-toolbar--alerts">
+                  <div className="crm-owner-toolbar-row">
+                    <label className="crm-field crm-field--inline crm-field--search">
+                      <span>Search alerts</span>
+                      <input
+                        type="search"
+                        className="crm-input crm-input--small"
+                        placeholder="Contact, stage, owner, template"
+                        value={ownerAlertSearch}
+                        onChange={(event) => setOwnerAlertSearch(event.target.value)}
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      className={`crm-btn crm-btn-secondary crm-alert-filter-toggle ${ownerAlertFiltersOpen ? "is-open" : ""}`}
+                      onClick={() => setOwnerAlertFiltersOpen((current) => !current)}
+                      aria-expanded={ownerAlertFiltersOpen}
+                      aria-controls="owner-alert-filter-panel"
+                    >
+                      <SlidersHorizontal size={16} />
+                      Filters
+                      <ChevronDown size={15} className="crm-alert-filter-toggle-icon" />
+                    </button>
+                    <div className="crm-owner-toolbar-actions">
+                      <button
+                        type="button"
+                        className="crm-btn crm-btn-secondary"
+                        onClick={markVisibleOwnerAlertsRead}
+                        disabled={!displayedOwnerAlerts.some((item) => !item.isRead)}
+                      >
+                        Mark visible read
+                      </button>
+                    </div>
+                  </div>
+                  {ownerAlertFiltersOpen && (
+                    <div id="owner-alert-filter-panel" className="crm-alert-filter-panel">
+                      <label className="crm-field crm-field--inline">
+                        <span>Status</span>
+                        <select
+                          className="crm-select crm-select--small"
+                          value={ownerAlertStatusFilter}
+                          onChange={(event) => setOwnerAlertStatusFilter(event.target.value)}
+                        >
+                          <option value="unread">Unread</option>
+                          <option value="all">All</option>
+                          <option value="read">Read</option>
+                        </select>
+                      </label>
+                      <label className="crm-field crm-field--inline">
+                        <span>Sort</span>
+                        <select
+                          className="crm-select crm-select--small"
+                          value={ownerAlertSort}
+                          onChange={(event) => setOwnerAlertSort(event.target.value)}
+                        >
+                          <option value="newest">Newest first</option>
+                          <option value="oldest">Oldest first</option>
+                          <option value="unread-first">Unread first</option>
+                        </select>
+                      </label>
+                      <label className="crm-field crm-field--inline">
+                        <span>Fetch limit</span>
+                        <input
+                          type="number"
+                          min="10"
+                          max="150"
+                          className="crm-input crm-input--small"
+                          value={ownerAlertFetchLimit}
+                          onChange={(event) => setOwnerAlertFetchLimit(normalizeLimit(event.target.value))}
+                        />
+                      </label>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="crm-activity-list">
-                {ownerAlerts.length === 0 && (
-                  <div className="crm-activity-empty">No owner alerts yet.</div>
+              <div className="crm-alert-card-grid">
+                {displayedOwnerAlerts.length === 0 && (
+                  <div className="crm-activity-empty crm-activity-empty--alerts">
+                    <strong>No alerts match the current view.</strong>
+                    <span>Try switching status, clearing the search, or increasing the fetch limit.</span>
+                  </div>
                 )}
-                {ownerAlerts.map((item) => (
-                  <div key={item._id} className="crm-activity-item">
-                    <div className="crm-activity-dot" />
-                    <div className="crm-activity-content">
-                      <div className="crm-activity-head">
+                {displayedOwnerAlerts.map((item) => (
+                  <article key={item._id} className={`crm-alert-card ${item.isRead ? "is-read" : "is-unread"}`}>
+                    <div className="crm-alert-card__top">
+                      <div className="crm-alert-card__title">
                         <strong>{item.contact?.name || item.contact?.phone || "Assigned lead"}</strong>
-                        <span>{formatDateTime(item.createdAt)}</span>
+                        <span>{item.contact?.phone || "No phone on file"}</span>
                       </div>
-                      <p>
-                        {toLabel(item.automationRule) || "Owner alert"}
-                        {item.recommendedTemplate ? ` • Template: ${item.recommendedTemplate}` : ""}
-                        {item.contact?.stage ? ` • Stage: ${item.contact.stage}` : ""}
-                      </p>
-                      <div className="crm-inline-actions">
+                      <div className="crm-alert-card__status">
                         <span className={`crm-status-chip ${item.isRead ? "crm-status-chip--done" : "crm-status-chip--pending"}`}>
                           {item.isRead ? "Read" : "Unread"}
                         </span>
-                        {!item.isRead && (
-                          <button
-                            type="button"
-                            className="crm-btn crm-btn-secondary"
-                            onClick={() => markOwnerAlertRead(item._id)}
-                          >
-                            Mark Read
-                          </button>
-                        )}
+                        <span className="crm-alert-card__time">{formatDateTime(item.createdAt)}</span>
                       </div>
                     </div>
-                  </div>
+
+                    <div className="crm-alert-card__body">
+                      <p>
+                        {toLabel(item.automationRule) || "Owner alert"}
+                        {item.recommendedTemplate ? ` | Template: ${item.recommendedTemplate}` : ""}
+                      </p>
+                      <div className="crm-alert-card__meta">
+                        <span>Owner: {item.ownerId || item.contact?.ownerId || "Unassigned"}</span>
+                        <span>Stage: {toLabel(item.contact?.stage) || "Unknown"}</span>
+                        <span>Lead score: {item.leadScore || item.contact?.leadScore || 0}</span>
+                      </div>
+                    </div>
+
+                    <div className="crm-alert-card__actions">
+                      <div className="crm-ops-chip-list">
+                        {item.readAt && <span className="crm-ops-chip">Read at {formatDateTime(item.readAt)}</span>}
+                        {item.recommendedTemplate && <span className="crm-ops-chip">Template ready</span>}
+                      </div>
+                      {!item.isRead && (
+                        <button
+                          type="button"
+                          className="crm-btn crm-btn-secondary"
+                          onClick={() => markOwnerAlertRead(item._id)}
+                        >
+                          Mark read
+                        </button>
+                      )}
+                    </div>
+                  </article>
                 ))}
               </div>
+
+              {visibleOwnerAlerts.length > displayedOwnerAlerts.length && (
+                <div className="crm-alerts-footer">
+                  <button
+                    type="button"
+                    className="crm-btn crm-btn-secondary"
+                    onClick={() =>
+                      setOwnerAlertRenderLimit((current) => Math.min(current + 12, visibleOwnerAlerts.length))
+                    }
+                  >
+                    Load more alerts
+                  </button>
+                </div>
+              )}
             </section>
 
-            <section className="crm-ops-panel">
+            <section className="crm-ops-panel" data-view="rules-runs">
               <div className="crm-drawer-card-header">
                 <div>
-                  <h3>Automation Control</h3>
+                  <h3>Rules &amp; Runs</h3>
                   <span className="crm-drawer-helper-text">
-                    Scheduler runs every 15 minutes. Preview and trigger pipeline rules here.
+                    Preview rule matches before applying updates. Scheduler checks every 15 minutes.
                   </span>
                 </div>
               </div>
 
-              <div className="crm-ops-actions">
-                <label className="crm-field">
-                  <span>Batch Size</span>
+              <div className="crm-rules-toolbar">
+                <label className="crm-field crm-field--inline crm-rules-toolbar__batch">
+                  <span>Batch Limit</span>
                   <input
                     type="number"
                     min="1"
@@ -853,38 +1647,78 @@ const CrmOps = () => {
                     onChange={(event) => setAutomationLimit(normalizeLimit(event.target.value))}
                   />
                 </label>
-                <button
-                  type="button"
-                  className="crm-btn crm-btn-secondary"
-                  onClick={() => runAutomation(true)}
-                  disabled={previewing || running}
-                >
-                  <RefreshCw size={16} className={previewing ? "spin" : ""} />
-                  {previewing ? "Previewing..." : "Preview Rules"}
-                </button>
-                <button
-                  type="button"
-                  className="crm-btn crm-btn-primary"
-                  onClick={() => runAutomation(false)}
-                  disabled={running || previewing}
-                >
-                  <Zap size={16} />
-                  {running ? "Running..." : "Run Automation"}
-                </button>
+                <label className="crm-field crm-field--inline crm-rules-toolbar__search">
+                  <span>Search datasets</span>
+                  <input
+                    type="search"
+                    className="crm-input crm-input--small"
+                    placeholder="Contact, rule, stage, template"
+                    value={automationDatasetSearch}
+                    onChange={(event) => setAutomationDatasetSearch(event.target.value)}
+                  />
+                </label>
+                <div className="crm-rules-toolbar__actions">
+                  <button
+                    type="button"
+                    className="crm-btn crm-btn-secondary"
+                    onClick={() => runAutomation(true)}
+                    disabled={previewing || running}
+                  >
+                    <RefreshCw size={16} className={previewing ? "spin" : ""} />
+                    {previewing ? "Previewing..." : "Preview Matches"}
+                  </button>
+                  <button
+                    type="button"
+                    className="crm-btn crm-btn-primary"
+                    onClick={() => runAutomation(false)}
+                    disabled={running || previewing}
+                  >
+                    <Zap size={16} />
+                    {running ? "Running..." : "Run Rules"}
+                  </button>
+                </div>
+              </div>
+
+              <div className="crm-rules-control-strip">
+                <div className="crm-ops-chip-list crm-rules-status-strip">
+                  <span className="crm-ops-chip">Mode: {currentRunState}</span>
+                  <span className="crm-ops-chip">Candidates: {currentCandidateCount}</span>
+                  <span className="crm-ops-chip">Created: {currentRunCount}</span>
+                  <span className="crm-ops-chip">Rules matched: {automationEntries.length}</span>
+                </div>
+                <div className="crm-rules-dataset-switcher">
+                  {automationDatasetTabs.map((tab) => {
+                    const TabIcon = tab.icon;
+                    const isActive = automationDatasetView === tab.key;
+                    return (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        className={`crm-filter-chip crm-rules-dataset-tab ${isActive ? "active" : ""}`}
+                        onClick={() => setAutomationDatasetView(tab.key)}
+                        aria-pressed={isActive}
+                      >
+                        <TabIcon size={14} />
+                        <span>{tab.label}</span>
+                        <strong>{tab.count}</strong>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               <div className="crm-summary-grid crm-summary-grid--compact">
                 <div className="crm-summary-card">
                   <strong>{automationResult?.candidateCount ?? 0}</strong>
-                  <span>Candidates</span>
+                  <span>Ready</span>
                 </div>
                 <div className="crm-summary-card">
                   <strong>{automationResult?.createdCount ?? 0}</strong>
-                  <span>Applied</span>
+                  <span>Created</span>
                 </div>
                 <div className="crm-summary-card">
                   <strong>{automationResult?.slaHours ?? dashboard?.slaHours ?? 0}</strong>
-                  <span>SLA Hours</span>
+                  <span>SLA Window</span>
                 </div>
                 <div className="crm-summary-card">
                   <strong>{automationResult?.dryRun ? "Preview" : "Live"}</strong>
@@ -902,120 +1736,142 @@ const CrmOps = () => {
                 </div>
               )}
 
-              <div className="crm-automation-dual-list">
-                <div className="crm-automation-column">
-                  <div className="crm-automation-column-header">
-                    <Target size={15} />
-                    <span>Task Candidates</span>
-                  </div>
-                  <div className="crm-automation-list">
-                    {automationResult?.tasks?.length ? (
-                      automationResult.tasks.map((task) => (
-                        <article
-                          key={`${task.contactId}-${task.automationRule}-${task.title}`}
-                          className="crm-automation-item"
-                        >
-                          <strong>{task.title || "Automation task"}</strong>
-                          <span>
-                            {task.contactName || "Unknown contact"}
-                            {task.phone ? ` | ${task.phone}` : ""}
-                          </span>
-                          <span>{AUTOMATION_RULE_LABELS[task.automationRule] || toLabel(task.automationRule)}</span>
-                          <span>
-                            Score: {task.leadScore || 0}
-                            {task.recommendedTemplate ? ` | Template: ${task.recommendedTemplate}` : ""}
-                          </span>
-                          <time>{formatDateTime(task.dueAt)}</time>
-                        </article>
-                      ))
-                    ) : (
-                      <div className="crm-empty-column">Preview or run automation to inspect generated tasks.</div>
-                    )}
-                  </div>
-                </div>
-
-                <div className="crm-automation-column">
-                  <div className="crm-automation-column-header">
-                    <GitBranch size={15} />
-                    <span>Stage Updates</span>
-                  </div>
-                  <div className="crm-automation-list">
-                    {automationResult?.contactUpdates?.length ? (
-                      automationResult.contactUpdates.map((item) => (
-                        <article
-                          key={`${item.contactId}-${item.automationRule}-${item.nextStage}`}
-                          className="crm-automation-item"
-                        >
-                          <strong>{item.contactName || "Unknown contact"}</strong>
-                          <span>
-                            {item.phone || "-"} | {AUTOMATION_RULE_LABELS[item.automationRule] || toLabel(item.automationRule)}
-                          </span>
-                          <span>
-                            {toLabel(item.previousStage)}
-                            {" -> "}
-                            {toLabel(item.nextStage)}
-                          </span>
-                          <span>
-                            Score: {item.leadScore || 0}
-                            {item.recommendedTemplate ? ` | Template: ${item.recommendedTemplate}` : ""}
-                          </span>
-                        </article>
-                      ))
-                    ) : (
-                      <div className="crm-empty-column">Stage automation changes will appear here after a preview or run.</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div className="crm-automation-column">
-                <div className="crm-automation-column-header">
-                  <BellRing size={15} />
-                  <span>Owner Notifications</span>
-                </div>
-                <div className="crm-automation-list">
-                  {automationResult?.ownerNotifications?.length ? (
-                    automationResult.ownerNotifications.map((item) => (
-                      <article
-                        key={`${item.contactId}-${item.ownerId}-${item.automationRule}`}
-                        className="crm-automation-item"
-                      >
-                        <strong>{item.contactName || "Unknown contact"}</strong>
-                        <span>
-                          Owner: {item.ownerId || "-"} | {AUTOMATION_RULE_LABELS[item.automationRule] || toLabel(item.automationRule)}
-                        </span>
-                        <span>
-                          Score: {item.leadScore || 0}
-                          {item.recommendedTemplate ? ` | Template: ${item.recommendedTemplate}` : ""}
-                        </span>
-                      </article>
-                    ))
-                  ) : (
-                    <div className="crm-empty-column">Owner notification events will appear here when automation alerts are generated.</div>
-                  )}
-                </div>
-              </div>
-
-              <div className="crm-automation-column">
-                <div className="crm-automation-column-header">
-                  <Send size={15} />
-                  <span>Email Delivery</span>
-                </div>
-                <div className="crm-automation-list">
-                  <article className="crm-automation-item">
-                    <strong>SMTP Delivery Summary</strong>
-                    <span>Attempted: {automationResult?.emailNotifications?.attempted ?? 0}</span>
-                    <span>Delivered: {automationResult?.emailNotifications?.delivered ?? 0}</span>
-                    <span>Skipped: {automationResult?.emailNotifications?.skipped ?? 0}</span>
-                    <span>Failed: {automationResult?.emailNotifications?.failed ?? 0}</span>
+              <div className={`crm-automation-dataset-grid ${automationDatasetView !== "all" ? "is-single" : ""}`}>
+                {(automationDatasetView === "all" || automationDatasetView === "tasks") && (
+                  <article className="crm-automation-column crm-automation-column--dataset">
+                    <div className="crm-automation-column-header crm-automation-column-header--dataset">
+                      <div className="crm-automation-column-header__title">
+                        <Target size={15} />
+                        <span>Task Preview</span>
+                      </div>
+                      <span className="crm-automation-column-header__meta">{filteredAutomationTasks.length} shown</span>
+                    </div>
+                    <div className="crm-automation-list crm-automation-list--scrollable">
+                      {filteredAutomationTasks.length ? (
+                        filteredAutomationTasks.map((task) => (
+                          <article
+                            key={`${task.contactId}-${task.automationRule}-${task.title}`}
+                            className="crm-automation-item"
+                          >
+                            <strong>{task.title || "Automation task"}</strong>
+                            <span>
+                              {task.contactName || "Unknown contact"}
+                              {task.phone ? ` | ${task.phone}` : ""}
+                            </span>
+                            <span>{AUTOMATION_RULE_LABELS[task.automationRule] || toLabel(task.automationRule)}</span>
+                            <span>
+                              Score: {task.leadScore || 0}
+                              {task.recommendedTemplate ? ` | Template: ${task.recommendedTemplate}` : ""}
+                            </span>
+                            <time>{formatDateTime(task.dueAt)}</time>
+                          </article>
+                        ))
+                      ) : (
+                        <div className="crm-empty-column">Preview or run automation to inspect generated tasks.</div>
+                      )}
+                    </div>
                   </article>
-                </div>
+                )}
+
+                {(automationDatasetView === "all" || automationDatasetView === "stage") && (
+                  <article className="crm-automation-column crm-automation-column--dataset">
+                    <div className="crm-automation-column-header crm-automation-column-header--dataset">
+                      <div className="crm-automation-column-header__title">
+                        <GitBranch size={15} />
+                        <span>Stage Moves</span>
+                      </div>
+                      <span className="crm-automation-column-header__meta">{filteredAutomationUpdates.length} shown</span>
+                    </div>
+                    <div className="crm-automation-list crm-automation-list--scrollable">
+                      {filteredAutomationUpdates.length ? (
+                        filteredAutomationUpdates.map((item) => (
+                          <article
+                            key={`${item.contactId}-${item.automationRule}-${item.nextStage}`}
+                            className="crm-automation-item"
+                          >
+                            <strong>{item.contactName || "Unknown contact"}</strong>
+                            <span>
+                              {item.phone || "-"} | {AUTOMATION_RULE_LABELS[item.automationRule] || toLabel(item.automationRule)}
+                            </span>
+                            <span>
+                              {toLabel(item.previousStage)}
+                              {" -> "}
+                              {toLabel(item.nextStage)}
+                            </span>
+                            <span>
+                              Score: {item.leadScore || 0}
+                              {item.recommendedTemplate ? ` | Template: ${item.recommendedTemplate}` : ""}
+                            </span>
+                          </article>
+                        ))
+                      ) : (
+                        <div className="crm-empty-column">Stage automation changes will appear here after a preview or run.</div>
+                      )}
+                    </div>
+                  </article>
+                )}
+
+                {(automationDatasetView === "all" || automationDatasetView === "owner") && (
+                  <article className="crm-automation-column crm-automation-column--dataset">
+                    <div className="crm-automation-column-header crm-automation-column-header--dataset">
+                      <div className="crm-automation-column-header__title">
+                        <BellRing size={15} />
+                        <span>Owner Notifications</span>
+                      </div>
+                      <span className="crm-automation-column-header__meta">{filteredOwnerNotifications.length} shown</span>
+                    </div>
+                    <div className="crm-automation-list crm-automation-list--scrollable">
+                      {filteredOwnerNotifications.length ? (
+                        filteredOwnerNotifications.map((item) => (
+                          <article
+                            key={`${item.contactId}-${item.ownerId}-${item.automationRule}`}
+                            className="crm-automation-item"
+                          >
+                            <strong>{item.contactName || "Unknown contact"}</strong>
+                            <span>
+                              Owner: {item.ownerId || "-"} | {AUTOMATION_RULE_LABELS[item.automationRule] || toLabel(item.automationRule)}
+                            </span>
+                            <span>
+                              Score: {item.leadScore || 0}
+                              {item.recommendedTemplate ? ` | Template: ${item.recommendedTemplate}` : ""}
+                            </span>
+                          </article>
+                        ))
+                      ) : (
+                        <div className="crm-empty-column">
+                          Owner notification events will appear here when automation alerts are generated.
+                        </div>
+                      )}
+                    </div>
+                  </article>
+                )}
+
+                {(automationDatasetView === "all" || automationDatasetView === "email") && (
+                  <article className="crm-automation-column crm-automation-column--dataset">
+                    <div className="crm-automation-column-header crm-automation-column-header--dataset">
+                      <div className="crm-automation-column-header__title">
+                        <Send size={15} />
+                        <span>Email Delivery</span>
+                      </div>
+                      <span className="crm-automation-column-header__meta">1 summary</span>
+                    </div>
+                    <div className="crm-automation-list crm-automation-list--scrollable">
+                      <article className="crm-automation-item">
+                        <strong>SMTP Delivery Summary</strong>
+                        <span>Attempted: {automationResult?.emailNotifications?.attempted ?? 0}</span>
+                        <span>Delivered: {automationResult?.emailNotifications?.delivered ?? 0}</span>
+                        <span>Skipped: {automationResult?.emailNotifications?.skipped ?? 0}</span>
+                        <span>Failed: {automationResult?.emailNotifications?.failed ?? 0}</span>
+                      </article>
+                    </div>
+                  </article>
+                )}
               </div>
             </section>
           </div>
 
           <div className="crm-ops-layout">
-            <section className="crm-ops-panel">
+            <section className="crm-ops-panel" data-view="history">
               <div className="crm-drawer-card-header">
                 <div>
                   <h3>Automation History</h3>
@@ -1025,257 +1881,438 @@ const CrmOps = () => {
                 </div>
               </div>
 
-              <div className="crm-activity-list">
-                <div className="crm-filter-group">
-                  <button
-                    type="button"
-                    className={`crm-filter-chip ${historyStatusFilter === "all" ? "active" : ""}`}
-                    onClick={() => setHistoryStatusFilter("all")}
-                  >
-                    All Runs
-                  </button>
-                  <button
-                    type="button"
-                    className={`crm-filter-chip ${historyStatusFilter === "success" ? "active" : ""}`}
-                    onClick={() => setHistoryStatusFilter("success")}
-                  >
-                    Success
-                  </button>
-                  <button
-                    type="button"
-                    className={`crm-filter-chip ${historyStatusFilter === "error" ? "active" : ""}`}
-                    onClick={() => setHistoryStatusFilter("error")}
-                  >
-                    Failed
-                  </button>
-                </div>
+              <div className="crm-history-toolbar">
+                <label className="crm-field crm-field--inline crm-history-toolbar__search">
+                  <span>Search history</span>
+                  <input
+                    type="search"
+                    className="crm-input crm-input--small"
+                    placeholder="Trigger, actor, error, counts"
+                    value={historySearch}
+                    onChange={(event) => setHistorySearch(event.target.value)}
+                  />
+                </label>
+                <label className="crm-field crm-field--inline crm-history-toolbar__limit">
+                  <span>Fetch limit</span>
+                  <input
+                    type="number"
+                    min="6"
+                    max="50"
+                    className="crm-input crm-input--small"
+                    value={historyFetchLimit}
+                    onChange={(event) => {
+                      const nextLimit = normalizeLimit(event.target.value);
+                      setHistoryFetchLimit(nextLimit);
+                      loadAutomationHistory({ silent: true, limit: nextLimit });
+                    }}
+                  />
+                </label>
+              </div>
 
-                {visibleAutomationHistory.length === 0 && (
-                  <div className="crm-activity-empty">No automation history recorded yet.</div>
+              <div className="crm-history-control-strip">
+                <div className="crm-ops-chip-list crm-history-summary-strip">
+                  <span className="crm-ops-chip">Loaded: {automationHistoryCounts.total}</span>
+                  <span className="crm-ops-chip">Showing: {displayedAutomationHistory.length}</span>
+                  <span className="crm-ops-chip">Success: {automationHistoryCounts.success}</span>
+                  <span className="crm-ops-chip">Failed: {automationHistoryCounts.error}</span>
+                  <span className="crm-ops-chip">Preview: {automationHistoryCounts.preview}</span>
+                  <span className="crm-ops-chip">Live: {automationHistoryCounts.live}</span>
+                </div>
+                <div className="crm-history-dataset-switcher">
+                  {[
+                    { key: "all", label: "All runs" },
+                    { key: "success", label: "Success" },
+                    { key: "error", label: "Failed" },
+                    { key: "preview", label: "Preview" },
+                    { key: "live", label: "Live" }
+                  ].map((item) => (
+                    <button
+                      key={item.key}
+                      type="button"
+                      className={`crm-filter-chip crm-history-tab ${historyStatusFilter === item.key ? "active" : ""}`}
+                      onClick={() => setHistoryStatusFilter(item.key)}
+                      aria-pressed={historyStatusFilter === item.key}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="crm-history-list crm-history-list--scrollable">
+                {displayedAutomationHistory.length === 0 && (
+                  <div className="crm-activity-empty crm-activity-empty--history">No automation history recorded yet.</div>
                 )}
-                {visibleAutomationHistory.map((item) => (
-                  <div key={item._id} className="crm-activity-item">
-                    <div className="crm-activity-dot" />
-                    <div className="crm-activity-content">
-                      <div className="crm-activity-head">
-                        <strong>{toLabel(item.triggerSource)}</strong>
+                {displayedAutomationHistory.map((item) => (
+                  <article key={item._id} className="crm-history-card">
+                    <div className="crm-history-card__top">
+                      <div className="crm-history-card__title">
+                        <strong>{toLabel(item.triggerSource) || "Automation run"}</strong>
                         <span>{formatDateTime(item.generatedAt)}</span>
                       </div>
-                      <p>
-                        {item.dryRun ? "Preview" : "Live run"} | Candidates: {item.candidateCount} | Created: {item.createdCount}
-                      </p>
-                      {item.errorMessage && <p>{item.errorMessage}</p>}
-                      <div className="crm-inline-actions">
-                        <span className={`crm-status-chip ${item.status === "success" ? "crm-status-chip--done" : "crm-status-chip--error"}`}>
+                      <div className="crm-history-card__status">
+                        <span
+                          className={`crm-status-chip ${
+                            item.status === "success" ? "crm-status-chip--done" : "crm-status-chip--error"
+                          }`}
+                        >
                           {toLabel(item.status)}
                         </span>
                         <span className="crm-status-chip crm-status-chip--pending">
-                          Email {item.emailNotifications.delivered}/{item.emailNotifications.attempted}
+                          {item.dryRun ? "Preview" : "Live"}
                         </span>
+                      </div>
+                    </div>
+
+                    <div className="crm-history-card__meta">
+                      <span>Candidates: {item.candidateCount}</span>
+                      <span>Created: {item.createdCount}</span>
+                      <span>Email: {item.emailNotifications.delivered}/{item.emailNotifications.attempted}</span>
+                      {item.automationActor && <span>Actor: {toLabel(item.automationActor)}</span>}
+                    </div>
+
+                    {item.errorMessage && <p className="crm-history-card__error">{item.errorMessage}</p>}
+
+                    <div className="crm-history-card__actions">
+                      <div className="crm-ops-chip-list">
+                        {item.dryRun && <span className="crm-ops-chip">Preview run</span>}
+                        {!item.dryRun && <span className="crm-ops-chip">Live run</span>}
+                      </div>
+                      <button
+                        type="button"
+                        className="crm-btn crm-btn-secondary"
+                        onClick={() => runAutomation(item.dryRun)}
+                        disabled={running || previewing}
+                      >
+                        {item.dryRun ? "Repeat Preview" : "Retry Run"}
+                      </button>
+                    </div>
+                  </article>
+                ))}
+                {displayedAutomationHistory.length < filteredAutomationHistory.length && (
+                  <div ref={historyLoadMoreRef} className="crm-history-load-more-sentinel" aria-hidden="true" />
+                )}
+              </div>
+            </section>
+
+            <section className="crm-ops-panel crm-ops-panel--lead-scoring" data-view="lead-scoring">
+              <div className="crm-drawer-card-header crm-leadscoring-header">
+                <div>
+                  <h3>Lead Scoring</h3>
+                  <span className="crm-drawer-helper-text">
+                    Manage score thresholds, templates, and owner follow-up prompts.
+                  </span>
+                </div>
+                <div className="crm-leadscoring-toolbar">
+                  <div className="crm-ops-chip-list crm-leadscoring-summary-strip">
+                    {leadScoringConfigCards.map((item) => (
+                      <span key={item.label} className="crm-ops-chip">
+                        {item.label}: {item.value}
+                      </span>
+                    ))}
+                  </div>
+                  <div className="crm-leadscoring-dataset-switcher" role="tablist" aria-label="Lead scoring datasets">
+                    {leadScoringDatasetTabs.map((tab) => (
+                      <button
+                        key={tab.key}
+                        type="button"
+                        className={`crm-btn crm-btn-secondary crm-leadscoring-tab ${leadScoringDatasetView === tab.key ? "active" : ""}`}
+                        onClick={() => setLeadScoringDatasetView(tab.key)}
+                        aria-pressed={leadScoringDatasetView === tab.key}
+                      >
+                        {tab.label}
+                        <span className="crm-leadscoring-tab__count">{tab.count}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div className={`crm-leadscoring-grid ${leadScoringDatasetView !== "all" ? "is-single" : ""}`}>
+                {(leadScoringDatasetView === "all" || leadScoringDatasetView === "config") && (
+                  <section className="crm-leadscoring-panel">
+                    <div className="crm-leadscoring-panel__header">
+                      <div>
+                        <h4>Configuration</h4>
+                        <span className="crm-drawer-helper-text">
+                          Control thresholds, automation rules, and owner notifications.
+                        </span>
+                      </div>
+                      <span className="crm-ops-chip">Live config</span>
+                    </div>
+
+                    <div className="crm-leadscoring-form">
+                      <label className="crm-toggle-row">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(leadScoringForm.isEnabled)}
+                          onChange={(event) => updateLeadScoringForm("isEnabled", event.target.checked)}
+                          disabled={leadScoringLoading || leadScoringSaving}
+                        />
+                        <span>Enable lead scoring</span>
+                      </label>
+
+                      <label className="crm-toggle-row">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(leadScoringForm.automationEnabled)}
+                          onChange={(event) =>
+                            updateLeadScoringForm("automationEnabled", event.target.checked)
+                          }
+                          disabled={leadScoringLoading || leadScoringSaving}
+                        />
+                        <span>Enable score-based automation</span>
+                      </label>
+
+                      <div className="crm-drawer-form-grid crm-drawer-form-grid--leadscoring">
+                        <label className="crm-field">
+                          <span>Move lead at score</span>
+                          <input
+                            type="number"
+                            min="0"
+                            className="crm-input"
+                            value={leadScoringForm.stageThreshold}
+                            onChange={(event) => updateLeadScoringForm("stageThreshold", event.target.value)}
+                            disabled={leadScoringLoading || leadScoringSaving}
+                          />
+                        </label>
+                        <label className="crm-field">
+                          <span>Move to stage</span>
+                          <select
+                            className="crm-select"
+                            value={leadScoringForm.stageOnThreshold}
+                            onChange={(event) => updateLeadScoringForm("stageOnThreshold", event.target.value)}
+                            disabled={leadScoringLoading || leadScoringSaving}
+                          >
+                            {leadStageOptions.map((option) => (
+                              <option key={option.key} value={option.key}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label className="crm-field">
+                          <span>Create task at score</span>
+                          <input
+                            type="number"
+                            min="0"
+                            className="crm-input"
+                            value={leadScoringForm.taskThreshold}
+                            onChange={(event) => updateLeadScoringForm("taskThreshold", event.target.value)}
+                            disabled={leadScoringLoading || leadScoringSaving}
+                          />
+                        </label>
+                        <label className="crm-field">
+                          <span>Task name</span>
+                          <input
+                            type="text"
+                            className="crm-input"
+                            value={leadScoringForm.taskTitle}
+                            onChange={(event) => updateLeadScoringForm("taskTitle", event.target.value)}
+                            disabled={leadScoringLoading || leadScoringSaving}
+                          />
+                        </label>
+                        <label className="crm-field crm-field--span-2">
+                          <span>Suggested template</span>
+                          <input
+                            type="text"
+                            className="crm-input"
+                            value={leadScoringForm.recommendedTemplate}
+                            onChange={(event) =>
+                              updateLeadScoringForm("recommendedTemplate", event.target.value)
+                            }
+                            placeholder="welcome_offer / proposal_follow_up"
+                            disabled={leadScoringLoading || leadScoringSaving}
+                          />
+                        </label>
+                      </div>
+
+                      <label className="crm-toggle-row">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(leadScoringForm.ownerNotification)}
+                          onChange={(event) =>
+                            updateLeadScoringForm("ownerNotification", event.target.checked)
+                          }
+                          disabled={leadScoringLoading || leadScoringSaving}
+                        />
+                        <span>Notify owner when scoring creates an action</span>
+                      </label>
+
+                      <div className="crm-drawer-actions">
                         <button
                           type="button"
-                          className="crm-btn crm-btn-secondary"
-                          onClick={() => runAutomation(item.dryRun)}
-                          disabled={running || previewing}
+                          className="crm-btn crm-btn-primary"
+                          onClick={saveLeadScoringAutomation}
+                          disabled={leadScoringLoading || leadScoringSaving}
                         >
-                          {item.dryRun ? "Repeat Preview" : "Retry Run"}
+                          {leadScoringSaving ? "Saving..." : "Save Scoring"}
                         </button>
                       </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            </section>
+                  </section>
+                )}
 
-            <section className="crm-ops-panel">
-              <div className="crm-drawer-card-header">
-                <div>
-                  <h3>Lead Scoring Automation</h3>
-                  <span className="crm-drawer-helper-text">
-                    Make score thresholds visible and control stage/task automation without opening sidebar settings.
-                  </span>
-                </div>
-              </div>
+                {(leadScoringDatasetView === "all" || leadScoringDatasetView === "preview") && (
+                  <section className="crm-leadscoring-panel">
+                    <div className="crm-leadscoring-panel__header">
+                      <div>
+                        <h4>Automation Preview</h4>
+                        <span className="crm-drawer-helper-text">
+                          Quick read on what the current scoring configuration will trigger.
+                        </span>
+                      </div>
+                      <span className="crm-ops-chip">Optimized</span>
+                    </div>
 
-              <div className="crm-ops-chip-list">
-                <span className="crm-ops-chip">Read Score: {leadScoringSettings.readScore}</span>
-                <span className="crm-ops-chip">Reply Score: {leadScoringSettings.replyScore}</span>
-                <span className="crm-ops-chip">Keywords: {leadScoringKeywordCount}</span>
-              </div>
+                    <div className="crm-leadscoring-preview-grid">
+                      <div className="crm-summary-card">
+                        <strong>{leadScoringSettings.readScore}</strong>
+                        <span>Read score</span>
+                      </div>
+                      <div className="crm-summary-card">
+                        <strong>{leadScoringSettings.replyScore}</strong>
+                        <span>Reply score</span>
+                      </div>
+                      <div className="crm-summary-card">
+                        <strong>{leadScoringForm.stageThreshold}</strong>
+                        <span>Stage threshold</span>
+                      </div>
+                      <div className="crm-summary-card">
+                        <strong>{leadScoringForm.taskThreshold}</strong>
+                        <span>Task threshold</span>
+                      </div>
+                    </div>
 
-              <label className="crm-toggle-row">
-                <input
-                  type="checkbox"
-                  checked={Boolean(leadScoringForm.isEnabled)}
-                  onChange={(event) => updateLeadScoringForm("isEnabled", event.target.checked)}
-                  disabled={leadScoringLoading || leadScoringSaving}
-                />
-                <span>Enable lead scoring</span>
-              </label>
+                    <div className="crm-rule-list">
+                      <article className="crm-rule-item">
+                        <Clock3 size={16} />
+                        <div>
+                          <strong>Lead becomes active</strong>
+                          <span>Read and reply signals are already counted against the live score.</span>
+                        </div>
+                      </article>
+                      <article className="crm-rule-item">
+                        <Target size={16} />
+                        <div>
+                          <strong>Stage move</strong>
+                          <span>
+                            Move leads to {toLabel(leadScoringForm.stageOnThreshold)} once they cross score{" "}
+                            {leadScoringForm.stageThreshold}.
+                          </span>
+                        </div>
+                      </article>
+                      <article className="crm-rule-item">
+                        <BellRing size={16} />
+                        <div>
+                          <strong>High intent task</strong>
+                          <span>
+                            Create task "{leadScoringForm.taskTitle || "High intent lead follow-up"}" at score{" "}
+                            {leadScoringForm.taskThreshold}.
+                          </span>
+                        </div>
+                      </article>
+                    </div>
+                  </section>
+                )}
 
-              <label className="crm-toggle-row">
-                <input
-                  type="checkbox"
-                  checked={Boolean(leadScoringForm.automationEnabled)}
-                  onChange={(event) =>
-                    updateLeadScoringForm("automationEnabled", event.target.checked)
-                  }
-                  disabled={leadScoringLoading || leadScoringSaving}
-                />
-                <span>Enable score-based automation</span>
-              </label>
+                {(leadScoringDatasetView === "all" || leadScoringDatasetView === "coverage") && (
+                  <section className="crm-leadscoring-panel">
+                    <div className="crm-leadscoring-panel__header">
+                      <div>
+                        <h4>Rule Coverage</h4>
+                        <span className="crm-drawer-helper-text">
+                          What the automation engine is currently watching for.
+                        </span>
+                      </div>
+                      <span className="crm-ops-chip">Coverage {leadScoringKeywordCount}</span>
+                    </div>
 
-              <div className="crm-drawer-form-grid">
-                <label className="crm-field">
-                  <span>Stage Threshold</span>
-                  <input
-                    type="number"
-                    min="0"
-                    className="crm-input"
-                    value={leadScoringForm.stageThreshold}
-                    onChange={(event) => updateLeadScoringForm("stageThreshold", event.target.value)}
-                    disabled={leadScoringLoading || leadScoringSaving}
-                  />
-                </label>
-                <label className="crm-field">
-                  <span>Move To Stage</span>
-                  <select
-                    className="crm-select"
-                    value={leadScoringForm.stageOnThreshold}
-                    onChange={(event) => updateLeadScoringForm("stageOnThreshold", event.target.value)}
-                    disabled={leadScoringLoading || leadScoringSaving}
-                  >
-                    {leadStageOptions.map((option) => (
-                      <option key={option.key} value={option.key}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="crm-field">
-                  <span>Task Threshold</span>
-                  <input
-                    type="number"
-                    min="0"
-                    className="crm-input"
-                    value={leadScoringForm.taskThreshold}
-                    onChange={(event) => updateLeadScoringForm("taskThreshold", event.target.value)}
-                    disabled={leadScoringLoading || leadScoringSaving}
-                  />
-                </label>
-                <label className="crm-field">
-                  <span>Task Title</span>
-                  <input
-                    type="text"
-                    className="crm-input"
-                    value={leadScoringForm.taskTitle}
-                    onChange={(event) => updateLeadScoringForm("taskTitle", event.target.value)}
-                    disabled={leadScoringLoading || leadScoringSaving}
-                  />
-                </label>
-                <label className="crm-field crm-field--span-2">
-                  <span>Recommended Template</span>
-                  <input
-                    type="text"
-                    className="crm-input"
-                    value={leadScoringForm.recommendedTemplate}
-                    onChange={(event) =>
-                      updateLeadScoringForm("recommendedTemplate", event.target.value)
-                    }
-                    placeholder="welcome_offer / proposal_follow_up"
-                    disabled={leadScoringLoading || leadScoringSaving}
-                  />
-                </label>
-              </div>
+                    <div className="crm-rule-list crm-leadscoring-rule-list">
+                      <article className="crm-rule-item">
+                        <Clock3 size={16} />
+                        <div>
+                          <strong>Overdue follow-up</strong>
+                          <span>Create a task when the next follow-up date is already missed.</span>
+                        </div>
+                      </article>
+                      <article className="crm-rule-item">
+                        <Send size={16} />
+                        <div>
+                          <strong>Reply SLA breach</strong>
+                          <span>Create a task when inbound messages wait longer than the configured SLA window.</span>
+                        </div>
+                      </article>
+                      <article className="crm-rule-item">
+                        <BadgeDollarSign size={16} />
+                        <div>
+                          <strong>Deal close risk</strong>
+                          <span>Create a task when open deals are close to the expected close time.</span>
+                        </div>
+                      </article>
+                      <article className="crm-rule-item">
+                        <GitBranch size={16} />
+                        <div>
+                          <strong>Opt-in to nurturing</strong>
+                          <span>Move opted-in leads from early stages into nurturing automatically.</span>
+                        </div>
+                      </article>
+                      <article className="crm-rule-item">
+                        <Target size={16} />
+                        <div>
+                          <strong>Lead score stage advance</strong>
+                          <span>
+                            Move leads to {toLabel(leadScoringForm.stageOnThreshold)} once they cross score{" "}
+                            {leadScoringForm.stageThreshold}.
+                          </span>
+                        </div>
+                      </article>
+                      <article className="crm-rule-item">
+                        <BellRing size={16} />
+                        <div>
+                          <strong>High intent follow-up task</strong>
+                          <span>
+                            Create task "{leadScoringForm.taskTitle || "High intent lead follow-up"}" at score{" "}
+                            {leadScoringForm.taskThreshold}.
+                          </span>
+                        </div>
+                      </article>
+                    </div>
 
-              <label className="crm-toggle-row">
-                <input
-                  type="checkbox"
-                  checked={Boolean(leadScoringForm.ownerNotification)}
-                  onChange={(event) =>
-                    updateLeadScoringForm("ownerNotification", event.target.checked)
-                  }
-                  disabled={leadScoringLoading || leadScoringSaving}
-                />
-                <span>Notify owner when threshold automation triggers</span>
-              </label>
-
-              <div className="crm-drawer-actions">
-                <button
-                  type="button"
-                  className="crm-btn crm-btn-primary"
-                  onClick={saveLeadScoringAutomation}
-                  disabled={leadScoringLoading || leadScoringSaving}
-                >
-                  {leadScoringSaving ? "Saving..." : "Save Automation"}
-                </button>
-              </div>
-            </section>
-
-            <section className="crm-ops-panel">
-              <div className="crm-drawer-card-header">
-                <div>
-                  <h3>Rule Coverage</h3>
-                  <span className="crm-drawer-helper-text">
-                    What the automation engine is currently watching for
-                  </span>
-                </div>
-              </div>
-
-              <div className="crm-rule-list">
-                <article className="crm-rule-item">
-                  <Clock3 size={16} />
-                  <div>
-                    <strong>Overdue follow-up</strong>
-                    <span>Create a task when the next follow-up date is already missed.</span>
-                  </div>
-                </article>
-                <article className="crm-rule-item">
-                  <Send size={16} />
-                  <div>
-                    <strong>Reply SLA breach</strong>
-                    <span>Create a task when inbound messages wait longer than the configured SLA window.</span>
-                  </div>
-                </article>
-                <article className="crm-rule-item">
-                  <BadgeDollarSign size={16} />
-                  <div>
-                    <strong>Deal close risk</strong>
-                    <span>Create a task when open deals are close to the expected close time.</span>
-                  </div>
-                </article>
-                <article className="crm-rule-item">
-                  <GitBranch size={16} />
-                  <div>
-                    <strong>Opt-in to nurturing</strong>
-                    <span>Move opted-in leads from early stages into nurturing automatically.</span>
-                  </div>
-                </article>
-                <article className="crm-rule-item">
-                  <Target size={16} />
-                  <div>
-                    <strong>Lead score stage advance</strong>
-                    <span>
-                      Move leads to {toLabel(leadScoringForm.stageOnThreshold)} once they cross score {leadScoringForm.stageThreshold}.
-                    </span>
-                  </div>
-                </article>
-                <article className="crm-rule-item">
-                  <BellRing size={16} />
-                  <div>
-                    <strong>High intent follow-up task</strong>
-                    <span>
-                      Create task "{leadScoringForm.taskTitle || "High intent lead follow-up"}" at score {leadScoringForm.taskThreshold}.
-                    </span>
-                  </div>
-                </article>
+                    <div className="crm-leadscoring-keyword-strip">
+                      <div className="crm-leadscoring-keyword-strip__header">
+                        <strong>Keyword rules</strong>
+                        <span>{leadScoringKeywordCount} configured</span>
+                      </div>
+                      <div className="crm-leadscoring-keyword-list crm-leadscoring-keyword-list--scrollable">
+                        {leadScoringKeywordRules.length === 0 ? (
+                          <div className="crm-activity-empty crm-activity-empty--history">
+                            No keyword rules configured yet.
+                          </div>
+                        ) : (
+                          leadScoringKeywordRules.map((item) => (
+                            <div
+                              key={`${item.keyword}-${item.score ?? "na"}-${item.stage || "any"}`}
+                              className="crm-leadscoring-keyword-card"
+                            >
+                              <strong>{item.keyword}</strong>
+                              <span>Score {item.score ?? "n/a"}</span>
+                              <span>{item.stage ? `Stage: ${toLabel(item.stage)}` : "Any stage"}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </section>
+                )}
               </div>
             </section>
           </div>
-        </>
+        </div>
       )}
     </div>
   );
 };
 
 export default CrmOps;
+

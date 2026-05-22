@@ -9,6 +9,20 @@ import "./CrmWorkspace.css";
 
 const TASK_CALENDAR_LOADING_TIMEOUT_MS = 8000;
 const WEEKDAY_LABELS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+const MONTH_LABELS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December"
+];
 
 const safeDate = (value) => {
   if (!value) return null;
@@ -46,6 +60,8 @@ const buildCalendarDays = (monthValue) => {
   });
 };
 
+const buildYearOptions = (year) => Array.from({ length: 12 }, (_, index) => year - 5 + index);
+
 const sanitizeTask = (task = {}) => ({
   _id: String(task?._id || task?.id || "").trim(),
   title: String(task?.title || "").trim(),
@@ -64,6 +80,7 @@ const CrmTaskCalendar = () => {
   const [error, setError] = useState("");
   const [monthCursor, setMonthCursor] = useState(() => getMonthStart(new Date()));
   const [selectedDateKey, setSelectedDateKey] = useState("");
+  const [calendarPickerView, setCalendarPickerView] = useState("day");
 
   const loadTasks = useCallback(async ({ silent = false } = {}) => {
     const releaseLoadingGuard = startLoadingTimeoutGuard(
@@ -114,8 +131,53 @@ const CrmTaskCalendar = () => {
   }, [tasks]);
 
   const calendarDays = useMemo(() => buildCalendarDays(monthCursor), [monthCursor]);
-  const activeDateKey = selectedDateKey || formatDayKey(new Date());
+  const todayKey = useMemo(() => formatDayKey(new Date()), []);
+  const activeDateKey = selectedDateKey || todayKey;
   const selectedDayTasks = tasksByDay.get(activeDateKey) || [];
+  const calendarYearOptions = useMemo(
+    () => buildYearOptions(monthCursor.getFullYear()),
+    [monthCursor]
+  );
+  const calendarMonthOptions = useMemo(
+    () =>
+      MONTH_LABELS.map((label, index) => ({
+        key: `${monthCursor.getFullYear()}-${index}`,
+        label,
+        monthIndex: index
+      })),
+    [monthCursor]
+  );
+  const calendarHeaderLabel = monthCursor.toLocaleString(undefined, {
+    month: "long",
+    year: "numeric"
+  });
+  const selectedDayLabel = activeDateKey ? formatDateTime(`${activeDateKey}T00:00:00`) : "Today";
+  const monthTaskTotal = useMemo(
+    () =>
+      calendarDays.reduce((total, day) => {
+        const dayKey = formatDayKey(day);
+        return total + (tasksByDay.get(dayKey)?.length || 0);
+      }, 0),
+    [calendarDays, tasksByDay]
+  );
+  const monthBusyDays = useMemo(
+    () => calendarDays.filter((day) => (tasksByDay.get(formatDayKey(day))?.length || 0) > 0).length,
+    [calendarDays, tasksByDay]
+  );
+  const selectedDayPrioritySummary = useMemo(
+    () =>
+      selectedDayTasks.reduce(
+        (summary, task) => {
+          const priority = String(task.priority || "medium").toLowerCase();
+          if (priority === "high") summary.high += 1;
+          else if (priority === "low") summary.low += 1;
+          else summary.medium += 1;
+          return summary;
+        },
+        { high: 0, medium: 0, low: 0 }
+      ),
+    [selectedDayTasks]
+  );
 
   const crmRealtime = useCrmRealtimeRefresh({
     entities: ["task"],
@@ -123,15 +185,49 @@ const CrmTaskCalendar = () => {
   });
 
   useEffect(() => {
-    if (selectedDateKey && tasksByDay.has(selectedDateKey)) return;
-    const todayKey = formatDayKey(new Date());
+    if (selectedDateKey) return;
     if (tasksByDay.has(todayKey)) {
       setSelectedDateKey(todayKey);
       return;
     }
     const firstKey = Array.from(tasksByDay.keys()).sort()[0] || "";
     setSelectedDateKey(firstKey);
-  }, [tasksByDay, selectedDateKey]);
+  }, [tasksByDay, selectedDateKey, todayKey]);
+
+  const shiftCalendarCursor = useCallback(
+    (direction) => {
+      setMonthCursor((prev) => {
+        if (calendarPickerView === "year") {
+          return new Date(prev.getFullYear() + direction * 12, prev.getMonth(), 1);
+        }
+        if (calendarPickerView === "month") {
+          return new Date(prev.getFullYear() + direction, prev.getMonth(), 1);
+        }
+        return new Date(prev.getFullYear(), prev.getMonth() + direction, 1);
+      });
+    },
+    [calendarPickerView]
+  );
+
+  const handleCalendarHeaderClick = useCallback(() => {
+    setCalendarPickerView((current) => {
+      if (current === "day") return "year";
+      if (current === "year") return "month";
+      return "day";
+    });
+  }, []);
+
+  const handleYearSelect = useCallback((year) => {
+    setMonthCursor(new Date(year, 0, 1));
+    setCalendarPickerView("month");
+  }, []);
+
+  const handleMonthSelect = useCallback((monthIndex) => {
+    const nextMonthCursor = new Date(monthCursor.getFullYear(), monthIndex, 1);
+    setMonthCursor(nextMonthCursor);
+    setCalendarPickerView("day");
+    setSelectedDateKey(formatDayKey(nextMonthCursor));
+  }, [monthCursor]);
 
   return (
     <div className="crm-workspace">
@@ -148,83 +244,166 @@ const CrmTaskCalendar = () => {
 
       {!loading && (
         <div className="crm-report-two-column crm-report-two-column--meetings">
-          <section className="crm-report-card">
+          <section className="crm-report-card crm-task-calendar-card">
             <div className="crm-drawer-card-header">
-              <div>
+              <div className="crm-task-calendar-header-copy">
                 <h3>Calendar</h3>
                 <span className="crm-drawer-helper-text">Pick a date to see scheduled tasks.</span>
               </div>
-              <div className="crm-inline-actions">
+              <div className="crm-inline-actions crm-task-calendar-nav">
                 <button
                   type="button"
                   className="crm-icon-btn"
-                  onClick={() => setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() - 1, 1))}
+                  onClick={() => shiftCalendarCursor(-1)}
                 >
                   <ChevronLeft size={16} />
                 </button>
-                <strong className="crm-calendar-title">
-                  {monthCursor.toLocaleString(undefined, { month: "long", year: "numeric" })}
-                </strong>
+                <button
+                  type="button"
+                  className="crm-calendar-title-button"
+                  onClick={handleCalendarHeaderClick}
+                  aria-label={`Change calendar view from ${calendarHeaderLabel}`}
+                >
+                  <strong className="crm-calendar-title">{calendarHeaderLabel}</strong>
+                  <span className="crm-calendar-title-hint">
+                    {calendarPickerView === "day"
+                      ? "Click to browse years"
+                      : calendarPickerView === "year"
+                      ? "Select a year"
+                      : "Select a month"}
+                  </span>
+                </button>
                 <button
                   type="button"
                   className="crm-icon-btn"
-                  onClick={() => setMonthCursor((prev) => new Date(prev.getFullYear(), prev.getMonth() + 1, 1))}
+                  onClick={() => shiftCalendarCursor(1)}
                 >
                   <ChevronRight size={16} />
                 </button>
               </div>
             </div>
 
-            <div className="crm-calendar-grid">
-              {WEEKDAY_LABELS.map((label) => (
-                <div key={label} className="crm-calendar-weekday">
-                  {label}
-                </div>
-              ))}
-              {calendarDays.map((day) => {
-                const dayKey = formatDayKey(day);
-                const items = tasksByDay.get(dayKey) || [];
-                const isCurrentMonth = day.getMonth() === monthCursor.getMonth();
-                const isSelected = dayKey === activeDateKey;
-                return (
-                  <button
-                    key={dayKey}
-                    type="button"
-                    className={[
-                      "crm-calendar-day",
-                      isCurrentMonth ? "" : "crm-calendar-day--muted",
-                      isSelected ? "crm-calendar-day--selected" : ""
-                    ]
-                      .filter(Boolean)
-                      .join(" ")}
-                    onClick={() => setSelectedDateKey(dayKey)}
-                  >
-                    <span>{day.getDate()}</span>
-                    <strong>{items.length > 0 ? items.length : ""}</strong>
-                  </button>
-                );
-              })}
+            <div className="crm-task-calendar-summary">
+              <span className="crm-ops-chip">Total tasks: {tasks.length}</span>
+              <span className="crm-ops-chip">This month: {monthTaskTotal}</span>
+              <span className="crm-ops-chip">Busy days: {monthBusyDays}</span>
+              <span className="crm-ops-chip">Selected: {selectedDateKey === todayKey ? "Today" : selectedDayLabel}</span>
             </div>
+
+            {calendarPickerView === "day" && (
+              <div className="crm-calendar-grid">
+                {WEEKDAY_LABELS.map((label) => (
+                  <div key={label} className="crm-calendar-weekday">
+                    {label}
+                  </div>
+                ))}
+                {calendarDays.map((day) => {
+                  const dayKey = formatDayKey(day);
+                  const items = tasksByDay.get(dayKey) || [];
+                  const isCurrentMonth = day.getMonth() === monthCursor.getMonth();
+                  const isSelected = dayKey === activeDateKey;
+                  const isToday = dayKey === todayKey;
+                  const dayClassName = [
+                    "crm-calendar-day",
+                    isCurrentMonth ? "" : "crm-calendar-day--muted",
+                    isSelected ? "crm-calendar-day--selected" : "",
+                    isToday ? "crm-calendar-day--today" : "",
+                    items.length > 0 ? "crm-calendar-day--task-heavy" : ""
+                  ]
+                    .filter(Boolean)
+                    .join(" ");
+                  return (
+                    <button
+                      key={dayKey}
+                      type="button"
+                      className={dayClassName}
+                      onClick={() => setSelectedDateKey(dayKey)}
+                    >
+                      <span className="crm-calendar-day__date">{day.getDate()}</span>
+                      <strong>{items.length > 0 ? items.length : ""}</strong>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {calendarPickerView === "year" && (
+              <div className="crm-task-calendar-picker">
+                <div className="crm-task-calendar-picker__title">
+                  <strong>Select a year</strong>
+                  <span>Choose a year to browse its months.</span>
+                </div>
+                <div className="crm-task-calendar-picker-grid crm-task-calendar-picker-grid--years">
+                  {calendarYearOptions.map((year) => {
+                    const isSelected = year === monthCursor.getFullYear();
+                    return (
+                      <button
+                        key={year}
+                        type="button"
+                        className={`crm-task-calendar-picker-btn ${isSelected ? "is-selected" : ""}`}
+                        onClick={() => handleYearSelect(year)}
+                      >
+                        <strong>{year}</strong>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {calendarPickerView === "month" && (
+              <div className="crm-task-calendar-picker">
+                <div className="crm-task-calendar-picker__title">
+                  <strong>Select a month</strong>
+                  <span>{monthCursor.getFullYear()}</span>
+                </div>
+                <div className="crm-task-calendar-picker-grid crm-task-calendar-picker-grid--months">
+                  {calendarMonthOptions.map((month) => {
+                    const isSelected = month.monthIndex === monthCursor.getMonth();
+                    return (
+                      <button
+                        key={month.key}
+                        type="button"
+                        className={`crm-task-calendar-picker-btn ${isSelected ? "is-selected" : ""}`}
+                        onClick={() => handleMonthSelect(month.monthIndex)}
+                      >
+                        <strong>{month.label}</strong>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </section>
 
-          <section className="crm-report-card">
-            <div className="crm-drawer-card-header">
-              <div>
+          <section className="crm-report-card crm-task-agenda-card">
+            <div className="crm-drawer-card-header crm-task-agenda-header">
+              <div className="crm-task-agenda-header-copy">
                 <h3>Daily Agenda</h3>
-                <span className="crm-drawer-helper-text">{activeDateKey || "No date selected"}</span>
+                <span className="crm-drawer-helper-text">{selectedDayLabel}</span>
+              </div>
+              <div className="crm-task-agenda-stats">
+                <span className="crm-ops-chip">Tasks: {selectedDayTasks.length}</span>
+                <span className="crm-ops-chip">High: {selectedDayPrioritySummary.high}</span>
+                <span className="crm-ops-chip">Medium: {selectedDayPrioritySummary.medium}</span>
+                <span className="crm-ops-chip">Low: {selectedDayPrioritySummary.low}</span>
               </div>
             </div>
 
             {selectedDayTasks.length === 0 ? (
-              <div className="crm-empty-state">
+              <div className="crm-empty-state crm-task-agenda-empty">
                 <strong>No tasks scheduled for this day.</strong>
                 <span>Choose another date or create tasks in CRM Tasks.</span>
               </div>
             ) : (
-              <div className="crm-meeting-list">
+              <div className="crm-meeting-list crm-task-agenda-list">
                 {selectedDayTasks.map((task) => (
                   <article key={task._id} className="crm-meeting-card">
-                    <div className="crm-meeting-card-main">
+                    <div className="crm-meeting-card__time">
+                      <strong>{task.priority || "medium"}</strong>
+                      <span>{formatDateTime(task.dueAt || task.reminderAt)}</span>
+                    </div>
+                    <div className="crm-meeting-card-main crm-task-agenda-main">
                       <div>
                         <h4>{task.title || "Untitled task"}</h4>
                         <p>
@@ -232,11 +411,10 @@ const CrmTaskCalendar = () => {
                           {task.contactPhone ? ` | ${task.contactPhone}` : ""}
                         </p>
                       </div>
-                      <div className="crm-meeting-card-meta">
-                        <span>Due: {formatDateTime(task.dueAt || task.reminderAt)}</span>
-                        <span>Status: {task.status || "pending"}</span>
-                        <span>Priority: {task.priority || "medium"}</span>
-                      </div>
+                    </div>
+                    <div className="crm-meeting-card-meta crm-task-agenda-meta">
+                      <span>Status: {task.status || "pending"}</span>
+                      <span>Priority: {task.priority || "medium"}</span>
                     </div>
                   </article>
                 ))}

@@ -139,7 +139,7 @@ const MainLayout = () => {
           </div>
         )}
         <main
-          className={`page-content ${isCrmHome ? "page-content--crm-home" : ""} ${currentPath === "/crm/pipeline" ? "page-content--crm-pipeline" : ""}`}
+          className={`page-content ${isCrmHome ? "page-content--crm-home" : ""} ${currentPath === "/crm/pipeline" ? "page-content--crm-pipeline" : ""} ${currentPath === "/crm/ops" ? "page-content--crm-ops" : ""}`}
         >
           <Outlet />
         </main>

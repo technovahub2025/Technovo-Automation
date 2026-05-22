@@ -76,7 +76,6 @@ import {
   formatReportStageLabel,
   formatReportStatusLabel,
   getActiveReportFilterCount,
-  mergeReportRealtimePayload,
   normalizeReportFilters,
   REPORT_FILTER_DEFAULTS,
   serializeReportFilters,
@@ -1014,6 +1013,7 @@ const CrmReports = () => {
   const hasHydratedCacheRef = useRef(false);
   const workerRef = useRef(null);
   const reloadIdRef = useRef(0);
+  const loadReportDataRef = useRef(null);
   const hadDisconnectRef = useRef(false);
 
   const updateQuery = useCallback(
@@ -1131,6 +1131,10 @@ const CrmReports = () => {
   }, [persistCache]);
 
   useEffect(() => {
+    loadReportDataRef.current = loadReportData;
+  }, [loadReportData]);
+
+  useEffect(() => {
     if (hasHydratedCacheRef.current) return;
     hasHydratedCacheRef.current = true;
     const cached = readSidebarPageCache(REPORT_CACHE_NAMESPACE, { currentUserId: cacheUserId, allowStale: true });
@@ -1246,14 +1250,51 @@ const CrmReports = () => {
     const handleOffline = () => setWebsocketStatus("offline");
     const handleOnline = () => setWebsocketStatus(webSocketService.isConnected?.() ? "connected" : "reconnecting");
     const handleRealtimePayload = (payload = {}) => {
-      if (!["lead_update", "deal_update", "stage_change", "stage_changed"].includes(String(payload?.type || "").trim())) return;
+      const type = String(payload?.type || "").trim();
+      if (type === "crm_changed") {
+        loadReportDataRef.current?.({ silent: true });
+        return;
+      }
+      if (!["lead_update", "deal_update", "stage_change", "stage_changed"].includes(type)) return;
       setContacts((previous) => {
-        const merged = mergeReportRealtimePayload({ contacts: previous }, payload);
-        return Array.isArray(merged.contacts) ? merged.contacts : previous;
+        const data = payload?.data && typeof payload.data === "object" ? payload.data : payload;
+        const nextContactId = String(data?._id || data?.id || data?.contactId || "").trim();
+        if (!nextContactId) return previous;
+
+        const nextContact = {
+          ...(Array.isArray(previous) ? previous.find((row) => String(row?.id || "").trim() === nextContactId) || {} : {}),
+          ...data,
+          _id: nextContactId
+        };
+        const index = Array.isArray(previous)
+          ? previous.findIndex((row) => String(row?.id || "").trim() === nextContactId)
+          : -1;
+        if (index >= 0) {
+          const next = [...previous];
+          next[index] = nextContact;
+          return next;
+        }
+        return [nextContact, ...(Array.isArray(previous) ? previous : [])];
       });
       setDeals((previous) => {
-        const merged = mergeReportRealtimePayload({ deals: previous }, payload);
-        return Array.isArray(merged.deals) ? merged.deals : previous;
+        const data = payload?.data && typeof payload.data === "object" ? payload.data : payload;
+        const nextDealId = String(data?._id || data?.id || data?.dealId || "").trim();
+        if (!nextDealId) return previous;
+
+        const nextDeal = {
+          ...(Array.isArray(previous) ? previous.find((row) => String(row?.id || "").trim() === nextDealId) || {} : {}),
+          ...data,
+          _id: nextDealId
+        };
+        const index = Array.isArray(previous)
+          ? previous.findIndex((row) => String(row?.id || "").trim() === nextDealId)
+          : -1;
+        if (index >= 0) {
+          const next = [...previous];
+          next[index] = nextDeal;
+          return next;
+        }
+        return [nextDeal, ...(Array.isArray(previous) ? previous : [])];
       });
     };
 
@@ -1282,7 +1323,6 @@ const CrmReports = () => {
       webSocketService.off("deal_update", handleRealtimePayload);
       webSocketService.off("stage_change", handleRealtimePayload);
       webSocketService.off("stage_changed", handleRealtimePayload);
-      webSocketService.disconnect();
     };
   }, [cacheUserId]);
 

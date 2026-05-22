@@ -51,6 +51,10 @@
     flex-direction: column;
 }
 
+.page-content--crm-ops {
+    padding: 14px;
+}
+
 .plan-expired-banner {
     display: flex;
     align-items: center;
@@ -94,6 +98,10 @@
     .page-content--crm-home {
         overflow-y: auto;
     }
+
+    .page-content--crm-ops {
+        padding: 12px;
+    }
 }
 
 @media (max-width: 768px) {
@@ -114,6 +122,10 @@
     .page-content--crm-home {
         padding: 0;
         overflow-y: auto;
+    }
+
+    .page-content--crm-ops {
+        padding: 10px;
     }
 
     .plan-expired-banner {

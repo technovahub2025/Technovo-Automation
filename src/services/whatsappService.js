@@ -610,7 +610,44 @@ export const whatsappService = {
         }
       };
     } catch (error) {
-      logAxiosServiceError('Failed to fetch unread conversation count', error, 'Failed to fetch unread conversation count');
+      if (!isNotFoundError(error)) {
+        logAxiosServiceError('Failed to fetch unread conversation count', error, 'Failed to fetch unread conversation count');
+      }
+
+      try {
+        const conversations = await this.getConversations({
+          ...filters,
+          limit: Number(filters?.limit || 100)
+        });
+        const unreadConversationCount = Array.isArray(conversations)
+          ? conversations.reduce((sum, conversation) => {
+              const unreadValue = Number(
+                conversation?.unreadCount ??
+                conversation?.unread_count ??
+                conversation?.unreadMessages ??
+                0
+              );
+              return sum + (Number.isFinite(unreadValue) ? Math.max(0, unreadValue) : 0);
+            }, 0)
+          : 0;
+
+        return {
+          ok: true,
+          data: {
+            unreadConversationCount
+          },
+          fallback: true
+        };
+      } catch (fallbackError) {
+        if (!isNotFoundError(fallbackError)) {
+          logAxiosServiceError(
+            'Unread conversation count fallback failed',
+            fallbackError,
+            'Failed to fetch unread conversation count'
+          );
+        }
+      }
+
       return {
         ok: false,
         error: normalizeServiceErrorMessage(

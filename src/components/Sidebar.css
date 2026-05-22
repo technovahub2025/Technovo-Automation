@@ -426,7 +426,8 @@
 .bulk-lead-scoring-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.45);
+    background: rgba(15, 23, 42, 0.52);
+    backdrop-filter: blur(6px);
     display: flex;
     align-items: center;
     justify-content: center;
@@ -435,38 +436,42 @@
 }
 
 .bulk-lead-scoring-modal {
-    width: min(620px, 100%);
+    width: min(720px, 100%);
     max-height: min(86vh, 820px);
     overflow-y: auto;
-    background: #ffffff;
-    border: 1px solid #e5e7eb;
-    border-radius: 12px;
-    box-shadow: 0 18px 40px rgba(15, 23, 42, 0.24);
-    padding: 18px;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    border: 1px solid #dbe5f1;
+    border-radius: 18px;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, 0.28);
+    padding: 20px;
 }
 
 .bulk-lead-scoring-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
     gap: 12px;
-    margin-bottom: 12px;
+    margin-bottom: 14px;
 }
 
 .bulk-lead-scoring-header h3 {
     margin: 0;
     color: #0f172a;
-    font-size: 22px;
+    font-size: 24px;
+    letter-spacing: -0.03em;
+    line-height: 1.15;
 }
 
 .bulk-lead-scoring-close-btn {
-    border: 1px solid #d1d5db;
-    background: #f8fafc;
-    color: #1f2937;
-    border-radius: 8px;
-    padding: 8px 12px;
+    border: 1px solid #d1d9e7;
+    background: linear-gradient(180deg, #ffffff 0%, #f4f7fb 100%);
+    color: #22324a;
+    border-radius: 12px;
+    padding: 9px 14px;
     font-size: 13px;
+    font-weight: 700;
     cursor: pointer;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.06);
 }
 
 .bulk-lead-scoring-loading {
@@ -480,7 +485,8 @@
     align-items: center;
     gap: 8px;
     font-size: 14px;
-    color: #1f2937;
+    color: #1d2b3f;
+    font-weight: 700;
     margin-bottom: 14px;
 }
 
@@ -494,42 +500,64 @@
 .bulk-lead-scoring-field {
     display: flex;
     flex-direction: column;
-    gap: 6px;
+    gap: 7px;
 }
 
 .bulk-lead-scoring-field span {
     font-size: 13px;
-    color: #475569;
+    color: #51647b;
+    font-weight: 700;
 }
 
-.bulk-lead-scoring-field input {
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    padding: 8px 10px;
+.bulk-lead-scoring-field input,
+.bulk-lead-scoring-field select {
+    border: 1px solid #d5deea;
+    border-radius: 12px;
+    padding: 10px 12px;
     font-size: 14px;
+    background: #fff;
+    color: #1f2937;
+    box-shadow: inset 0 1px 1px rgba(15, 23, 42, 0.03);
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
+    appearance: none;
+}
+
+.bulk-lead-scoring-field input:focus,
+.bulk-lead-scoring-field select:focus,
+.bulk-lead-scoring-keyword-row input:focus {
+    outline: none;
+    border-color: #84aef0;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.14);
 }
 
 .bulk-lead-scoring-keywords-header {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
+    gap: 12px;
     margin-bottom: 10px;
 }
 
 .bulk-lead-scoring-keywords-header h4 {
     margin: 0;
-    font-size: 16px;
+    font-size: 17px;
     color: #0f172a;
+    line-height: 1.2;
 }
 
 .bulk-lead-scoring-add-btn {
-    border: 1px solid #d1d5db;
-    background: #ffffff;
-    color: #1f2937;
-    border-radius: 8px;
-    padding: 7px 12px;
+    border: 1px solid #d5deea;
+    background: linear-gradient(180deg, #ffffff 0%, #f4f7fb 100%);
+    color: #22324a;
+    border-radius: 12px;
+    padding: 9px 14px;
     font-size: 13px;
+    font-weight: 700;
     cursor: pointer;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+    white-space: nowrap;
 }
 
 .bulk-lead-scoring-keyword-list {
@@ -541,25 +569,29 @@
 
 .bulk-lead-scoring-keyword-row {
     display: grid;
-    grid-template-columns: 1fr 100px auto;
+    grid-template-columns: minmax(0, 1fr) 108px 104px;
     gap: 10px;
+    align-items: end;
 }
 
 .bulk-lead-scoring-keyword-row input {
-    border: 1px solid #d1d5db;
-    border-radius: 8px;
-    padding: 8px 10px;
+    border: 1px solid #d5deea;
+    border-radius: 12px;
+    padding: 10px 12px;
     font-size: 14px;
+    min-width: 0;
 }
 
 .bulk-lead-scoring-remove-btn {
-    border: 1px solid #fda4af;
-    background: #fff1f2;
+    border: 1px solid #f8b4c1;
+    background: linear-gradient(180deg, #fff 0%, #fff5f7 100%);
     color: #e11d48;
-    border-radius: 8px;
-    padding: 8px 12px;
+    border-radius: 12px;
+    padding: 10px 12px;
     font-size: 13px;
+    font-weight: 700;
     cursor: pointer;
+    min-height: 42px;
 }
 
 .bulk-lead-scoring-remove-btn:disabled {
@@ -568,8 +600,8 @@
 }
 
 .bulk-lead-scoring-feedback {
-    border-radius: 8px;
-    padding: 10px 12px;
+    border-radius: 12px;
+    padding: 11px 12px;
     font-size: 13px;
     margin-bottom: 14px;
 }
@@ -590,25 +622,28 @@
     display: flex;
     justify-content: flex-end;
     gap: 10px;
+    padding-top: 2px;
 }
 
 .bulk-lead-scoring-cancel-btn,
 .bulk-lead-scoring-save-btn {
-    border-radius: 8px;
+    border-radius: 12px;
     border: 1px solid transparent;
-    padding: 8px 14px;
+    padding: 10px 16px;
     font-size: 14px;
+    font-weight: 700;
     cursor: pointer;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.06);
 }
 
 .bulk-lead-scoring-cancel-btn {
-    background: #f8fafc;
-    border-color: #d1d5db;
-    color: #1f2937;
+    background: linear-gradient(180deg, #ffffff 0%, #f4f7fb 100%);
+    border-color: #d5deea;
+    color: #22324a;
 }
 
 .bulk-lead-scoring-save-btn {
-    background: #16a34a;
+    background: linear-gradient(180deg, #22c55e 0%, #16a34a 100%);
     border-color: #16a34a;
     color: #ffffff;
 }
@@ -800,6 +835,21 @@
 
     .bulk-lead-scoring-keyword-row {
         grid-template-columns: 1fr;
+    }
+
+    .bulk-lead-scoring-header,
+    .bulk-lead-scoring-keywords-header,
+    .bulk-lead-scoring-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .bulk-lead-scoring-close-btn,
+    .bulk-lead-scoring-add-btn,
+    .bulk-lead-scoring-cancel-btn,
+    .bulk-lead-scoring-save-btn {
+        width: 100%;
+        justify-content: center;
     }
 
     .bulk-google-calendar-status {
