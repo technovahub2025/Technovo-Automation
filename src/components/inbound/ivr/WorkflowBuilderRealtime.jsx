@@ -294,6 +294,45 @@ function getDefaultNodeData(nodeType, industry) {
         booking_service: { label: 'Booking', service: 'booking', industry: 'hotel', api_endpoint: '/api/hotel/booking' },
         claims_service: { label: 'Claims', service: 'claims', industry: 'insurance', api_endpoint: '/api/insurance/claims' },
 
+        availability_check: {
+            label: 'Availability Check',
+            promptText: 'Please choose an available slot.',
+            timezone: 'Asia/Kolkata',
+            numDigits: 1,
+            timeoutSeconds: 10,
+            maxRetries: 3,
+            slotDefinitions: [
+                { key: 'slot_1', label: '4:00 PM', startTime: '16:00', endTime: '16:30', capacity: 5, digit: '1', order: 1, active: true },
+                { key: 'slot_2', label: '7:00 PM', startTime: '19:00', endTime: '19:30', capacity: 5, digit: '2', order: 2, active: true }
+            ]
+        },
+        slot_offer: {
+            label: 'Slot Offer',
+            promptText: 'The selected slot is full.',
+            offerText: 'Would you like to book the next available slot?',
+            yesDigits: '1',
+            noDigits: '2'
+        },
+        booking_confirm: {
+            label: 'Booking Confirm',
+            promptText: 'Would you like to confirm this booking?',
+            yesDigits: '1',
+            noDigits: '2'
+        },
+        booking_create: {
+            label: 'Booking Create',
+            bookingReferencePrefix: 'BK',
+            tokenPrefix: 'T',
+            preventDuplicates: true
+        },
+        whatsapp_notify: {
+            label: 'WhatsApp Notify',
+            customerRecipient: '{{callerNumber}}',
+            customerMessageText: 'Your booking has been confirmed.',
+            adminMessageText: 'New booking confirmed.'
+        },
+        handoff: { label: 'Hand Off', destination: '+1234567890', timeout: 30, announcementText: 'Connecting you now.' },
+
         end: { label: 'Hang up', text: 'Thank you for calling. Goodbye.' }
     };
     return templates[nodeType] || { label: nodeType };

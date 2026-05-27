@@ -17,8 +17,10 @@ import {
   Route,
   Volume2,
   LogIn,
-  BadgeCheck
+  BadgeCheck,
+  Monitor
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 import useIVRWorkflowSocket from '../../../hooks/useIVRWorkflowSocket';
 import socketService from '../../../services/socketService';
 import WorkflowBuilderCanvas from './WorkflowBuilderCanvas';
@@ -45,6 +47,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
   // Track which node is being edited to prevent socket updates
   const [, setEditingNodeId] = useState(null);
   const [, setLastEditTimestamp] = useState(0);
+  const navigate = useNavigate();
 
 
   const {
@@ -367,13 +370,11 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
 
     const hasStartNode = nodes.some((node) => {
       const nodeType = (node.type || '').toLowerCase();
-      return nodeType === 'start' || nodeType === 'audio' || nodeType === 'greeting';
+      return nodeType === 'start' || nodeType === 'audio' || nodeType === 'greeting' || nodeType === 'availability_check' || nodeType === 'slot_offer' || nodeType === 'booking_confirm';
     });
-    const hasInputNode = nodes.some((node) => (node.type || '').toLowerCase() === 'input');
     const hasEndNode = nodes.some((node) => (node.type || '').toLowerCase() === 'end');
 
-    if (!hasStartNode) issues.push('Workflow must include at least one audio/greeting start node.');
-    if (!hasInputNode) issues.push('Workflow must include at least one input node.');
+    if (!hasStartNode) issues.push('Workflow must include at least one audio/greeting or booking entry node.');
     if (!hasEndNode) issues.push('Workflow must include at least one end node.');
 
     return {
@@ -413,7 +414,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
 
     const hasStartNode = nodes.some((node) => {
       const nodeType = (node.type || '').toLowerCase();
-      return nodeType === 'start' || nodeType === 'audio' || nodeType === 'greeting';
+      return nodeType === 'start' || nodeType === 'audio' || nodeType === 'greeting' || nodeType === 'availability_check' || nodeType === 'slot_offer' || nodeType === 'booking_confirm';
     });
     const hasEndNode = nodes.some((node) => (node.type || '').toLowerCase() === 'end');
     const audioNodeCount = nodes.filter((node) => {
@@ -858,11 +859,11 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
 
     const entryWithNoIncoming = nodes.find((node) => {
       const type = (node.type || '').toLowerCase();
-      return (type === 'audio' || type === 'greeting') && (incoming.get(node.id) || 0) === 0;
+      return (type === 'audio' || type === 'greeting' || type === 'availability_check' || type === 'slot_offer' || type === 'booking_confirm') && (incoming.get(node.id) || 0) === 0;
     });
     if (entryWithNoIncoming) return entryWithNoIncoming.id;
 
-    const firstEntry = nodes.find((node) => ['audio', 'greeting'].includes((node.type || '').toLowerCase()));
+    const firstEntry = nodes.find((node) => ['audio', 'greeting', 'availability_check', 'slot_offer', 'booking_confirm'].includes((node.type || '').toLowerCase()));
     if (firstEntry) return firstEntry.id;
 
     return nodes[0]?.id || null;
@@ -1043,6 +1044,10 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
     setTestRunSteps([]);
   };
 
+  const handleOpenMonitor = () => {
+    navigate(`/voice-automation/inbound/monitor/${menu._id}`);
+  };
+
   const handleDeleteWorkflow = () => {
     const workflowName = menu.displayName || menu.ivrName || menu.name || 'this IVR';
     const confirmed = window.confirm(
@@ -1092,6 +1097,14 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
             title="Edit Workflow"
           >
             <Edit3 size={16} />
+          </button>
+          <button
+            className="action-btn monitor-btn"
+            onClick={handleOpenMonitor}
+            title="Open Workflow Monitor"
+            aria-label="Open Workflow Monitor"
+          >
+            <Monitor size={16} />
           </button>
           <button
             className="action-btn delete-btn"

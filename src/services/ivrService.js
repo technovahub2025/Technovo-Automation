@@ -210,6 +210,21 @@ export const ivrService = {
   },
 
   /**
+   * Get workflow event log rows for a date range
+   */
+  async getWorkflowEventLog(workflowId, filters = {}) {
+    try {
+      const response = await apiService.get(`/ivr/analytics/workflow/${workflowId}/events`, {
+        params: filters
+      });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to get workflow event log:', error);
+      throw error;
+    }
+  },
+
+  /**
    * Get workflow status
    */
   async getWorkflowStatus(workflowId) {

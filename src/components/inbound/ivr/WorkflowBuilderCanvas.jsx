@@ -17,6 +17,9 @@ import {
   Minimize2,
   Maximize2,
   ScanEye,
+  Clock,
+  CheckCircle,
+  Save,
   Undo2,
   Redo2,
   Play,
@@ -33,6 +36,12 @@ const NODE_TYPES = [
   { type: 'conditional', label: 'Conditional', icon: GitBranch, color: '#ec4899' },
   { type: 'transfer', label: 'Transfer', icon: PhoneCall, color: '#f59e0b' },
   { type: 'voicemail', label: 'Voicemail', icon: Voicemail, color: '#8b5cf6' },
+  { type: 'availability_check', label: 'Availability Check', icon: ScanEye, color: '#0ea5e9' },
+  { type: 'slot_offer', label: 'Slot Offer', icon: Clock, color: '#14b8a6' },
+  { type: 'booking_confirm', label: 'Booking Confirm', icon: CheckCircle, color: '#16a34a' },
+  { type: 'booking_create', label: 'Booking Create', icon: Save, color: '#22c55e' },
+  { type: 'whatsapp_notify', label: 'WhatsApp Notify', icon: MessageSquare, color: '#059669' },
+  { type: 'handoff', label: 'Hand Off', icon: PhoneCall, color: '#f59e0b' },
   { type: 'end', label: 'End', icon: X, color: '#ef4444' }
 ];
 
@@ -105,6 +114,71 @@ const createNodeData = (type) => {
       return {
         condition: 'business_hours',
         promptKey: createUniqueId('conditional')
+      };
+    case 'availability_check':
+      return {
+        promptText: 'Please choose an available slot.',
+        timezone: 'Asia/Kolkata',
+        numDigits: 1,
+        timeoutSeconds: 10,
+        maxRetries: 3,
+        selectionVariable: 'booking.selectedSlotKey',
+        slotDefinitions: [
+          { key: 'slot_1', label: '4:00 PM', startTime: '16:00', endTime: '16:30', capacity: 5, digit: '1', order: 1, active: true },
+          { key: 'slot_2', label: '7:00 PM', startTime: '19:00', endTime: '19:30', capacity: 5, digit: '2', order: 2, active: true }
+        ],
+        promptKey: createUniqueId('availability')
+      };
+    case 'slot_offer':
+      return {
+        promptText: 'The selected slot is full.',
+        offerText: 'Would you like to book the next available slot?',
+        yesDigits: '1',
+        noDigits: '2',
+        timeoutSeconds: 10,
+        maxRetries: 3,
+        suggestedSlotVariable: 'booking.nextAvailableSlotKey',
+        promptKey: createUniqueId('slot_offer')
+      };
+    case 'booking_confirm':
+      return {
+        promptText: 'Would you like to confirm this booking?',
+        yesDigits: '1',
+        noDigits: '2',
+        timeoutSeconds: 10,
+        maxRetries: 3,
+        promptKey: createUniqueId('booking_confirm')
+      };
+    case 'booking_create':
+      return {
+        bookingReferencePrefix: 'BK',
+        tokenPrefix: 'T',
+        customerNameVariable: 'customerName',
+        customerPhoneVariable: 'callerNumber',
+        customerEmailVariable: 'customerEmail',
+        notesVariable: 'notes',
+        preventDuplicates: true,
+        promptKey: createUniqueId('booking_create')
+      };
+    case 'whatsapp_notify':
+      return {
+        customerRecipient: '{{callerNumber}}',
+        adminRecipient: '',
+        customerTemplateName: '',
+        adminTemplateName: '',
+        customerMessageText: 'Your booking has been confirmed.',
+        adminMessageText: 'New booking confirmed.',
+        customerTemplateLanguage: 'en_US',
+        adminTemplateLanguage: 'en_US',
+        promptKey: createUniqueId('whatsapp_notify')
+      };
+    case 'handoff':
+      return {
+        destination: '+1234567890',
+        callerId: '',
+        timeout: 30,
+        announcementText: 'Connecting you now.',
+        promptKey: createUniqueId('handoff')
       };
     default:
       return {
@@ -430,7 +504,7 @@ const WorkflowBuilderCanvas = ({
 
         const sourceNode = currentNodes.find((n) => n.id === edge.source);
         const sourceType = (sourceNode?.type || '').toLowerCase();
-        if (sourceType === 'input' || sourceType === 'conditional') {
+        if (sourceType === 'input' || sourceType === 'conditional' || sourceType === 'availability_check' || sourceType === 'slot_offer' || sourceType === 'booking_confirm' || sourceType === 'booking_create' || sourceType === 'whatsapp_notify') {
           const handle = edge.sourceHandle || '__default__';
           const key = `${edge.source}:${handle}`;
           if (sourceHandleMap.has(key)) {
@@ -469,6 +543,9 @@ const WorkflowBuilderCanvas = ({
       if (nodeType === 'voicemail') {
         addVirtualReference(node.id, asNodeId(data.greetingAudioNodeId || data.greeting_audio_node_id));
       }
+      if (nodeType === 'availability_check' || nodeType === 'slot_offer' || nodeType === 'booking_confirm') {
+        addVirtualReference(node.id, asNodeId(data.promptAudioNodeId || data.prompt_audio_node_id));
+      }
     });
 
     const startNode = currentNodes.find(n => incoming.get(n.id) === 0) || currentNodes[0];
@@ -493,7 +570,7 @@ const WorkflowBuilderCanvas = ({
       }
     });
 
-    const endNodes = currentNodes.filter(n => n.type === 'end');
+    const endNodes = currentNodes.filter(n => (n.type || '').toLowerCase() === 'end');
     if (endNodes.length === 0) {
       errors.push({ code: 'NO_END', message: 'Add at least one end node.' });
     } else if (!endNodes.some(n => reachable.has(n.id))) {
@@ -560,6 +637,24 @@ const WorkflowBuilderCanvas = ({
         const greetingAudioNodeId = asNodeId(data.greetingAudioNodeId || data.greeting_audio_node_id);
         if (greetingAudioNodeId && !audioNodeIds.has(greetingAudioNodeId)) {
           errors.push({ code: 'INVALID_VOICEMAIL_GREETING_REF', message: `Voicemail node ${node.id} greeting reference is not an audio node.`, nodeId: node.id });
+        }
+      }
+
+      if (nodeType === 'availability_check') {
+        const promptText = String(data.promptText || data.prompt_text || '').trim();
+        const slotDefinitions = Array.isArray(data.slotDefinitions) ? data.slotDefinitions : [];
+        if (!promptText) {
+          errors.push({ code: 'MISSING_PROMPT_TEXT', message: `Availability Check node ${node.id} requires prompt text.`, nodeId: node.id });
+        }
+        if (slotDefinitions.length === 0) {
+          errors.push({ code: 'MISSING_SLOT_DEFINITIONS', message: `Availability Check node ${node.id} requires at least one slot definition.`, nodeId: node.id });
+        }
+      }
+
+      if (nodeType === 'slot_offer' || nodeType === 'booking_confirm') {
+        const promptText = String(data.promptText || data.prompt_text || '').trim();
+        if (!promptText) {
+          errors.push({ code: 'MISSING_PROMPT_TEXT', message: `${nodeType} node ${node.id} requires prompt text.`, nodeId: node.id });
         }
       }
     });
@@ -809,6 +904,18 @@ const WorkflowBuilderCanvas = ({
       const existing = edges.filter(edge => edge.source === sourceNode.id).map(edge => edge.sourceHandle);
       sourceHandle = existing.includes('true') && !existing.includes('false') ? 'false' : 'true';
     }
+    if (sourceNode.type === 'availability_check') {
+      const existing = edges.filter((edge) => edge.source === sourceNode.id).map((edge) => edge.sourceHandle);
+      sourceHandle = existing.includes('available') && !existing.includes('full') ? 'full' : 'available';
+    }
+    if (sourceNode.type === 'slot_offer' || sourceNode.type === 'booking_confirm') {
+      const existing = edges.filter((edge) => edge.source === sourceNode.id).map((edge) => edge.sourceHandle);
+      sourceHandle = existing.includes('yes') && !existing.includes('no') ? 'no' : 'yes';
+    }
+    if (sourceNode.type === 'booking_create' || sourceNode.type === 'whatsapp_notify') {
+      const existing = edges.filter((edge) => edge.source === sourceNode.id).map((edge) => edge.sourceHandle);
+      sourceHandle = existing.includes('success') && !existing.includes('failure') ? 'failure' : 'success';
+    }
 
     const candidateEdge = {
       source: connectingFrom,
@@ -884,16 +991,26 @@ const WorkflowBuilderCanvas = ({
       const lineEndX = x2 - arrowOffset;
       const lineEndY = y2;
 
+      const edgeColors = {
+        true: '#16a34a',
+        false: '#dc2626',
+        timeout: '#f59e0b',
+        no_match: '#64748b',
+        available: '#0ea5e9',
+        full: '#7c3aed',
+        yes: '#16a34a',
+        no: '#dc2626',
+        success: '#22c55e',
+        failure: '#ef4444',
+        default: '#94a3b8'
+      };
+
       return {
         id: edge.id,
         source: edge.source,
         target: edge.target,
         label: resolveEdgeLabel(edge),
-        color: edge.sourceHandle === 'true' ? '#16a34a'
-          : edge.sourceHandle === 'false' ? '#dc2626'
-            : edge.sourceHandle === 'timeout' ? '#f59e0b'
-              : edge.sourceHandle === 'no_match' ? '#64748b'
-                : '#94a3b8',
+        color: edgeColors[String(edge.sourceHandle || '').toLowerCase()] || edgeColors.default,
         path: `M ${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${lineEndX} ${lineEndY}`,
         arrowPath: `M ${lineEndX} ${lineEndY} L ${x2} ${y2} M ${x2 - arrowSize} ${y2 - arrowSize / 2} L ${x2} ${y2} L ${x2 - arrowSize} ${y2 + arrowSize / 2}`,
         center: { x: midX, y: (y1 + y2) / 2 }
@@ -928,6 +1045,8 @@ const WorkflowBuilderCanvas = ({
       if (Number.isFinite(asDigit)) return 2 + Math.max(0, Math.min(9, asDigit)) / 10;
       if (normalized === 'timeout') return 3;
       if (normalized === 'no_match') return 4;
+      if (normalized === 'available' || normalized === 'yes' || normalized === 'success') return 0.5;
+      if (normalized === 'full' || normalized === 'no' || normalized === 'failure') return 1.5;
       if (normalized === 'default') return 4.5;
       return 6;
     };
@@ -938,10 +1057,12 @@ const WorkflowBuilderCanvas = ({
       if (normalized === 'audio' || normalized === 'greeting') return 1;
       if (normalized === 'input') return 2;
       if (normalized === 'conditional') return 3;
-      if (normalized === 'transfer') return 4;
-      if (normalized === 'voicemail') return 5;
-      if (normalized === 'end') return 6;
-      return 7;
+      if (normalized === 'availability_check' || normalized === 'slot_offer' || normalized === 'booking_confirm') return 3.5;
+      if (normalized === 'booking_create' || normalized === 'whatsapp_notify') return 4;
+      if (normalized === 'handoff' || normalized === 'transfer') return 5;
+      if (normalized === 'voicemail') return 6;
+      if (normalized === 'end') return 7;
+      return 8;
     };
 
     edges.forEach((edge) => {

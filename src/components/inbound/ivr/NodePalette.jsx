@@ -10,6 +10,12 @@ const NODE_TYPES = [
     { type: 'transfer', label: 'Transfer', icon: '📞', description: 'Transfer to number' },
     { type: 'voicemail', label: 'Voicemail', icon: '📬', description: 'Record message' },
     { type: 'sms', label: 'Send SMS', icon: '💬', description: 'Send text message' },    { type: 'repeat', label: 'Repeat', icon: '🔄', description: 'Repeat menu' },
+    { type: 'availability_check', label: 'Availability Check', icon: '📅', description: 'Check slot availability' },
+    { type: 'slot_offer', label: 'Slot Offer', icon: '🕒', description: 'Offer the next available slot' },
+    { type: 'booking_confirm', label: 'Booking Confirm', icon: '✅', description: 'Confirm booking details' },
+    { type: 'booking_create', label: 'Booking Create', icon: '📝', description: 'Save the booking' },
+    { type: 'whatsapp_notify', label: 'WhatsApp Notify', icon: '💬', description: 'Send booking notifications' },
+    { type: 'handoff', label: 'Hand Off', icon: '📞', description: 'Transfer to human agent' },
     { type: 'end', label: 'End', icon: '🔚', description: 'Hang up call' }
 ];
 

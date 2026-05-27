@@ -37,6 +37,7 @@ const InboundCalls = lazy(() => import("./components/inbound/InboundCalls"));
 const OutboundCall = lazy(() => import("./components/outbound/OutboundCall"));
 const OutboundSchedules = lazy(() => import("./components/outbound/OutboundSchedules"));
 const CallAnalytics = lazy(() => import("./components/inbound/ivr/CallAnalytics"));
+const WorkflowMonitorPage = lazy(() => import("./pages/VoiceAutomation/WorkflowMonitorPage"));
 const VoiceBroadcast = lazy(() => import("./pages/VoiceBroadcast/VoiceBroadcast"));
 const EmailAutomationDashboard = lazy(() => import("./pages/EmailAutomationDashboard"));
 const EmailAutomation = lazy(() => import("./pages/EmailAutomation"));
@@ -179,6 +180,7 @@ function App() {
           />
           <Route path="voice-automation" element={<Navigate to="/voice-automation/inbound" replace />} />
           <Route path="voice-automation/inbound" element={renderLazyRoute(<InboundCalls />, "Loading inbound automation...")} />
+          <Route path="voice-automation/inbound/monitor/:workflowId" element={renderLazyRoute(<WorkflowMonitorPage />, "Loading workflow monitor...")} />
           <Route path="voice-automation/outbound" element={renderLazyRoute(<OutboundCall />, "Loading outbound automation...")} />
           <Route path="voice-automation/outbound/schedules" element={renderLazyRoute(<OutboundSchedules />, "Loading outbound schedules...")} />
           <Route path="voice-automation/history" element={renderLazyRoute(<CallAnalytics />, "Loading call analytics...")} />

@@ -164,6 +164,24 @@
   color: #ef4444;
 }
 
+.ivr-menu-tab .action-btn.monitor-btn {
+  padding: 6px;
+  min-width: 32px;
+  width: 32px;
+  height: 32px;
+  justify-content: center;
+  border-radius: 50%;
+  background: #eff6ff;
+  border-color: #bfdbfe;
+  color: #1d4ed8;
+}
+
+.ivr-menu-tab .action-btn.monitor-btn:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1d4ed8;
+}
+
 .ivr-menu-tab .active-users-indicator {
   display: flex;
   align-items: center;

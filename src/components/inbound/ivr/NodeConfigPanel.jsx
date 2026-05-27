@@ -75,7 +75,35 @@ const buildInitialConfig = (node) => {
     audioUrl: getNodeField(data, 'audioUrl', null, ''),
     audioPublicId: getNodeField(data, 'audioPublicId', 'audio_public_id', getNodeField(data, 'audioAssetId', 'audio_asset_id', '')),
     audioAssetId: getNodeField(data, 'audioAssetId', 'audio_asset_id', ''),
-    promptKey: getNodeField(data, 'promptKey', null, '')
+    promptKey: getNodeField(data, 'promptKey', null, ''),
+    timezone: getNodeField(data, 'timezone', null, 'Asia/Kolkata'),
+    promptText: getNodeField(data, 'promptText', 'prompt_text', ''),
+    offerText: getNodeField(data, 'offerText', 'offer_text', ''),
+    yesDigits: getNodeField(data, 'yesDigits', 'yes_digits', '1'),
+    noDigits: getNodeField(data, 'noDigits', 'no_digits', '2'),
+    slotDefinitionsText: (() => {
+      const raw = getNodeField(data, 'slotDefinitions', 'slot_definitions', getNodeField(data, 'slots', null, []));
+      return typeof raw === 'string' ? raw : JSON.stringify(Array.isArray(raw) ? raw : [], null, 2);
+    })(),
+    selectionVariable: getNodeField(data, 'selectionVariable', 'selection_variable', 'booking.selectedSlotKey'),
+    suggestedSlotVariable: getNodeField(data, 'suggestedSlotVariable', 'suggested_slot_variable', 'booking.nextAvailableSlotKey'),
+    bookingReferencePrefix: getNodeField(data, 'bookingReferencePrefix', 'booking_reference_prefix', 'BK'),
+    tokenPrefix: getNodeField(data, 'tokenPrefix', 'token_prefix', 'T'),
+    customerNameVariable: getNodeField(data, 'customerNameVariable', 'customer_name_variable', 'customerName'),
+    customerPhoneVariable: getNodeField(data, 'customerPhoneVariable', 'customer_phone_variable', 'callerNumber'),
+    customerEmailVariable: getNodeField(data, 'customerEmailVariable', 'customer_email_variable', 'customerEmail'),
+    notesVariable: getNodeField(data, 'notesVariable', 'notes_variable', 'notes'),
+    preventDuplicates: getNodeField(data, 'preventDuplicates', 'prevent_duplicates', true),
+    customerRecipient: getNodeField(data, 'customerRecipient', 'customer_recipient', '{{callerNumber}}'),
+    adminRecipient: getNodeField(data, 'adminRecipient', 'admin_recipient', ''),
+    customerTemplateName: getNodeField(data, 'customerTemplateName', 'customer_template_name', ''),
+    adminTemplateName: getNodeField(data, 'adminTemplateName', 'admin_template_name', ''),
+    customerMessageText: getNodeField(data, 'customerMessageText', 'customer_message_text', ''),
+    adminMessageText: getNodeField(data, 'adminMessageText', 'admin_message_text', ''),
+    customerTemplateLanguage: getNodeField(data, 'customerTemplateLanguage', 'customer_template_language', 'en_US'),
+    adminTemplateLanguage: getNodeField(data, 'adminTemplateLanguage', 'admin_template_language', 'en_US'),
+    announcementText: getNodeField(data, 'announcementText', 'announcement_text', ''),
+    bookingText: getNodeField(data, 'text', null, '')
   };
 };
 
@@ -164,6 +192,19 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
       nextConfig.premiumTiers = toList(nextConfig.premiumTiersText);
       delete nextConfig.unknownCallerValuesText;
       delete nextConfig.premiumTiersText;
+    }
+
+    if (['availability_check', 'slot_offer', 'booking_confirm', 'booking_create', 'whatsapp_notify', 'handoff'].includes(node?.type)) {
+      try {
+        const parsedSlots = String(nextConfig.slotDefinitionsText || '').trim()
+          ? JSON.parse(nextConfig.slotDefinitionsText)
+          : [];
+        nextConfig.slotDefinitions = Array.isArray(parsedSlots) ? parsedSlots : [];
+      } catch (error) {
+        alert(`Slot definitions must be valid JSON: ${error.message}`);
+        return;
+      }
+      delete nextConfig.slotDefinitionsText;
     }
 
     if (node?.type === 'audio' && nextConfig.mode === 'tts') {
@@ -543,10 +584,384 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
     </div>
   );
 
+  const renderBookingConfig = (type) => {
+    const isAvailability = type === 'availability_check';
+    const isOffer = type === 'slot_offer';
+    const isConfirm = type === 'booking_confirm';
+    const isCreate = type === 'booking_create';
+    const isNotify = type === 'whatsapp_notify';
+    const isHandoff = type === 'handoff';
+
+    return (
+      <div className="config-section">
+        <h4>{type.replace('_', ' ')} Configuration</h4>
+
+        {isAvailability && (
+          <>
+            <div className="form-group">
+              <label>Prompt Text</label>
+              <textarea
+                value={config.promptText || ''}
+                onChange={(e) => handleChange('promptText', e.target.value)}
+                rows={3}
+                placeholder="Please choose a time slot."
+              />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Timezone</label>
+                <input
+                  type="text"
+                  value={config.timezone || 'Asia/Kolkata'}
+                  onChange={(e) => handleChange('timezone', e.target.value)}
+                  placeholder="Asia/Kolkata"
+                />
+              </div>
+              <div className="form-group">
+                <label>Digits to Read</label>
+                <input
+                  type="number"
+                  value={config.numDigits || 1}
+                  onChange={(e) => handleChange('numDigits', parseNumber(e.target.value, 1))}
+                  min={1}
+                  max={5}
+                />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Timeout (seconds)</label>
+                <input
+                  type="number"
+                  value={config.timeoutSeconds || 10}
+                  onChange={(e) => handleChange('timeoutSeconds', parseNumber(e.target.value, 10))}
+                  min={1}
+                  max={60}
+                />
+              </div>
+              <div className="form-group">
+                <label>Max Retries</label>
+                <input
+                  type="number"
+                  value={config.maxRetries || 3}
+                  onChange={(e) => handleChange('maxRetries', parseNumber(e.target.value, 3))}
+                  min={1}
+                  max={10}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Selection Variable</label>
+              <input
+                type="text"
+                value={config.selectionVariable || 'booking.selectedSlotKey'}
+                onChange={(e) => handleChange('selectionVariable', e.target.value)}
+                placeholder="booking.selectedSlotKey"
+              />
+            </div>
+            <div className="form-group">
+              <label>Slot Definitions JSON</label>
+              <textarea
+                value={config.slotDefinitionsText || '[]'}
+                onChange={(e) => handleChange('slotDefinitionsText', e.target.value)}
+                rows={8}
+                placeholder='[{"key":"slot_1","label":"4:00 PM","startTime":"16:00","endTime":"16:30","capacity":5,"digit":"1","order":1,"active":true}]'
+              />
+              <small className="form-help">Provide a JSON array of slot objects. Each object may include key, label, startTime, endTime, capacity, digit, order, and active.</small>
+            </div>
+          </>
+        )}
+
+        {isOffer && (
+          <>
+            <div className="form-group">
+              <label>Prompt Text</label>
+              <textarea
+                value={config.promptText || ''}
+                onChange={(e) => handleChange('promptText', e.target.value)}
+                rows={2}
+                placeholder="The selected slot is full."
+              />
+            </div>
+            <div className="form-group">
+              <label>Offer Text</label>
+              <textarea
+                value={config.offerText || ''}
+                onChange={(e) => handleChange('offerText', e.target.value)}
+                rows={2}
+                placeholder="Would you like to book the next available slot?"
+              />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Yes Digits</label>
+                <input
+                  type="text"
+                  value={config.yesDigits || '1'}
+                  onChange={(e) => handleChange('yesDigits', e.target.value)}
+                  placeholder="1"
+                />
+              </div>
+              <div className="form-group">
+                <label>No Digits</label>
+                <input
+                  type="text"
+                  value={config.noDigits || '2'}
+                  onChange={(e) => handleChange('noDigits', e.target.value)}
+                  placeholder="2"
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Suggested Slot Variable</label>
+              <input
+                type="text"
+                value={config.suggestedSlotVariable || 'booking.nextAvailableSlotKey'}
+                onChange={(e) => handleChange('suggestedSlotVariable', e.target.value)}
+                placeholder="booking.nextAvailableSlotKey"
+              />
+            </div>
+          </>
+        )}
+
+        {isConfirm && (
+          <>
+            <div className="form-group">
+              <label>Prompt Text</label>
+              <textarea
+                value={config.promptText || ''}
+                onChange={(e) => handleChange('promptText', e.target.value)}
+                rows={2}
+                placeholder="Would you like to confirm this booking?"
+              />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Yes Digits</label>
+                <input
+                  type="text"
+                  value={config.yesDigits || '1'}
+                  onChange={(e) => handleChange('yesDigits', e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>No Digits</label>
+                <input
+                  type="text"
+                  value={config.noDigits || '2'}
+                  onChange={(e) => handleChange('noDigits', e.target.value)}
+                />
+              </div>
+            </div>
+          </>
+        )}
+
+        {isCreate && (
+          <>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Booking Reference Prefix</label>
+                <input
+                  type="text"
+                  value={config.bookingReferencePrefix || 'BK'}
+                  onChange={(e) => handleChange('bookingReferencePrefix', e.target.value)}
+                  placeholder="BK"
+                />
+              </div>
+              <div className="form-group">
+                <label>Token Prefix</label>
+                <input
+                  type="text"
+                  value={config.tokenPrefix || 'T'}
+                  onChange={(e) => handleChange('tokenPrefix', e.target.value)}
+                  placeholder="T"
+                />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Customer Name Variable</label>
+                <input
+                  type="text"
+                  value={config.customerNameVariable || 'customerName'}
+                  onChange={(e) => handleChange('customerNameVariable', e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>Customer Phone Variable</label>
+                <input
+                  type="text"
+                  value={config.customerPhoneVariable || 'callerNumber'}
+                  onChange={(e) => handleChange('customerPhoneVariable', e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Customer Email Variable</label>
+                <input
+                  type="text"
+                  value={config.customerEmailVariable || 'customerEmail'}
+                  onChange={(e) => handleChange('customerEmailVariable', e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>Notes Variable</label>
+                <input
+                  type="text"
+                  value={config.notesVariable || 'notes'}
+                  onChange={(e) => handleChange('notesVariable', e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Prevent Duplicate Booking</label>
+              <select
+                value={config.preventDuplicates ? 'yes' : 'no'}
+                onChange={(e) => handleChange('preventDuplicates', e.target.value === 'yes')}
+              >
+                <option value="yes">Enabled</option>
+                <option value="no">Disabled</option>
+              </select>
+            </div>
+          </>
+        )}
+
+        {isNotify && (
+          <>
+            <div className="form-group">
+              <label>Customer Recipient</label>
+              <input
+                type="text"
+                value={config.customerRecipient || '{{callerNumber}}'}
+                onChange={(e) => handleChange('customerRecipient', e.target.value)}
+                placeholder="{{callerNumber}}"
+              />
+            </div>
+            <div className="form-group">
+              <label>Admin Recipient</label>
+              <input
+                type="text"
+                value={config.adminRecipient || ''}
+                onChange={(e) => handleChange('adminRecipient', e.target.value)}
+                placeholder="+1234567890"
+              />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Customer Template Name</label>
+                <input
+                  type="text"
+                  value={config.customerTemplateName || ''}
+                  onChange={(e) => handleChange('customerTemplateName', e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>Customer Language</label>
+                <input
+                  type="text"
+                  value={config.customerTemplateLanguage || 'en_US'}
+                  onChange={(e) => handleChange('customerTemplateLanguage', e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Customer Message Text</label>
+              <textarea
+                value={config.customerMessageText || ''}
+                onChange={(e) => handleChange('customerMessageText', e.target.value)}
+                rows={2}
+                placeholder="Your booking has been confirmed."
+              />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Admin Template Name</label>
+                <input
+                  type="text"
+                  value={config.adminTemplateName || ''}
+                  onChange={(e) => handleChange('adminTemplateName', e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>Admin Language</label>
+                <input
+                  type="text"
+                  value={config.adminTemplateLanguage || 'en_US'}
+                  onChange={(e) => handleChange('adminTemplateLanguage', e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Admin Message Text</label>
+              <textarea
+                value={config.adminMessageText || ''}
+                onChange={(e) => handleChange('adminMessageText', e.target.value)}
+                rows={2}
+                placeholder="New booking confirmed."
+              />
+            </div>
+          </>
+        )}
+
+        {isHandoff && (
+          <>
+            <div className="form-group">
+              <label>Destination Number</label>
+              <input
+                type="tel"
+                value={config.destination || ''}
+                onChange={(e) => handleChange('destination', e.target.value)}
+                placeholder="+1234567890"
+              />
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label>Caller ID</label>
+                <input
+                  type="text"
+                  value={config.callerId || ''}
+                  onChange={(e) => handleChange('callerId', e.target.value)}
+                />
+              </div>
+              <div className="form-group">
+                <label>Timeout (seconds)</label>
+                <input
+                  type="number"
+                  value={config.timeout || 30}
+                  onChange={(e) => handleChange('timeout', parseNumber(e.target.value, 30))}
+                  min={10}
+                  max={120}
+                />
+              </div>
+            </div>
+            <div className="form-group">
+              <label>Announcement Text</label>
+              <textarea
+                value={config.announcementText || ''}
+                onChange={(e) => handleChange('announcementText', e.target.value)}
+                rows={2}
+                placeholder="Connecting you now."
+              />
+            </div>
+          </>
+        )}
+
+      </div>
+    );
+  };
+
   const renderConfigByNodeType = () => {
     switch (node?.type) {
       case 'audio':
         return renderAudioConfig();
+      case 'availability_check':
+      case 'slot_offer':
+      case 'booking_confirm':
+      case 'booking_create':
+      case 'whatsapp_notify':
+      case 'handoff':
+        return renderBookingConfig(node?.type);
       case 'input':
         return (
           <div className="config-section">
