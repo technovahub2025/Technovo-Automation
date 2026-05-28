@@ -567,11 +567,12 @@
 
 .workflow-monitor-table-wrap {
   overflow-x: auto;
-  overflow-y: hidden;
+  overflow-y: auto;
   border-radius: 18px;
   border: 1px solid #e2e8f0;
   flex: 1;
   min-height: 360px;
+  max-height: 620px;
   scrollbar-gutter: stable both-edges;
 }
 
