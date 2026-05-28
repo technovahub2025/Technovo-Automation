@@ -649,12 +649,35 @@ const WorkflowBuilderCanvas = ({
         if (slotDefinitions.length === 0) {
           errors.push({ code: 'MISSING_SLOT_DEFINITIONS', message: `Availability Check node ${node.id} requires at least one slot definition.`, nodeId: node.id });
         }
+        if (!currentEdges.some((edge) => edge.source === node.id && edge.sourceHandle === 'available')) {
+          errors.push({ code: 'MISSING_AVAILABLE_BRANCH', message: `Availability Check node ${node.id} is missing available branch.`, nodeId: node.id });
+        }
+        if (!currentEdges.some((edge) => edge.source === node.id && edge.sourceHandle === 'full')) {
+          errors.push({ code: 'MISSING_FULL_BRANCH', message: `Availability Check node ${node.id} is missing full branch.`, nodeId: node.id });
+        }
       }
 
       if (nodeType === 'slot_offer' || nodeType === 'booking_confirm') {
         const promptText = String(data.promptText || data.prompt_text || '').trim();
         if (!promptText) {
           errors.push({ code: 'MISSING_PROMPT_TEXT', message: `${nodeType} node ${node.id} requires prompt text.`, nodeId: node.id });
+        }
+        const requiredYesHandle = 'yes';
+        const requiredNoHandle = 'no';
+        if (!currentEdges.some((edge) => edge.source === node.id && edge.sourceHandle === requiredYesHandle)) {
+          errors.push({ code: 'MISSING_YES_BRANCH', message: `${nodeType} node ${node.id} is missing yes branch.`, nodeId: node.id });
+        }
+        if (!currentEdges.some((edge) => edge.source === node.id && edge.sourceHandle === requiredNoHandle)) {
+          errors.push({ code: 'MISSING_NO_BRANCH', message: `${nodeType} node ${node.id} is missing no branch.`, nodeId: node.id });
+        }
+      }
+
+      if (nodeType === 'booking_create' || nodeType === 'whatsapp_notify') {
+        if (!currentEdges.some((edge) => edge.source === node.id && edge.sourceHandle === 'success')) {
+          errors.push({ code: 'MISSING_SUCCESS_BRANCH', message: `${nodeType} node ${node.id} is missing success branch.`, nodeId: node.id });
+        }
+        if (!currentEdges.some((edge) => edge.source === node.id && edge.sourceHandle === 'failure')) {
+          errors.push({ code: 'MISSING_FAILURE_BRANCH', message: `${nodeType} node ${node.id} is missing failure branch.`, nodeId: node.id });
         }
       }
     });
