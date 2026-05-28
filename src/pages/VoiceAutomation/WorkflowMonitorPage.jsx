@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   AlertTriangle,
@@ -15,6 +16,7 @@ import {
   Layers3,
   ListOrdered,
   MessageCircle,
+  MoreVertical,
   PhoneCall,
   Route,
   Search,
@@ -208,10 +210,12 @@ const WorkflowMonitorPage = () => {
   const [sortOrder, setSortOrder] = useState('newest');
   const [startDate, setStartDate] = useState(getTodayInputValue());
   const [endDate, setEndDate] = useState(getTodayInputValue());
-  const [expandedRows, setExpandedRows] = useState(() => new Set());
   const [lastSyncedAt, setLastSyncedAt] = useState(null);
   const [openPanels, setOpenPanels] = useState({});
   const [isFilterPanelOpen, setIsFilterPanelOpen] = useState(false);
+  const [isWorkflowDrawerOpen, setIsWorkflowDrawerOpen] = useState(false);
+  const [selectedRowKey, setSelectedRowKey] = useState('');
+  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const refreshTimerRef = useRef(null);
   const filterButtonRef = useRef(null);
   const filterPanelRef = useRef(null);
@@ -789,17 +793,23 @@ const WorkflowMonitorPage = () => {
     if (!hasQueueCapability && queueFilter !== 'all') setQueueFilter('all');
   }, [hasQueueCapability, queueFilter]);
 
-  const toggleExpandedRow = useCallback((callSid) => {
-    if (!callSid) return;
-    setExpandedRows((prev) => {
-      const next = new Set(prev);
-      if (next.has(callSid)) {
-        next.delete(callSid);
-      } else {
-        next.add(callSid);
-      }
-      return next;
-    });
+  const openRowDrawer = useCallback((row) => {
+    const rowKey = getRowKey(row);
+    if (!rowKey) return;
+    setSelectedRowKey(rowKey);
+    setIsDrawerOpen(true);
+  }, []);
+
+  const closeRowDrawer = useCallback(() => {
+    setIsDrawerOpen(false);
+  }, []);
+
+  const openWorkflowDrawer = useCallback(() => {
+    setIsWorkflowDrawerOpen((prev) => !prev);
+  }, []);
+
+  const closeWorkflowDrawer = useCallback(() => {
+    setIsWorkflowDrawerOpen(false);
   }, []);
 
   const togglePanel = useCallback((panelKey) => {
@@ -869,6 +879,41 @@ const WorkflowMonitorPage = () => {
 
     return <span>{value || '-'}</span>;
   };
+
+  const selectedRow = useMemo(() => {
+    if (!selectedRowKey) return null;
+    return mergedRows.find((row) => getRowKey(row) === selectedRowKey) || null;
+  }, [mergedRows, selectedRowKey]);
+
+  useEffect(() => {
+    if (!selectedRowKey) return;
+    if (!mergedRows.some((row) => getRowKey(row) === selectedRowKey)) {
+      setIsDrawerOpen(false);
+    }
+  }, [mergedRows, selectedRowKey]);
+
+  useEffect(() => {
+    if (!isDrawerOpen && !isWorkflowDrawerOpen) return undefined;
+
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape') {
+        closeRowDrawer();
+        closeWorkflowDrawer();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [closeRowDrawer, closeWorkflowDrawer, isDrawerOpen, isWorkflowDrawerOpen]);
+
+  useEffect(() => {
+    if (!isDrawerOpen && !isWorkflowDrawerOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [isDrawerOpen, isWorkflowDrawerOpen]);
 
   const renderCapabilityPanelBody = (capabilityKey) => {
     const nodes = capabilityState.capabilityMap?.[capabilityKey]?.nodes || [];
@@ -1320,6 +1365,18 @@ const WorkflowMonitorPage = () => {
               <span className="workflow-monitor-live__dot" />
               {connected ? 'Socket live' : 'Socket offline'}
             </div>
+            <button
+              type="button"
+              className="workflow-monitor-hero__details-button"
+              onClick={openWorkflowDrawer}
+              aria-haspopup="dialog"
+              aria-expanded={isWorkflowDrawerOpen}
+              aria-controls="workflow-monitor-details-drawer"
+              title="Open workflow details"
+            >
+              <MoreVertical size={16} />
+              <span>Details</span>
+            </button>
           </div>
         </header>
 
@@ -1581,11 +1638,11 @@ const WorkflowMonitorPage = () => {
                 <table className="workflow-monitor-table">
                   <thead>
                     <tr>
-                      <th aria-label="Expand" />
                       <th className="workflow-monitor-table__serial">S.No</th>
                       {visibleColumns.map((column) => (
                         <th key={column.key}>{column.label}</th>
                       ))}
+                      <th className="workflow-monitor-table__actions-header">Action</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1600,52 +1657,25 @@ const WorkflowMonitorPage = () => {
                       </tr>
                     ) : visibleRows.map((row, index) => {
                       const rowKey = getRowKey(row);
-                      const isExpanded = expandedRows.has(rowKey);
-                      const rowActions = getVisibleRowTags(row, capabilityState);
 
                       return (
-                        <React.Fragment key={rowKey}>
-                          <tr className={`workflow-monitor-row ${normalizeStatus(row.callStatus) === 'running' ? 'is-live' : ''}`}>
-                            <td>
-                              <button
-                                type="button"
-                                className="workflow-monitor-row__expand"
-                                onClick={() => toggleExpandedRow(rowKey)}
-                                aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
-                              >
-                                {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
-                              </button>
-                            </td>
-                            <td className="workflow-monitor-table__serial">{index + 1}</td>
-                            {visibleColumns.map((column) => (
-                              <td key={`${rowKey}-${column.key}`}>{renderCell(row, column)}</td>
-                            ))}
-                          </tr>
-                          {isExpanded ? (
-                            <tr className="workflow-monitor-row__detail is-open">
-                              <td colSpan={visibleColumns.length + 2}>
-                                <div className="workflow-monitor-row__detail-inner">
-                                  <div className="workflow-monitor-row__detail-head">
-                                    <div>
-                                      <strong>{row.callerNumber || '-'}</strong>
-                                      <span>{row.visitedPathLabel || 'No visited path yet'}</span>
-                                    </div>
-                                    {rowActions.length > 0 ? (
-                                      <div className="workflow-monitor-row__detail-tags">
-                                        {rowActions.map((tag) => (
-                                          <span key={`${rowKey}-${tag}`} className="workflow-monitor-tag">
-                                            {tag.replace(/_/g, ' ')}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    ) : null}
-                                  </div>
-                                  {renderDetailSection(row)}
-                                </div>
-                              </td>
-                            </tr>
-                          ) : null}
-                        </React.Fragment>
+                        <tr className={`workflow-monitor-row ${normalizeStatus(row.callStatus) === 'running' ? 'is-live' : ''}`} key={rowKey}>
+                          <td className="workflow-monitor-table__serial">{index + 1}</td>
+                          {visibleColumns.map((column) => (
+                            <td key={`${rowKey}-${column.key}`}>{renderCell(row, column)}</td>
+                          ))}
+                          <td className="workflow-monitor-table__actions">
+                            <button
+                              type="button"
+                              className="workflow-monitor-row__action"
+                              onClick={() => openRowDrawer(row)}
+                              aria-label={`Open actions for ${row.callerNumber || 'call row'}`}
+                              title="Open call details"
+                            >
+                              <MoreVertical size={16} />
+                            </button>
+                          </td>
+                        </tr>
                       );
                     })}
                   </tbody>
@@ -1654,40 +1684,132 @@ const WorkflowMonitorPage = () => {
             </div>
           </main>
 
-          <aside className="workflow-monitor-sidebar">
-            {sidebarPanels.map((panel) => {
-              const Icon = panel.icon;
-              const isOpen = openPanels[panel.key] ?? false;
+        </section>
 
-              return (
-                <section
-                  className={`workflow-monitor-panel ${isOpen ? 'is-open' : 'is-collapsed'}`}
-                  key={panel.key}
+        {isWorkflowDrawerOpen ? createPortal(
+          <div
+            className="workflow-monitor-details-drawer-overlay"
+            role="presentation"
+            onClick={closeWorkflowDrawer}
+          >
+            <aside
+              className="workflow-monitor-details-drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="workflow-monitor-details-drawer-title"
+              id="workflow-monitor-details-drawer"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="workflow-monitor-details-drawer__header">
+                <div className="workflow-monitor-details-drawer__title">
+                  <div className="workflow-monitor-details-drawer__eyebrow">
+                    <Layers3 size={13} />
+                    <span>Workflow details</span>
+                  </div>
+                  <h2 id="workflow-monitor-details-drawer-title">{resolveWorkflowName(workflow || {})}</h2>
+                  <p>{chromeState.heroSubtitle}</p>
+                </div>
+                <button
+                  type="button"
+                  className="workflow-monitor-details-drawer__close"
+                  onClick={closeWorkflowDrawer}
+                  aria-label="Close workflow details"
                 >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="workflow-monitor-details-drawer__body">
+                {sidebarPanels.map((panel) => {
+                  const Icon = panel.icon;
+                  const isOpen = openPanels[panel.key] ?? false;
+
+                  return (
+                    <section
+                      className={`workflow-monitor-panel ${isOpen ? 'is-open' : 'is-collapsed'}`}
+                      key={panel.key}
+                    >
+                      <button
+                        type="button"
+                        className="workflow-monitor-panel__header workflow-monitor-panel__header--button"
+                        onClick={() => togglePanel(panel.key)}
+                        aria-expanded={isOpen}
+                      >
+                        <span className="workflow-monitor-panel__header-copy">
+                          <Icon size={16} />
+                          <span>{panel.label}</span>
+                        </span>
+                        <span className="workflow-monitor-panel__chevron">
+                          {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                        </span>
+                      </button>
+                      {isOpen ? (
+                        <div className="workflow-monitor-panel__body">
+                          {panel.body}
+                        </div>
+                      ) : null}
+                    </section>
+                  );
+                })}
+              </div>
+            </aside>
+          </div>,
+          document.body
+        ) : null}
+
+        {isDrawerOpen && selectedRow ? createPortal(
+          <div className="workflow-monitor-drawer-overlay" role="presentation" onClick={closeRowDrawer}>
+            <aside
+              className="workflow-monitor-drawer"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Call details drawer"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="workflow-monitor-drawer__header">
+                <div className="workflow-monitor-drawer__title">
+                  <div className="workflow-monitor-drawer__eyebrow">
+                    <Split size={13} />
+                    <span>Call details</span>
+                  </div>
+                  <h2>{selectedRow.callerNumber || 'Unknown caller'}</h2>
+                  <p>{selectedRow.visitedPathLabel || selectedRow.currentNodeLabel || 'Call execution details'}</p>
+                </div>
+                <div className="workflow-monitor-drawer__actions">
+                  <span className={`workflow-monitor-drawer__status workflow-monitor-drawer__status--${normalizeStatus(selectedRow.callStatus)}`}>
+                    {String(selectedRow.callStatus || 'unknown').replace(/_/g, ' ')}
+                  </span>
                   <button
                     type="button"
-                    className="workflow-monitor-panel__header workflow-monitor-panel__header--button"
-                    onClick={() => togglePanel(panel.key)}
-                    aria-expanded={isOpen}
+                    className="workflow-monitor-drawer__close"
+                    onClick={closeRowDrawer}
+                    aria-label="Close call details"
                   >
-                    <span className="workflow-monitor-panel__header-copy">
-                      <Icon size={16} />
-                      <span>{panel.label}</span>
-                    </span>
-                    <span className="workflow-monitor-panel__chevron">
-                      {isOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                    </span>
+                    <X size={16} />
                   </button>
-                  {isOpen ? (
-                    <div className="workflow-monitor-panel__body">
-                      {panel.body}
-                    </div>
-                  ) : null}
-                </section>
-              );
-            })}
-          </aside>
-        </section>
+                </div>
+              </div>
+
+              <div className="workflow-monitor-drawer__body">
+                <div className="workflow-monitor-row__detail-head workflow-monitor-row__detail-head--drawer">
+                  <div>
+                    <strong>{selectedRow.callerNumber || '-'}</strong>
+                    <span>{selectedRow.visitedPathLabel || 'No visited path yet'}</span>
+                  </div>
+                  <div className="workflow-monitor-row__detail-tags">
+                    {getVisibleRowTags(selectedRow, capabilityState).map((tag) => (
+                      <span key={`drawer-${selectedRowKey}-${tag}`} className="workflow-monitor-tag">
+                        {tag.replace(/_/g, ' ')}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                {renderDetailSection(selectedRow)}
+              </div>
+            </aside>
+          </div>,
+          document.body
+        ) : null}
       </div>
     </div>
   );
