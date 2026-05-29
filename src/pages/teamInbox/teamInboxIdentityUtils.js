@@ -53,11 +53,17 @@ export const doesConversationMatchSearch = ({
   const normalizedSearchTerm = normalizeLookupText(searchTerm);
   if (!normalizedSearchTerm) return true;
 
+  const sidebarSearchText = normalizeLookupText(conversation?.sidebarSearchText || '');
+  if (sidebarSearchText && sidebarSearchText.includes(normalizedSearchTerm)) {
+    return true;
+  }
+
   const displayName = normalizeLookupText(getConversationDisplayName?.(conversation) || '');
   const rawName = normalizeLookupText(
     conversation?.contactId?.name || conversation?.contactName || ''
   );
   const contactPhone = getConversationPhoneValue(conversation);
+  const contactPhoneDigits = normalizePhone(contactPhone);
   const previewText = normalizeLookupText(conversation?.lastMessagePreviewText || '');
   const normalizedPhoneQuery = normalizePhone(searchTerm);
   const phoneKeys = getPhoneLookupKeys(contactPhone);
@@ -67,6 +73,7 @@ export const doesConversationMatchSearch = ({
     rawName.includes(normalizedSearchTerm) ||
     previewText.includes(normalizedSearchTerm) ||
     contactPhone.includes(String(searchTerm || '').trim()) ||
+    (Boolean(normalizedPhoneQuery) && contactPhoneDigits.includes(normalizedPhoneQuery)) ||
     (Boolean(normalizedPhoneQuery) &&
       phoneKeys.some(
         (key) => key.includes(normalizedPhoneQuery) || normalizedPhoneQuery.includes(key)

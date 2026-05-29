@@ -17,6 +17,9 @@ const DEFAULT_CONVERSATION_PAGE_LIMIT = 20;
 const DEFAULT_MESSAGES_PAGE_LIMIT = 20;
 const CONVERSATION_LIST_LOADING_TIMEOUT_MS = 8000;
 const VALID_CONVERSATION_FILTERS = new Set(['all', 'unread', 'read']);
+const READ_REQUEST_DEDUPE_MS = 8000;
+const pendingReadConversationIds = new Set();
+const recentReadConversationAt = new Map();
 
 const isTeamInboxTraceEnabled = () => {
   if (typeof window === 'undefined') return false;
@@ -39,6 +42,7 @@ const recordInboxDebugEvent = (setInboxDebugInfo, lastEvent, extra = {}) => {
     lastEvent: String(lastEvent || 'idle').trim() || 'idle',
     lastEventAt: new Date().toISOString(),
     source: String(extra?.source || 'data').trim() || 'data',
+    reason: String(extra?.reason || '').trim(),
     conversationId: String(extra?.conversationId || '').trim(),
     messageId: String(extra?.messageId || '').trim(),
     details: String(extra?.details || '').trim()
@@ -68,6 +72,18 @@ const normalizeMessagePageMeta = (meta = {}, fallbackLimit = DEFAULT_MESSAGES_PA
   nextCursor: String(meta?.nextCursor || '').trim() || null
 });
 
+const getOldestMessageCursor = (messages = []) => {
+  if (!Array.isArray(messages) || messages.length === 0) return null;
+  const oldestMessage = messages.find(Boolean);
+  return String(oldestMessage?._id || oldestMessage?.id || '').trim() || null;
+};
+
+const trimMessagesToPage = (messages = [], limit = DEFAULT_MESSAGES_PAGE_LIMIT) => {
+  if (!Array.isArray(messages)) return [];
+  const safeLimit = Math.max(1, Number(limit || DEFAULT_MESSAGES_PAGE_LIMIT) || DEFAULT_MESSAGES_PAGE_LIMIT);
+  return messages.length > safeLimit ? messages.slice(messages.length - safeLimit) : messages;
+};
+
 const normalizeConversationListFilter = (value = 'all') => {
   const normalizedValue = String(value || '').trim().toLowerCase();
   return VALID_CONVERSATION_FILTERS.has(normalizedValue) ? normalizedValue : 'all';
@@ -76,17 +92,26 @@ const normalizeConversationListFilter = (value = 'all') => {
 const buildConversationListQuerySignature = ({
   search = '',
   filter = 'all',
+  view = 'all',
+  status = '',
+  assignedTo = '',
   limit = DEFAULT_CONVERSATION_PAGE_LIMIT
 }) =>
   [
     String(search || '').trim().toLowerCase(),
     normalizeConversationListFilter(filter),
+    String(view || '').trim().toLowerCase(),
+    String(status || '').trim().toLowerCase(),
+    String(assignedTo || '').trim().toLowerCase(),
     Math.max(1, Math.min(Number(limit || DEFAULT_CONVERSATION_PAGE_LIMIT) || DEFAULT_CONVERSATION_PAGE_LIMIT, 200))
   ].join('::');
 
 export const createInboxDataActions = ({
   currentUserId,
+  currentUserDisplayName,
+  currentUserInternalRole,
   normalizeConversation,
+  selectedWhatsAppState,
   setLoading,
   setConversations,
   setMessages,
@@ -96,11 +121,14 @@ export const createInboxDataActions = ({
   setThreadCacheInfo,
   setInboxDebugInfo,
   selectedConversation,
+  messages,
   sendingMessage,
   messageInput,
   setSendingMessage,
   setMessageInput,
-  appendMessageUnique,
+  upsertMessage,
+  patchMessage,
+  removeMessage,
   getConversationIdValue,
   conversationId,
   isRealName,
@@ -118,7 +146,6 @@ export const createInboxDataActions = ({
   threadCacheDisplaySourceRef,
   threadFreshSyncAtRef,
   setConversationPageMeta,
-  setSidebarRefreshing,
   notifyActionFeedback,
   confirmAction
 }) => {
@@ -140,6 +167,165 @@ export const createInboxDataActions = ({
     return false;
   };
 
+  const normalizedCurrentUserRole = String(currentUserInternalRole || '').trim().toLowerCase();
+  const currentUserSenderRole = normalizedCurrentUserRole === 'agent' ? 'agent' : 'admin';
+  const currentUserSenderName =
+    String(currentUserDisplayName || '').trim() ||
+    (currentUserSenderRole === 'admin' ? 'Admin' : 'Agent');
+  const currentUserSenderMeta = {
+    senderId: String(currentUserId || '').trim() || null,
+    senderRole: currentUserSenderRole,
+    senderName: currentUserSenderName
+  };
+
+  const canSendFreeformMessage = () => {
+    if (selectedWhatsAppState?.optedOut) {
+      return {
+        ok: false,
+        error: 'This contact has opted out. Restore consent before sending a WhatsApp message.'
+      };
+    }
+
+    if (!selectedWhatsAppState?.freeformAllowed) {
+      return {
+        ok: false,
+        error:
+          'The 24-hour window is closed. Use an approved template to continue this chat.'
+      };
+    }
+
+    return { ok: true };
+  };
+
+  const getMessageIdentityKeys = (message = {}) => {
+    const keys = [];
+    const messageId = String(message?._id || message?.id || '').trim();
+    if (messageId) keys.push(messageId);
+
+    const whatsappMessageId = String(message?.whatsappMessageId || '').trim();
+    if (whatsappMessageId) keys.push(whatsappMessageId);
+
+    const pipelineRequestId = String(message?.mediaPipelineRequestId || '').trim();
+    if (pipelineRequestId) keys.push(pipelineRequestId);
+
+    return Array.from(new Set(keys.filter(Boolean)));
+  };
+
+  const getActiveThreadCache = () => {
+    const activeConversationId = String(activeMessagesConversationIdRef?.current || '').trim();
+    if (!activeConversationId || !messageCacheRef?.current) return null;
+
+    const cachedMessages = messageCacheRef.current.get(activeConversationId);
+    return Array.isArray(cachedMessages) ? cachedMessages : null;
+  };
+
+  const syncActiveThreadCache = (updater) => {
+    const activeConversationId = String(activeMessagesConversationIdRef?.current || '').trim();
+    const currentCache = getActiveThreadCache();
+    if (!activeConversationId || !Array.isArray(currentCache) || typeof updater !== 'function') {
+      return false;
+    }
+
+    const nextCache = updater(currentCache.slice());
+    if (!Array.isArray(nextCache)) return false;
+
+    messageCacheRef.current.set(activeConversationId, nextCache);
+    return true;
+  };
+
+  const upsertMessageIntoCache = (incomingMessage = {}) => {
+    const normalizedMessage = incomingMessage && typeof incomingMessage === 'object' ? incomingMessage : null;
+    if (!normalizedMessage) return false;
+
+    return syncActiveThreadCache((currentCache) => {
+      const identityKeys = getMessageIdentityKeys(normalizedMessage);
+      if (!identityKeys.length) {
+        return [...currentCache, normalizedMessage];
+      }
+
+      let matchedIndex = -1;
+      for (let index = 0; index < currentCache.length; index += 1) {
+        const message = currentCache[index];
+        const messageKeys = getMessageIdentityKeys(message);
+        if (messageKeys.some((key) => identityKeys.includes(key))) {
+          matchedIndex = index;
+          break;
+        }
+      }
+
+      if (matchedIndex >= 0) {
+        currentCache[matchedIndex] = {
+          ...mergeMessagePreservingReplyContext(currentCache[matchedIndex], normalizedMessage)
+        };
+        return currentCache;
+      }
+
+      return [...currentCache, normalizedMessage];
+    });
+  };
+
+  const patchMessageIntoCache = (messageIdentity = '', patch = {}) => {
+    const normalizedIdentity = String(messageIdentity || '').trim();
+    if (!normalizedIdentity) return false;
+
+    return syncActiveThreadCache((currentCache) => {
+      let matchedIndex = -1;
+      for (let index = 0; index < currentCache.length; index += 1) {
+        const message = currentCache[index];
+        const messageKeys = getMessageIdentityKeys(message);
+        if (messageKeys.includes(normalizedIdentity)) {
+          matchedIndex = index;
+          break;
+        }
+      }
+
+      if (matchedIndex < 0) return currentCache;
+
+      const existingMessage = currentCache[matchedIndex];
+      currentCache[matchedIndex] =
+        typeof patch === 'function'
+          ? patch(existingMessage)
+          : {
+              ...existingMessage,
+              ...(patch || {})
+            };
+      return currentCache;
+    });
+  };
+
+  const removeMessageFromCache = (messageIdentity = '') => {
+    const normalizedIdentity = String(messageIdentity || '').trim();
+    if (!normalizedIdentity) return false;
+
+    return syncActiveThreadCache((currentCache) =>
+      currentCache.filter((message) => {
+        const messageKeys = getMessageIdentityKeys(message);
+        return !messageKeys.includes(normalizedIdentity);
+      })
+    );
+  };
+
+  const updateMessageLocally = (messageIdentity, nextValue) => {
+    if (typeof patchMessage === 'function') {
+      patchMessage(messageIdentity, nextValue);
+    }
+    return patchMessageIntoCache(messageIdentity, nextValue);
+  };
+
+  const upsertMessageLocally = (message) => {
+    if (typeof upsertMessage === 'function') {
+      upsertMessage(message);
+    }
+    return upsertMessageIntoCache(message);
+  };
+
+  const removeMessageLocally = (messageIdentity) => {
+    if (typeof removeMessage === 'function') {
+      removeMessage(messageIdentity);
+    }
+    return removeMessageFromCache(messageIdentity);
+  };
+
   const normalizeConversationPageMeta = (meta = {}, querySignature = '') => {
     const limit = Number(
       meta?.limit || conversationPageMetaRef?.current?.limit || DEFAULT_CONVERSATION_PAGE_LIMIT
@@ -149,6 +335,7 @@ export const createInboxDataActions = ({
         Number.isFinite(limit) && limit > 0 ? Math.min(limit, 200) : DEFAULT_CONVERSATION_PAGE_LIMIT,
       hasMore: Boolean(meta?.hasMore),
       nextCursor: String(meta?.nextCursor || '').trim() || null,
+      previousCursor: String(meta?.previousCursor || '').trim() || null,
       exhausted: Boolean(meta?.exhausted),
       loaded: true,
       querySignature: String(querySignature || '').trim()
@@ -166,9 +353,15 @@ export const createInboxDataActions = ({
   const loadConversations = async ({
     silent = false,
     append = false,
+    cursor = '',
     limit,
     search = '',
-    filter = 'all'
+    filter = 'all',
+    view = 'all',
+    status = '',
+    assignedTo = '',
+    reason = 'unknown',
+    skipCache = false
   } = {}) => {
     let requestId = 0;
     let requestKey = '';
@@ -187,14 +380,20 @@ export const createInboxDataActions = ({
     try {
       const normalizedSearch = String(search || '').trim();
       const normalizedFilter = normalizeConversationListFilter(filter);
+      const normalizedView = String(view || '').trim().toLowerCase() || 'all';
+      const normalizedStatus = String(status || '').trim().toLowerCase();
       const queryLimit =
         Number(limit || conversationPageMetaRef?.current?.limit || DEFAULT_CONVERSATION_PAGE_LIMIT) ||
         DEFAULT_CONVERSATION_PAGE_LIMIT;
       const querySignature = buildConversationListQuerySignature({
         search: normalizedSearch,
         filter: normalizedFilter,
+        view: normalizedView,
+        status: normalizedStatus,
+        assignedTo,
         limit: queryLimit
       });
+      const normalizedReason = String(reason || 'unknown').trim() || 'unknown';
       const pageMeta = conversationPageMetaRef?.current || {};
       previousPageMeta = {
         ...(pageMeta || {})
@@ -205,9 +404,6 @@ export const createInboxDataActions = ({
       const existingLoadPromise = conversationLoadPromiseMapRef?.current?.get(requestKey);
 
       if (existingLoadPromise) {
-        if (silent && typeof setSidebarRefreshing === 'function') {
-          setSidebarRefreshing(true);
-        }
         if (!silent) setLoading(true);
         return existingLoadPromise;
       }
@@ -220,9 +416,6 @@ export const createInboxDataActions = ({
         return false;
       }
 
-      if (silent && typeof setSidebarRefreshing === 'function') {
-        setSidebarRefreshing(true);
-      }
       if (!silent) setLoading(true);
       if (!append) {
         const pendingMeta = {
@@ -230,6 +423,7 @@ export const createInboxDataActions = ({
             Math.max(1, Math.min(queryLimit, 200)) || DEFAULT_CONVERSATION_PAGE_LIMIT,
           hasMore: false,
           nextCursor: null,
+          previousCursor: null,
           loaded: false,
           querySignature
         };
@@ -245,21 +439,41 @@ export const createInboxDataActions = ({
       }
 
       const loadPromise = (async () => {
-        const currentCursor = String(pageMeta?.nextCursor || '').trim();
+        traceTeamInbox('loadConversations:start', {
+          reason: normalizedReason,
+          append,
+          cursor: cursor || pageMeta?.nextCursor || '',
+          search: normalizedSearch,
+          filter: normalizedFilter,
+          view: normalizedView,
+          status: normalizedStatus,
+          assignedTo
+        });
+        recordInboxDebugEvent(setInboxDebugInfo, 'loadConversations:start', {
+          source: 'data',
+          reason: normalizedReason,
+          details: append ? 'Appending conversation list page' : 'Loading conversation list'
+        });
+        const currentCursor = String(cursor || pageMeta?.nextCursor || '').trim();
         const response = whatsappService.getConversationsPage
           ? await whatsappService.getConversationsPage({
               limit: queryLimit,
               scope: 'team',
+              ...(skipCache ? { skipCache: true } : {}),
               ...(append && currentCursor ? { cursor: currentCursor } : {}),
               ...(normalizedSearch ? { search: normalizedSearch } : {}),
-              ...(normalizedFilter !== 'all' ? { filter: normalizedFilter } : {})
+              ...(normalizedFilter !== 'all' ? { filter: normalizedFilter } : {}),
+              ...(normalizedView !== 'all' ? { view: normalizedView } : {}),
+              ...(normalizedStatus ? { status: normalizedStatus } : {}),
+              ...(String(assignedTo || '').trim() ? { assignedTo: String(assignedTo).trim() } : {})
             })
           : {
               ...(await whatsappService.getConversationsPage({ limit: queryLimit, scope: 'team' })),
               meta: {
                 limit: queryLimit,
                 hasMore: false,
-                nextCursor: null
+                nextCursor: null,
+                previousCursor: null
               }
             };
 
@@ -352,6 +566,14 @@ export const createInboxDataActions = ({
           });
         }
 
+        recordInboxDebugEvent(setInboxDebugInfo, 'loadConversations:done', {
+          source: 'data',
+          reason: normalizedReason,
+          details: `Loaded ${incomingConversations.length} conversation${
+            incomingConversations.length === 1 ? '' : 's'
+          }`
+        });
+
         return true;
       })();
 
@@ -365,6 +587,11 @@ export const createInboxDataActions = ({
       const normalizedError = normalizeError(error, 'Failed to load conversations');
       const logFn = isTimeoutLikeError(normalizedError) ? console.warn : console.error;
       logFn('Failed to load conversations:', normalizedError);
+      recordInboxDebugEvent(setInboxDebugInfo, 'loadConversations:error', {
+        source: 'data',
+        reason: String(reason || 'unknown').trim() || 'unknown',
+        details: String(normalizedError?.message || normalizedError || 'Unknown error')
+      });
       if (conversationLoadRequestIdRef && !append && Number(conversationLoadRequestIdRef.current || 0) === requestId) {
         const restoredMeta = {
           ...(conversationPageMetaRef?.current || {}),
@@ -382,9 +609,6 @@ export const createInboxDataActions = ({
       }
       releaseLoadingGuard();
       const isCurrentRequest = Number(conversationLoadRequestIdRef?.current || 0) === requestId;
-      if (silent && isCurrentRequest && typeof setSidebarRefreshing === 'function') {
-        setSidebarRefreshing(false);
-      }
       if (!silent && isCurrentRequest) setLoading(false);
     }
   };
@@ -393,6 +617,7 @@ export const createInboxDataActions = ({
     const normalizedConversationId = String(targetConversationId || '').trim();
     const loadOlder = Boolean(options?.loadOlder);
     const forceRefresh = Boolean(options?.forceRefresh);
+    const normalizedReason = String(options?.reason || 'unknown').trim() || 'unknown';
     const parsedPageLimit = Number(options?.limit);
     const pageLimit = Number.isFinite(parsedPageLimit)
       ? Math.max(20, Math.min(parsedPageLimit, 80))
@@ -402,6 +627,7 @@ export const createInboxDataActions = ({
       traceTeamInbox('loadMessages:skip', { reason: 'missing_conversation_id' });
       recordInboxDebugEvent(setInboxDebugInfo, 'loadMessages:skip', {
         source: 'data',
+        reason: normalizedReason,
         details: 'Missing conversation id'
       });
       activeMessagesConversationIdRef.current = '';
@@ -422,6 +648,10 @@ export const createInboxDataActions = ({
     }
 
     const previousConversationId = String(activeMessagesConversationIdRef.current || '').trim();
+    const selectedConversationId = String(getConversationIdValue(selectedConversation) || '').trim();
+    const visibleMessagesMatchConversation =
+      previousConversationId === normalizedConversationId ||
+      selectedConversationId === normalizedConversationId;
     const isConversationSwitch = previousConversationId !== normalizedConversationId;
     const nextRequestId = Number(messageLoadRequestIdRef.current || 0) + 1;
     const persistentCachedThread = forceRefresh
@@ -434,11 +664,28 @@ export const createInboxDataActions = ({
     const runtimeCachedMessages = forceRefresh
       ? null
       : messageCacheRef.current.get(normalizedConversationId);
+    const visibleMessagesForConversation =
+      !forceRefresh &&
+      !loadOlder &&
+      visibleMessagesMatchConversation &&
+      Array.isArray(messages)
+        ? messages
+        : !forceRefresh &&
+            loadOlder &&
+            Array.isArray(messages) &&
+            visibleMessagesMatchConversation
+          ? messages
+          : null;
     const cachedMessages = Array.isArray(runtimeCachedMessages)
       ? runtimeCachedMessages
       : Array.isArray(persistentCachedThread?.messages)
         ? persistentCachedThread.messages
+        : Array.isArray(visibleMessagesForConversation)
+          ? visibleMessagesForConversation
         : null;
+    const initialCachedMessages = Array.isArray(cachedMessages)
+      ? trimMessagesToPage(cachedMessages, pageLimit)
+      : null;
     const cachedMeta = normalizeMessagePageMeta(
       (forceRefresh ? null : messagePaginationCacheRef?.current?.get(normalizedConversationId)) ||
         persistentCachedThread?.meta,
@@ -449,12 +696,12 @@ export const createInboxDataActions = ({
       !Array.isArray(runtimeCachedMessages) &&
       Array.isArray(persistentCachedThread?.messages)
     ) {
-      messageCacheRef.current.set(normalizedConversationId, persistentCachedThread.messages);
+      messageCacheRef.current.set(normalizedConversationId, initialCachedMessages || []);
       messagePaginationCacheRef?.current?.set(normalizedConversationId, cachedMeta);
     }
 
     if (typeof setThreadCacheInfo === 'function') {
-      const cachedCount = Array.isArray(cachedMessages) ? cachedMessages.length : 0;
+      const cachedCount = Array.isArray(initialCachedMessages) ? initialCachedMessages.length : 0;
       if (
         cachedCount > 0 &&
         threadCacheDisplaySourceRef &&
@@ -466,7 +713,7 @@ export const createInboxDataActions = ({
         source:
           threadCacheDisplaySourceRef?.current === 'cache'
             ? 'cache'
-            : Array.isArray(cachedMessages)
+            : Array.isArray(initialCachedMessages)
               ? 'cache'
               : 'network',
         isStale: Boolean(persistentCachedThread?.isStale),
@@ -476,12 +723,13 @@ export const createInboxDataActions = ({
     }
 
     traceTeamInbox('loadMessages:start', {
+      reason: normalizedReason,
       conversationId: normalizedConversationId,
       loadOlder,
       forceRefresh,
       requestId: nextRequestId,
       hasRuntimeCache: Array.isArray(runtimeCachedMessages),
-      cachedCount: Array.isArray(cachedMessages) ? cachedMessages.length : 0,
+      cachedCount: Array.isArray(initialCachedMessages) ? initialCachedMessages.length : 0,
       cachedHasMore: Boolean(cachedMeta.hasMore),
       cachedNextCursor: cachedMeta.nextCursor || null,
       previousConversationId
@@ -491,26 +739,37 @@ export const createInboxDataActions = ({
       loadOlder ? 'loadMessages:older:start' : 'loadMessages:start',
       {
         source: 'data',
+        reason: normalizedReason,
         conversationId: normalizedConversationId,
         details: loadOlder ? 'Loading older messages' : 'Loading conversation messages'
       }
     );
 
-    if (!loadOlder && isConversationSwitch && Array.isArray(cachedMessages)) {
+    if (!loadOlder && isConversationSwitch && Array.isArray(initialCachedMessages)) {
       activeMessagesConversationIdRef.current = normalizedConversationId;
-      setMessages(cachedMessages);
+      setMessages(initialCachedMessages);
     }
 
     if (!loadOlder) {
       setMessagesHasMore(Boolean(cachedMeta.hasMore));
       setMessagesOlderLoading(false);
-    } else if (
-      !Array.isArray(cachedMessages) ||
-      cachedMessages.length === 0 ||
-      !cachedMeta.hasMore ||
-      !cachedMeta.nextCursor
-    ) {
-      return false;
+    } else {
+      activeMessagesConversationIdRef.current = normalizedConversationId;
+      const fallbackOlderCursor = getOldestMessageCursor(cachedMessages);
+      if (!cachedMeta.nextCursor && fallbackOlderCursor && cachedMessages.length >= pageLimit) {
+        cachedMeta.nextCursor = fallbackOlderCursor;
+        cachedMeta.hasMore = true;
+        messagePaginationCacheRef?.current?.set(normalizedConversationId, cachedMeta);
+      }
+
+      if (
+        !Array.isArray(cachedMessages) ||
+        cachedMessages.length === 0 ||
+        !cachedMeta.hasMore ||
+        !cachedMeta.nextCursor
+      ) {
+        return false;
+      }
     }
 
     const requestKey = loadOlder
@@ -521,7 +780,7 @@ export const createInboxDataActions = ({
       if (loadOlder) {
         setMessagesOlderLoading(true);
       } else {
-        setMessagesLoading(!Array.isArray(cachedMessages) || cachedMessages.length === 0);
+        setMessagesLoading(!Array.isArray(initialCachedMessages) || initialCachedMessages.length === 0);
       }
       return existingLoadPromise;
     }
@@ -542,7 +801,7 @@ export const createInboxDataActions = ({
         messageLoadAbortControllerRef.current = nextAbortController;
       }
       messageLoadRequestIdRef.current = requestId;
-      setMessagesLoading(!Array.isArray(cachedMessages) || cachedMessages.length === 0);
+      setMessagesLoading(!Array.isArray(initialCachedMessages) || initialCachedMessages.length === 0);
     } else {
       setMessagesOlderLoading(true);
     }
@@ -551,6 +810,7 @@ export const createInboxDataActions = ({
       .getMessagesPage(normalizedConversationId, {
         limit: pageLimit,
         scope: 'team',
+        skipCache: forceRefresh,
         signal: !loadOlder ? messageLoadAbortControllerRef?.current?.signal || null : null,
         ...(loadOlder && cachedMeta.nextCursor ? { cursor: cachedMeta.nextCursor } : {})
       })
@@ -562,6 +822,7 @@ export const createInboxDataActions = ({
 
         const responseOk = Boolean(data?.ok !== false);
         const fetchedMessages = Array.isArray(data?.data) ? data.data : [];
+        const fetchedInitialPageMessages = trimMessagesToPage(fetchedMessages, pageLimit);
         const fetchedMeta = normalizeMessagePageMeta(data?.meta, pageLimit);
         const wasCanceled = Boolean(data?.canceled);
         const currentCachedMessages = Array.isArray(
@@ -583,14 +844,12 @@ export const createInboxDataActions = ({
         const nextMessages = loadOlder
           ? mergeOrderedMessagesPreservingReplyContext(fetchedMessages, currentCachedMessages)
           : shouldPreserveExistingMessages
-            ? currentCachedMessages
-            : mergeOrderedMessagesPreservingReplyContext(currentCachedMessages, fetchedMessages);
+            ? trimMessagesToPage(currentCachedMessages, pageLimit)
+            : fetchedInitialPageMessages;
 
         const shouldPreserveExistingPagination =
           !loadOlder &&
-          (currentCachedMessages.length > fetchedMessages.length ||
-            shouldPreserveExistingMessages ||
-            !responseOk) &&
+          (!responseOk || shouldPreserveExistingMessages) &&
           messagePaginationCacheRef?.current?.has(normalizedConversationId);
         const nextMeta = shouldPreserveExistingPagination
           ? normalizeMessagePageMeta(
@@ -598,6 +857,9 @@ export const createInboxDataActions = ({
               pageLimit
             )
           : fetchedMeta;
+        if (!nextMeta.nextCursor && nextMeta.hasMore && nextMessages.length >= pageLimit) {
+          nextMeta.nextCursor = getOldestMessageCursor(nextMessages);
+        }
 
         if (wasCanceled) {
           traceTeamInbox('loadMessages:canceled', {
@@ -623,6 +885,7 @@ export const createInboxDataActions = ({
           loadOlder ? 'loadMessages:older:success' : 'loadMessages:success',
           {
             source: 'data',
+            reason: normalizedReason,
             conversationId: normalizedConversationId,
             details: responseOk
               ? `${nextMessages.length} messages loaded`
@@ -694,6 +957,7 @@ export const createInboxDataActions = ({
           logFn('Failed to load messages:', normalizedError);
         }
         traceTeamInbox('loadMessages:error', {
+          reason: normalizedReason,
           conversationId: normalizedConversationId,
           loadOlder,
           requestId,
@@ -704,6 +968,7 @@ export const createInboxDataActions = ({
           loadOlder ? 'loadMessages:older:error' : 'loadMessages:error',
           {
             source: 'data',
+            reason: normalizedReason,
             conversationId: normalizedConversationId,
             details: String(error?.message || error || 'Unknown error')
           }
@@ -732,25 +997,38 @@ export const createInboxDataActions = ({
     const normalizedConversationId = String(targetConversationId || '').trim();
     if (!normalizedConversationId) return null;
 
-    try {
-      const response = await whatsappService.getConversation(normalizedConversationId);
-      const rawConversation = response?.data || response || null;
-      if (!rawConversation) return null;
-
-      const normalizedConversation = normalizeConversation(rawConversation);
-      const conversationIdValue = String(
-        normalizedConversation?._id || normalizedConversation?.id || ''
-      ).trim();
-      if (!conversationIdValue) return null;
-
-      setConversations((prev) => upsertConversationInOrderedList(prev, normalizedConversation));
-      return normalizedConversation;
-    } catch (error) {
-      if (!silent) {
-        console.error('Failed to load conversation by id:', error);
-      }
-      return null;
+    const requestKey = `detail::${normalizedConversationId}`;
+    const existingLoadPromise = conversationLoadPromiseMapRef?.current?.get(requestKey);
+    if (existingLoadPromise) {
+      return existingLoadPromise;
     }
+
+    const loadPromise = (async () => {
+      try {
+        const response = await whatsappService.getConversation(normalizedConversationId);
+        const rawConversation = response?.data || response || null;
+        if (!rawConversation) return null;
+
+        const normalizedConversation = normalizeConversation(rawConversation);
+        const conversationIdValue = String(
+          normalizedConversation?._id || normalizedConversation?.id || ''
+        ).trim();
+        if (!conversationIdValue) return null;
+
+        setConversations((prev) => upsertConversationInOrderedList(prev, normalizedConversation));
+        return normalizedConversation;
+      } catch (error) {
+        if (!silent) {
+          console.error('Failed to load conversation by id:', error);
+        }
+        return null;
+      } finally {
+        conversationLoadPromiseMapRef?.current?.delete(requestKey);
+      }
+    })();
+
+    conversationLoadPromiseMapRef?.current?.set(requestKey, loadPromise);
+    return loadPromise;
   };
 
   const buildReplyMetadata = (replyContext = null) => {
@@ -872,6 +1150,12 @@ export const createInboxDataActions = ({
     const overrideMessage = String(options?.messageOverride || '').trim();
     if ((!messageInput.trim() && !overrideMessage) || !selectedConversation || sendingMessage) return false;
 
+    const freeformCheck = canSendFreeformMessage();
+    if (!freeformCheck.ok) {
+      notify(freeformCheck.error, 'error');
+      return false;
+    }
+
     let optimisticId = null;
     let textToSend = '';
     const replyMetadata = buildReplyMetadata(options?.replyContext);
@@ -886,9 +1170,10 @@ export const createInboxDataActions = ({
       if (!overrideMessage) {
         setMessageInput('');
       }
-      appendMessageUnique({
+      upsertMessageLocally({
         _id: optimisticId,
         sender: 'agent',
+        ...currentUserSenderMeta,
         text: textToSend,
         status: 'sending',
         timestamp: new Date().toISOString(),
@@ -923,110 +1208,43 @@ export const createInboxDataActions = ({
         const sentMessage = result.message || result.data?.message;
 
         if (sentMessage) {
-          setMessages((prev) => {
-            const sentId = sentMessage?._id ? String(sentMessage._id) : '';
-            const sentWamid = sentMessage?.whatsappMessageId
-              ? String(sentMessage.whatsappMessageId)
-              : '';
+          const finalMessage = {
+            ...mergeMessagePreservingReplyContext(
+              {
+                _id: optimisticId,
+                replyTo: replyMetadata.replyTo,
+                replyToMessageId: replyMetadata.replyToMessageId,
+                whatsappContextMessageId: replyMetadata.whatsappContextMessageId
+              },
+              sentMessage
+            ),
+            replyTo: sentMessage?.replyTo || replyMetadata.replyTo || '',
+            replyToMessageId:
+              sentMessage?.replyToMessageId || replyMetadata.replyToMessageId || '',
+            whatsappContextMessageId:
+              sentMessage?.whatsappContextMessageId ||
+              replyMetadata.whatsappContextMessageId ||
+              ''
+          };
 
-            // Replace optimistic temp bubble.
-            let next = prev.map((message) =>
-              message._id === optimisticId
-                ? {
-                    ...mergeMessagePreservingReplyContext(message, sentMessage),
-                    replyTo:
-                      sentMessage?.replyTo ||
-                      message?.replyTo ||
-                      replyMetadata.replyTo,
-                    replyToMessageId:
-                      sentMessage?.replyToMessageId ||
-                      message?.replyToMessageId ||
-                      replyMetadata.replyToMessageId ||
-                      '',
-                    whatsappContextMessageId:
-                      sentMessage?.whatsappContextMessageId ||
-                      message?.whatsappContextMessageId ||
-                      replyMetadata.whatsappContextMessageId ||
-                      ''
-                  }
-                : message
-            );
-
-            // If temp wasn't found (already removed/replaced), ensure message exists once.
-            const existsAfterReplace = next.some((message) => {
-              const messageId = message?._id ? String(message._id) : '';
-              const messageWamid = message?.whatsappMessageId
-                ? String(message.whatsappMessageId)
-                : '';
-              return (sentId && messageId === sentId) || (sentWamid && messageWamid === sentWamid);
-            });
-            if (!existsAfterReplace) {
-              next = [
-                ...next,
-                {
-                  ...sentMessage,
-                  ...replyMetadata
-                }
-              ];
-            } else if (Object.keys(replyMetadata).length > 0) {
-              next = next.map((message) => {
-                const messageId = message?._id ? String(message._id) : '';
-                const messageWamid = message?.whatsappMessageId
-                  ? String(message.whatsappMessageId)
-                  : '';
-                const isTarget =
-                  (sentId && messageId === sentId) || (sentWamid && messageWamid === sentWamid);
-                return isTarget
-                  ? {
-                      ...message,
-                      replyTo: message?.replyTo || replyMetadata.replyTo,
-                      replyToMessageId:
-                        message?.replyToMessageId || replyMetadata.replyToMessageId || '',
-                      whatsappContextMessageId:
-                        message?.whatsappContextMessageId ||
-                        replyMetadata.whatsappContextMessageId ||
-                        ''
-                    }
-                  : message;
-              });
-            }
-
-            // De-duplicate same real message (can happen due to websocket + API race).
-            const seen = new Set();
-            next = next.filter((message) => {
-              const messageId = message?._id ? String(message._id) : '';
-              const messageWamid = message?.whatsappMessageId
-                ? String(message.whatsappMessageId)
-                : '';
-              const key = messageId || messageWamid;
-              if (!key) return true;
-              if (seen.has(key)) return false;
-              seen.add(key);
-              return true;
-            });
-
-            return next;
-          });
+          if (String(finalMessage?._id || '').trim() !== optimisticId) {
+            removeMessageLocally(optimisticId);
+          }
+          upsertMessageLocally(finalMessage);
         } else {
-          setMessages((prev) =>
-            prev.map((message) =>
-              message._id === optimisticId
-                ? {
-                    ...message,
-                    status:
-                      ['delivered', 'read', 'failed'].includes(
-                        String(message?.status || '').trim().toLowerCase()
-                      )
-                        ? String(message.status).trim().toLowerCase()
-                        : 'sent'
-                  }
-                : message
-            )
-          );
+          updateMessageLocally(optimisticId, (message) => ({
+            ...message,
+            status:
+              ['delivered', 'read', 'failed'].includes(
+                String(message?.status || '').trim().toLowerCase()
+              )
+                ? String(message.status).trim().toLowerCase()
+                : 'sent'
+          }));
         }
         return true;
       } else {
-        setMessages((prev) => prev.filter((message) => message._id !== optimisticId));
+        removeMessageLocally(optimisticId);
         if (!overrideMessage) {
           setMessageInput(textToSend);
         }
@@ -1036,7 +1254,7 @@ export const createInboxDataActions = ({
       }
     } catch (error) {
       if (optimisticId) {
-        setMessages((prev) => prev.filter((message) => message._id !== optimisticId));
+        removeMessageLocally(optimisticId);
       }
       if (textToSend && !String(options?.messageOverride || '').trim()) {
         setMessageInput((prev) => prev || textToSend);
@@ -1052,6 +1270,12 @@ export const createInboxDataActions = ({
   const sendAttachment = async (file, options = {}) => {
     if (!file || !selectedConversation || sendingMessage) {
       return { success: false, error: 'Attachment send is not available right now.' };
+    }
+
+    const freeformCheck = canSendFreeformMessage();
+    if (!freeformCheck.ok) {
+      notify(freeformCheck.error, 'error');
+      return { success: false, error: freeformCheck.error };
     }
 
     let optimisticId = null;
@@ -1082,19 +1306,13 @@ export const createInboxDataActions = ({
     const mediaPipelineRequestId =
       String(options?.mediaPipelineRequestId || '').trim() || createMediaPipelineRequestId();
     const updateUploadProgress = (progressValue) => {
-      setMessages((prev) =>
-        prev.map((message) =>
-          message._id === optimisticId
-            ? {
-                ...message,
-                attachment: {
-                  ...(message?.attachment || {}),
-                  uploadProgress: progressValue
-                }
-              }
-            : message
-        )
-      );
+      updateMessageLocally(optimisticId, (message) => ({
+        ...message,
+        attachment: {
+          ...(message?.attachment || {}),
+          uploadProgress: progressValue
+        }
+      }));
     };
 
     try {
@@ -1108,6 +1326,7 @@ export const createInboxDataActions = ({
       const optimisticMessage = {
         _id: optimisticId,
         sender: 'agent',
+        ...currentUserSenderMeta,
         text: optimisticText,
         status: 'sending',
         timestamp: new Date().toISOString(),
@@ -1133,13 +1352,12 @@ export const createInboxDataActions = ({
       };
 
       if (replaceMessageId) {
-        setMessages((prev) =>
-          prev.map((message) =>
-            message._id === replaceMessageId ? { ...message, ...optimisticMessage } : message
-          )
-        );
+        updateMessageLocally(replaceMessageId, (message) => ({
+          ...message,
+          ...optimisticMessage
+        }));
       } else {
-        appendMessageUnique(optimisticMessage);
+        upsertMessageLocally(optimisticMessage);
       }
 
       setConversations((prev) =>
@@ -1193,21 +1411,15 @@ export const createInboxDataActions = ({
 
       const sentMessage = result?.message || result?.data?.message;
       if (!sentMessage) {
-        setMessages((prev) =>
-          prev.map((message) =>
-            message._id === optimisticId
-              ? {
-                  ...message,
-                  status:
-                    ['delivered', 'read', 'failed'].includes(
-                      String(message?.status || '').trim().toLowerCase()
-                    )
-                      ? String(message.status).trim().toLowerCase()
-                      : 'sent'
-                }
-              : message
-          )
-        );
+        updateMessageLocally(optimisticId, (message) => ({
+          ...message,
+          status:
+            ['delivered', 'read', 'failed'].includes(
+              String(message?.status || '').trim().toLowerCase()
+            )
+              ? String(message.status).trim().toLowerCase()
+              : 'sent'
+        }));
       } else {
         shouldRevokeLocalPreview = Boolean(String(sentMessage?.mediaUrl || '').trim());
         setConversations((prev) =>
@@ -1237,73 +1449,42 @@ export const createInboxDataActions = ({
           )
         );
 
-        setMessages((prev) => {
-          let next = prev.map((message) =>
-            message._id === optimisticId
-              ? {
-                  ...mergeMessagePreservingReplyContext(message, sentMessage),
-                  replyTo: sentMessage?.replyTo || message?.replyTo,
-                  replyToMessageId:
-                    sentMessage?.replyToMessageId || message?.replyToMessageId || '',
-                  whatsappContextMessageId:
-                    sentMessage?.whatsappContextMessageId ||
-                    message?.whatsappContextMessageId ||
-                    '',
-                  mediaPipelineRequestId:
-                    sentMessage?.mediaPipelineRequestId ||
-                    message?.mediaPipelineRequestId ||
-                    mediaPipelineRequestId,
-                  attachment: {
-                    ...(sentMessage?.attachment || {}),
-                    uploadProgress: null,
-                    uploadError: ''
-                  }
-                }
-              : message
-          );
-
-          const sentId = String(sentMessage?._id || '').trim();
-          if (sentId && !next.some((message) => String(message?._id || '') === sentId)) {
-            next = [
-              ...next,
-              {
-                ...sentMessage,
-                ...replyMetadata,
-                mediaPipelineRequestId:
-                  sentMessage?.mediaPipelineRequestId || mediaPipelineRequestId
-              }
-            ];
+        const finalMessage = {
+          ...mergeMessagePreservingReplyContext(
+            {
+              _id: optimisticId,
+              mediaPipelineRequestId
+            },
+            sentMessage
+          ),
+          ...replyMetadata,
+          mediaPipelineRequestId:
+            sentMessage?.mediaPipelineRequestId || mediaPipelineRequestId,
+          attachment: {
+            ...(sentMessage?.attachment || {}),
+            uploadProgress: null,
+            uploadError: ''
           }
+        };
 
-          const seen = new Set();
-          return next.filter((message) => {
-            const key = String(message?._id || message?.whatsappMessageId || '').trim();
-            if (!key) return true;
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
-        });
+        if (String(finalMessage?._id || '').trim() !== optimisticId) {
+          removeMessageLocally(optimisticId);
+        }
+        upsertMessageLocally(finalMessage);
       }
       return { success: true };
     } catch (error) {
       if (optimisticId) {
-        setMessages((prev) =>
-          prev.map((message) =>
-            message._id === optimisticId
-              ? {
-                  ...message,
-                  status: 'failed',
-                  attachment: {
-                    ...(message?.attachment || {}),
-                    uploadProgress: null,
-                    uploadError: error?.message || 'Upload failed',
-                    _localFile: file
-                  }
-                }
-              : message
-          )
-        );
+        updateMessageLocally(optimisticId, (message) => ({
+          ...message,
+          status: 'failed',
+          attachment: {
+            ...(message?.attachment || {}),
+            uploadProgress: null,
+            uploadError: error?.message || 'Upload failed',
+            _localFile: file
+          }
+        }));
       }
       if (overrideCaption === null) {
         setMessageInput((prev) => prev || caption);
@@ -1342,6 +1523,7 @@ export const createInboxDataActions = ({
     const optimisticReactionMessage = {
       _id: optimisticId,
       sender: 'agent',
+      ...currentUserSenderMeta,
       text: normalizedEmoji ? `Reacted with ${normalizedEmoji}` : '[Reaction removed]',
       status: 'sending',
       timestamp: new Date().toISOString(),
@@ -1351,7 +1533,7 @@ export const createInboxDataActions = ({
       whatsappContextMessageId: targetWhatsAppMessageId
     };
 
-    appendMessageUnique(optimisticReactionMessage);
+    upsertMessageLocally(optimisticReactionMessage);
 
     try {
       const result = await whatsappService.sendReactionMessage(
@@ -1368,56 +1550,33 @@ export const createInboxDataActions = ({
 
       const sentMessage = result?.message || result?.data?.message;
       if (!sentMessage) {
-        setMessages((prev) =>
-          prev.map((message) =>
-            String(message?._id || '') === optimisticId
-              ? {
-                  ...message,
-                  status:
-                    ['delivered', 'read', 'failed'].includes(
-                      String(message?.status || '').trim().toLowerCase()
-                    )
-                      ? String(message.status).trim().toLowerCase()
-                      : 'sent'
-                }
-              : message
-          )
-        );
+        updateMessageLocally(optimisticId, (message) => ({
+          ...message,
+          status:
+            ['delivered', 'read', 'failed'].includes(
+              String(message?.status || '').trim().toLowerCase()
+            )
+              ? String(message.status).trim().toLowerCase()
+              : 'sent'
+        }));
         return true;
       }
 
-      setMessages((prev) => {
-        const sentId = String(sentMessage?._id || '').trim();
-        const sentWamid = String(sentMessage?.whatsappMessageId || '').trim();
-        let next = prev.map((message) =>
-          String(message?._id || '') === optimisticId
-            ? mergeMessagePreservingReplyContext(message, sentMessage)
-            : message
-        );
-
-        const existsAfterReplace = next.some((message) => {
-          const messageId = String(message?._id || '').trim();
-          const messageWamid = String(message?.whatsappMessageId || '').trim();
-          return (sentId && messageId === sentId) || (sentWamid && messageWamid === sentWamid);
-        });
-
-        if (!existsAfterReplace) {
-          next = [...next, sentMessage];
-        }
-
-        const seen = new Set();
-        return next.filter((message) => {
-          const key = String(message?._id || message?.whatsappMessageId || '').trim();
-          if (!key) return true;
-          if (seen.has(key)) return false;
-          seen.add(key);
-          return true;
-        });
-      });
+      const finalMessage = mergeMessagePreservingReplyContext(
+        {
+          _id: optimisticId,
+          whatsappContextMessageId: targetWhatsAppMessageId
+        },
+        sentMessage
+      );
+      if (String(finalMessage?._id || '').trim() !== optimisticId) {
+        removeMessageLocally(optimisticId);
+      }
+      upsertMessageLocally(finalMessage);
 
       return true;
     } catch (error) {
-      setMessages((prev) => prev.filter((message) => String(message?._id || '') !== optimisticId));
+      removeMessageLocally(optimisticId);
       console.error('Error sending reaction:', error);
       notify(error?.message || 'Unable to send reaction', 'error');
       return false;
@@ -1493,7 +1652,7 @@ export const createInboxDataActions = ({
     const mediaPipelineRequestId = String(message?.mediaPipelineRequestId || '').trim();
 
     if (messageId.startsWith('temp-')) {
-      setMessages((prev) => prev.filter((item) => String(item?._id || '') !== messageId));
+      removeMessageLocally(messageId);
       return;
     }
 
@@ -1514,21 +1673,15 @@ export const createInboxDataActions = ({
       notify(`Attachment deleted (ref: ${mediaPipelineRequestId})`, 'info');
     }
 
-    setMessages((prev) =>
-      prev.map((item) =>
-        String(item?._id || '') === messageId
-          ? {
-              ...item,
-              mediaUrl: '',
-              mediaCaption: '',
-              attachment: {
-                ...(item?.attachment || {}),
-                deletedAt: new Date().toISOString()
-              }
-            }
-          : item
-      )
-    );
+    updateMessageLocally(messageId, (item) => ({
+      ...item,
+      mediaUrl: '',
+      mediaCaption: '',
+      attachment: {
+        ...(item?.attachment || {}),
+        deletedAt: new Date().toISOString()
+      }
+    }));
   };
 
   const deleteMessage = async (message) => {
@@ -1548,7 +1701,7 @@ export const createInboxDataActions = ({
     }
 
     if (messageId.startsWith('temp-')) {
-      setMessages((prev) => prev.filter((item) => String(item?._id || '') !== messageId));
+      removeMessageLocally(messageId);
       return;
     }
 
@@ -1561,7 +1714,7 @@ export const createInboxDataActions = ({
       return;
     }
 
-    setMessages((prev) => prev.filter((item) => String(item?._id || '') !== messageId));
+    removeMessageLocally(messageId);
   };
 
   const retryAttachment = async (message) => {
@@ -1604,17 +1757,42 @@ export const createInboxDataActions = ({
   };
 
   const markAsRead = async (targetConversationId) => {
+    const normalizedConversationId = String(targetConversationId || '').trim();
+    if (!normalizedConversationId) return false;
+
+    const now = Date.now();
+    const lastAttemptAt = Number(recentReadConversationAt.get(normalizedConversationId) || 0) || 0;
+    if (
+      pendingReadConversationIds.has(normalizedConversationId) ||
+      (lastAttemptAt && now - lastAttemptAt < READ_REQUEST_DEDUPE_MS)
+    ) {
+      return false;
+    }
+
+    pendingReadConversationIds.add(normalizedConversationId);
+    recentReadConversationAt.set(normalizedConversationId, now);
+    setConversations((prev) =>
+      prev.map((conversation) =>
+        String(conversation?._id || conversation?.id || '').trim() === normalizedConversationId
+          ? { ...conversation, unreadCount: 0 }
+          : conversation
+      )
+    );
+
     try {
-      await whatsappService.markConversationAsRead(targetConversationId);
-      setConversations((prev) =>
-        prev.map((conversation) =>
-          conversation._id === targetConversationId
-            ? { ...conversation, unreadCount: 0 }
-            : conversation
-        )
-      );
+      await whatsappService.markConversationAsRead(normalizedConversationId);
+      return true;
     } catch (error) {
       console.error('Failed to mark conversation as read:', error);
+      return false;
+    } finally {
+      pendingReadConversationIds.delete(normalizedConversationId);
+      if (recentReadConversationAt.size > 300) {
+        const cutoff = Date.now() - READ_REQUEST_DEDUPE_MS * 4;
+        recentReadConversationAt.forEach((attemptAt, conversationIdValue) => {
+          if (attemptAt < cutoff) recentReadConversationAt.delete(conversationIdValue);
+        });
+      }
     }
   };
 

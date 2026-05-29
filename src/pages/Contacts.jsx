@@ -1,18 +1,35 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, useContext } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, Send, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X, FileText, Copy, ExternalLink, MoreVertical, ScanLine } from 'lucide-react';
 import Papa from 'papaparse';
 import { apiClient } from '../services/whatsappapi';
+import { AuthContext } from './authcontext';
+import { crmService, subscribeCrmUserRoster } from '../services/crmService';
+import socketService from '../services/socketService';
 import WhatsAppOptInModal from '../components/WhatsAppOptInModal';
 import WhatsAppConsentAuditModal from '../components/WhatsAppConsentAuditModal';
 import BusinessCardScannerModal from '../components/contacts/BusinessCardScannerModal';
+import CrmContactDrawer from '../components/crm/CrmContactDrawer';
 import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
 import { buildPublicWhatsAppOptInDemoUrl, buildWhatsAppOutreachState } from '../utils/whatsappOutreachNavigation';
 import { getWhatsAppConversationState } from '../utils/whatsappContactState';
+import { resolveWorkspaceManagementAccessState } from '../utils/agentAccess';
 import './Contacts.css';
 
 const CONTACTS_LOADING_TIMEOUT_MS = 8000;
 const CONTACTS_PAGE_SIZE_OPTIONS = [10, 25, 50, 100];
+const CONTACT_LEAD_STATUS_OPTIONS = [
+    { value: 'new_lead', label: 'New Lead' },
+    { value: 'interested', label: 'Interested' },
+    { value: 'follow_up', label: 'Follow Up' },
+    { value: 'proposal_sent', label: 'Proposal Sent' },
+    { value: 'converted', label: 'Converted' },
+    { value: 'closed', label: 'Closed' }
+];
+const CONTACT_LEAD_STATUS_LABELS = CONTACT_LEAD_STATUS_OPTIONS.reduce((acc, option) => {
+    acc[option.value] = option.label;
+    return acc;
+}, {});
 
 const createWhatsAppOptInDraft = (contact = {}) => ({
     source: String(contact?.whatsappOptInSource || '').trim() || 'manual',
@@ -48,6 +65,7 @@ const CONTACTS_ROUTE_QUERY_KEYS = {
     pageSize: 'pageSize',
     search: 'search',
     activeFilter: 'activeFilter',
+    leadStatus: 'leadStatus',
     sort: 'sort'
 };
 
@@ -84,11 +102,13 @@ const buildContactsRouteSearchParams = ({
     pageSize,
     searchTerm,
     lastActiveFilter,
+    leadStatusFilter,
     sortOption
 }) => {
     const params = new URLSearchParams();
     const normalizedSearch = String(searchTerm || '').trim();
     const normalizedFilter = String(lastActiveFilter || 'all').trim() || 'all';
+    const normalizedLeadStatus = String(leadStatusFilter || 'all').trim().toLowerCase() || 'all';
     const normalizedSort = String(sortOption || 'name-asc').trim() || 'name-asc';
 
     if (currentPage && Number(currentPage) > 1) {
@@ -102,6 +122,9 @@ const buildContactsRouteSearchParams = ({
     }
     if (normalizedFilter !== 'all') {
         params.set(CONTACTS_ROUTE_QUERY_KEYS.activeFilter, normalizedFilter);
+    }
+    if (normalizedLeadStatus !== 'all') {
+        params.set(CONTACTS_ROUTE_QUERY_KEYS.leadStatus, normalizedLeadStatus);
     }
     if (normalizedSort !== 'name-asc') {
         params.set(CONTACTS_ROUTE_QUERY_KEYS.sort, normalizedSort);
@@ -126,6 +149,7 @@ const buildContactsRequestSignature = ({
     pageSize = 10,
     searchTerm = '',
     lastActiveFilter = 'all',
+    leadStatusFilter = 'all',
     sortOption = 'name-asc'
 }) =>
     [
@@ -133,12 +157,40 @@ const buildContactsRequestSignature = ({
         Number(pageSize) || 10,
         String(searchTerm || '').trim().toLowerCase(),
         String(lastActiveFilter || 'all').trim().toLowerCase() || 'all',
+        String(leadStatusFilter || 'all').trim().toLowerCase() || 'all',
         String(sortOption || 'name-asc').trim().toLowerCase() || 'name-asc'
     ].join('|');
+
+const formatLeadStatusLabel = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase();
+    return CONTACT_LEAD_STATUS_LABELS[normalized] || normalized.replace(/[_-]+/g, ' ').replace(/\b\w/g, (char) => char.toUpperCase()) || 'New Lead';
+};
+
+const CONTACT_LEAD_STATUS_FILTER_OPTIONS = [
+    { value: 'all', label: 'All Leads' },
+    ...CONTACT_LEAD_STATUS_OPTIONS
+];
+
+const formatOwnerLabel = (contact = {}, rosterMap = new Map()) => {
+    const rawValue = String(
+        contact?.assignedTo ||
+        contact?.ownerId ||
+        contact?.assignedAgent ||
+        contact?.assignedToDisplay ||
+        ''
+    ).trim();
+    if (!rawValue) return 'Unassigned';
+    return (
+        rosterMap.get(rawValue) ||
+        String(contact?.assignedToName || contact?.ownerName || contact?.assignedAgentName || rawValue).trim() ||
+        rawValue
+    );
+};
 
 const Contacts = () => {
     const navigate = useNavigate();
     const [searchParams, setSearchParams] = useSearchParams();
+    const { user } = useContext(AuthContext);
     const initialRouteStateRef = useRef(null);
     if (!initialRouteStateRef.current) {
         initialRouteStateRef.current = readContactsRouteState(searchParams);
@@ -157,6 +209,9 @@ const Contacts = () => {
     const [showFilterDropdown, setShowFilterDropdown] = useState(false);
     const [showSortDropdown, setShowSortDropdown] = useState(false);
     const [lastActiveFilter, setLastActiveFilter] = useState(initialRouteStateRef.current.lastActiveFilter);
+    const [leadStatusFilter, setLeadStatusFilter] = useState(
+        String(searchParams.get(CONTACTS_ROUTE_QUERY_KEYS.leadStatus) || 'all').trim().toLowerCase() || 'all'
+    );
     const [sortOption, setSortOption] = useState(initialRouteStateRef.current.sortOption);
     const [showImportModal, setShowImportModal] = useState(false);
     const [importFile, setImportFile] = useState(null);
@@ -180,11 +235,39 @@ const Contacts = () => {
     const [showBusinessCardScanner, setShowBusinessCardScanner] = useState(false);
     const [cardScannerSeedContact, setCardScannerSeedContact] = useState({});
     const [cardScannerContext, setCardScannerContext] = useState('standalone');
+    const [crmUserRoster, setCrmUserRoster] = useState([]);
+    const [bulkAssignTo, setBulkAssignTo] = useState('');
+    const [bulkAssignReason, setBulkAssignReason] = useState('');
+    const [crmMetrics, setCrmMetrics] = useState(null);
+    const [crmMetricsLoading, setCrmMetricsLoading] = useState(false);
+    const [crmSummaryPulseActive, setCrmSummaryPulseActive] = useState(false);
+    const [crmDrawerOpen, setCrmDrawerOpen] = useState(false);
+    const [crmDrawerContact, setCrmDrawerContact] = useState(null);
     const [currentPage, setCurrentPage] = useState(initialRouteStateRef.current.currentPage);
     const [pageSize, setPageSize] = useState(initialRouteStateRef.current.pageSize);
     const fileInputRef = useRef(null);
     const contactsSkipNextLoadKeyRef = useRef('');
     const contactsRequestSeqRef = useRef(0);
+    const crmSummaryPulseTimerRef = useRef(null);
+    const isAdminWorkspaceUser = resolveWorkspaceManagementAccessState(user);
+    const canBulkManageContacts = isAdminWorkspaceUser;
+    const canImportContacts = isAdminWorkspaceUser;
+    const canExportContacts = isAdminWorkspaceUser;
+    const canCreateContacts = true;
+    const contactsPageSubtitle = isAdminWorkspaceUser
+        ? 'Manage company contacts, ownership, pipeline stages, and follow-ups.'
+        : 'Work your assigned leads, notes, tasks, and follow-ups.';
+    const hasActiveLeadStatusFilter = leadStatusFilter !== 'all';
+    const crmAssignableUsers = useMemo(() => {
+        return (Array.isArray(crmUserRoster) ? crmUserRoster : [])
+            .map((agent) => ({
+                id: String(agent?._id || agent?.id || agent?.userId || '').trim(),
+                label: String(agent?.displayName || agent?.name || agent?.label || agent?.email || '').trim()
+            }))
+            .filter((agent) => agent.id)
+            .filter((agent, index, list) => list.findIndex((candidate) => candidate.id === agent.id) === index)
+            .sort((left, right) => left.label.localeCompare(right.label));
+    }, [crmUserRoster]);
 
     const showNotification = useCallback((message, type = 'success') => {
         const nextMessage = String(message || '').trim();
@@ -197,6 +280,12 @@ const Contacts = () => {
         const timer = window.setTimeout(() => setNotification(null), 2800);
         return () => window.clearTimeout(timer);
     }, [notification]);
+
+    useEffect(() => {
+        if (!crmSummaryPulseActive) return undefined;
+        const timer = window.setTimeout(() => setCrmSummaryPulseActive(false), 1200);
+        return () => window.clearTimeout(timer);
+    }, [crmSummaryPulseActive]);
 
     useEffect(() => {
         const handleClickOutside = (event) => {
@@ -228,6 +317,46 @@ const Contacts = () => {
         return () => window.removeEventListener('keydown', handleKeyDown);
     }, []);
 
+    useEffect(() => {
+        const unsubscribe = subscribeCrmUserRoster((payload = {}) => {
+            const nextUsers = Array.isArray(payload?.users)
+                ? payload.users
+                : Array.isArray(payload?.data)
+                    ? payload.data
+                    : [];
+            setCrmUserRoster(nextUsers);
+        });
+
+        return () => {
+            if (typeof unsubscribe === 'function') {
+                unsubscribe();
+            }
+        };
+    }, []);
+
+    const crmAgentRosterMap = useMemo(() => {
+        const nextMap = new Map();
+        (Array.isArray(crmUserRoster) ? crmUserRoster : []).forEach((agent) => {
+            const label = String(agent?.name || agent?.fullName || agent?.username || agent?.email || '').trim();
+            const keys = [
+                agent?._id,
+                agent?.id,
+                agent?.userId,
+                agent?.ownerId,
+                agent?.assignedTo,
+                agent?.agentId
+            ]
+                .map((value) => String(value || '').trim())
+                .filter(Boolean);
+            keys.forEach((key) => {
+                if (!nextMap.has(key)) {
+                    nextMap.set(key, label || key);
+                }
+            });
+        });
+        return nextMap;
+    }, [crmUserRoster]);
+
     const loadContacts = useCallback(async ({ silent = false } = {}) => {
         const requestSeq = ++contactsRequestSeqRef.current;
         const requestKey = buildContactsRequestSignature({
@@ -235,6 +364,7 @@ const Contacts = () => {
             pageSize,
             searchTerm: debouncedSearchTerm,
             lastActiveFilter,
+            leadStatusFilter,
             sortOption
         });
 
@@ -258,6 +388,7 @@ const Contacts = () => {
                 pageSize,
                 search: debouncedSearchTerm,
                 activeFilter: lastActiveFilter,
+                leadStatus: leadStatusFilter,
                 sort: sortOption
             });
             const responseData = response?.data || {};
@@ -283,6 +414,7 @@ const Contacts = () => {
                     pageSize: resolvedPageSize,
                     searchTerm: debouncedSearchTerm,
                     lastActiveFilter,
+                    leadStatusFilter,
                     sortOption
                 });
                 setCurrentPage(resolvedPage);
@@ -300,11 +432,67 @@ const Contacts = () => {
             releaseLoadingGuard();
             if (!silent && requestSeq === contactsRequestSeqRef.current) setLoading(false);
         }
-    }, [currentPage, debouncedSearchTerm, lastActiveFilter, pageSize, sortOption]);
+    }, [
+        currentPage,
+        debouncedSearchTerm,
+        lastActiveFilter,
+        leadStatusFilter,
+        pageSize,
+        sortOption
+    ]);
+
+    const loadCrmMetrics = useCallback(async ({ silent = false } = {}) => {
+        try {
+            if (!silent) setCrmMetricsLoading(true);
+            const metricsResponse = await crmService.getMetrics();
+            if (metricsResponse?.success === false) {
+                throw new Error(metricsResponse?.error || 'Failed to load CRM metrics');
+            }
+            const metricsData = metricsResponse?.data || {};
+            setCrmMetrics(metricsData);
+        } catch (error) {
+            if (!silent) {
+                console.error('Failed to load CRM metrics:', error);
+            }
+            setCrmMetrics(null);
+        } finally {
+            if (!silent) setCrmMetricsLoading(false);
+        }
+    }, []);
 
     useEffect(() => {
         loadContacts();
     }, [loadContacts]);
+
+    useEffect(() => {
+        loadCrmMetrics();
+    }, [loadCrmMetrics]);
+
+    useEffect(() => {
+        socketService.connect(import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_WS_URL);
+
+        const handleCrmChanged = () => {
+            if (crmSummaryPulseTimerRef.current) {
+                window.clearTimeout(crmSummaryPulseTimerRef.current);
+            }
+            setCrmSummaryPulseActive(true);
+            crmSummaryPulseTimerRef.current = window.setTimeout(() => {
+                setCrmSummaryPulseActive(false);
+                crmSummaryPulseTimerRef.current = null;
+            }, 1200);
+            void loadContacts({ silent: true });
+            void loadCrmMetrics({ silent: true });
+        };
+
+        socketService.on('crm_changed', handleCrmChanged);
+        return () => {
+            socketService.off('crm_changed', handleCrmChanged);
+            if (crmSummaryPulseTimerRef.current) {
+                window.clearTimeout(crmSummaryPulseTimerRef.current);
+                crmSummaryPulseTimerRef.current = null;
+            }
+        };
+    }, [loadContacts, loadCrmMetrics]);
 
     useEffect(() => {
         const routeState = readContactsRouteState(searchParams);
@@ -313,6 +501,7 @@ const Contacts = () => {
         setSearchTerm(routeState.searchTerm);
         setDebouncedSearchTerm(routeState.searchTerm);
         setLastActiveFilter(routeState.lastActiveFilter);
+        setLeadStatusFilter(String(searchParams.get(CONTACTS_ROUTE_QUERY_KEYS.leadStatus) || 'all').trim().toLowerCase() || 'all');
         setSortOption(routeState.sortOption);
     }, [searchParams]);
 
@@ -621,6 +810,10 @@ const Contacts = () => {
     };
 
     const handleBulkDelete = async () => {
+        if (!canBulkManageContacts) {
+            showNotification('Bulk delete is available for admins only.', 'error');
+            return;
+        }
         if (selectedContacts.size === 0) {
             showNotification('Please select at least one contact to delete', 'error');
             return;
@@ -641,6 +834,49 @@ const Contacts = () => {
             showNotification(`${selectedContacts.size} contact(s) deleted successfully!`);
         } catch (error) {
             showNotification('Failed to delete some contacts: ' + error.message, 'error');
+        }
+    };
+
+    const handleBulkAssign = async () => {
+        if (!canBulkManageContacts) {
+            showNotification('Bulk assignment is available for admins only.', 'error');
+            return;
+        }
+        if (selectedContacts.size === 0) {
+            showNotification('Please select at least one contact to assign', 'error');
+            return;
+        }
+        if (!bulkAssignTo) {
+            showNotification('Please choose an agent to assign the selected contacts', 'error');
+            return;
+        }
+
+        const selectedAgentLabel = crmAgentRosterMap.get(bulkAssignTo) || bulkAssignTo;
+        const normalizedReason = String(bulkAssignReason || '').trim();
+        if (!window.confirm(`Assign ${selectedContacts.size} contact(s) to ${selectedAgentLabel}?`)) {
+            return;
+        }
+
+        try {
+            const result = await crmService.bulkUpdateContacts({
+                action: 'assign',
+                contactIds: Array.from(selectedContacts),
+                ownerId: bulkAssignTo,
+                reason: normalizedReason
+            });
+
+            if (result?.success === false || result?.data?.success === false) {
+                throw new Error(result?.error || result?.data?.error || 'Failed to assign contacts');
+            }
+
+            await loadContacts({ silent: true });
+            setSelectedContacts(new Set());
+            setSelectionMode(false);
+            setBulkAssignTo('');
+            setBulkAssignReason('');
+            showNotification(`${selectedContacts.size} contact(s) assigned successfully!`);
+        } catch (error) {
+            showNotification('Failed to assign selected contacts: ' + error.message, 'error');
         }
     };
 
@@ -678,6 +914,15 @@ const Contacts = () => {
         setCurrentPage(1);
     };
 
+    const handleLeadStatusFilterChange = (value) => {
+        const normalizedSearch = String(searchTerm || '').trim();
+        if (normalizedSearch !== debouncedSearchTerm) {
+            setDebouncedSearchTerm(normalizedSearch);
+        }
+        setLeadStatusFilter(String(value || 'all').trim().toLowerCase() || 'all');
+        setCurrentPage(1);
+    };
+
     const handleSortOptionChange = (value) => {
         const normalizedSearch = String(searchTerm || '').trim();
         if (normalizedSearch !== debouncedSearchTerm) {
@@ -686,6 +931,39 @@ const Contacts = () => {
         setSortOption(value);
         setCurrentPage(1);
     };
+
+    const handleSummaryCardClick = useCallback((kind = 'contacts') => {
+        const normalizedKind = String(kind || 'contacts').trim();
+        switch (normalizedKind) {
+            case 'followups':
+                handleSearchTermChange('');
+                handleLastActiveFilterChange('all');
+                handleLeadStatusFilterChange('follow_up');
+                break;
+            case 'notes':
+                handleSearchTermChange('');
+                handleLastActiveFilterChange('all');
+                handleLeadStatusFilterChange('interested');
+                break;
+            case 'overdue':
+                handleSearchTermChange('');
+                handleLastActiveFilterChange('all');
+                handleLeadStatusFilterChange('proposal_sent');
+                break;
+            case 'pipeline':
+                handleSearchTermChange('');
+                handleLastActiveFilterChange('all');
+                handleLeadStatusFilterChange('all');
+                break;
+            case 'contacts':
+            default:
+                handleSearchTermChange('');
+                handleLastActiveFilterChange('all');
+                handleLeadStatusFilterChange('all');
+                handleSortOptionChange('name-asc');
+                break;
+        }
+    }, [handleLastActiveFilterChange, handleLeadStatusFilterChange, handleSearchTermChange, handleSortOptionChange]);
 
     const handleMessage = (contact) => {
         navigate('/inbox', {
@@ -700,6 +978,24 @@ const Contacts = () => {
             })
         });
     };
+
+    const openCrmDrawer = useCallback((contact = null) => {
+        if (!contact?._id) return;
+        setCrmDrawerContact(contact);
+        setCrmDrawerOpen(true);
+    }, []);
+
+    const closeCrmDrawer = useCallback(() => {
+        setCrmDrawerOpen(false);
+        setCrmDrawerContact(null);
+    }, []);
+
+    const handleCrmContactUpdated = useCallback((updatedContact = {}) => {
+        if (updatedContact && typeof updatedContact === 'object') {
+            setCrmDrawerContact((current) => (current ? { ...current, ...updatedContact } : updatedContact));
+        }
+        void loadContacts({ silent: true });
+    }, [loadContacts]);
 
     const openWhatsAppOptInModal = (contact) => {
         setOptInTargetContact(contact);
@@ -785,6 +1081,13 @@ const Contacts = () => {
         if (diffMins < 60) return `${Math.max(diffMins, 0)} ${diffMins === 1 ? 'min' : 'mins'} ago`;
         if (diffHours < 24) return `${Math.max(diffHours, 0)} ${diffHours === 1 ? 'hour' : 'hours'} ago`;
         return `${Math.max(diffDays, 0)} ${diffDays === 1 ? 'day' : 'days'} ago`;
+    };
+
+    const formatFollowupDate = (timestamp) => {
+        if (!timestamp) return 'None';
+        const date = new Date(timestamp);
+        if (Number.isNaN(date.getTime())) return 'None';
+        return date.toLocaleString();
     };
 
     const normalizeSourceType = (contact) => {
@@ -1086,6 +1389,10 @@ const Contacts = () => {
             .filter((contact) => contact?.phone);
 
     const handleImportContacts = async () => {
+        if (!canImportContacts) {
+            showNotification('Import is available for admins only.', 'error');
+            return;
+        }
         const mappedContacts = getMappedContacts();
         
         if (mappedContacts.length === 0) {
@@ -1152,6 +1459,35 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
         window.URL.revokeObjectURL(url);
     };
 
+    const downloadContactsExport = () => {
+        const exportSource =
+            canExportContacts && selectedContacts.size > 0
+                ? visibleContacts.filter((contact) => selectedContacts.has(contact._id))
+                : visibleContacts;
+        const rows = exportSource.map((contact) => ({
+            Name: contact?.name || '',
+            Phone: contact?.phone || '',
+            Email: contact?.email || '',
+            'Lead Status': contact?.leadStatusLabel || formatLeadStatusLabel(contact?.leadStatus),
+            'Assigned Agent': formatOwnerLabel(contact, crmAgentRosterMap),
+            'Followup Date': contact?.followupAt || '',
+            'Last Activity': contact?.lastActivity || '',
+            Tags: Array.isArray(contact?.tags) ? contact.tags.join(', ') : String(contact?.tags || ''),
+            'Opt-in Status': compactOptInStatusLabel(contact?.optInStatus),
+            Origin: sourceLabelMap[contact?.sourceType || 'manual'] || 'Manual'
+        }));
+        const csv = Papa.unparse(rows);
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = 'contacts_export.csv';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+    };
+
     const resetImport = () => {
         setShowImportModal(false);
         setImportFile(null);
@@ -1167,13 +1503,50 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
 
     const importAudit = useMemo(() => getImportAuditSummary(), [importRows, importMapping]);
 
-    const visibleContacts = useMemo(() => contacts.map((contact) => ({
-        ...contact,
-        sourceType: normalizeSourceType(contact),
-        lastActive: contact.lastContactAt || contact.lastContact || contact.lastInboundMessageAt || contact.updatedAt || contact.createdAt,
-        whatsappState: getWhatsAppConversationState(contact),
-        optInStatus: getWhatsAppOptInStatus(contact)
-    })), [contacts]);
+    const visibleContacts = useMemo(() => contacts.map((contact) => {
+        const followupAt = contact?.nextFollowUpAt || contact?.followupDate || null;
+        const lastActivity = contact?.lastContactAt || contact?.lastContact || contact?.lastInboundMessageAt || contact?.updatedAt || contact?.createdAt;
+        return {
+            ...contact,
+            sourceType: normalizeSourceType(contact),
+            lastActivity,
+            lastActive: lastActivity,
+            followupAt,
+            leadStatusNormalized: String(contact?.leadStatus || 'new_lead').trim().toLowerCase() || 'new_lead',
+            leadStatusLabel: formatLeadStatusLabel(contact?.leadStatus),
+            assignedAgentLabel: formatOwnerLabel(contact, crmAgentRosterMap),
+            whatsappState: getWhatsAppConversationState(contact),
+            optInStatus: getWhatsAppOptInStatus(contact)
+        };
+    }), [contacts]);
+
+    const crmSummary = useMemo(() => {
+        const now = Date.now();
+        const notesCount = visibleContacts.filter((contact) => {
+            const notes = String(contact?.notes || contact?.internalNotes || '').trim();
+            return Boolean(notes);
+        }).length;
+        const followupsDueCount = visibleContacts.filter((contact) => {
+            const dueValue = contact?.followupAt || contact?.followupDate || contact?.nextFollowUpAt;
+            if (!dueValue) return false;
+            const dueTime = new Date(dueValue).getTime();
+            return Number.isFinite(dueTime) && dueTime <= now;
+        }).length;
+        const activePipelineCount = visibleContacts.filter((contact) => {
+            const status = String(contact?.leadStatus || '').trim().toLowerCase();
+            return status && status !== 'closed';
+        }).length;
+
+        return {
+            visibleContacts: Number(totalContacts || 0),
+            scopedContacts: Number(crmMetrics?.contacts?.total || totalContacts || 0),
+            activePipelineCount,
+            notesCount,
+            followupsDueCount,
+            openTasks: Number(crmMetrics?.tasks?.open || 0),
+            overdueTasks: Number(crmMetrics?.tasks?.overdue || 0)
+        };
+    }, [crmMetrics, totalContacts, visibleContacts]);
 
     const totalPages = Math.max(1, Math.ceil(totalContacts / pageSize));
     const safeCurrentPage = Math.min(Math.max(currentPage, 1), totalPages);
@@ -1192,6 +1565,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
             pageSize,
             searchTerm: debouncedSearchTerm,
             lastActiveFilter,
+            leadStatusFilter,
             sortOption
         });
         const currentSerialized = searchParams.toString();
@@ -1199,19 +1573,56 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
         if (currentSerialized !== nextSerialized) {
             setSearchParams(nextParams, { replace: true });
         }
-    }, [debouncedSearchTerm, safeCurrentPage, lastActiveFilter, pageSize, searchParams, setSearchParams, sortOption]);
+    }, [debouncedSearchTerm, safeCurrentPage, lastActiveFilter, leadStatusFilter, pageSize, searchParams, setSearchParams, sortOption]);
 
     return (
         <div className="contacts-page">
             <div className="page-header">
                 <div>
                     <h2>Contacts ({loading ? '...' : totalContacts})</h2>
-                    <p>Manage your customer database</p>
+                    <p>{contactsPageSubtitle}</p>
                 </div>
                 <div className="header-actions">
                     {selectionMode ? (
                         <>
-                            {selectedContacts.size > 0 && (
+                            {canBulkManageContacts && (
+                                <div className="bulk-assign-toolbar">
+                                    <div className="bulk-assign-toolbar__field">
+                                        <select
+                                            className="bulk-assign-select"
+                                            value={bulkAssignTo}
+                                            onChange={(e) => setBulkAssignTo(e.target.value)}
+                                            aria-label="Assign selected contacts to agent"
+                                        >
+                                            <option value="">Assign to agent</option>
+                                            {crmAssignableUsers.map((agent) => (
+                                                <option key={agent.id} value={agent.id}>
+                                                    {agent.label || agent.id}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+                                    <div className="bulk-assign-toolbar__field">
+                                        <textarea
+                                            className="bulk-assign-note"
+                                            rows="2"
+                                            value={bulkAssignReason}
+                                            onChange={(e) => setBulkAssignReason(e.target.value)}
+                                            placeholder="Internal reason or handover note"
+                                            aria-label="Internal reason or handover note"
+                                        />
+                                    </div>
+                                    <button
+                                        className="secondary-btn"
+                                        onClick={handleBulkAssign}
+                                        disabled={selectedContacts.size === 0 || !bulkAssignTo}
+                                    >
+                                        <Send size={18} />
+                                        Assign Selected ({selectedContacts.size})
+                                    </button>
+                                </div>
+                            )}
+                            {canBulkManageContacts && selectedContacts.size > 0 && (
                                 <button 
                                     className="secondary-btn delete-selected" 
                                     onClick={handleBulkDelete}
@@ -1232,18 +1643,30 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                         </>
                     ) : (
                         <>
-                            <button className="secondary-btn" onClick={() => openBusinessCardScanner({}, 'standalone')}>
-                                <ScanLine size={18} />
-                                Scan Card
-                            </button>
-                            <button className="secondary-btn" onClick={() => setShowImportModal(true)}>
-                                <Upload size={18} />
-                                Import
-                            </button>
-                            <button className="primary-btn" onClick={() => openAddContactModal()}>
-                                <UserPlus size={18} />
-                                Add Contact
-                            </button>
+                            {canCreateContacts && (
+                                <button className="secondary-btn" onClick={() => openBusinessCardScanner({}, 'standalone')}>
+                                    <ScanLine size={18} />
+                                    Scan Card
+                                </button>
+                            )}
+                            {canImportContacts && (
+                                <button className="secondary-btn" onClick={() => setShowImportModal(true)}>
+                                    <Upload size={18} />
+                                    Import
+                                </button>
+                            )}
+                            {canExportContacts && (
+                                <button className="secondary-btn" onClick={downloadContactsExport}>
+                                    <Download size={18} />
+                                    Export
+                                </button>
+                            )}
+                            {canCreateContacts && (
+                                <button className="primary-btn" onClick={() => openAddContactModal()}>
+                                    <UserPlus size={18} />
+                                    Add Contact
+                                </button>
+                            )}
                         </>
                     )}
                 </div>
@@ -1400,15 +1823,93 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                         </div>
                     )}
                 </div>
-                {!selectionMode && (
+                {canBulkManageContacts && !selectionMode && (
                     <button 
                         className="secondary-btn select-contacts-btn" 
-                        onClick={() => setSelectionMode(true)}
+                        onClick={() => {
+                            setSelectionMode(true);
+                            setBulkAssignTo('');
+                            setSelectedContacts(new Set());
+                        }}
                     >
                         <CheckSquare size={18} />
                         Select Contacts
                     </button>
                 )}
+            </div>
+
+            <div className="lead-status-filter-row" aria-label="Lead status filters">
+                {CONTACT_LEAD_STATUS_FILTER_OPTIONS.map((option) => (
+                    <button
+                        key={option.value}
+                        type="button"
+                        className={`crm-filter-chip${leadStatusFilter === option.value ? ' active' : ''}`}
+                        onClick={() => handleLeadStatusFilterChange(option.value)}
+                    >
+                        {option.label}
+                    </button>
+                ))}
+            </div>
+
+            <div className="crm-summary-strip" aria-label="CRM contact summary">
+                <button
+                    type="button"
+                    className={`crm-summary-card${crmSummaryPulseActive ? ' crm-summary-card--pulse' : ''}`}
+                    onClick={() => handleSummaryCardClick('contacts')}
+                >
+                    <span className="crm-summary-card__label">Contacts</span>
+                    <strong className="crm-summary-card__value">
+                        {crmMetricsLoading ? '...' : crmSummary.visibleContacts}
+                        <span className="crm-summary-card__value-divider">/</span>
+                        <span className="crm-summary-card__value-total">{crmSummary.scopedContacts}</span>
+                    </strong>
+                    <span className="crm-summary-card__meta">Shown in list / total in scope</span>
+                </button>
+                <button
+                    type="button"
+                    className={`crm-summary-card${crmSummaryPulseActive ? ' crm-summary-card--pulse' : ''}`}
+                    onClick={() => handleSummaryCardClick('pipeline')}
+                >
+                    <span className="crm-summary-card__label">Active Pipeline</span>
+                    <strong className="crm-summary-card__value">{crmSummary.activePipelineCount}</strong>
+                    <span className="crm-summary-card__meta">Open leads in view</span>
+                </button>
+                <button
+                    type="button"
+                    className={`crm-summary-card${crmSummaryPulseActive ? ' crm-summary-card--pulse' : ''}`}
+                    onClick={() => handleSummaryCardClick('pipeline')}
+                >
+                    <span className="crm-summary-card__label">Open Tasks</span>
+                    <strong className="crm-summary-card__value">{crmSummary.openTasks}</strong>
+                    <span className="crm-summary-card__meta">Pending action items</span>
+                </button>
+                <button
+                    type="button"
+                    className={`crm-summary-card${crmSummaryPulseActive ? ' crm-summary-card--pulse' : ''}`}
+                    onClick={() => handleSummaryCardClick('overdue')}
+                >
+                    <span className="crm-summary-card__label">Overdue</span>
+                    <strong className="crm-summary-card__value">{crmSummary.overdueTasks}</strong>
+                    <span className="crm-summary-card__meta">Tasks past due</span>
+                </button>
+                <button
+                    type="button"
+                    className={`crm-summary-card${crmSummaryPulseActive ? ' crm-summary-card--pulse' : ''}`}
+                    onClick={() => handleSummaryCardClick('notes')}
+                >
+                    <span className="crm-summary-card__label">Notes</span>
+                    <strong className="crm-summary-card__value">{crmSummary.notesCount}</strong>
+                    <span className="crm-summary-card__meta">Contacts with internal notes</span>
+                </button>
+                <button
+                    type="button"
+                    className={`crm-summary-card${crmSummaryPulseActive ? ' crm-summary-card--pulse' : ''}`}
+                    onClick={() => handleSummaryCardClick('followups')}
+                >
+                    <span className="crm-summary-card__label">Followups</span>
+                    <strong className="crm-summary-card__value">{crmSummary.followupsDueCount}</strong>
+                    <span className="crm-summary-card__meta">Due or overdue now</span>
+                </button>
             </div>
 
             <div className="contacts-table-container">
@@ -1439,10 +1940,13 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                 <th className="name-col">Name</th>
                                 <th className="phone-col">Phone Number</th>
                                 <th className="tags-col">Tags</th>
+                                <th className="lead-status-col">Lead Status</th>
+                                <th className="assigned-col">Assigned Agent</th>
+                                <th className="followup-col">Followup Date</th>
                                 <th className="consent-col">Opt-in</th>
                                 <th className="origin-col">Origin</th>
                                 <th className="messaging-col">Send State</th>
-                                <th className="last-active-col">Last Active</th>
+                                <th className="last-active-col">Last Activity</th>
                                 {!selectionMode && <th className="actions-col">Actions</th>}
                             </tr>
                         </thead>
@@ -1476,6 +1980,21 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                             <span className="tag gray">No tags</span>
                                         )}
                                     </td>
+                                    <td className="lead-status-col">
+                                        <span className={`badge crm-lead-badge crm-lead-badge--${contact.leadStatusNormalized || 'new_lead'}`}>
+                                            {contact.leadStatusLabel || formatLeadStatusLabel(contact.leadStatus)}
+                                        </span>
+                                    </td>
+                                    <td className="assigned-col">
+                                        <span className="crm-assigned-agent">
+                                            {formatOwnerLabel(contact, crmAgentRosterMap)}
+                                        </span>
+                                    </td>
+                                    <td className="followup-col">
+                                        <span className="crm-followup-date">
+                                            {formatFollowupDate(contact.followupAt)}
+                                        </span>
+                                    </td>
                                     <td className="consent-col">
                                         <div className="whatsapp-contact-status">
                                             <span className={`badge whatsapp-contact-badge whatsapp-contact-badge--${contact.optInStatus || 'unknown'}`}>
@@ -1498,7 +2017,7 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                             {compactMessagingStatusLabel(contact.whatsappState?.statusLabel)}
                                         </span>
                                     </td>
-                                    <td className="last-active-col">{formatLastActive(contact.lastActive)}</td>
+                                    <td className="last-active-col">{formatLastActive(contact.lastActivity)}</td>
                                     {!selectionMode && (
                                         <td className="actions-col">
                                             <div className="action-buttons">
@@ -1544,6 +2063,18 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                                             >
                                                                 <FileText size={15} />
                                                                 <span>View Consent Audit</span>
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                className="contact-actions-menu__item"
+                                                                onClick={() => {
+                                                                    closeContactActionsMenu();
+                                                                    openCrmDrawer(contact);
+                                                                }}
+                                                                role="menuitem"
+                                                            >
+                                                                <ExternalLink size={15} />
+                                                                <span>Open CRM Details</span>
                                                             </button>
                                                             <button
                                                                 type="button"
@@ -1700,6 +2231,18 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                                             className="contact-actions-menu__item"
                                                             onClick={() => {
                                                                 closeContactActionsMenu();
+                                                                openCrmDrawer(contact);
+                                                            }}
+                                                            role="menuitem"
+                                                        >
+                                                            <ExternalLink size={15} />
+                                                            <span>Open CRM Details</span>
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            className="contact-actions-menu__item"
+                                                            onClick={() => {
+                                                                closeContactActionsMenu();
                                                                 copyPublicOptInLink(contact);
                                                             }}
                                                             role="menuitem"
@@ -1778,6 +2321,20 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                 </div>
                                 <div className="contact-mobile-card__meta">
                                     <div className="contact-mobile-card__meta-row">
+                                        <span className="contact-mobile-card__label">Lead Status</span>
+                                        <span className={`badge crm-lead-badge crm-lead-badge--${contact.leadStatusNormalized || 'new_lead'}`}>
+                                            {contact.leadStatusLabel || formatLeadStatusLabel(contact.leadStatus)}
+                                        </span>
+                                    </div>
+                                    <div className="contact-mobile-card__meta-row">
+                                        <span className="contact-mobile-card__label">Assigned Agent</span>
+                                        <span className="contact-mobile-card__value">{formatOwnerLabel(contact, crmAgentRosterMap)}</span>
+                                    </div>
+                                    <div className="contact-mobile-card__meta-row">
+                                        <span className="contact-mobile-card__label">Followup Date</span>
+                                        <span className="contact-mobile-card__value">{formatFollowupDate(contact.followupAt)}</span>
+                                    </div>
+                                    <div className="contact-mobile-card__meta-row">
                                         <span className="contact-mobile-card__label">Opt-in</span>
                                         <span className={`badge whatsapp-contact-badge whatsapp-contact-badge--${contact.optInStatus || 'unknown'}`}>
                                             {compactOptInStatusLabel(contact.optInStatus)}
@@ -1796,8 +2353,8 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                         </span>
                                     </div>
                                     <div className="contact-mobile-card__meta-row">
-                                        <span className="contact-mobile-card__label">Last Active</span>
-                                        <span className="contact-mobile-card__value">{formatLastActive(contact.lastActive)}</span>
+                                        <span className="contact-mobile-card__label">Last Activity</span>
+                                        <span className="contact-mobile-card__value">{formatLastActive(contact.lastActivity)}</span>
                                     </div>
                                     {contact.tags && contact.tags.length > 0 ? (
                                         <div className="contact-mobile-card__tags">
@@ -1898,23 +2455,24 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                             </div>
                             <h3>No contacts found</h3>
                             <p>
-                                {searchTerm || lastActiveFilter !== 'all'
+                                {searchTerm || lastActiveFilter !== 'all' || hasActiveLeadStatusFilter
                                     ? 'Your search or filters are hiding every contact right now.'
                                     : 'Start by adding your first contact to build your database.'}
                             </p>
-                                    {(searchTerm || lastActiveFilter !== 'all') && (
+                                    {(searchTerm || lastActiveFilter !== 'all' || hasActiveLeadStatusFilter) && (
                                 <button
                                     className="secondary-btn"
                                     onClick={() => {
                                         handleSearchTermChange('');
                                         handleLastActiveFilterChange('all');
+                                        handleLeadStatusFilterChange('all');
                                         handleSortOptionChange('name-asc');
                                     }}
                                 >
                                     Reset Filters
                                 </button>
                             )}
-                            {!searchTerm && lastActiveFilter === 'all' && (
+                            {!searchTerm && lastActiveFilter === 'all' && !hasActiveLeadStatusFilter && canCreateContacts && (
                                 <button className="primary-btn" onClick={() => openAddContactModal()}>
                                     <UserPlus size={18} />
                                     Add Your First Contact
@@ -2450,6 +3008,17 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                 contactName={auditTargetContact?.name || ''}
                 phone={auditTargetContact?.phone || ''}
                 onRefresh={() => loadContactConsentAudit(auditTargetContact)}
+            />
+            <CrmContactDrawer
+                open={crmDrawerOpen}
+                contactId={crmDrawerContact?._id || ''}
+                initialContact={crmDrawerContact}
+                currentUserId={String(user?.id || user?._id || '').trim()}
+                onClose={closeCrmDrawer}
+                onContactUpdated={handleCrmContactUpdated}
+                onTaskMutation={() => void loadContacts({ silent: true })}
+                onDealMutation={() => void loadContacts({ silent: true })}
+                onStartWhatsApp={handleMessage}
             />
         </div>
     );

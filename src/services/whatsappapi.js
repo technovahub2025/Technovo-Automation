@@ -6,6 +6,11 @@ import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
 import { registerUnauthorizedAxiosInterceptor } from "./serviceAuth";
 import { normalizeError } from "../utils/errorUtils";
+import {
+  buildWorkspaceQueryScope,
+  getStoredWorkspaceUser,
+  resolveAgentWorkspaceState
+} from "../utils/agentAccess";
 
 const API_BASE_URL = resolveApiBaseUrl();
 const ADMIN_API_BASE_URL = String(import.meta.env.VITE_API_ADMIN_URL || "")
@@ -15,6 +20,64 @@ const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 30000);
 const LONG_TIMEOUT_MS = Number(
   import.meta.env.VITE_API_LONG_TIMEOUT_MS || 300000,
 );
+
+const getWorkspaceScope = (method = "get", url = "") => {
+  const user = getStoredWorkspaceUser();
+  if (!resolveAgentWorkspaceState(user)) return {};
+
+  const normalizedUrl = String(url || "").toLowerCase();
+  const scopeType =
+    normalizedUrl.includes("/contacts") ||
+    normalizedUrl.includes("/crm/contacts") ||
+    normalizedUrl.includes("/conversations") ||
+    normalizedUrl.includes("/messages")
+      ? "assignedTo"
+      : "createdBy";
+  return buildWorkspaceQueryScope(user, { scopeType });
+};
+
+axios.interceptors.request.use((config) => {
+  const url = String(config?.url || "").trim();
+  const method = String(config?.method || "get").toLowerCase();
+  const isWorkspaceUrl =
+    /^\/api\/(conversations|contacts|broadcasts|bulk|messages|templates|lead-scoring|crm)/i.test(url) ||
+    /^\/(api\/)?(conversations|contacts|broadcasts|bulk|messages|templates|lead-scoring|crm)/i.test(url);
+  if (!isWorkspaceUrl) return config;
+
+  const scope = getWorkspaceScope(method, url);
+  if (!scope || Object.keys(scope).length === 0) return config;
+
+  if (method === "get" || method === "delete") {
+    config.params = {
+      ...scope,
+      ...(config.params || {})
+    };
+    return config;
+  }
+
+  const data = config.data;
+  if (data instanceof FormData) {
+    Object.entries(scope).forEach(([key, value]) => {
+      if (typeof value === "undefined" || value === null || value === "") return;
+      if (!data.has(key)) data.append(key, String(value));
+    });
+    return config;
+  }
+
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    config.data = {
+      ...scope,
+      ...data
+    };
+  } else {
+    config.data = {
+      ...scope,
+      ...(typeof data === "undefined" ? {} : { payload: data })
+    };
+  }
+
+  return config;
+});
 
 const getStoredAuthToken = () => {
   const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
@@ -281,6 +344,19 @@ export const apiClient = {
   getMessages: (conversationId) =>
     api.get(`/conversations/${conversationId}/messages`, {
       timeout: LONG_TIMEOUT_MS,
+    }).then((response) => {
+      const data = response?.data;
+      const normalizedMessages = Array.isArray(data?.messages)
+        ? data.messages
+        : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
+      return {
+        ...response,
+        data: normalizedMessages
+      };
     }),
 
   /**

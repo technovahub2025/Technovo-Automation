@@ -2,6 +2,7 @@ import { createContext, useState, useEffect } from "react";
 import axios from "axios";
 import { auth } from "../firebase/firebase";
 import { onAuthStateChanged } from "firebase/auth";
+import { buildAgentAccessPayload } from "../utils/agentAccess";
 
 export const AuthContext = createContext();
 
@@ -16,14 +17,19 @@ export const AuthProvider = ({ children }) => {
   });
 
   const login = (userData, token, provider) => {
+    const nextUser = {
+      ...userData,
+      ...buildAgentAccessPayload(userData)
+    };
     localStorage.setItem("username", userData.username);
+    localStorage.setItem("userId", String(nextUser.id || nextUser.userId || ""));
     const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
     localStorage.setItem(tokenKey, token);
     localStorage.setItem("authToken", token);
     localStorage.setItem("token", token); // Legacy key used in some modules
-    localStorage.setItem("user", JSON.stringify(userData));
+    localStorage.setItem("user", JSON.stringify(nextUser));
     if (provider) localStorage.setItem("authProvider", provider);
-    setUser(userData);
+    setUser(nextUser);
   };
 
   const logout = () => {
@@ -33,6 +39,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem("token"); // Legacy key cleanup
     localStorage.removeItem("user");
     localStorage.removeItem("username");
+    localStorage.removeItem("userId");
     localStorage.removeItem("authProvider");
     setUser(null);
   };
@@ -78,6 +85,7 @@ export const AuthProvider = ({ children }) => {
         const nextUser = {
           ...(user || {}),
           ...data,
+          ...buildAgentAccessPayload(data),
           id: data.userId || user?.id
         };
         login(nextUser, token, localStorage.getItem("authProvider") || "local");
@@ -106,7 +114,10 @@ export const AuthProvider = ({ children }) => {
       const token = res.data.token;
       const nextUser = res.data.user;
       if (token && nextUser) {
-        login(nextUser, token, "firebase");
+        login({
+          ...nextUser,
+          ...buildAgentAccessPayload(nextUser)
+        }, token, "firebase");
       }
     };
 

@@ -103,7 +103,29 @@ const pickFirstLabel = (...values) => {
   return '';
 };
 
-export const resolveConversationAssigneeLabel = (conversation = {}) => {
+const normalizeAgentLookupId = (value) => toCleanString(value).toLowerCase();
+
+const getConversationAssignedLookupId = (conversation = {}) =>
+  pickFirstLabel(
+    conversation?.assignedTo?._id,
+    conversation?.assignedTo?.id,
+    conversation?.assignedTo?.userId,
+    conversation?.assignedTo?.agentId,
+    typeof conversation?.assignedTo === 'string' ? conversation.assignedTo : '',
+    conversation?.assignedToId,
+    conversation?.assignedAgentId,
+    conversation?.assignedAgent,
+    conversation?.assignedAgent?._id,
+    conversation?.assignedAgent?.id,
+    conversation?.assignedAgent?.userId,
+    conversation?.assigneeId,
+    conversation?.ownerId
+  );
+
+const getAgentDisplayLabel = (agent = {}) =>
+  pickFirstLabel(agent?.label, agent?.name, agent?.displayName, agent?.fullName, agent?.email);
+
+export const resolveConversationAssigneeLabel = (conversation = {}, availableAgents = []) => {
   const directAssignee = conversation?.assignedTo;
   const owner = conversation?.owner;
 
@@ -120,7 +142,39 @@ export const resolveConversationAssigneeLabel = (conversation = {}) => {
     owner?.email
   );
 
-  return label || 'Unassigned';
+  if (label) return label;
+
+  const lookupId = normalizeAgentLookupId(getConversationAssignedLookupId(conversation));
+  if (lookupId) {
+    const agentRecord = (Array.isArray(availableAgents) ? availableAgents : []).find((agent) => {
+      if (!agent || typeof agent !== 'object') return false;
+      const agentIds = [
+        agent?.id,
+        agent?._id,
+        agent?.userId,
+        agent?.agentId,
+        agent?.assignedToId
+      ]
+        .map(normalizeAgentLookupId)
+        .filter(Boolean);
+      return agentIds.includes(lookupId);
+    });
+
+    const agentLabel = getAgentDisplayLabel(agentRecord);
+    if (agentLabel) return agentLabel;
+
+    return 'Assigned';
+  }
+
+  const directAssigneeId = pickFirstLabel(
+    directAssignee?._id,
+    directAssignee?.id,
+    directAssignee?.userId,
+    typeof directAssignee === 'string' ? directAssignee : ''
+  );
+  if (directAssigneeId) return 'Assigned';
+
+  return 'Unassigned';
 };
 
 const getSlaDueAtValue = (conversation = {}) =>
@@ -226,19 +280,27 @@ export const filterConversations = ({
   getConversationDisplayName
 }) => {
   const safeConversations = Array.isArray(conversations) ? conversations : [];
+  const normalizedSearchTerm = String(searchTerm || '').trim().toLowerCase();
 
-  return safeConversations
-    .filter((conversation) =>
-      doesConversationMatchSearch({
+  if (!normalizedSearchTerm && conversationFilter === 'all') {
+    return safeConversations;
+  }
+
+  return safeConversations.filter((conversation) => {
+    if (
+      normalizedSearchTerm &&
+      !doesConversationMatchSearch({
         conversation,
-        searchTerm,
+        searchTerm: normalizedSearchTerm,
         getConversationDisplayName
       })
-    )
-    .filter((conversation) => {
-      if (conversationFilter === 'unread') return getUnreadCount(conversation) > 0;
-      if (conversationFilter === 'read') return getUnreadCount(conversation) === 0;
-      return true;
+    ) {
+      return false;
+    }
+
+    if (conversationFilter === 'unread') return getUnreadCount(conversation) > 0;
+    if (conversationFilter === 'read') return getUnreadCount(conversation) === 0;
+    return true;
     });
 };
 

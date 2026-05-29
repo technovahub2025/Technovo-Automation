@@ -1,5 +1,9 @@
 import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
+import {
+  buildWorkspaceQueryScope,
+  getStoredWorkspaceUser
+} from "../utils/agentAccess";
 
 const metaApi = axios.create({
   baseURL: `${resolveApiBaseUrl()}/api`,
@@ -8,6 +12,49 @@ const metaApi = axios.create({
     "Content-Type": "application/json",
   },
   withCredentials: String(import.meta.env.VITE_API_WITH_CREDENTIALS || "false").toLowerCase() === "true",
+});
+
+const getMetaWorkspaceScope = (method = "get") => {
+  const user = getStoredWorkspaceUser();
+  const scopeType = method === "get" || method === "delete" ? "createdBy" : "createdBy";
+  return buildWorkspaceQueryScope(user, { scopeType });
+};
+
+metaApi.interceptors.request.use((config) => {
+  const method = String(config?.method || "get").toLowerCase();
+  const scope = getMetaWorkspaceScope(method);
+  if (!scope || Object.keys(scope).length === 0) {
+    return config;
+  }
+
+  if (method === "get" || method === "delete") {
+    config.params = {
+      ...scope,
+      ...(config.params || {})
+    };
+  } else {
+    const data = config.data;
+    if (data instanceof FormData) {
+      Object.entries(scope).forEach(([key, value]) => {
+        if (typeof value === "undefined" || value === null || value === "") return;
+        if (!data.has(key)) data.append(key, String(value));
+      });
+      return config;
+    }
+    if (data && typeof data === "object" && !Array.isArray(data) && !(data instanceof FormData)) {
+      config.data = {
+        ...scope,
+        ...data
+      };
+    } else if (!(data instanceof FormData)) {
+      config.data = {
+        ...scope,
+        ...(typeof data === "undefined" ? {} : { payload: data })
+      };
+    }
+  }
+
+  return config;
 });
 
 metaApi.interceptors.request.use((config) => {

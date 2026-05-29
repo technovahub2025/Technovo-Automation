@@ -14,6 +14,7 @@ import {
   Trash2,
   Upload,
   UserRound,
+  Star,
   X,
   ChevronDown
 } from 'lucide-react';
@@ -52,6 +53,13 @@ const ContactInfoPanel = ({
   leadScoringSettings,
   leadScoringSettingsLoading,
   leadStageOptions,
+  availableAgents = [],
+  canAssignChats = false,
+  handleAssignConversation,
+  handleSetConversationImportant,
+  handleCloseConversation,
+  handleReopenConversation,
+  handleConversationLeadStatusChange,
   openTemplateSendModal,
   onSendOptInPrompt,
   onMarkWhatsAppOptIn,
@@ -127,6 +135,11 @@ const ContactInfoPanel = ({
   contactInfoMessageTone
 }) => {
   const crmDocumentInputRef = React.useRef(null);
+  const assignedAgentSelectRef = React.useRef(null);
+  const sectionRefs = React.useRef({});
+  const [assignedAgentDraft, setAssignedAgentDraft] = React.useState(
+    String(selectedConversation?.assignedTo || selectedConversation?.assignedAgent || '')
+  );
   const [expandedSections, setExpandedSections] = React.useState({
     followUp: false,
     quickTask: false,
@@ -145,6 +158,27 @@ const ContactInfoPanel = ({
       event.target.value = '';
     }
   };
+
+  React.useEffect(() => {
+    setAssignedAgentDraft(String(selectedConversation?.assignedTo || selectedConversation?.assignedAgent || ''));
+  }, [selectedConversation]);
+
+  const followUpBadgeLabel = React.useMemo(() => {
+    const rawValue = String(leadFollowUpDraft || '').trim();
+    if (!rawValue) return 'No follow-up';
+
+    const parsedValue = new Date(rawValue);
+    if (Number.isNaN(parsedValue.getTime())) {
+      return 'Follow-up set';
+    }
+
+    return parsedValue.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  }, [leadFollowUpDraft]);
 
   if (!selectedConversation || !showContactInfo) return null;
 
@@ -180,6 +214,24 @@ const ContactInfoPanel = ({
   const marketingNextAllowedAt = selectedConversation?.contactId?.whatsappMarketingWindowStartedAt
     ? whatsappMessagingState?.marketingNextAllowedAt
     : null;
+  const leadStatusBadgeLabel = String(leadStatus || 'New Lead').trim() || 'New Lead';
+  const leadStatusBadgeTone = String(selectedConversation?.leadStatus || '').trim().toLowerCase() || 'new_lead';
+  const taskDueBadgeLabel = (() => {
+    const rawValue = String(crmTaskDueDraft || '').trim();
+    if (!rawValue) return 'No task due';
+
+    const parsedValue = new Date(rawValue);
+    if (Number.isNaN(parsedValue.getTime())) {
+      return 'Task due set';
+    }
+
+    return parsedValue.toLocaleString('en-IN', {
+      day: '2-digit',
+      month: 'short',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  })();
 
   const toggleSection = (sectionKey) => {
     setExpandedSections((current) => ({
@@ -188,11 +240,44 @@ const ContactInfoPanel = ({
     }));
   };
 
+  const openSection = (sectionKey) => {
+    if (!sectionKey) return;
+    setExpandedSections((current) => ({
+      ...current,
+      [sectionKey]: true
+    }));
+
+    if (typeof window === 'undefined') return;
+    window.requestAnimationFrame(() => {
+      sectionRefs.current?.[sectionKey]?.scrollIntoView?.({
+        behavior: 'smooth',
+        block: 'start'
+      });
+    });
+  };
+
+  const focusAssignedAgentControl = () => {
+    if (!canAssignChats || typeof window === 'undefined') return;
+
+    window.requestAnimationFrame(() => {
+      assignedAgentSelectRef.current?.scrollIntoView?.({
+        behavior: 'smooth',
+        block: 'center'
+      });
+      assignedAgentSelectRef.current?.focus?.();
+    });
+  };
+
   const renderCollapsibleCard = (sectionKey, title, content, summary, icon) => {
     const isExpanded = Boolean(expandedSections[sectionKey]);
 
     return (
-      <div className="contact-info-card contact-info-card--collapsible">
+      <div
+        className="contact-info-card contact-info-card--collapsible"
+        ref={(node) => {
+          sectionRefs.current[sectionKey] = node || null;
+        }}
+      >
         <button
           type="button"
           className="contact-info-section-toggle"
@@ -292,6 +377,172 @@ const ContactInfoPanel = ({
                 </option>
               ))}
             </select>
+          </div>
+          <div className="contact-info-item">
+            <span>Lead Status</span>
+            <select
+              className="lead-stage-select"
+              value={String(selectedConversation?.leadStatus || 'new_lead')}
+              onChange={(event) => handleConversationLeadStatusChange?.(event.target.value)}
+              disabled={contactInfoActionBusy}
+            >
+              <option value="new_lead">New Lead</option>
+              <option value="interested">Interested</option>
+              <option value="follow_up">Follow Up</option>
+              <option value="proposal_sent">Proposal Sent</option>
+              <option value="converted">Converted</option>
+              <option value="closed">Closed</option>
+            </select>
+          </div>
+          <div className="contact-info-item contact-info-item--admin-strip">
+            <span className="contact-info-item-label-row">
+              <span>Assigned Agent</span>
+              {canAssignChats ? <span className="contact-info-admin-badge">Admin</span> : null}
+            </span>
+            {canAssignChats ? (
+              <div className="contact-info-assignment">
+                <select
+                  className="lead-stage-select"
+                  ref={assignedAgentSelectRef}
+                  value={assignedAgentDraft}
+                  onChange={(event) => setAssignedAgentDraft(event.target.value)}
+                  disabled={contactInfoActionBusy}
+                >
+                  <option value="">Unassigned</option>
+                  {availableAgents.map((agent) => {
+                    const agentId = String(agent?.id || agent?._id || agent?.userId || '').trim();
+                    const agentLabel =
+                      String(agent?.label || agent?.name || agent?.displayName || agent?.email || agentId || 'Agent').trim();
+                    if (!agentId) return null;
+                    return (
+                      <option key={`agent-${agentId}`} value={agentId}>
+                        {agentLabel}
+                      </option>
+                    );
+                  })}
+                </select>
+                <div className="contact-info-assignment__actions">
+                  <button
+                    type="button"
+                    className="lead-action-btn lead-action-btn--neutral"
+                    onClick={() => handleAssignConversation?.(assignedAgentDraft)}
+                    disabled={contactInfoActionBusy || !assignedAgentDraft}
+                  >
+                    Assign selected agent
+                  </button>
+                </div>
+                <span className="contact-info-assignment__hint">
+                  Select an agent, then save the assignment. Admins can reassign this conversation to any active agent in the workspace.
+                </span>
+              </div>
+            ) : (
+              <strong>{String(selectedConversation?.assignedTo || selectedConversation?.assignedAgent || 'Unassigned')}</strong>
+            )}
+          </div>
+          <div className="contact-info-item contact-info-item--actions">
+            <span>Conversation</span>
+            <div className="whatsapp-status-actions">
+              <button
+                type="button"
+                className="lead-action-btn lead-action-btn--neutral"
+                onClick={() => handleSetConversationImportant?.(!selectedConversation?.important)}
+                disabled={contactInfoActionBusy}
+              >
+                {selectedConversation?.important ? 'Unmark Important' : 'Mark Important'}
+              </button>
+              {String(selectedConversation?.status || '').toLowerCase() === 'resolved' ? (
+                <button
+                  type="button"
+                  className="lead-action-btn lead-action-btn--qualify"
+                  onClick={() => handleReopenConversation?.()}
+                  disabled={contactInfoActionBusy}
+                >
+                  Reopen
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="lead-action-btn lead-action-btn--unqualify"
+                  onClick={() => handleCloseConversation?.()}
+                  disabled={contactInfoActionBusy}
+                >
+                  Close
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        <div className="contact-info-card contact-info-quick-actions">
+          <div className="contact-info-quick-actions__header">
+            <div className="contact-info-quick-actions__header-copy">
+              <h4>Quick Actions</h4>
+              <p>Jump to common follow-up, task, note, and assignment actions</p>
+            </div>
+            <button
+              type="button"
+              className={`contact-info-followup-badge${leadFollowUpDraft ? ' is-set' : ' is-empty'}`}
+              onClick={() => openSection('followUp')}
+            >
+              <CalendarClock size={12} />
+              <span>{followUpBadgeLabel}</span>
+            </button>
+            <button
+              type="button"
+              className={`contact-info-followup-badge contact-info-followup-badge--task${crmTaskDueDraft ? ' is-set' : ' is-empty'}`}
+              onClick={() => openSection('quickTask')}
+            >
+              <NotebookPen size={12} />
+              <span>{taskDueBadgeLabel}</span>
+            </button>
+            <span className={`contact-info-status-chip status-${leadStatusBadgeTone}`}>
+              <span className="contact-info-status-chip__label">Lead status</span>
+              <strong>{leadStatusBadgeLabel}</strong>
+            </span>
+          </div>
+          <div className="contact-info-quick-actions__row">
+            <button
+              type="button"
+              className="contact-info-quick-action"
+              onClick={() => openSection('followUp')}
+            >
+              <CalendarClock size={14} />
+              <span>Follow-up</span>
+            </button>
+            <button
+              type="button"
+              className="contact-info-quick-action contact-info-quick-action--task"
+              onClick={() => openSection('quickTask')}
+            >
+              <NotebookPen size={14} />
+              <span>Create Task</span>
+            </button>
+            <button
+              type="button"
+              className="contact-info-quick-action"
+              onClick={() => openSection('internalNotes')}
+            >
+              <FileText size={14} />
+              <span>Notes</span>
+            </button>
+            <button
+              type="button"
+              className={`contact-info-quick-action contact-info-quick-action--important${selectedConversation?.important ? ' is-active' : ''}`}
+              onClick={() => handleSetConversationImportant?.(!selectedConversation?.important)}
+            >
+              <Star size={14} />
+              <span>{selectedConversation?.important ? 'Unmark' : 'Mark Important'}</span>
+            </button>
+            {canAssignChats ? (
+              <button
+                type="button"
+                className="contact-info-quick-action contact-info-quick-action--assign"
+                onClick={focusAssignedAgentControl}
+              >
+                <UserRound size={14} />
+                <span>Assign Agent</span>
+              </button>
+            ) : null}
           </div>
         </div>
 

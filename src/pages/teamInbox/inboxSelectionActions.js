@@ -1,4 +1,8 @@
 import { whatsappService } from '../../services/whatsappService';
+import {
+  removeConversationByIdFromOrderedList,
+  patchConversationsByIds
+} from './teamInboxUtils';
 
 const getConversationId = (conversation = {}) =>
   String(
@@ -25,7 +29,11 @@ export const createInboxSelectionActions = ({
   navigate,
   getMessageKey,
   notifyActionFeedback,
-  confirmAction
+  confirmAction,
+  refreshInboxOverview,
+  bulkAssignBusy = false,
+  setBulkAssignBusy,
+  setBulkAssignTarget
 }) => {
   const notify = (message, tone = 'info') => {
     const nextMessage = String(message || '').trim();
@@ -45,6 +53,44 @@ export const createInboxSelectionActions = ({
     return false;
   };
 
+  const refreshInboxOverviewSafely = async () => {
+    if (typeof refreshInboxOverview !== 'function') return;
+    try {
+      await refreshInboxOverview();
+    } catch (error) {
+      console.warn('Team Inbox overview refresh failed after assignment:', error);
+    }
+  };
+
+  const applyConversationAssignmentLocally = (conversationIds = [], patch = {}) => {
+    const conversationIdSet = new Set(
+      (Array.isArray(conversationIds) ? conversationIds : [])
+        .map((conversationId) => String(conversationId || '').trim())
+        .filter(Boolean)
+    );
+
+    if (conversationIdSet.size === 0) return;
+
+    const patchConversation = (conversation = {}) => {
+      const conversationId = getConversationId(conversation);
+      if (!conversationIdSet.has(conversationId)) return conversation;
+
+      return {
+        ...conversation,
+        ...patch,
+        ...(patch.assignedTo !== undefined ? { assignedTo: patch.assignedTo } : {}),
+        ...(patch.assignedAgent !== undefined ? { assignedAgent: patch.assignedAgent } : {}),
+        ...(patch.assignedToId !== undefined ? { assignedToId: patch.assignedToId } : {})
+      };
+    };
+
+    setConversations((prev) => patchConversationsByIds(prev, conversationIds, patchConversation));
+
+    if (selectedConversation && conversationIdSet.has(getConversationId(selectedConversation))) {
+      setSelectedConversation((prev) => patchConversation(prev));
+    }
+  };
+
   const deleteConversationEntry = async (conversation) => {
     const targetConversation = conversation || selectedConversation;
     if (!targetConversation) return;
@@ -61,9 +107,7 @@ export const createInboxSelectionActions = ({
       try {
         await whatsappService.deleteConversation(targetConversationId);
 
-        setConversations((prev) =>
-          prev.filter((conversationItem) => getConversationId(conversationItem) !== targetConversationId)
-        );
+        setConversations((prev) => removeConversationByIdFromOrderedList(prev, targetConversationId));
 
         if (getConversationId(selectedConversation) === targetConversationId) {
           setSelectedConversation(null);
@@ -111,9 +155,13 @@ export const createInboxSelectionActions = ({
       try {
         await whatsappService.deleteSelectedConversations(selectedForDeletion);
 
-        setConversations((prev) =>
-          prev.filter((conversation) => !selectedForDeletion.includes(getConversationId(conversation)))
-        );
+        setConversations((prev) => {
+          let next = Array.isArray(prev) ? [...prev] : [];
+          selectedForDeletion.forEach((conversationId) => {
+            next = removeConversationByIdFromOrderedList(next, conversationId);
+          });
+          return next;
+        });
 
         if (selectedConversation && selectedForDeletion.includes(getConversationId(selectedConversation))) {
           setSelectedConversation(null);
@@ -127,6 +175,92 @@ export const createInboxSelectionActions = ({
       } catch (error) {
         console.error('Failed to delete selected chats:', error);
         notify('Failed to delete selected chats', 'error');
+      }
+    }
+  };
+
+  const assignConversationById = async (conversationId, assignedTo) => {
+    const normalizedConversationId = getConversationId({ _id: conversationId });
+    const nextAssignedTo = String(assignedTo || '').trim();
+
+    if (!normalizedConversationId || !nextAssignedTo) {
+      notify('Please choose an agent to assign this chat.', 'info');
+      return false;
+    }
+
+    try {
+      const result = await whatsappService.assignConversation(normalizedConversationId, nextAssignedTo);
+      if (result?.success === false) {
+        throw new Error(result?.error || 'Failed to assign conversation.');
+      }
+
+      applyConversationAssignmentLocally([normalizedConversationId], {
+        assignedTo: nextAssignedTo,
+        assignedAgent: nextAssignedTo,
+        assignedToId: nextAssignedTo
+      });
+      await refreshInboxOverviewSafely();
+      notify('Conversation assigned successfully.', 'success');
+      return true;
+    } catch (error) {
+      console.error('Failed to assign conversation:', error);
+      notify(error?.message || 'Failed to assign conversation', 'error');
+      return false;
+    }
+  };
+
+  const bulkAssignSelectedChats = async (assignedTo) => {
+    if (bulkAssignBusy) return false;
+    if (selectedForDeletion.length === 0) {
+      notify('Please select chats to reassign', 'info');
+      return false;
+    }
+
+    const nextAssignedTo = String(assignedTo || '').trim();
+    if (!nextAssignedTo) {
+      notify('Please choose an agent to reassign the selected chats.', 'info');
+      return false;
+    }
+
+    if (
+      !(await confirmWithFallback(
+        `Assign ${selectedForDeletion.length} selected chat(s) to this agent?`
+      ))
+    ) {
+      return false;
+    }
+
+    try {
+      if (typeof setBulkAssignBusy === 'function') {
+        setBulkAssignBusy(true);
+      }
+
+      const result = await whatsappService.bulkAssignConversations(selectedForDeletion, nextAssignedTo);
+      if (result?.success === false) {
+        throw new Error(result?.error || 'Failed to bulk assign conversations.');
+      }
+
+      applyConversationAssignmentLocally(selectedForDeletion, {
+        assignedTo: nextAssignedTo,
+        assignedAgent: nextAssignedTo,
+        assignedToId: nextAssignedTo
+      });
+
+      setSelectedForDeletion([]);
+      setShowSelectMode(false);
+      if (typeof setBulkAssignTarget === 'function') {
+        setBulkAssignTarget('');
+      }
+      await refreshInboxOverviewSafely();
+      notify('Selected chats reassigned successfully.', 'success');
+      return true;
+    } catch (error) {
+      console.error('Failed to bulk assign conversations:', error);
+      notify(error?.message || 'Failed to bulk assign selected chats', 'error');
+      return false;
+    } finally {
+      if (typeof setBulkAssignBusy === 'function') {
+        setBulkAssignBusy(false);
       }
     }
   };
@@ -191,6 +325,8 @@ export const createInboxSelectionActions = ({
     deleteConversationEntry,
     toggleSelectForDeletion,
     deleteSelectedChats,
+    assignConversationById,
+    bulkAssignSelectedChats,
     toggleMessageSelection,
     deleteSelectedMessages
   };

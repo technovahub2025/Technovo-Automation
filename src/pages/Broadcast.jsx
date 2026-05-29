@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import Papa from "papaparse";
 
 import { apiClient } from "../services/whatsappapi";
+import { whatsappService } from "../services/whatsappService";
 import { useBroadcast, useCampaignAutomation } from "../hooks/useBroadcast";
 import webSocketService from "../services/websocketService";
 
@@ -38,10 +39,22 @@ import { stripAppRouteBase } from "../utils/appRouteBase";
 // Import styles
 import "../styles/whatsapp.css";
 import "../styles/message-preview.css";
+
+const TEAM_INBOX_REFRESH_REQUEST_EVENT = "teamInbox:refreshRequested";
 import "../styles/broadcast-list-controls.css";
 import "./Broadcast.css";
 
 const normalizeText = (value = "") => String(value || "").trim();
+
+const getCreatorDisplayLabel = (broadcast = {}) => {
+  const createdBy = normalizeText(broadcast?.createdBy);
+  if (createdBy) return createdBy;
+  const createdByEmail = normalizeText(broadcast?.createdByEmail);
+  if (createdByEmail) return createdByEmail;
+  const createdById = normalizeText(broadcast?.createdById);
+  if (createdById) return `Agent ${createdById.slice(-6)}`;
+  return "Unknown";
+};
 
 const getBroadcastErrorMessage = (
   error,
@@ -179,6 +192,9 @@ const Broadcast = ({
     statusFilter,
     setStatusFilter,
 
+    creatorFilter,
+    setCreatorFilter,
+
     sortBy,
     setSortBy,
 
@@ -243,9 +259,6 @@ const Broadcast = ({
     downloadAllCampaigns,
   } = useBroadcast();
 
-  // Additional state for pagination and broadcast mode
-  const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage] = useState(5);
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
   const [selectedBroadcast, setSelectedBroadcast] = useState(null);
   const [audienceValidationModalOpen, setAudienceValidationModalOpen] =
@@ -315,6 +328,9 @@ const Broadcast = ({
     lastPercent: -1,
     lastUpdateAt: 0,
   });
+  const broadcastTableScrollRef = useRef(null);
+  const broadcastInfiniteScrollSentinelRef = useRef(null);
+  const [visibleBroadcastCount, setVisibleBroadcastCount] = useState(10);
 
   useEffect(
     () => () => {
@@ -448,42 +464,84 @@ const Broadcast = ({
   // Get filtered and sorted broadcasts
 
   const filteredBroadcasts = getFilteredAndSortedBroadcasts();
+  const visibleBroadcasts = filteredBroadcasts.slice(0, visibleBroadcastCount);
+  const creatorOptions = Array.from(
+    new Map(
+      broadcasts
+        .map((broadcast) => {
+          const value =
+            normalizeText(broadcast?.createdByEmail) ||
+            normalizeText(broadcast?.createdBy) ||
+            normalizeText(broadcast?.createdById);
 
-  const totalPages = Math.max(
-    1,
-    Math.ceil(filteredBroadcasts.length / itemsPerPage),
-  );
-  const safeCurrentPage = Math.min(currentPage, totalPages);
-  const indexOfLastItem = safeCurrentPage * itemsPerPage;
-  const indexOfFirstItem = indexOfLastItem - itemsPerPage;
-  const currentBroadcasts = filteredBroadcasts.slice(
-    indexOfFirstItem,
-    indexOfLastItem,
-  );
+          if (!value) return null;
 
-  const paginate = (pageNumber) => {
-    const nextPage = Math.min(Math.max(1, pageNumber), totalPages);
-    setCurrentPage(nextPage);
-  };
-
-  const getVisiblePages = () => {
-    const pages = [];
-    const windowSize = 2;
-    const start = Math.max(1, safeCurrentPage - windowSize);
-    const end = Math.min(totalPages, safeCurrentPage + windowSize);
-
-    for (let page = start; page <= end; page += 1) {
-      pages.push(page);
-    }
-
-    return pages;
-  };
+          return [
+            value,
+            {
+              value,
+              label: getCreatorDisplayLabel(broadcast),
+            },
+          ];
+        })
+        .filter(Boolean),
+  ).values(),
+  ).sort((a, b) => a.label.localeCompare(b.label));
+  const currentBroadcasts = visibleBroadcasts;
 
   useEffect(() => {
-    setCurrentPage(1);
+    const sentinel = broadcastInfiniteScrollSentinelRef.current;
+    const root = broadcastTableScrollRef.current;
+    if (!sentinel || !root) return undefined;
+
+    // Load the next page only when the broadcast table itself reaches the bottom.
+    const observer = new IntersectionObserver(
+      async (entries) => {
+        const [entry] = entries;
+        if (!entry?.isIntersecting) return;
+        if (loadingMoreBroadcasts) return;
+
+        const hasMoreVisibleItems = visibleBroadcastCount < filteredBroadcasts.length;
+        if (hasMoreVisibleItems) {
+          setVisibleBroadcastCount((prev) =>
+            Math.min(prev + 10, filteredBroadcasts.length),
+          );
+          return;
+        }
+
+        if (!broadcastPageMeta?.hasMore) return;
+        const loaded = await loadMoreBroadcasts();
+        if (loaded) {
+          setVisibleBroadcastCount((prev) => prev + 10);
+        }
+      },
+      {
+        root,
+        rootMargin: "0px",
+        threshold: 0,
+      },
+    );
+
+    observer.observe(sentinel);
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [
+    broadcastPageMeta?.hasMore,
+    broadcastPageMeta?.nextCursor,
+    filteredBroadcasts.length,
+    loadMoreBroadcasts,
+    loadingMoreBroadcasts,
+    visibleBroadcastCount,
+  ]);
+
+  useEffect(() => {
+    setVisibleBroadcastCount(10);
   }, [
     searchTerm,
     statusFilter,
+    creatorFilter,
     sortBy,
     sortOrder,
     dateFilter,
@@ -491,10 +549,6 @@ const Broadcast = ({
     endDate,
     selectedPeriod,
   ]);
-
-  useEffect(() => {
-    setCurrentPage((prev) => Math.min(prev, totalPages));
-  }, [totalPages]);
   const cachedOverviewStats = getCachedOverviewStats(broadcasts);
   const overviewStats = overviewSummary
     ? {
@@ -2418,14 +2472,10 @@ const Broadcast = ({
       const result = await apiClient.createBroadcast(payload);
 
       if (result.data.success) {
-        const queued = Boolean(result.data.queued);
         alert(
-          queued
-            ? result.data.message ||
-                "Broadcast queued. Sending will continue in the background."
-            : scheduledTime
+          scheduledTime
               ? "Broadcast scheduled successfully!"
-              : "Broadcast created successfully!",
+              : "Broadcast sent successfully. Inbox updated immediately!",
         );
 
         await loadBroadcasts();
@@ -2641,10 +2691,7 @@ const Broadcast = ({
       setSendResults(result.data);
 
       if (result.data.success) {
-        const queued = Boolean(result.data.queued);
-        if (queued) {
-          setShowResultsPopup(false);
-        }
+        setShowResultsPopup(false);
 
         await loadBroadcasts();
 
@@ -2689,7 +2736,21 @@ const Broadcast = ({
       const result = await apiClient.sendBroadcast(broadcastId);
 
       if (result.data.success) {
-        alert("Broadcast sent successfully!");
+        if (typeof whatsappService?.clearInboxRequestCache === "function") {
+          whatsappService.clearInboxRequestCache();
+        }
+        if (typeof window !== "undefined" && typeof window.dispatchEvent === "function") {
+          window.dispatchEvent(
+            new CustomEvent(TEAM_INBOX_REFRESH_REQUEST_EVENT, {
+              detail: {
+                broadcastId: String(broadcastId || "").trim(),
+                reason: "broadcast_sent",
+                updatedAt: new Date().toISOString()
+              }
+            })
+          );
+        }
+        alert("Broadcast sent successfully. Inbox updated immediately!");
 
         await loadBroadcasts();
       } else {
@@ -3256,15 +3317,15 @@ const Broadcast = ({
             }
           />
 
-          {(isSending || sendResults?.queued) && (
+          {(isSending || sendResults?.success) && (
             <div className="broadcast-validation-banner broadcast-validation-banner--success broadcast-send-banner">
               <strong>
-                {isSending ? "Sending broadcast..." : "Broadcast queued"}
+                {isSending ? "Sending broadcast..." : "Broadcast sent"}
               </strong>
               <span>
                 {isSending
-                  ? "We are sending this campaign in the background. You can stay on this page and watch the broadcast list update."
-                  : "The campaign is running in the background. You can stay here and watch the progress update."}
+                  ? "We are sending this campaign now. The inbox row will appear as soon as the send completes."
+                  : "The campaign was sent and inbox records were updated immediately."}
               </span>
             </div>
           )}
@@ -3278,7 +3339,9 @@ const Broadcast = ({
                 onStartDateChange={(e) => setStartDate(e.target.value)}
                 onEndDateChange={(e) => setEndDate(e.target.value)}
                 onPeriodChange={(e) => setSelectedPeriod(e.target.value)}
-                onApplyFilter={() => setCurrentPage(1)}
+                onApplyFilter={() => {
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
                 onExportCampaigns={() =>
                   void downloadAllCampaigns(filteredBroadcasts)
                 }
@@ -3294,15 +3357,15 @@ const Broadcast = ({
                   onSearchChange={(e) => setSearchTerm(e.target.value)}
                   statusFilter={statusFilter}
                   onStatusFilterChange={(value) => setStatusFilter(value)}
+                  creatorFilter={creatorFilter}
+                  onCreatorFilterChange={(value) => setCreatorFilter(value)}
+                  creatorOptions={creatorOptions}
                   sortBy={sortBy}
                   onSortByChange={(value) => setSortBy(value)}
                   sortOrder={sortOrder}
                   onSortOrderChange={(value) => setSortOrder(value)}
                   onRefresh={() => loadBroadcasts()}
-                  totalBroadcasts={filteredBroadcasts.length}
-                  hasMoreCampaigns={Boolean(broadcastPageMeta?.hasMore)}
-                  isLoadingMoreCampaigns={Boolean(loadingMoreBroadcasts)}
-                  onLoadMoreCampaigns={() => loadMoreBroadcasts()}
+                  totalBroadcasts={currentBroadcasts.length}
                   lastUpdated={
                     broadcasts.length > 0
                       ? Math.max(
@@ -3328,57 +3391,14 @@ const Broadcast = ({
                   onStopBroadcast={stopBroadcast}
                   onDeleteClick={handleDeleteClick}
                   onViewAnalytics={handleViewAnalytics}
+                  scrollContainerRef={broadcastTableScrollRef}
+                  infiniteScrollSentinelRef={broadcastInfiniteScrollSentinelRef}
+                  isLoadingMore={Boolean(loadingMoreBroadcasts)}
+                  hasMoreBroadcasts={Boolean(broadcastPageMeta?.hasMore)}
+                  hasMoreVisibleBroadcasts={
+                    visibleBroadcastCount < filteredBroadcasts.length
+                  }
                 />
-
-                {totalPages > 1 && (
-                  <div className="broadcast-pagination-bar">
-                    <div className="broadcast-pagination-info">
-                      Showing{" "}
-                      <span className="broadcast-pagination-strong">
-                        {indexOfFirstItem + 1}-
-                        {Math.min(indexOfLastItem, filteredBroadcasts.length)}
-                      </span>{" "}
-                      of{" "}
-                      <span className="broadcast-pagination-strong">
-                        {filteredBroadcasts.length}
-                      </span>{" "}
-                      campaigns
-                    </div>
-
-                    <div className="broadcast-pagination-controls">
-                      <button
-                        type="button"
-                        className="broadcast-pagination-btn"
-                        onClick={() => paginate(safeCurrentPage - 1)}
-                        disabled={safeCurrentPage <= 1}
-                      >
-                        Prev
-                      </button>
-
-                      <div className="broadcast-pagination-pages">
-                        {getVisiblePages().map((pageNo) => (
-                          <button
-                            key={pageNo}
-                            type="button"
-                            className={`broadcast-pagination-page ${pageNo === safeCurrentPage ? "active" : ""}`}
-                            onClick={() => paginate(pageNo)}
-                          >
-                            {pageNo}
-                          </button>
-                        ))}
-                      </div>
-
-                      <button
-                        type="button"
-                        className="broadcast-pagination-btn"
-                        onClick={() => paginate(safeCurrentPage + 1)}
-                        disabled={safeCurrentPage >= totalPages}
-                      >
-                        Next
-                      </button>
-                    </div>
-                  </div>
-                )}
 
               </div>
             </>
@@ -3566,6 +3586,8 @@ const Broadcast = ({
             onSearchChange={(e) => setSearchTerm(e.target.value)}
             statusFilter={statusFilter}
             onStatusFilterChange={(value) => setStatusFilter(value)}
+            creatorFilter={creatorFilter}
+            onCreatorFilterChange={(value) => setCreatorFilter(value)}
             showFilterDropdown={showFilterDropdown}
             onFilterDropdownToggle={() =>
               setShowFilterDropdown(!showFilterDropdown)

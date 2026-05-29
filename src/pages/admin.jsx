@@ -9,6 +9,7 @@ import {
   Settings2,
   Shield,
   ShieldCheck,
+  UserCog,
   UsersRound,
   WalletCards
 } from 'lucide-react';
@@ -26,6 +27,18 @@ const ADMIN_CARDS = [
     path: '/admin/users',
     action: 'Open Users',
     meta: 'Search + role filters',
+    accent: 'superadmin-dashboard-card--users'
+  },
+  {
+    key: 'agent-management',
+    icon: UserCog,
+    label: 'Agent roster',
+    title: 'Agent Management',
+    description:
+      'Open a lightweight table view of the current users and admins roster with name, email, role, and status.',
+    path: '/agent-management',
+    action: 'Open Agents',
+    meta: 'Users and admins list',
     accent: 'superadmin-dashboard-card--users'
   },
   {

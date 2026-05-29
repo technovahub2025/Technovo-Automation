@@ -1,4 +1,4 @@
-const TEAM_INBOX_CACHE_VERSION = 7;
+const TEAM_INBOX_CACHE_VERSION = 8;
 const TEAM_INBOX_CACHE_PREFIX = 'team-inbox-cache';
 
 const TEAM_INBOX_BOOTSTRAP_TTL_MS = 30 * 60 * 1000;
@@ -115,6 +115,15 @@ const sanitizeAttachment = (attachment = {}) => {
   return nextAttachment;
 };
 
+const sanitizeAttachments = (message = {}) => {
+  if (Array.isArray(message.attachments)) {
+    return message.attachments.map(sanitizeAttachment).filter(Boolean).slice(0, 10);
+  }
+
+  const fallbackAttachment = sanitizeAttachment(message.attachment);
+  return fallbackAttachment ? [fallbackAttachment] : [];
+};
+
 const sanitizeReplyMessage = (message = {}) => {
   if (!message || typeof message !== 'object') return null;
 
@@ -136,7 +145,8 @@ const sanitizeReplyMessage = (message = {}) => {
     mediaUrl: sanitizeUrl(message.mediaUrl),
     rawMessageType: pickString(message.rawMessageType),
     attachmentDeleted: Boolean(message.attachmentDeleted),
-    attachment: sanitizeAttachment(message.attachment)
+    attachment: sanitizeAttachment(message.attachment),
+    attachments: sanitizeAttachments(message)
   };
 };
 
@@ -167,6 +177,7 @@ export const sanitizeTeamInboxMessageForCache = (message = {}) => {
     whatsappContextMessageId: pickString(message.whatsappContextMessageId),
     attachmentDeleted: Boolean(message.attachmentDeleted),
     attachment: sanitizeAttachment(message.attachment),
+    attachments: sanitizeAttachments(message),
     replyTo: sanitizeReplyMessage(message.replyTo)
   };
 };

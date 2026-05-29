@@ -11,7 +11,8 @@ import { useLocation, useNavigate, useParams, useSearchParams } from 'react-rout
 import './TeamInbox.css';
 import { googleCalendarService } from '../services/googleCalendarService';
 import { apiClient } from '../services/whatsappapi';
-import { crmService } from '../services/crmService';
+import { crmService, getCrmUserRoster, subscribeCrmUserRoster } from '../services/crmService';
+import { whatsappService } from '../services/whatsappService';
 import { AuthContext } from './authcontext'
 import TemplateSendModal from './teamInbox/TemplateSendModal';
 import ContactInfoPanel from './teamInbox/ContactInfoPanel';
@@ -31,7 +32,10 @@ import { useConversationSelectionEffects } from './teamInbox/useConversationSele
 import { useTeamInboxContactEffects } from './teamInbox/useTeamInboxContactEffects';
 import { useTeamInboxViewEffects } from './teamInbox/useTeamInboxViewEffects';
 import { useTeamInboxBoundUtils } from './teamInbox/useTeamInboxBoundUtils';
+import { useConversationListEngine } from './teamInbox/useConversationListEngine';
+import { useMessageListEngine } from './teamInbox/inbox/hooks/useMessageListEngine';
 import useCrmRealtimeRefresh from '../hooks/useCrmRealtimeRefresh';
+import { useStableCallback } from '../hooks/useStableCallback';
 import {
   readTeamInboxBootstrapCache,
   writeTeamInboxBootstrapCache
@@ -49,15 +53,119 @@ import {
 } from '../utils/crmSyncEvents';
 import {
   formatConversationTime,
-  filterConversations,
   buildGroupedMessages,
   formatMessageTime,
   getMessageKey
 } from './teamInbox/teamInboxDisplayUtils';
 import { resolvePreferredMessageStatus } from './teamInbox/replyMessageMergeUtils';
+import { resolveAgentWorkspaceState, resolveWorkspaceManagementAccessState } from '../utils/agentAccess';
 
 const TEAM_INBOX_DRAFTS_PREFIX = 'team-inbox:drafts:v1';
+const THREAD_WINDOW_BUFFER_BEFORE = 140;
+const THREAD_WINDOW_BUFFER_AFTER = 220;
+const THREAD_WINDOW_MIN_FULL_SIZE = 320;
 
+const ADMIN_INBOX_FILTER_OPTIONS = [
+  { value: 'all', label: 'All Chats', countKeys: ['allChats'] },
+  {
+    value: 'unread',
+    label: 'Unread',
+    countKeys: ['unreadConversations', 'unreadChats', 'unread']
+  },
+  { value: 'unassigned', label: 'Unassigned', countKeys: ['unassignedChats'] },
+  { value: 'assigned', label: 'Assigned Chats', countKeys: ['assignedChats'] },
+  { value: 'my', label: 'My Chats', countKeys: ['myChats'] },
+  { value: 'closed', label: 'Closed', countKeys: ['closedChats'] },
+  {
+    value: 'important',
+    label: 'Important',
+    countKeys: ['importantChats', 'important']
+  },
+  {
+    value: 'followups',
+    label: 'Followups',
+    countKeys: ['followups']
+  }
+];
+
+const AGENT_INBOX_FILTER_OPTIONS = [
+  {
+    value: 'unread',
+    label: 'Unread',
+    countKeys: ['unreadConversations', 'unreadChats', 'unread']
+  },
+  { value: 'my', label: 'My Chats', countKeys: ['myChats'] },
+  {
+    value: 'assigned-leads',
+    label: 'Assigned Leads',
+    countKeys: ['assignedLeads', 'assignedChats']
+  },
+  {
+    value: 'followups',
+    label: 'Followups',
+    countKeys: ['followups']
+  },
+  { value: 'closed', label: 'Closed Chats', countKeys: ['closedChats'] }
+];
+
+const INBOX_VIEW_OPTIONS = new Set([
+  'all',
+  'unread',
+  'my',
+  'assigned',
+  'assigned-leads',
+  'unassigned',
+  'closed',
+  'important',
+  'followups'
+]);
+
+const normalizeInboxViewOption = (value = '') => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return INBOX_VIEW_OPTIONS.has(normalized) ? normalized : '';
+};
+
+const resolveInboxViewLabel = (value = '') => {
+  const normalized = normalizeInboxViewOption(value);
+  if (normalized === 'assigned-leads') return 'assigned';
+  if (normalized === 'followups') return 'followups';
+  if (normalized === 'important') return 'important';
+  return normalized;
+};
+
+const buildInboxFilterOptionsWithCounts = (options = [], getCount = () => 0) =>
+  (Array.isArray(options) ? options : [])
+    .map((option) => {
+      const normalizedValue = String(option?.value || '').trim().toLowerCase();
+      const count = Number(
+        getCount(normalizedValue, Array.isArray(option?.countKeys) ? option.countKeys : [])
+      );
+      return {
+        ...option,
+        value: normalizedValue,
+        count: Number.isFinite(count) && count > 0 ? count : 0
+      };
+    })
+    .filter((option) => Boolean(option.value));
+
+const ADMIN_INBOX_VIEW_VALUES = new Set([
+  'all',
+  'unread',
+  'unassigned',
+  'assigned',
+  'my',
+  'closed',
+  'important',
+  'followups'
+]);
+
+const AGENT_INBOX_VIEW_VALUES = new Set([
+  'my',
+  'unread',
+  'assigned-leads',
+  'followups',
+  'closed'
+]);
 const getTeamInboxDraftStorageKey = (currentUserId) => {
   const normalizedUserId = String(currentUserId || '').trim();
   if (!normalizedUserId) return '';
@@ -89,15 +197,14 @@ const writeTeamInboxDrafts = (currentUserId, draftsByConversation = {}) => {
 };
 
 const isTeamInboxDebugVisible = () => {
+  const allowDebugOverlay =
+    Boolean(import.meta?.env?.DEV) ||
+    String(import.meta?.env?.VITE_ENABLE_INBOX_DEBUG || '').trim().toLowerCase() === 'true';
   if (typeof window === 'undefined') {
-    return Boolean(import.meta?.env?.DEV);
+    return false;
   }
 
-  try {
-    return Boolean(import.meta?.env?.DEV);
-  } catch {
-    return Boolean(import.meta?.env?.DEV);
-  }
+  return allowDebugOverlay && String(window.localStorage.getItem('debugTeamInbox') || '').trim() === '1';
 };
 
 const formatInboxDebugTimestamp = (value) => {
@@ -112,6 +219,33 @@ const formatInboxDebugTimestamp = (value) => {
   });
 };
 
+const resolveInitialInboxView = () => {
+  if (typeof window !== 'undefined') {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const requestedView = String(params.get('view') || '').trim().toLowerCase();
+      if (normalizeInboxViewOption(requestedView)) {
+        return requestedView;
+      }
+    } catch {
+      // fall through to role-based default
+    }
+  }
+
+  if (typeof window !== 'undefined') {
+    try {
+      const storedUser = JSON.parse(window.localStorage.getItem('user') || 'null');
+      if (resolveAgentWorkspaceState(storedUser || {})) {
+        return 'my';
+      }
+    } catch {
+      // fall through to default
+    }
+  }
+
+  return 'all';
+};
+
 const TeamInbox = () => {
 
   const location = useLocation();
@@ -119,18 +253,34 @@ const TeamInbox = () => {
   const { conversationId } = useParams();
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useContext(AuthContext);
-  const [conversations, setConversations] = useState([]);
+  const initialConversationPageLimit = 20;
+  const {
+    conversations,
+    setConversations,
+    upsertConversation,
+    patchConversation,
+    conversationByIdMap,
+    conversationLookupMap
+  } = useConversationListEngine([]);
+  const {
+    messages,
+    setMessages,
+    appendMessageUnique,
+    upsertMessage,
+    patchMessage,
+    removeMessage
+  } = useMessageListEngine([]);
   const [conversationPageMeta, setConversationPageMeta] = useState({
-    limit: 25,
+    limit: initialConversationPageLimit,
     hasMore: false,
     nextCursor: null,
+    previousCursor: null,
     exhausted: false,
     loaded: false,
     querySignature: ''
   });
   const [conversationLoadingMore, setConversationLoadingMore] = useState(false);
   const [selectedConversation, setSelectedConversation] = useState(null);
-  const [messages, setMessages] = useState([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messagesOlderLoading, setMessagesOlderLoading] = useState(false);
   const [messagesHasMore, setMessagesHasMore] = useState(false);
@@ -144,11 +294,11 @@ const TeamInbox = () => {
     lastEvent: 'idle',
     lastEventAt: null,
     source: 'ui',
+    reason: '',
     conversationId: '',
     messageId: '',
     details: ''
   });
-  const [sidebarRefreshing, setSidebarRefreshing] = useState(false);
   const [pendingTemplateTarget, setPendingTemplateTarget] = useState(null);
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
@@ -163,7 +313,14 @@ const TeamInbox = () => {
     const initialFilter = String(searchParams.get('filter') || 'all').trim().toLowerCase();
     return ['all', 'unread', 'read'].includes(initialFilter) ? initialFilter : 'all';
   });
+  const [inboxView, setInboxView] = useState(() => {
+    return resolveInitialInboxView();
+  });
+  const [agentRoster, setAgentRoster] = useState([]);
+  const [inboxOverview, setInboxOverview] = useState({});
   const [selectedForDeletion, setSelectedForDeletion] = useState([]);
+  const [bulkAssignTarget, setBulkAssignTarget] = useState('');
+  const [bulkAssignBusy, setBulkAssignBusy] = useState(false);
   const [showSelectMode, setShowSelectMode] = useState(false);
   const [showMessageSelectMenu, setShowMessageSelectMenu] = useState(false);
   const [showMessageSelectMode, setShowMessageSelectMode] = useState(false);
@@ -207,6 +364,8 @@ const TeamInbox = () => {
   const [crmDocumentTypeDraft, setCrmDocumentTypeDraft] = useState('other');
   const [notificationMode, setNotificationMode] = useState(() => getTeamInboxNotificationMode());
   const [teamInboxActionFeedback, setTeamInboxActionFeedback] = useState(null);
+  const [inboxNotifications, setInboxNotifications] = useState([]);
+  const [showInboxNotificationsMenu, setShowInboxNotificationsMenu] = useState(false);
   const [conversationDrafts, setConversationDrafts] = useState({});
   const [showWhatsAppOptInModal, setShowWhatsAppOptInModal] = useState(false);
   const [whatsAppOptInDraft, setWhatsAppOptInDraft] = useState({
@@ -248,14 +407,16 @@ const TeamInbox = () => {
   const messageCacheRef = useRef(new Map());
   const messagePaginationCacheRef = useRef(new Map());
   const messageLoadPromiseMapRef = useRef(new Map());
+  const threadWindowTrimmedRef = useRef(false);
   const conversationLoadPromiseMapRef = useRef(new Map());
   const threadAutoLoadAttemptRef = useRef('');
   const threadCacheDisplaySourceRef = useRef('unknown');
   const threadFreshSyncAtRef = useRef(0);
   const conversationPageMetaRef = useRef({
-    limit: 25,
+    limit: initialConversationPageLimit,
     hasMore: false,
     nextCursor: null,
+    previousCursor: null,
     exhausted: false,
     loaded: false,
     querySignature: ''
@@ -279,7 +440,115 @@ const TeamInbox = () => {
   ];
   const storedUser = (() => { try { return JSON.parse(localStorage.getItem('user') || 'null'); } catch { return null; } })();
   const currentUserId = user?.id || user?._id || storedUser?.id || storedUser?._id || localStorage.getItem('userId') || null;
+  const currentUserDisplayName = String(
+    user?.displayName ||
+      user?.fullName ||
+      user?.name ||
+      user?.username ||
+      user?.email ||
+      storedUser?.displayName ||
+      storedUser?.fullName ||
+      storedUser?.name ||
+      storedUser?.username ||
+      storedUser?.email ||
+      ''
+  ).trim();
+  const currentUserInternalRole = String(
+    user?.companyRole || user?.role || storedUser?.companyRole || storedUser?.role || ''
+  )
+    .trim()
+    .toLowerCase();
   const currentCompanyId = user?.companyId || storedUser?.companyId || localStorage.getItem('companyId') || null;
+  const workspaceAccessSource = Object.keys(user || {}).length ? user : (storedUser || {});
+  const isAdminWorkspace = resolveWorkspaceManagementAccessState(workspaceAccessSource);
+  const isAgentWorkspace = !isAdminWorkspace && resolveAgentWorkspaceState(workspaceAccessSource);
+  const currentViewerInternalRole = isAgentWorkspace ? 'agent' : 'admin';
+  const isAgentInbox = isAgentWorkspace;
+  const isAdminInbox = !isAgentInbox;
+  const isAgentRestricted = isAgentWorkspace;
+  const canAssignChats = !isAgentRestricted;
+  const inboxFilterOptions = isAgentInbox ? AGENT_INBOX_FILTER_OPTIONS : ADMIN_INBOX_FILTER_OPTIONS;
+  const inboxFilterTitle = isAgentInbox ? 'Agent Inbox Filters' : 'Admin Inbox Filters';
+  const inboxFilterDescription = isAgentInbox
+    ? 'My work queue and channel filters'
+    : 'Workspace-wide queue and channel filters';
+  const inboxWorkspaceLabel = isAgentInbox ? 'Agent workspace' : 'Admin workspace';
+  const inboxWorkspaceHint = isAgentInbox ? 'Assigned queue only' : 'Full inbox access';
+  const inboxFilterSummary = isAgentInbox
+    ? 'My Chats, Assigned Leads, Followups, Closed Chats'
+    : 'All Chats, Unassigned, Assigned Chats, My Chats, Closed, Important, Followups';
+  const inboxChannelNote = isAgentInbox
+    ? 'Assigned conversations only, with follow-up and closure controls.'
+    : 'Workspace-wide queue with reassignment, follow-up, and priority monitoring.';
+  const assignableAgents = useMemo(
+    () =>
+      (Array.isArray(agentRoster) ? agentRoster : []).filter((agent) => {
+        if (!agent || typeof agent !== 'object') return false;
+        return agent?.isEnabled !== false;
+      }),
+    [agentRoster]
+  );
+  const normalizeInboxAgentRecord = useCallback((agent = {}) => {
+    const agentId = String(agent?.id || agent?._id || agent?.userId || '').trim();
+    if (!agentId) return null;
+
+    const companyRole = String(agent?.companyRole || agent?.role || '').trim().toLowerCase();
+    const displayName = String(
+      agent?.displayName ||
+        agent?.name ||
+        agent?.username ||
+        agent?.fullName ||
+        agent?.email ||
+        agentId
+    ).trim();
+
+    return {
+      _id: agentId,
+      id: agentId,
+      userId: agentId,
+      name: displayName,
+      displayName,
+      email: String(agent?.email || '').trim(),
+      role: String(agent?.displayRole || (companyRole === 'admin' ? 'Admin' : 'Agent')).trim() || 'Agent',
+      companyRole: companyRole || 'user',
+      isEnabled: typeof agent?.isEnabled === 'boolean' ? agent.isEnabled : true,
+      source: String(agent?.source || '').trim(),
+      connected: agent?.connected !== false,
+      lastSeenAt: String(agent?.lastSeenAt || '').trim()
+    };
+  }, []);
+  const mergeInboxAgentRoster = useCallback(
+    (baseList = [], incomingList = []) => {
+      const merged = new Map();
+
+      const addRecord = (record) => {
+        const normalized = normalizeInboxAgentRecord(record);
+        if (!normalized) return;
+
+        const previous = merged.get(normalized.id);
+        merged.set(normalized.id, {
+          ...(previous || {}),
+          ...normalized,
+          isEnabled:
+            typeof normalized.isEnabled === 'boolean'
+              ? normalized.isEnabled
+              : previous?.isEnabled !== false,
+          connected:
+            typeof normalized.connected === 'boolean'
+              ? normalized.connected
+              : previous?.connected !== false || false
+        });
+      };
+
+      (Array.isArray(baseList) ? baseList : []).forEach(addRecord);
+      (Array.isArray(incomingList) ? incomingList : []).forEach(addRecord);
+      return Array.from(merged.values());
+    },
+    [normalizeInboxAgentRecord]
+  );
+  const currentWorkspaceAssigneeId = String(currentUserId || '').trim();
+  const inboxStatusView = inboxView === 'archived' ? 'archived' : '';
+  const inboxAssignedTo = isAgentRestricted && currentWorkspaceAssigneeId ? currentWorkspaceAssigneeId : '';
   const routeOutreachTarget = getWhatsAppOutreachTargetFromLocationState(location.state);
   const requestedConversationFilter = String(searchParams.get('filter') || 'all').trim().toLowerCase();
   const deferredSearchTerm = useDeferredValue(searchTerm);
@@ -315,6 +584,7 @@ const TeamInbox = () => {
     getCrmActivityDescription
   } = useTeamInboxBoundUtils(contactNameMap, leadStageOptions);
   const activeConversationId = String(getConversationIdValue(selectedConversation) || '').trim();
+  const permittedInboxViewValues = isAgentInbox ? AGENT_INBOX_VIEW_VALUES : ADMIN_INBOX_VIEW_VALUES;
 
   useEffect(() => {
     setConversationDrafts(readTeamInboxDrafts(currentUserId));
@@ -401,6 +671,40 @@ const TeamInbox = () => {
   }, [currentUserId]);
 
   useEffect(() => {
+    if (!canAssignChats) {
+      setAgentRoster([]);
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadWorkspaceAgentRoster = async () => {
+      try {
+        const result = await getCrmUserRoster({ preferWebSocket: true });
+        const users = Array.isArray(result?.data) ? result.data : [];
+        if (cancelled) return;
+        setAgentRoster((previous) => mergeInboxAgentRoster(previous, users));
+      } catch {
+        if (!cancelled) {
+          setAgentRoster([]);
+        }
+      }
+    };
+
+    loadWorkspaceAgentRoster();
+
+    const unsubscribe = subscribeCrmUserRoster((payload = {}) => {
+      if (cancelled) return;
+      setAgentRoster((previous) => mergeInboxAgentRoster(previous, payload?.users || []));
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe?.();
+    };
+  }, [canAssignChats, mergeInboxAgentRoster]);
+
+  useEffect(() => {
     if (!activeConversationId) return;
     setConversationDrafts((prev) => {
       const currentDraft = String(prev?.[activeConversationId] || '');
@@ -479,6 +783,16 @@ const TeamInbox = () => {
   const showTeamInboxActionFeedback = useCallback((message, tone = 'info') => {
     const nextMessage = String(message || '').trim();
     if (!nextMessage) return;
+    setInboxNotifications((previous) => [
+      {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        message: nextMessage,
+        tone: String(tone || 'info').trim() || 'info',
+        createdAt: new Date().toISOString(),
+        source: 'inbox-action'
+      },
+      ...previous
+    ].slice(0, 5));
     setTeamInboxActionFeedback({
       message: nextMessage,
       tone: String(tone || 'info').trim() || 'info'
@@ -631,11 +945,8 @@ const TeamInbox = () => {
       if (!nextConversationId) return;
       pendingConversationRouteSyncRef.current = nextConversationId;
 
-      const matchingConversation = conversations.find(
-        (conversation) =>
-          String(getConversationIdValue(conversation) || '').trim() === nextConversationId ||
-          String(conversation?.summaryId || '').trim() === nextConversationId
-      );
+      const matchingConversation =
+        conversationLookupMap.get(nextConversationId) || conversationByIdMap.get(nextConversationId);
 
       if (matchingConversation) {
         setSelectedConversation(matchingConversation);
@@ -655,33 +966,7 @@ const TeamInbox = () => {
         handleOpenConversationFromNotification
       );
     };
-  }, [conversations, navigate]);
-
-  const appendMessageUnique = useCallback((incomingMessage) => {
-
-    if (!incomingMessage) return;
-
-    setMessages(prev => {
-
-      const exists = prev.some(msg => {
-
-        if (incomingMessage._id && msg._id) return msg._id === incomingMessage._id;
-
-        if (incomingMessage.whatsappMessageId && msg.whatsappMessageId) {
-
-          return msg.whatsappMessageId === incomingMessage.whatsappMessageId;
-
-        }
-
-        return false;
-
-      });
-
-      return exists ? prev : [...prev, incomingMessage];
-
-    });
-
-  }, []);
+  }, [conversationByIdMap, conversationLookupMap, navigate]);
 
   const {
     showTemplateSendModal,
@@ -799,6 +1084,23 @@ const TeamInbox = () => {
 
   const selectedWhatsAppState = getWhatsAppConversationState(whatsappStateContactSource);
 
+  const refreshInboxOverview = useCallback(async ({ skipCache = false } = {}) => {
+    try {
+      const result = await whatsappService.getInboxOverview({
+        view: inboxView,
+        ...(skipCache ? { skipCache: true } : {})
+      });
+      if (result?.success === false) {
+        return false;
+      }
+      setInboxOverview(result?.data && typeof result.data === 'object' ? result.data : {});
+      return true;
+    } catch (error) {
+      console.error('Failed to refresh inbox overview:', error);
+      return false;
+    }
+  }, [inboxView]);
+
   const {
     applyContactUpdateLocally,
     loadCrmActivitiesForContact,
@@ -809,6 +1111,13 @@ const TeamInbox = () => {
     handleLeadStageChange,
     handleSaveLeadFollowUp,
     handleCreateQuickTask,
+    handleAssignConversation,
+    handleSetConversationImportant,
+    handleCloseConversation,
+    handleReopenConversation,
+    handleAddInternalNote,
+    handleCreateFollowupTask,
+    handleConversationLeadStatusChange,
     handleOpenCrmDocument,
     handleDownloadCrmDocument,
     handleDeleteCrmDocument,
@@ -844,8 +1153,10 @@ const TeamInbox = () => {
     getContactIdFromConversation,
     getContactTagsRaw,
     getConversationIdValue,
+    currentUserId,
     toIsoFromDateTimeLocalInput,
     toDateTimeLocalInputValue,
+    refreshInboxOverview,
     confirmAction: confirmTeamInboxAction
   });
   const {
@@ -951,6 +1262,7 @@ const TeamInbox = () => {
     if (activeConversationId) return;
 
     activeMessagesConversationIdRef.current = '';
+    threadWindowTrimmedRef.current = false;
     messageLoadRequestIdRef.current += 1;
     threadCacheDisplaySourceRef.current = 'unknown';
     threadFreshSyncAtRef.current = 0;
@@ -968,6 +1280,7 @@ const TeamInbox = () => {
       lastEvent: 'selection_cleared',
       lastEventAt: new Date().toISOString(),
       source: 'ui',
+      reason: 'selection_cleared',
       conversationId: '',
       messageId: '',
       details: 'No active conversation selected'
@@ -987,10 +1300,9 @@ const TeamInbox = () => {
       return;
     }
 
-    messageCacheRef.current.set(
-      activeMessagesConversationId,
-      messages
-    );
+    if (threadWindowTrimmedRef.current) return;
+
+    messageCacheRef.current.set(activeMessagesConversationId, messages);
   }, [messages]);
 
   useEffect(() => {
@@ -1051,17 +1363,24 @@ const TeamInbox = () => {
     loadContacts
   } = createInboxDataActions({
     currentUserId,
+    currentUserDisplayName,
+    currentUserInternalRole: currentViewerInternalRole,
     normalizeConversation,
+    selectedWhatsAppState,
     setLoading,
     setConversations,
     setMessages,
     setMessagesLoading,
     selectedConversation,
+    messages,
     sendingMessage,
     messageInput,
     setSendingMessage,
     setMessageInput,
     appendMessageUnique,
+    upsertMessage,
+    patchMessage,
+    removeMessage,
     getConversationIdValue,
     conversationId,
     isRealName,
@@ -1079,7 +1398,6 @@ const TeamInbox = () => {
     threadCacheDisplaySourceRef,
     threadFreshSyncAtRef,
     setConversationPageMeta,
-    setSidebarRefreshing,
     setMessagesOlderLoading,
     setMessagesHasMore,
     setThreadCacheInfo,
@@ -1087,84 +1405,206 @@ const TeamInbox = () => {
     notifyActionFeedback: showTeamInboxActionFeedback,
     confirmAction: confirmTeamInboxAction
   });
+  const loadConversationsStable = useStableCallback(loadConversations);
+  const loadConversationByIdStable = useStableCallback(loadConversationById);
+  const loadMessagesStable = useStableCallback(loadMessages);
+  const sendMessageStable = useStableCallback(sendMessage);
+  const sendReactionStable = useStableCallback(sendReaction);
+  const sendAttachmentStable = useStableCallback(sendAttachment);
+  const openAttachmentStable = useStableCallback(openAttachment);
+  const deleteMessageStable = useStableCallback(deleteMessage);
+  const retryAttachmentStable = useStableCallback(retryAttachment);
+  const markAsReadStable = useStableCallback(markAsRead);
+  const loadContactsStable = useStableCallback(loadContacts);
+
+  const handleComposerSendMessage = useCallback(
+    async (options = {}) => {
+      if (!selectedConversation) return false;
+
+      if (selectedWhatsAppState?.optedOut) {
+        setTeamInboxActionFeedback(
+          'This contact has opted out. Restore consent before sending a WhatsApp message.',
+          'error'
+        );
+        return false;
+      }
+
+      if (!selectedWhatsAppState?.freeformAllowed) {
+        setTeamInboxActionFeedback(
+          'The 24-hour window is closed. Use an approved template to continue this chat.',
+          'error'
+        );
+        if (typeof openTemplateSendModal === 'function') {
+          openTemplateSendModal();
+        }
+        return false;
+      }
+
+      return sendMessageStable(options);
+    },
+    [
+      openTemplateSendModal,
+      selectedConversation,
+      selectedWhatsAppState,
+      sendMessageStable,
+      setTeamInboxActionFeedback
+    ]
+  );
 
   useEffect(() => {
     const activeId = String(getConversationIdValue(selectedConversation) || '').trim();
     if (!activeId) return;
     if (messagesLoading || messagesOlderLoading) return;
-    if (Array.isArray(messages) && messages.length > 0) return;
     if (messageLoadPromiseMapRef.current?.has(activeId)) return;
-
-    const cachedThreadCount = Number(threadCacheInfo?.messageCount || 0);
-    if (cachedThreadCount > 0) return;
     if (threadAutoLoadAttemptRef.current === activeId) return;
 
     const timer = window.setTimeout(() => {
       if (String(getConversationIdValue(selectedConversationRef.current) || '').trim() !== activeId) {
         return;
       }
-      const cachedMessages = messageCacheRef.current.get(activeId);
-      if (Array.isArray(cachedMessages) && cachedMessages.length > 0) {
-        return;
-      }
       threadAutoLoadAttemptRef.current = activeId;
-      void loadMessages(activeId);
+      void Promise.resolve(
+        loadMessagesStable(activeId, {
+          reason: 'selection_load',
+          forceRefresh: false,
+          limit: 20
+        })
+      ).then((didLoad) => {
+        if (didLoad === false && threadAutoLoadAttemptRef.current === activeId) {
+          threadAutoLoadAttemptRef.current = '';
+        }
+      });
     }, 0);
 
     return () => window.clearTimeout(timer);
   }, [
-    loadMessages,
-    messages,
+    loadMessagesStable,
     messagesLoading,
     messagesOlderLoading,
-    activeConversationId,
-    threadCacheInfo?.messageCount
+    activeConversationId
   ]);
 
   useEffect(() => {
     const activeId = String(getConversationIdValue(selectedConversation) || '').trim();
     if (!activeId) {
       threadAutoLoadAttemptRef.current = '';
-      return;
     }
-
-    if (Array.isArray(messages) && messages.length > 0) {
-      threadAutoLoadAttemptRef.current = '';
-    }
-  }, [messages, activeConversationId]);
+  }, [activeConversationId]);
 
   const loadScopedConversations = useCallback(
     async (options = {}) =>
-      loadConversations({
+      loadConversationsStable({
         ...options,
+        reason: String(options?.reason || 'unknown').trim() || 'unknown',
         search: normalizedConversationSearchTerm,
-        filter: normalizedConversationFilter
+        filter: normalizedConversationFilter,
+        view: inboxView,
+        status: inboxStatusView,
+        ...(inboxAssignedTo ? { assignedTo: inboxAssignedTo } : {})
       }),
-    [loadConversations, normalizedConversationSearchTerm, normalizedConversationFilter]
+    [
+      loadConversationsStable,
+      normalizedConversationSearchTerm,
+      normalizedConversationFilter,
+      inboxView,
+      inboxStatusView,
+      inboxAssignedTo,
+      isAgentRestricted,
+      currentWorkspaceAssigneeId
+    ]
   );
 
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.addEventListener !== 'function') {
+      return undefined;
+    }
+
+    const handleBroadcastRefreshRequested = () => {
+      void loadScopedConversations({
+        silent: true,
+        append: false,
+        reason: 'broadcast_sent',
+        skipCache: true
+      });
+      void refreshInboxOverview({ skipCache: true });
+    };
+
+    window.addEventListener('teamInbox:refreshRequested', handleBroadcastRefreshRequested);
+    return () => {
+      window.removeEventListener('teamInbox:refreshRequested', handleBroadcastRefreshRequested);
+    };
+  }, [loadScopedConversations, refreshInboxOverview]);
+
   const loadMoreConversations = useCallback(async () => {
-    if (!conversationPageMeta.hasMore || conversationLoadingMore) {
+    const nextCursor = String(conversationPageMeta?.nextCursor || '').trim();
+    if (!conversationPageMeta.hasMore || conversationLoadingMore || !nextCursor) {
       return false;
     }
 
     setConversationLoadingMore(true);
     try {
-      return await loadScopedConversations({ silent: true, append: true });
+      return await loadScopedConversations({
+        silent: true,
+        append: true,
+        cursor: nextCursor,
+        reason: 'sidebar_scroll'
+      });
     } finally {
       setConversationLoadingMore(false);
     }
-  }, [conversationPageMeta.hasMore, conversationLoadingMore, loadScopedConversations]);
+  }, [
+    conversationPageMeta?.hasMore,
+    conversationPageMeta?.nextCursor,
+    conversationLoadingMore,
+    loadScopedConversations
+  ]);
+
+  useEffect(() => {
+    const normalizedUserId = String(currentUserId || '').trim();
+    if (!normalizedUserId || wsConnected) return undefined;
+
+    let disposed = false;
+    const poll = async () => {
+      if (disposed) return;
+      await loadScopedConversations({
+        silent: true,
+        append: false,
+        reason: 'ws_fallback_poll',
+        skipCache: true
+      });
+      await refreshInboxOverview({ skipCache: true });
+    };
+
+    void poll();
+    const intervalId = window.setInterval(() => {
+      void poll();
+    }, 5000);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(intervalId);
+    };
+  }, [currentUserId, wsConnected, loadScopedConversations, refreshInboxOverview]);
 
   useEffect(() => {
     const normalizedUserId = String(currentUserId || '').trim();
     if (!normalizedUserId) return;
 
-    void loadScopedConversations({ silent: true, append: false }).catch(() => undefined);
+    void loadScopedConversations({
+      silent: true,
+      append: false,
+      reason: 'initial_bootstrap'
+    }).catch(() => undefined);
   }, [currentUserId, loadScopedConversations]);
 
   useEffect(() => {
-    const querySignature = `${normalizedConversationSearchTerm.toLowerCase()}::${normalizedConversationFilter}`;
+    const normalizedUserId = String(currentUserId || '').trim();
+    if (!normalizedUserId) return;
+    void refreshInboxOverview();
+  }, [refreshInboxOverview, currentUserId]);
+
+  useEffect(() => {
+    const querySignature = `${normalizedConversationSearchTerm.toLowerCase()}::${normalizedConversationFilter}::${String(inboxView || '').trim().toLowerCase()}::${inboxStatusView}::${inboxAssignedTo}`;
     if (!conversationQueryInitializedRef.current) {
       conversationQueryInitializedRef.current = true;
       conversationPageMetaRef.current = {
@@ -1179,10 +1619,13 @@ const TeamInbox = () => {
     }
 
     setConversationLoadingMore(false);
-    void loadScopedConversations({ silent: true, append: false });
+    void loadScopedConversations({ silent: true, append: false, reason: 'query_change' });
   }, [
     normalizedConversationSearchTerm,
     normalizedConversationFilter,
+    inboxView,
+    inboxStatusView,
+    inboxAssignedTo,
     loadScopedConversations
   ]);
 
@@ -1200,7 +1643,7 @@ const TeamInbox = () => {
     setMessageInput,
     realtimeResyncTimerRef,
     selectedConversationRef,
-    loadMessages,
+    loadMessages: loadMessagesStable,
     chatMessagesRef,
     isConversationSwitchRef,
     threadFreshSyncAtRef,
@@ -1208,17 +1651,90 @@ const TeamInbox = () => {
     messagesLoading,
     messagesOlderLoading
   });
+
+  const handleVisibleMessageWindowChange = useCallback(
+    ({ visibleMessageKeys = [] } = {}) => {
+      const activeId = String(activeMessagesConversationIdRef.current || '').trim();
+      if (!activeId) return;
+
+      const fullThreadMessages = messageCacheRef.current.get(activeId);
+      if (!Array.isArray(fullThreadMessages) || fullThreadMessages.length < THREAD_WINDOW_MIN_FULL_SIZE) {
+        threadWindowTrimmedRef.current = false;
+        return;
+      }
+
+      const normalizedVisibleKeys = Array.from(
+        new Set(
+          (Array.isArray(visibleMessageKeys) ? visibleMessageKeys : [])
+            .map((value) => String(value || '').trim())
+            .filter(Boolean)
+        )
+      );
+
+      if (normalizedVisibleKeys.length === 0) return;
+
+      const keyToIndex = new Map();
+      fullThreadMessages.forEach((message, index) => {
+        const messageKey = String(getMessageKey(message, index)).trim();
+        if (messageKey && !keyToIndex.has(messageKey)) {
+          keyToIndex.set(messageKey, index);
+        }
+      });
+
+      const visibleIndices = normalizedVisibleKeys
+        .map((key) => keyToIndex.get(key))
+        .filter((index) => Number.isInteger(index) && index >= 0);
+
+      if (visibleIndices.length === 0) return;
+
+      const firstVisibleIndex = Math.min(...visibleIndices);
+      const lastVisibleIndex = Math.max(...visibleIndices);
+      const startIndex = Math.max(0, firstVisibleIndex - THREAD_WINDOW_BUFFER_BEFORE);
+      const endIndex = Math.min(
+        fullThreadMessages.length - 1,
+        lastVisibleIndex + THREAD_WINDOW_BUFFER_AFTER
+      );
+
+      if (startIndex === 0 && endIndex >= fullThreadMessages.length - 1) {
+        threadWindowTrimmedRef.current = false;
+        return;
+      }
+
+      const nextWindow = fullThreadMessages.slice(startIndex, endIndex + 1);
+      if (nextWindow.length === 0) return;
+
+      const currentWindow = Array.isArray(messages) ? messages : [];
+      const sameWindow =
+        currentWindow.length === nextWindow.length &&
+        currentWindow.every(
+          (message, index) =>
+            String(message?._id || message?.id || message?.whatsappMessageId || '').trim() ===
+            String(
+              nextWindow[index]?._id ||
+                nextWindow[index]?.id ||
+                nextWindow[index]?.whatsappMessageId ||
+                ''
+            ).trim()
+        );
+      threadWindowTrimmedRef.current = nextWindow.length < fullThreadMessages.length;
+      if (sameWindow) return;
+
+      setMessages(nextWindow);
+    },
+    [messages, setMessages]
+  );
+
   useConversationSelectionEffects({
     locationState: location.state,
     conversations,
+    conversationLookupMap,
     setSelectedConversation,
     selectedConversationId: activeConversationId,
     isConversationSwitchRef,
-    loadMessages,
-    loadConversationById,
+    loadConversationById: loadConversationByIdStable,
     conversationId,
     getUnreadCount,
-    markAsRead,
+    markAsRead: markAsReadStable,
     pendingConversationRouteSyncRef,
     getConversationDisplayName
   });
@@ -1227,7 +1743,6 @@ const TeamInbox = () => {
     currentUserId,
     currentCompanyId,
     activeConversationId,
-    notificationMode,
     setWsConnected,
     hasBootstrapCache: Boolean(
       readTeamInboxBootstrapCache({
@@ -1236,33 +1751,36 @@ const TeamInbox = () => {
       })
     ),
     loadConversations: loadScopedConversations,
-    loadContacts,
+    loadContacts: loadContactsStable,
     hasRealContactName,
-    getMappedContactName,
     setConversations,
-    enrichConversationIdentity,
-    selectedConversationRef,
-    getUnreadCount,
     setMessages,
     appendMessageUnique,
-    markAsRead,
+    upsertMessage,
+    patchMessage,
+    removeMessage,
+    markAsRead: markAsReadStable,
     scheduleRealtimeResync,
-    loadMessages,
     setSelectedConversation,
     applyLeadScoreUpdateToConversation,
-    setSidebarRefreshing,
     realtimeResyncTimerRef,
     setUserPresenceMap,
     setConversationTypingState,
     setInboxDebugInfo,
     notifyActionFeedback: showTeamInboxActionFeedback,
-    threadFreshSyncAtRef
+    refreshInboxOverview,
+    threadFreshSyncAtRef,
+    conversationLookupMap,
+    upsertConversation,
+    patchConversation
   });
   const {
     deleteCurrentConversation,
     deleteConversationEntry,
     toggleSelectForDeletion,
     deleteSelectedChats,
+    assignConversationById,
+    bulkAssignSelectedChats,
     toggleMessageSelection,
     deleteSelectedMessages
   } = createInboxSelectionActions({
@@ -1280,24 +1798,45 @@ const TeamInbox = () => {
     navigate,
     getMessageKey,
     notifyActionFeedback: showTeamInboxActionFeedback,
-    confirmAction: confirmTeamInboxAction
+    confirmAction: confirmTeamInboxAction,
+    refreshInboxOverview,
+    bulkAssignBusy,
+    setBulkAssignBusy,
+    setBulkAssignTarget
   });
 
-  const filteredConversations = useMemo(
-    () =>
-      filterConversations({
-        conversations,
-        searchTerm: deferredSearchTerm,
-        conversationFilter,
-        getUnreadCount,
-        getConversationDisplayName
-      }),
-    [conversations, deferredSearchTerm, conversationFilter, getUnreadCount, getConversationDisplayName]
-  );
+  const filteredConversations = useMemo(() => {
+    if (!isAgentRestricted) {
+      return conversations;
+    }
+
+    return (Array.isArray(conversations) ? conversations : []).filter((conversation) => {
+      const assigneeId = String(
+        conversation?.assignedTo?._id ||
+          conversation?.assignedTo?.id ||
+          conversation?.assignedTo ||
+          conversation?.agentId ||
+          conversation?.ownerId ||
+          ''
+      ).trim();
+      return !currentWorkspaceAssigneeId || assigneeId === currentWorkspaceAssigneeId;
+    });
+  }, [conversations, isAgentRestricted, currentWorkspaceAssigneeId]);
 
   const sidebarConversations = filteredConversations;
 
   filteredConversationsRef.current = filteredConversations;
+
+  const filteredConversationIndexById = useMemo(() => {
+    const map = new Map();
+    (Array.isArray(filteredConversations) ? filteredConversations : []).forEach((conversation, index) => {
+      const conversationId = String(getConversationIdValue(conversation) || '').trim();
+      if (conversationId && !map.has(conversationId)) {
+        map.set(conversationId, index);
+      }
+    });
+    return map;
+  }, [filteredConversations, getConversationIdValue]);
 
   const handleMessageInputChange = (nextValue) => {
     const normalizedValue = String(nextValue || '');
@@ -1334,7 +1873,7 @@ const TeamInbox = () => {
 
     try {
       setContactInfoActionBusy(true);
-      const sent = await sendMessage({ messageOverride: promptMessage });
+      const sent = await sendMessageStable({ messageOverride: promptMessage });
       if (sent) {
         setContactInfoMessage('Opt-in prompt sent.');
         setContactInfoMessageTone('success');
@@ -1474,7 +2013,7 @@ const TeamInbox = () => {
     setSelectedConversation,
     navigate,
     getUnreadCount,
-    markAsRead,
+    markAsRead: markAsReadStable,
     setShowFilterMenu,
     setShowSelectMenu,
     setShowMessageSelectMenu,
@@ -1522,7 +2061,7 @@ const TeamInbox = () => {
         const trimmedInput = String(messageInput || '').trim();
         if (!trimmedInput || sendingMessage) return;
         event.preventDefault();
-        sendMessage();
+        handleComposerSendMessage();
         return;
       }
 
@@ -1535,9 +2074,7 @@ const TeamInbox = () => {
         : [];
       if (!safeConversations.length) return;
 
-      const currentIndex = safeConversations.findIndex(
-        (conversation) => String(getConversationIdValue(conversation) || '').trim() === activeConversationId
-      );
+      const currentIndex = filteredConversationIndexById.get(activeConversationId) ?? -1;
       const fallbackIndex = currentIndex < 0 ? 0 : currentIndex;
       const direction = event.key === 'ArrowDown' ? 1 : -1;
       const nextIndex = Math.min(
@@ -1552,112 +2089,328 @@ const TeamInbox = () => {
 
     window.addEventListener('keydown', handleKeyboardShortcut);
     return () => window.removeEventListener('keydown', handleKeyboardShortcut);
-  }, [activeConversationId, handleSelectConversation, messageInput, sendMessage, sendingMessage]);
+  }, [
+    activeConversationId,
+    filteredConversationIndexById,
+    handleSelectConversation,
+    messageInput,
+    handleComposerSendMessage,
+    sendingMessage
+  ]);
+
+  const getInboxOverviewCount = (viewKey, countKeys = []) => {
+    const normalizedKey = String(viewKey || '').trim().toLowerCase();
+    const countKeyCandidates = [
+      ...countKeys,
+      normalizedKey,
+      `${normalizedKey}Chats`,
+      `${normalizedKey}Count`
+    ];
+
+    for (const key of countKeyCandidates) {
+      const nextCount = inboxOverview?.[key];
+      if (Number.isFinite(Number(nextCount))) {
+        return Number(nextCount);
+      }
+    }
+
+    return 0;
+  };
+
+  const inboxFilterOptionsWithCounts = useMemo(
+    () => buildInboxFilterOptionsWithCounts(inboxFilterOptions, getInboxOverviewCount),
+    [inboxFilterOptions, inboxOverview]
+  );
+
+  const inboxTopMetrics = [
+    {
+      label: 'Active queue',
+      value: isAgentInbox ? getInboxOverviewCount('my', ['myChats']) : getInboxOverviewCount('all', ['allChats']),
+      note: isAgentInbox ? 'Your assigned workload' : 'Workspace total'
+    },
+    {
+      label: 'Unread',
+      value: getInboxOverviewCount('unread', ['unreadConversations', 'unreadChats']),
+      note: 'Needs attention'
+    },
+    {
+      label: 'Assigned',
+      value: getInboxOverviewCount('assigned', ['assignedChats']),
+      note: 'Tracked in real time'
+    },
+    {
+      label: 'Closed',
+      value: getInboxOverviewCount('closed', ['closedChats']),
+      note: 'Resolved conversations'
+    }
+  ];
+
+  const handleInboxViewChange = useCallback(
+    (nextView) => {
+      const normalizedView = String(nextView || '').trim().toLowerCase() || (isAgentInbox ? 'my' : 'all');
+      setInboxView(normalizedView);
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set('view', normalizedView);
+      setSearchParams(nextParams, { replace: true });
+    },
+    [isAgentInbox, searchParams, setSearchParams, setInboxView]
+  );
+
+  const toggleInboxNotificationsMenu = useCallback(() => {
+    setShowInboxNotificationsMenu((current) => !current);
+  }, []);
+
+  useEffect(() => {
+    const requestedView = String(searchParams.get('view') || '').trim().toLowerCase();
+    const normalizedCurrentView = String(inboxView || '').trim().toLowerCase();
+    const nextDefaultView = isAgentInbox ? 'my' : 'all';
+
+    if (!requestedView) {
+      if (normalizedCurrentView !== nextDefaultView) {
+        handleInboxViewChange(nextDefaultView);
+      }
+      return;
+    }
+
+    if (permittedInboxViewValues.has(requestedView)) {
+      return;
+    }
+
+    handleInboxViewChange(nextDefaultView);
+  }, [
+    handleInboxViewChange,
+    inboxView,
+    isAgentInbox,
+    permittedInboxViewValues,
+    searchParams
+  ]);
 
   return (
     <div className="team-inbox-shell">
       <div className="inbox-container">
-      <ConversationSidebar
-        wsConnected={wsConnected}
-        refreshing={sidebarRefreshing}
-        loadingMoreConversations={conversationLoadingMore}
-        allowLoadMoreConversations={
-          Boolean(conversationPageMeta.loaded) &&
-          !Boolean(conversationPageMeta.exhausted) &&
-          !conversationLoadingMore
-        }
-        hasMoreConversations={
-          Boolean(conversationPageMeta.hasMore) ||
-          Boolean(conversationPageMeta.nextCursor) ||
-          (!Boolean(conversationPageMeta.exhausted) && Boolean(conversationPageMeta.loaded))
-        }
-        conversationListExhausted={
-          Boolean(conversationPageMeta.loaded) &&
-          Boolean(conversationPageMeta.exhausted) &&
-          Array.isArray(sidebarConversations) &&
-          sidebarConversations.length > 0
-        }
-        filterMenuRef={filterMenuRef}
-        inboxMenuRef={inboxMenuRef}
-        showFilterMenu={showFilterMenu}
-        showSelectMenu={showSelectMenu}
-        showSelectMode={showSelectMode}
-        selectedForDeletion={selectedForDeletion}
-        loading={loading}
-        filteredConversations={sidebarConversations}
-        selectedConversation={selectedConversation}
-        searchTerm={searchTerm}
-        searchInputRef={sidebarSearchInputRef}
-        onSearchTermChange={setSearchTerm}
-        onToggleFilterMenu={handleToggleFilterMenu}
-        onSelectFilter={handleSelectConversationFilter}
-        onToggleSelectMenu={handleToggleInboxMenu}
-        onToggleSelectMode={handleToggleConversationSelectMode}
-        onDeleteSelectedChats={deleteSelectedChats}
-        onDeleteConversation={deleteConversationEntry}
-        onResolveSelection={handleResolveConversationSelection}
-        onConversationClick={handleSelectConversation}
-        onToggleSelectForDeletion={toggleSelectForDeletion}
-        onLoadMoreConversations={loadMoreConversations}
-        getUnreadCount={getUnreadCount}
-        getConversationAvatarText={getConversationAvatarText}
-        getConversationDisplayName={getConversationDisplayName}
-        formatConversationTime={formatConversationTime}
-      />
+        <div className="inbox-workspace-layout">
+          <div className="inbox-main-layout">
+            <ConversationSidebar
+              wsConnected={wsConnected}
+              loadingMoreConversations={conversationLoadingMore}
+              hasMoreConversations={
+                Boolean(conversationPageMeta.hasMore) ||
+                Boolean(conversationPageMeta.nextCursor)
+              }
+              conversationListExhausted={
+                Boolean(conversationPageMeta.loaded) &&
+                Boolean(conversationPageMeta.exhausted) &&
+                Array.isArray(sidebarConversations) &&
+                sidebarConversations.length > 0
+              }
+              filterMenuRef={filterMenuRef}
+              inboxMenuRef={inboxMenuRef}
+              showFilterMenu={showFilterMenu}
+              showSelectMenu={showSelectMenu}
+              showSelectMode={showSelectMode}
+              selectedForDeletion={selectedForDeletion}
+              bulkAssignTarget={bulkAssignTarget}
+              bulkAssignBusy={bulkAssignBusy}
+              loading={loading}
+              filteredConversations={sidebarConversations}
+              selectedConversation={selectedConversation}
+              searchTerm={searchTerm}
+              searchInputRef={sidebarSearchInputRef}
+              onSearchTermChange={setSearchTerm}
+              onToggleFilterMenu={handleToggleFilterMenu}
+              onSelectFilter={handleSelectConversationFilter}
+              onToggleSelectMenu={handleToggleInboxMenu}
+              showInboxNotificationsMenu={showInboxNotificationsMenu}
+              onToggleInboxNotificationsMenu={toggleInboxNotificationsMenu}
+              onToggleSelectMode={handleToggleConversationSelectMode}
+              onDeleteSelectedChats={deleteSelectedChats}
+              onBulkAssignSelectedChats={bulkAssignSelectedChats}
+              onDeleteConversation={deleteConversationEntry}
+              onResolveSelection={handleResolveConversationSelection}
+              onAssignConversation={assignConversationById}
+              onConversationClick={handleSelectConversation}
+              onToggleSelectForDeletion={toggleSelectForDeletion}
+              onLoadMoreConversations={loadMoreConversations}
+              getUnreadCount={getUnreadCount}
+              getConversationAvatarText={getConversationAvatarText}
+              getConversationDisplayName={getConversationDisplayName}
+              formatConversationTime={formatConversationTime}
+              canAssignChats={!isAgentRestricted}
+              availableAgents={assignableAgents}
+              currentUserId={currentUserId}
+              setBulkAssignTarget={setBulkAssignTarget}
+              inboxView={inboxView}
+              inboxFilterOptions={inboxFilterOptionsWithCounts}
+              onInboxViewChange={handleInboxViewChange}
+              inboxFilterTitle={inboxFilterTitle}
+              inboxFilterDescription={inboxFilterDescription}
+              inboxWorkspaceLabel={inboxWorkspaceLabel}
+              inboxWorkspaceHint={inboxWorkspaceHint}
+              inboxNotifications={inboxNotifications}
+              onClearInboxNotifications={() => setInboxNotifications([])}
+            />
 
-      <ChatArea
-        selectedConversation={selectedConversation}
-        currentThreadConversationId={String(activeMessagesConversationIdRef.current || '').trim()}
-        messages={messages}
-        messagesLoading={messagesLoading}
-        hasOlderMessages={messagesHasMore}
-        threadCacheInfo={threadCacheInfo}
-        inboxDebugInfo={inboxDebugInfo}
-        isInboxDebugVisible={isInboxDebugVisible}
-        olderMessagesLoading={messagesOlderLoading}
-        getConversationAvatarText={getConversationAvatarText}
-        getConversationDisplayName={getConversationDisplayName}
-        messageMenuRef={messageMenuRef}
-        showMessageSelectMenu={showMessageSelectMenu}
-        showMessageSelectMode={showMessageSelectMode}
-        selectedMessagesForDeletion={selectedMessagesForDeletion}
-        groupedMessages={groupedMessages}
-        chatMessagesRef={chatMessagesRef}
-        messagesEndRef={messagesEndRef}
-        messageInputRef={messageInputRef}
-        messageInput={messageInput}
-        showEmojiPicker={showEmojiPicker}
-        emojiPickerRef={emojiPickerRef}
-        commonEmojis={commonEmojis}
-        externalMessageActionFeedback={teamInboxActionFeedback}
-        onClearExternalMessageActionFeedback={() => setTeamInboxActionFeedback(null)}
-        sendingMessage={sendingMessage}
-        whatsappMessagingState={selectedWhatsAppState}
-        typingState={conversationTypingState}
-        userPresenceMap={userPresenceMap}
-        onToggleMessageMenu={handleToggleMessageMenu}
-        onToggleMessageSelectMode={handleToggleMessageSelectionMode}
-        onDeleteConversation={handleDeleteCurrentConversationFromMenu}
-        onOpenContactInformation={handleOpenContactInformation}
-        onOpenTemplateSendModal={openTemplateSendModal}
-        onToggleMessageSelection={toggleMessageSelection}
-        deleteSelectedMessages={deleteSelectedMessages}
-        onMessageInputChange={handleMessageInputChange}
-        onSendMessage={sendMessage}
-        onReactToMessage={sendReaction}
-        onSendAttachment={sendAttachment}
-        selectedConversationLatestInboundMessageAt={latestInboundMessageAtFromThread}
-        onOpenAttachment={openAttachment}
-        onDeleteMessage={deleteMessage}
-        onRetryAttachment={retryAttachment}
-        onLoadOlderMessages={() =>
-          activeConversationId ? loadMessages(activeConversationId, { loadOlder: true }) : false
-        }
-        onToggleEmojiPicker={() => setShowEmojiPicker((prev) => !prev)}
-        onEmojiInsert={handleEmojiInsert}
-        getMessageKey={getMessageKey}
-        formatMessageTime={formatMessageTime}
-      />
+            <ChatArea
+              selectedConversation={selectedConversation}
+              currentThreadConversationId={String(activeMessagesConversationIdRef.current || '').trim()}
+              currentViewerUserId={currentUserId}
+              currentViewerInternalRole={currentViewerInternalRole}
+              currentViewerDisplayName={currentUserDisplayName}
+              messages={messages}
+              messagesLoading={messagesLoading}
+              hasOlderMessages={messagesHasMore}
+              threadCacheInfo={threadCacheInfo}
+              inboxDebugInfo={inboxDebugInfo}
+              isInboxDebugVisible={isInboxDebugVisible}
+              olderMessagesLoading={messagesOlderLoading}
+              getConversationAvatarText={getConversationAvatarText}
+              getConversationDisplayName={getConversationDisplayName}
+              messageMenuRef={messageMenuRef}
+              showMessageSelectMenu={showMessageSelectMenu}
+              showMessageSelectMode={showMessageSelectMode}
+              selectedMessagesForDeletion={selectedMessagesForDeletion}
+              groupedMessages={groupedMessages}
+              chatMessagesRef={chatMessagesRef}
+              messagesEndRef={messagesEndRef}
+              messageInputRef={messageInputRef}
+              messageInput={messageInput}
+              showEmojiPicker={showEmojiPicker}
+              emojiPickerRef={emojiPickerRef}
+              commonEmojis={commonEmojis}
+              externalMessageActionFeedback={teamInboxActionFeedback}
+              onClearExternalMessageActionFeedback={() => setTeamInboxActionFeedback(null)}
+              sendingMessage={sendingMessage}
+              whatsappMessagingState={selectedWhatsAppState}
+              typingState={conversationTypingState}
+              userPresenceMap={userPresenceMap}
+              onToggleMessageMenu={handleToggleMessageMenu}
+              onToggleMessageSelectMode={handleToggleMessageSelectionMode}
+              onDeleteConversation={handleDeleteCurrentConversationFromMenu}
+              onOpenContactInformation={handleOpenContactInformation}
+              onOpenTemplateSendModal={openTemplateSendModal}
+              onToggleConversationImportant={handleSetConversationImportant}
+              onCloseConversation={handleCloseConversation}
+              onToggleMessageSelection={toggleMessageSelection}
+              deleteSelectedMessages={deleteSelectedMessages}
+              onMessageInputChange={handleMessageInputChange}
+              onSendMessage={handleComposerSendMessage}
+              onReactToMessage={sendReactionStable}
+              onSendAttachment={sendAttachmentStable}
+              selectedConversationLatestInboundMessageAt={latestInboundMessageAtFromThread}
+              onOpenAttachment={openAttachmentStable}
+              onDeleteMessage={deleteMessageStable}
+              onRetryAttachment={retryAttachmentStable}
+              onLoadOlderMessages={() =>
+                activeConversationId
+                  ? loadMessagesStable(activeConversationId, { loadOlder: true, reason: 'older_scroll' })
+                  : false
+              }
+              onVisibleMessageWindowChange={handleVisibleMessageWindowChange}
+              onToggleEmojiPicker={() => setShowEmojiPicker((prev) => !prev)}
+              onEmojiInsert={handleEmojiInsert}
+              getMessageKey={getMessageKey}
+              formatMessageTime={formatMessageTime}
+            />
+          </div>
+
+          <ContactInfoPanel
+            selectedConversation={selectedConversation}
+            showContactInfo={showContactInfo}
+            setShowContactInfo={setShowContactInfo}
+            deriveLeadStatus={deriveLeadStatus}
+            getConversationLeadScore={getConversationLeadScore}
+            getLeadStageValue={getLeadStageValue}
+            handleLeadStageChange={handleLeadStageChange}
+            contactInfoActionBusy={contactInfoActionBusy}
+            currentUserId={currentUserId}
+            currentCompanyId={currentCompanyId}
+            whatsappMessagingState={selectedWhatsAppState}
+            leadScoringSettings={leadScoringSettings}
+            leadScoringSettingsLoading={leadScoringSettingsLoading}
+            leadStageOptions={leadStageOptions}
+            availableAgents={assignableAgents}
+            canAssignChats={!isAgentRestricted}
+            handleAssignConversation={handleAssignConversation}
+            handleSetConversationImportant={handleSetConversationImportant}
+            handleCloseConversation={handleCloseConversation}
+            handleReopenConversation={handleReopenConversation}
+            handleConversationLeadStatusChange={handleConversationLeadStatusChange}
+            openTemplateSendModal={openTemplateSendModal}
+            onSendOptInPrompt={handleSendOptInPrompt}
+            onMarkWhatsAppOptIn={handleMarkSelectedConversationOptIn}
+            onOpenWhatsAppOptInModal={openSelectedConversationOptInModal}
+            onMarkWhatsAppOptOut={handleMarkSelectedConversationOptOut}
+            onViewWhatsAppConsentAudit={openSelectedConversationConsentAudit}
+            templateLoading={templateLoading}
+            templateSending={templateSending}
+            handleQualifyLead={handleQualifyLead}
+            handleUnqualifyLead={handleUnqualifyLead}
+            leadFollowUpDraft={leadFollowUpDraft}
+            setLeadFollowUpDraft={setLeadFollowUpDraft}
+            handleSaveLeadFollowUp={handleSaveLeadFollowUp}
+            leadFollowUpSaving={leadFollowUpSaving}
+            crmTaskTitleDraft={crmTaskTitleDraft}
+            setCrmTaskTitleDraft={setCrmTaskTitleDraft}
+            crmTaskPriorityDraft={crmTaskPriorityDraft}
+            setCrmTaskPriorityDraft={setCrmTaskPriorityDraft}
+            crmTaskDueDraft={crmTaskDueDraft}
+            setCrmTaskDueDraft={setCrmTaskDueDraft}
+            handleCreateQuickTask={handleCreateQuickTask}
+            crmTaskCreating={crmTaskCreating}
+            meetTokenDraft={meetTokenDraft}
+            setMeetTokenDraft={setMeetTokenDraft}
+            meetAuthConfigured={meetAuthConfigured}
+            meetAuthStatusLoading={meetAuthStatusLoading}
+            meetConnecting={meetConnecting}
+            meetDisconnecting={meetDisconnecting}
+            handleDisconnectGoogleForMeet={handleDisconnectGoogleForMeet}
+            handleConnectGoogleForMeet={handleConnectGoogleForMeet}
+            meetTitleDraft={meetTitleDraft}
+            setMeetTitleDraft={setMeetTitleDraft}
+            meetStartDraft={meetStartDraft}
+            setMeetStartDraft={setMeetStartDraft}
+            meetEndDraft={meetEndDraft}
+            setMeetEndDraft={setMeetEndDraft}
+            meetCreateFollowUpTask={meetCreateFollowUpTask}
+            setMeetCreateFollowUpTask={setMeetCreateFollowUpTask}
+            meetFollowUpTitleDraft={meetFollowUpTitleDraft}
+            setMeetFollowUpTitleDraft={setMeetFollowUpTitleDraft}
+            meetFollowUpPriorityDraft={meetFollowUpPriorityDraft}
+            setMeetFollowUpPriorityDraft={setMeetFollowUpPriorityDraft}
+            meetFollowUpDueDraft={meetFollowUpDueDraft}
+            setMeetFollowUpDueDraft={setMeetFollowUpDueDraft}
+            handleCreateMeetLink={handleCreateMeetLink}
+            meetCreating={meetCreating}
+            meetLink={meetLink}
+            handleCopyMeetLink={handleCopyMeetLink}
+            meetSending={meetSending}
+            meetTemplateSending={meetTemplateSending}
+            handleSendMeetTemplateToContact={handleSendMeetTemplateToContact}
+            sendingMessage={sendingMessage}
+            handleSendMeetLinkToContact={handleSendMeetLinkToContact}
+            crmActivitiesLoading={crmActivitiesLoading}
+            crmActivities={crmActivities}
+            crmDocumentsLoading={crmDocumentsLoading}
+            crmDocuments={crmDocuments}
+            crmDocumentUploading={crmDocumentUploading}
+            crmDocumentTypeDraft={crmDocumentTypeDraft}
+            setCrmDocumentTypeDraft={setCrmDocumentTypeDraft}
+            handleUploadCrmDocument={handleUploadCrmDocument}
+            handleOpenCrmDocument={handleOpenCrmDocument}
+            handleDownloadCrmDocument={handleDownloadCrmDocument}
+            handleDeleteCrmDocument={handleDeleteCrmDocument}
+            getCrmActivityLabel={getCrmActivityLabel}
+            getCrmActivityDescription={getCrmActivityDescription}
+            formatDateTimeForActivity={formatDateTimeForActivity}
+            internalNoteDraft={internalNoteDraft}
+            setInternalNoteDraft={setInternalNoteDraft}
+            handleSaveInternalNote={handleSaveInternalNote}
+            internalNoteSaving={internalNoteSaving}
+            contactInfoMessage={contactInfoMessage}
+            contactInfoMessageTone={contactInfoMessageTone}
+          />
+        </div>
+
         <TemplateSendModal
           showTemplateSendModal={showTemplateSendModal}
           closeTemplateSendModal={closeTemplateSendModal}
@@ -1684,95 +2437,6 @@ const TeamInbox = () => {
           templateModalMessageTone={templateModalMessageTone}
           handleSendTemplate={handleSendTemplate}
         />
-      <ContactInfoPanel
-        selectedConversation={selectedConversation}
-        showContactInfo={showContactInfo}
-        setShowContactInfo={setShowContactInfo}
-        deriveLeadStatus={deriveLeadStatus}
-        getConversationLeadScore={getConversationLeadScore}
-        getLeadStageValue={getLeadStageValue}
-        handleLeadStageChange={handleLeadStageChange}
-        contactInfoActionBusy={contactInfoActionBusy}
-        currentUserId={currentUserId}
-        currentCompanyId={currentCompanyId}
-        whatsappMessagingState={selectedWhatsAppState}
-        leadScoringSettings={leadScoringSettings}
-        leadScoringSettingsLoading={leadScoringSettingsLoading}
-        leadStageOptions={leadStageOptions}
-        openTemplateSendModal={openTemplateSendModal}
-        onSendOptInPrompt={handleSendOptInPrompt}
-        onMarkWhatsAppOptIn={handleMarkSelectedConversationOptIn}
-        onOpenWhatsAppOptInModal={openSelectedConversationOptInModal}
-        onMarkWhatsAppOptOut={handleMarkSelectedConversationOptOut}
-        onViewWhatsAppConsentAudit={openSelectedConversationConsentAudit}
-        templateLoading={templateLoading}
-        templateSending={templateSending}
-        handleQualifyLead={handleQualifyLead}
-        handleUnqualifyLead={handleUnqualifyLead}
-        leadFollowUpDraft={leadFollowUpDraft}
-        setLeadFollowUpDraft={setLeadFollowUpDraft}
-        handleSaveLeadFollowUp={handleSaveLeadFollowUp}
-        leadFollowUpSaving={leadFollowUpSaving}
-        crmTaskTitleDraft={crmTaskTitleDraft}
-        setCrmTaskTitleDraft={setCrmTaskTitleDraft}
-        crmTaskPriorityDraft={crmTaskPriorityDraft}
-        setCrmTaskPriorityDraft={setCrmTaskPriorityDraft}
-        crmTaskDueDraft={crmTaskDueDraft}
-        setCrmTaskDueDraft={setCrmTaskDueDraft}
-        handleCreateQuickTask={handleCreateQuickTask}
-        crmTaskCreating={crmTaskCreating}
-        meetTokenDraft={meetTokenDraft}
-        setMeetTokenDraft={setMeetTokenDraft}
-        meetAuthConfigured={meetAuthConfigured}
-        meetAuthStatusLoading={meetAuthStatusLoading}
-        meetConnecting={meetConnecting}
-        meetDisconnecting={meetDisconnecting}
-        handleDisconnectGoogleForMeet={handleDisconnectGoogleForMeet}
-        handleConnectGoogleForMeet={handleConnectGoogleForMeet}
-        meetTitleDraft={meetTitleDraft}
-        setMeetTitleDraft={setMeetTitleDraft}
-        meetStartDraft={meetStartDraft}
-        setMeetStartDraft={setMeetStartDraft}
-        meetEndDraft={meetEndDraft}
-        setMeetEndDraft={setMeetEndDraft}
-        meetCreateFollowUpTask={meetCreateFollowUpTask}
-        setMeetCreateFollowUpTask={setMeetCreateFollowUpTask}
-        meetFollowUpTitleDraft={meetFollowUpTitleDraft}
-        setMeetFollowUpTitleDraft={setMeetFollowUpTitleDraft}
-        meetFollowUpPriorityDraft={meetFollowUpPriorityDraft}
-        setMeetFollowUpPriorityDraft={setMeetFollowUpPriorityDraft}
-        meetFollowUpDueDraft={meetFollowUpDueDraft}
-        setMeetFollowUpDueDraft={setMeetFollowUpDueDraft}
-        handleCreateMeetLink={handleCreateMeetLink}
-        meetCreating={meetCreating}
-        meetLink={meetLink}
-        handleCopyMeetLink={handleCopyMeetLink}
-        meetSending={meetSending}
-        meetTemplateSending={meetTemplateSending}
-        handleSendMeetTemplateToContact={handleSendMeetTemplateToContact}
-        sendingMessage={sendingMessage}
-        handleSendMeetLinkToContact={handleSendMeetLinkToContact}
-        crmActivitiesLoading={crmActivitiesLoading}
-        crmActivities={crmActivities}
-        crmDocumentsLoading={crmDocumentsLoading}
-        crmDocuments={crmDocuments}
-        crmDocumentUploading={crmDocumentUploading}
-        crmDocumentTypeDraft={crmDocumentTypeDraft}
-        setCrmDocumentTypeDraft={setCrmDocumentTypeDraft}
-        handleUploadCrmDocument={handleUploadCrmDocument}
-        handleOpenCrmDocument={handleOpenCrmDocument}
-        handleDownloadCrmDocument={handleDownloadCrmDocument}
-        handleDeleteCrmDocument={handleDeleteCrmDocument}
-        getCrmActivityLabel={getCrmActivityLabel}
-        getCrmActivityDescription={getCrmActivityDescription}
-        formatDateTimeForActivity={formatDateTimeForActivity}
-        internalNoteDraft={internalNoteDraft}
-        setInternalNoteDraft={setInternalNoteDraft}
-        handleSaveInternalNote={handleSaveInternalNote}
-        internalNoteSaving={internalNoteSaving}
-        contactInfoMessage={contactInfoMessage}
-        contactInfoMessageTone={contactInfoMessageTone}
-      />
       <WhatsAppOptInModal
         open={showWhatsAppOptInModal}
         phone={selectedConversation?.contactPhone || ''}

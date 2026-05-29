@@ -2,6 +2,12 @@ import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
 import { handleUnauthorizedServiceError } from "./serviceAuth";
 import webSocketService from "./websocketService";
+import {
+  buildWorkspaceOwnershipPayload,
+  buildWorkspaceQueryScope,
+  getStoredWorkspaceUser,
+  resolveAgentWorkspaceState
+} from "../utils/agentAccess";
 
 const API_BASE_URL = resolveApiBaseUrl();
 const CRM_REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_CRM_REQUEST_TIMEOUT_MS || 15000);
@@ -23,6 +29,12 @@ let crmUserRosterSource = "";
 let crmUserRosterUpdatedAt = 0;
 let crmUserRosterSocketListenerBound = false;
 const crmUserRosterListeners = new Set();
+
+const getWorkspaceScope = (scopeType = "createdBy") =>
+  buildWorkspaceQueryScope(getStoredWorkspaceUser(), { scopeType });
+
+const applyWorkspaceOwnership = (payload = {}, scopeType = "createdBy") =>
+  buildWorkspaceOwnershipPayload(getStoredWorkspaceUser(), payload, { scopeType });
 
 const readPipelineStagesAvailability = () => {
   try {
@@ -73,14 +85,27 @@ const withServiceError = (error, fallback) => {
 };
 
 const buildRequestConfig = (includeJson = true, extra = {}) => {
-  const { headers: extraHeaders = {}, ...rest } = extra || {};
+  const { headers: extraHeaders = {}, workspaceScopeType, ...rest } = extra || {};
+  const scopeType =
+    workspaceScopeType === false
+      ? ""
+      : String(
+          workspaceScopeType || (resolveAgentWorkspaceState(getStoredWorkspaceUser()) ? "createdBy" : "")
+        ).trim();
+  const nextRest = { ...rest };
+  if (scopeType) {
+    nextRest.params = {
+      ...(nextRest.params || {}),
+      ...getWorkspaceScope(scopeType)
+    };
+  }
   return {
     timeout: CRM_REQUEST_TIMEOUT_MS,
     headers: {
       ...getAuthHeaders(includeJson),
       ...extraHeaders
     },
-    ...rest
+    ...nextRest
   };
 };
 
@@ -299,7 +324,10 @@ export const crmService = {
   async getContacts(filters = {}) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/contacts`, {
-        ...buildRequestConfig(false, { params: filters })
+        ...buildRequestConfig(false, {
+          params: filters,
+          workspaceScopeType: false
+        })
       });
       return response.data;
     } catch (error) {
@@ -331,7 +359,8 @@ export const crmService = {
 
   async createFilterPreset(payload = {}) {
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/crm/filter-presets`, payload, {
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
+      const response = await axios.post(`${API_BASE_URL}/api/crm/filter-presets`, nextPayload, {
         ...buildRequestConfig()
       });
       return response.data;
@@ -401,7 +430,8 @@ export const crmService = {
     }
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/crm/pipeline-stages`, payload, {
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
+      const response = await axios.post(`${API_BASE_URL}/api/crm/pipeline-stages`, nextPayload, {
         ...buildRequestConfig()
       });
       writePipelineStagesAvailability(true);
@@ -552,9 +582,10 @@ export const crmService = {
     try {
       const payload = { note };
       if (nextFollowUpAt !== undefined) payload.nextFollowUpAt = nextFollowUpAt;
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
       const response = await axios.post(
         `${API_BASE_URL}/api/crm/contacts/${contactId}/notes`,
-        payload,
+        nextPayload,
         buildRequestConfig()
       );
       return response.data;
@@ -563,10 +594,15 @@ export const crmService = {
     }
   },
 
-  async listContactDocuments(contactId) {
+  async listContactDocuments(contactId, options = {}) {
     try {
+      const params = {};
+      const conversationId = String(options?.conversationId || '').trim();
+      if (conversationId) {
+        params.conversationId = conversationId;
+      }
       const response = await axios.get(`${API_BASE_URL}/api/crm/contacts/${contactId}/documents`, {
-        ...buildRequestConfig(false)
+        ...buildRequestConfig(false, { params })
       });
       return response.data;
     } catch (error) {
@@ -637,7 +673,7 @@ export const crmService = {
   async getDeals(filters = {}) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/deals`, {
-        ...buildRequestConfig(false, { params: filters })
+        ...buildRequestConfig(false, { params: filters, workspaceScopeType: false })
       });
       return response.data;
     } catch (error) {
@@ -648,7 +684,7 @@ export const crmService = {
   async getDealMetrics(filters = {}) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/deals/metrics`, {
-        ...buildRequestConfig(false, { params: filters })
+        ...buildRequestConfig(false, { params: filters, workspaceScopeType: false })
       });
       return response.data;
     } catch (error) {
@@ -658,7 +694,8 @@ export const crmService = {
 
   async createDeal(payload) {
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/crm/deals`, payload, {
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
+      const response = await axios.post(`${API_BASE_URL}/api/crm/deals`, nextPayload, {
         ...buildRequestConfig()
       });
       return response.data;
@@ -702,7 +739,8 @@ export const crmService = {
 
   async createTask(payload) {
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/crm/tasks`, payload, {
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
+      const response = await axios.post(`${API_BASE_URL}/api/crm/tasks`, nextPayload, {
         ...buildRequestConfig()
       });
       return response.data;
@@ -724,9 +762,10 @@ export const crmService = {
 
   async addTaskComment(taskId, text) {
     try {
+      const nextPayload = applyWorkspaceOwnership({ text }, "createdBy");
       const response = await axios.post(
         `${API_BASE_URL}/api/crm/tasks/${taskId}/comments`,
-        { text },
+        nextPayload,
         buildRequestConfig()
       );
       return response.data;
@@ -794,9 +833,10 @@ export const crmService = {
 
   async scheduleReportExport(payload = {}) {
     try {
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
       const response = await axios.post(
         `${API_BASE_URL}/api/crm/reports/schedule`,
-        payload,
+        nextPayload,
         buildRequestConfig()
       );
       return response.data;
@@ -889,9 +929,10 @@ export const crmService = {
 
   async runFollowUpAutomation(payload = {}) {
     try {
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
       const response = await axios.post(
         `${API_BASE_URL}/api/crm/ops/follow-up-automation`,
-        payload,
+        nextPayload,
         buildRequestConfig()
       );
       return response.data;

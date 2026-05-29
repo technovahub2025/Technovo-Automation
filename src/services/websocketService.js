@@ -194,6 +194,70 @@ class WebSocketService extends EventEmitter {
     this.emit('pong', data);
   }
 
+  emitIncomingEvent(data = {}) {
+    if (!data || typeof data !== 'object') return;
+
+    const eventType = String(data.type || '').trim();
+    if (!eventType) return;
+
+    this.emit(eventType, data);
+
+    const normalizedStatus = String(data.status || '').trim().toLowerCase();
+    switch (eventType) {
+      case 'new_message':
+        this.emit('message_received', data);
+        break;
+      case 'message_received':
+        this.emit('new_message', data);
+        break;
+      case 'message_status':
+        if (normalizedStatus === 'delivered') {
+          this.emit('message_delivered', data);
+        } else if (normalizedStatus === 'read') {
+          this.emit('message_read', data);
+        }
+        break;
+      case 'message_delivered':
+        this.emit('message_status', {
+          ...data,
+          type: 'message_status',
+          status: 'delivered'
+        });
+        break;
+      case 'message_read':
+        this.emit('message_status', {
+          ...data,
+          type: 'message_status',
+          status: 'read'
+        });
+        break;
+      case 'conversation_read':
+        this.emit('message_read', data);
+        this.emit('message_status', {
+          ...data,
+          type: 'message_status',
+          status: 'read'
+        });
+        break;
+      case 'typing:update':
+        this.emit('typing', data);
+        this.emit('typing_status', data);
+        break;
+      case 'typing_status':
+        this.emit('typing', data);
+        this.emit('typing:update', data);
+        break;
+      case 'presence:update':
+        this.emit('presence', data);
+        break;
+      case 'presence':
+        this.emit('presence:update', data);
+        break;
+      default:
+        break;
+    }
+  }
+
   async connect(userId, onMessage) {
     if (this.connectionPromise) return this.connectionPromise;
     if (typeof window !== 'undefined' && !navigator.onLine) {
@@ -266,7 +330,16 @@ class WebSocketService extends EventEmitter {
         return;
       }
 
-      this.emit(data.type, data);
+      if (data?.type === 'realtime_batch' && Array.isArray(data.events)) {
+        data.events.forEach((entry) => {
+          if (!entry || typeof entry !== 'object') return;
+          this.emitIncomingEvent(entry);
+          if (this.messageHandler) this.messageHandler(entry);
+        });
+        return;
+      }
+
+      this.emitIncomingEvent(data);
       if (this.messageHandler) this.messageHandler(data);
     } catch (error) {
       console.error('WebSocket message parse error:', error);

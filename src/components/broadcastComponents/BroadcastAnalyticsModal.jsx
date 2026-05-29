@@ -84,6 +84,16 @@ const getFailureReasonDetail = (item = {}) => {
   return reason || "";
 };
 
+const getCreatorLabel = (broadcast = {}) => {
+  const createdBy = normalizeText(broadcast?.createdBy);
+  if (createdBy) return createdBy;
+  const createdByEmail = normalizeText(broadcast?.createdByEmail);
+  if (createdByEmail) return createdByEmail;
+  const createdById = normalizeText(broadcast?.createdById);
+  if (createdById) return `Agent ${createdById.slice(-6)}`;
+  return "Unknown";
+};
+
 const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
   const [activeTab, setActiveTab] = useState("overview");
   const [recipientDetails, setRecipientDetails] = useState([]);
@@ -548,6 +558,10 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
               </span>
             </p>
           ) : null}
+          <p>Created By: {getCreatorLabel(mergedBroadcast)}</p>
+          {normalizeText(mergedBroadcast?.createdById) ? (
+            <p>Creator ID: {normalizeText(mergedBroadcast.createdById)}</p>
+          ) : null}
           <p>Total Recipients: {totalRecipients}</p>
           <p>Retry Candidates: {Number(retrySummary.retryCandidates || 0)}</p>
           <p>Suppressed: {Number(reliabilityAnalytics.suppressed || 0)}</p>
@@ -754,6 +768,16 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
                   <span>Created:</span>
                   <span>{new Date(broadcast.createdAt).toLocaleString()}</span>
                 </div>
+                <div className="detail-row">
+                  <span>Created By:</span>
+                  <span>{getCreatorLabel(mergedBroadcast)}</span>
+                </div>
+                {normalizeText(mergedBroadcast?.createdById) ? (
+                  <div className="detail-row">
+                    <span>Creator ID:</span>
+                    <span>{normalizeText(mergedBroadcast.createdById)}</span>
+                  </div>
+                ) : null}
                 <div className="detail-row">
                   <span>Last Updated:</span>
                   <span>{new Date(broadcast.updatedAt).toLocaleString()}</span>

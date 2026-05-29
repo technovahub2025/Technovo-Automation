@@ -15,7 +15,7 @@ import {
 
 const BROADCAST_PAGE_CACHE_NAMESPACE = "broadcast-page";
 const BROADCAST_PAGE_CACHE_TTL_MS = 10 * 60 * 1000;
-const BROADCAST_PAGE_LIMIT = 25;
+const BROADCAST_PAGE_LIMIT = 10;
 
 const normalizeBroadcastStatus = (broadcast = {}) => {
   const status = String(broadcast?.status || "").trim().toLowerCase();
@@ -24,6 +24,31 @@ const normalizeBroadcastStatus = (broadcast = {}) => {
     return "completed";
   }
   return status;
+};
+
+const normalizeCreatorFilterValue = (value = "") => String(value || "").trim();
+
+const isLikelyObjectId = (value = "") =>
+  /^[a-f0-9]{24}$/i.test(String(value || "").trim());
+
+const matchesCreatorFilter = (broadcast = {}, filterValue = "") => {
+  const normalizedFilter = normalizeCreatorFilterValue(filterValue);
+  if (!normalizedFilter || normalizedFilter === "all") return true;
+
+  const broadcastCreatorId = normalizeCreatorFilterValue(broadcast?.createdById);
+  const broadcastCreatorEmail = normalizeCreatorFilterValue(
+    broadcast?.createdByEmail,
+  );
+  const broadcastCreatorName = normalizeCreatorFilterValue(broadcast?.createdBy);
+
+  if (isLikelyObjectId(normalizedFilter)) {
+    return broadcastCreatorId === normalizedFilter;
+  }
+
+  const loweredFilter = normalizedFilter.toLowerCase();
+  return [broadcastCreatorName, broadcastCreatorEmail]
+    .filter(Boolean)
+    .some((value) => value.toLowerCase().includes(loweredFilter));
 };
 
 const dedupeTemplatesById = (items = []) => {
@@ -87,6 +112,9 @@ const sanitizeBroadcastForCache = (broadcast = {}) => ({
   messageType: String(broadcast?.messageType || "").trim(),
   templateName: String(broadcast?.templateName || "").trim(),
   language: String(broadcast?.language || "").trim(),
+  createdBy: String(broadcast?.createdBy || "").trim(),
+  createdById: String(broadcast?.createdById || "").trim(),
+  createdByEmail: String(broadcast?.createdByEmail || "").trim(),
   createdAt: String(broadcast?.createdAt || "").trim(),
   scheduledAt: String(broadcast?.scheduledAt || "").trim(),
   completedAt: String(broadcast?.completedAt || "").trim(),
@@ -170,6 +198,7 @@ export const useBroadcast = () => {
   const loadRequestSeqRef = useRef(0);
   const latestAppliedSeqRef = useRef(0);
   const broadcastRefreshTimerRef = useRef(null);
+  const hasMountedBroadcastFilterRef = useRef(false);
   const currentUserId = resolveCacheUserId();
   const broadcastPageCacheRef = useRef(null);
   const broadcastsRef = useRef([]);
@@ -177,6 +206,7 @@ export const useBroadcast = () => {
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [creatorFilter, setCreatorFilter] = useState("all");
   const [reliabilityFilter, setReliabilityFilter] = useState("all");
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState("desc");
@@ -299,9 +329,20 @@ export const useBroadcast = () => {
         setLoadingMoreBroadcasts(true);
       }
 
+      const selectedCreatorFilter = normalizeCreatorFilterValue(creatorFilter);
+      const creatorQuery = {};
+      if (selectedCreatorFilter && selectedCreatorFilter !== "all") {
+        if (isLikelyObjectId(selectedCreatorFilter)) {
+          creatorQuery.createdById = selectedCreatorFilter;
+        } else {
+          creatorQuery.createdBy = selectedCreatorFilter;
+        }
+      }
+
       const result = await apiClient.getBroadcasts({
         limit: BROADCAST_PAGE_LIMIT,
         ...(cursor ? { cursor } : {}),
+        ...creatorQuery,
       });
       const responseData = result?.data?.data ?? result?.data ?? [];
       const broadcastItems = Array.isArray(responseData?.items)
@@ -347,7 +388,7 @@ export const useBroadcast = () => {
         setLoadingMoreBroadcasts(false);
       }
     }
-  }, [persistBroadcastPageCache]);
+  }, [creatorFilter, persistBroadcastPageCache]);
 
   const loadMoreBroadcasts = useCallback(async () => {
     const nextCursor = String(broadcastPageMeta?.nextCursor || "").trim();
@@ -357,6 +398,14 @@ export const useBroadcast = () => {
 
     return loadBroadcasts({ append: true, cursor: nextCursor });
   }, [broadcastPageMeta, loadBroadcasts, loadingMoreBroadcasts]);
+
+  useEffect(() => {
+    if (!hasMountedBroadcastFilterRef.current) {
+      hasMountedBroadcastFilterRef.current = true;
+      return;
+    }
+    loadBroadcasts();
+  }, [creatorFilter, loadBroadcasts]);
 
   const syncTemplates = useCallback(async () => {
     try {
@@ -1088,6 +1137,12 @@ export const useBroadcast = () => {
       );
     }
 
+    if (creatorFilter !== "all") {
+      filtered = filtered.filter((broadcast) => {
+        return matchesCreatorFilter(broadcast, creatorFilter);
+      });
+    }
+
     if (reliabilityFilter !== "all") {
       filtered = filtered.filter((broadcast) => {
         const analytics = broadcast?.retrySummary?.analytics || {};
@@ -1274,6 +1329,8 @@ export const useBroadcast = () => {
     setSearchTerm,
     statusFilter,
     setStatusFilter,
+    creatorFilter,
+    setCreatorFilter,
     reliabilityFilter,
     setReliabilityFilter,
     sortBy,

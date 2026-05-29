@@ -4,6 +4,11 @@ import { resolveApiBaseUrl } from "./apiBaseUrl";
 import { registerUnauthorizedAxiosInterceptor } from "./serviceAuth";
 import { isNotFoundError, runFallbackSequence } from "./messageFallback.js";
 import { normalizeError } from "../utils/errorUtils";
+import {
+  buildWorkspaceOwnershipPayload,
+  buildWorkspaceQueryScope,
+  getStoredWorkspaceUser
+} from "../utils/agentAccess";
 
 const API_BASE_URL = resolveApiBaseUrl();
 registerUnauthorizedAxiosInterceptor(axios);
@@ -27,6 +32,12 @@ const LEAD_SCORING_DEFAULTS = {
   }
 };
 let leadScoringEndpointState = 'unknown'; // unknown | available | missing
+
+const getWorkspaceScope = (scopeType = "createdBy") =>
+  buildWorkspaceQueryScope(getStoredWorkspaceUser(), { scopeType });
+
+const applyWorkspaceOwnership = (payload = {}, scopeType = "createdBy") =>
+  buildWorkspaceOwnershipPayload(getStoredWorkspaceUser(), payload, { scopeType });
 
 const getAuthHeaders = (includeJson = true) => {
   const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
@@ -216,6 +227,103 @@ const resolveLeadScoringEndpointState = async ({ force = false } = {}) => {
   return leadScoringEndpointState;
 };
 
+const TEAM_INBOX_REQUEST_CACHE_TTL_MS = 10_000;
+const inboxRequestCache = new Map();
+const inboxRequestInflight = new Map();
+
+const toStableString = (value) => {
+  if (value === null || typeof value === 'undefined') return '';
+  if (typeof value === 'string') return value;
+  if (typeof value !== 'object') return String(value);
+  if (Array.isArray(value)) return `[${value.map((item) => toStableString(item)).join(',')}]`;
+
+  const keys = Object.keys(value).sort();
+  return `{${keys.map((key) => `${key}:${toStableString(value[key])}`).join(',')}}`;
+};
+
+const getInboxRequestScopeKey = () => {
+  const user = getStoredWorkspaceUser() || {};
+  return [
+    String(user?.id || user?._id || '').trim(),
+    String(user?.companyId || '').trim(),
+    String(user?.companyRole || user?.role || '').trim()
+  ]
+    .filter(Boolean)
+    .join(':');
+};
+
+const buildInboxRequestCacheKey = (prefix, scopeKey, params = {}) =>
+  [prefix, scopeKey || 'global', toStableString(params)].join('::');
+
+const getCachedInboxRequest = async ({
+  key,
+  ttlMs = TEAM_INBOX_REQUEST_CACHE_TTL_MS,
+  loader,
+  enabled = true,
+  cacheResult = true
+} = {}) => {
+  if (!enabled || !key || typeof loader !== 'function') {
+    return loader?.();
+  }
+
+  const now = Date.now();
+  const cachedEntry = inboxRequestCache.get(key);
+  if (cachedEntry && cachedEntry.expiresAt > now) {
+    return cachedEntry.value;
+  }
+
+  const inFlight = inboxRequestInflight.get(key);
+  if (inFlight) {
+    return inFlight;
+  }
+
+  const nextPromise = Promise.resolve()
+    .then(loader)
+    .then((value) => {
+      const shouldCache =
+        typeof cacheResult === 'function' ? Boolean(cacheResult(value)) : Boolean(cacheResult);
+      if (shouldCache) {
+        inboxRequestCache.set(key, {
+          value,
+          expiresAt: Date.now() + Math.max(1, Number(ttlMs) || TEAM_INBOX_REQUEST_CACHE_TTL_MS)
+        });
+      }
+      return value;
+    })
+    .finally(() => {
+      inboxRequestInflight.delete(key);
+    });
+
+  inboxRequestInflight.set(key, nextPromise);
+  return nextPromise;
+};
+
+const clearInboxRequestCache = () => {
+  inboxRequestCache.clear();
+  inboxRequestInflight.clear();
+};
+
+const invalidateInboxRequestCache = ({ conversationId = '', scopeKey = '' } = {}) => {
+  const normalizedConversationId = String(conversationId || '').trim();
+  const normalizedScopeKey = String(scopeKey || getInboxRequestScopeKey() || '').trim();
+
+  Array.from(inboxRequestCache.keys()).forEach((key) => {
+    const matchesConversation = normalizedConversationId && key.includes(normalizedConversationId);
+    const matchesScope = normalizedScopeKey && key.includes(normalizedScopeKey);
+    if (matchesConversation || matchesScope) {
+      inboxRequestCache.delete(key);
+    }
+  });
+
+  Array.from(inboxRequestInflight.keys()).forEach((key) => {
+    const matchesConversation = normalizedConversationId && key.includes(normalizedConversationId);
+    const matchesScope = normalizedScopeKey && key.includes(normalizedScopeKey);
+    if (matchesConversation || matchesScope) {
+      inboxRequestInflight.delete(key);
+    }
+  });
+};
+
 const postWith404Retry = async (url, data, config = {}, { retryOn404 = true } = {}) => {
   try {
     return await axios.post(url, data, config);
@@ -319,6 +427,7 @@ export const whatsappService = {
         payload,
         { headers: getAuthHeaders() }
       );
+      invalidateInboxRequestCache({ conversationId });
       return response.data;
 
     } catch (error) {
@@ -344,6 +453,7 @@ export const whatsappService = {
         { to, mediaType, mediaUrl, text, conversationId },
         { headers: getAuthHeaders() }
       );
+      invalidateInboxRequestCache({ conversationId });
       return response.data;
 
     } catch (error) {
@@ -392,6 +502,7 @@ export const whatsappService = {
         payload,
         { headers: getAuthHeaders() }
       );
+      invalidateInboxRequestCache({ conversationId: normalizedConversationId });
       return response.data;
     } catch (error) {
       console.error('Failed to send template message:', error);
@@ -450,6 +561,7 @@ export const whatsappService = {
           }
         }
       );
+      invalidateInboxRequestCache({ conversationId: String(conversationId || '').trim() });
       return response.data;
     } catch (error) {
       console.error('Failed to send attachment message:', error);
@@ -494,6 +606,7 @@ export const whatsappService = {
         },
         { headers: getAuthHeaders() }
       );
+      invalidateInboxRequestCache({ conversationId });
       return response.data;
     } catch (error) {
       console.error('Failed to send reaction message:', error);
@@ -597,9 +710,10 @@ export const whatsappService = {
 
   async getUnreadConversationCount(filters = {}) {
     try {
+      const scopedFilters = { ...(filters && typeof filters === 'object' ? filters : {}), ...getWorkspaceScope("assignedTo") };
       const response = await axios.get(`${API_BASE_URL}/api/conversations/unread-count`, {
         headers: getAuthHeaders(false),
-        params: filters,
+        params: scopedFilters,
         timeout: 8000
       });
       const payload = response?.data?.data || response?.data || {};
@@ -617,6 +731,7 @@ export const whatsappService = {
       try {
         const conversations = await this.getConversations({
           ...filters,
+          ...getWorkspaceScope("assignedTo"),
           limit: Number(filters?.limit || 100)
         });
         const unreadConversationCount = Array.isArray(conversations)
@@ -666,18 +781,27 @@ export const whatsappService = {
 
     try {
       const normalizedFilters = filters && typeof filters === 'object' ? filters : {};
+      const scopedFilters = { ...normalizedFilters, ...getWorkspaceScope("assignedTo") };
       const hasExplicitPaging =
-        Number(normalizedFilters?.limit || 0) > 0 || String(normalizedFilters?.cursor || '').trim();
+        Number(scopedFilters?.limit || 0) > 0 || String(scopedFilters?.cursor || '').trim();
 
       if (hasExplicitPaging) {
         const response = await axios.get(`${API_BASE_URL}/api/conversations`, {
           headers: getAuthHeaders(false),
-          params: normalizedFilters,
+          params: scopedFilters,
           timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
         });
         const data = response.data;
         const result = data?.data || data;
         return Array.isArray(result) ? result : [];
+      }
+
+      if (String(scopedFilters?.paginateAll || '').trim().toLowerCase() !== 'true') {
+        const response = await this.getConversationsPage({
+          ...scopedFilters,
+          limit: Number(scopedFilters?.limit || 20) || 20
+        });
+        return Array.isArray(response?.data) ? response.data : [];
       }
 
       const aggregatedConversations = [];
@@ -689,8 +813,8 @@ export const whatsappService = {
       while (hasMore && safetyCounter < 100) {
         safetyCounter += 1;
         const page = await this.getConversationsPage({
-          ...normalizedFilters,
-          limit: Math.min(Number(normalizedFilters?.limit || 0) || 200, 200) || 200,
+          ...scopedFilters,
+          limit: Math.min(Number(scopedFilters?.limit || 0) || 200, 200) || 200,
           ...(cursor ? { cursor } : {})
         });
 
@@ -725,60 +849,77 @@ export const whatsappService = {
 
   async getConversationsPage(filters = {}) {
     try {
-      const requestedLimit = Number(filters?.limit || 0) || null;
-      const response = await axios.get(`${API_BASE_URL}/api/conversations`, {
-        headers: getAuthHeaders(false),
-        params: filters,
-        timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
-      });
-      const payload = response.data;
-      const wrappedPayload =
-        payload && !Array.isArray(payload) && typeof payload === 'object' ? payload : null;
-      const conversations = Array.isArray(payload)
-        ? payload
-        : Array.isArray(wrappedPayload?.data)
-          ? wrappedPayload.data
-          : [];
-      const responseMeta =
-        wrappedPayload?.meta && typeof wrappedPayload.meta === 'object' && !Array.isArray(wrappedPayload.meta)
-          ? wrappedPayload.meta
-          : {};
-      const hasMoreFromMeta = typeof responseMeta?.hasMore === 'boolean' ? responseMeta.hasMore : null;
-      const derivedHasMore =
-        hasMoreFromMeta !== null
-          ? hasMoreFromMeta
-          : requestedLimit
-            ? conversations.length >= requestedLimit
-            : conversations.length > 0;
-      const derivedNextCursor =
-        String(responseMeta?.nextCursor || '').trim() ||
-        encodeConversationCursor(conversations[conversations.length - 1]);
-      if (wrappedPayload?.success === false) {
-        return {
-          ok: false,
-          error: normalizeServiceErrorMessage(
-            wrappedPayload?.error || wrappedPayload?.message,
-            'Failed to fetch conversations'
-          ),
-          data: [],
-          meta: {
-            limit: Number(responseMeta?.limit || requestedLimit || 0) || null,
-            hasMore: false,
-            nextCursor: null,
-            exhausted: false
-          }
-        };
-      }
-      return {
-        ok: true,
-        data: conversations,
-        meta: {
-          limit: Number(responseMeta?.limit || requestedLimit || 0) || null,
-          hasMore: derivedHasMore,
-          nextCursor: derivedNextCursor || null,
-          exhausted: Boolean(responseMeta?.exhausted) || (!derivedHasMore && !derivedNextCursor)
+      const scopedFilters = { ...(filters && typeof filters === 'object' ? filters : {}), ...getWorkspaceScope("assignedTo") };
+      const requestedLimit = Number(scopedFilters?.limit || 0) || null;
+      const cacheKey = buildInboxRequestCacheKey(
+        'conversations-page',
+        getInboxRequestScopeKey(),
+        {
+          ...scopedFilters,
+          requestedLimit
         }
-      };
+      );
+      return getCachedInboxRequest({
+        key: cacheKey,
+        enabled: String(scopedFilters?.skipCache || '').trim().toLowerCase() !== 'true',
+        cacheResult: (value) => Boolean(value?.ok !== false),
+        loader: async () => {
+          const response = await axios.get(`${API_BASE_URL}/api/conversations`, {
+            headers: getAuthHeaders(false),
+            params: scopedFilters,
+            timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
+          });
+          const payload = response.data;
+          const wrappedPayload =
+            payload && !Array.isArray(payload) && typeof payload === 'object' ? payload : null;
+          const conversations = Array.isArray(payload)
+            ? payload
+            : Array.isArray(wrappedPayload?.data)
+              ? wrappedPayload.data
+              : [];
+          const responseMeta =
+            wrappedPayload?.meta && typeof wrappedPayload.meta === 'object' && !Array.isArray(wrappedPayload.meta)
+              ? wrappedPayload.meta
+              : {};
+          const hasMoreFromMeta = typeof responseMeta?.hasMore === 'boolean' ? responseMeta.hasMore : null;
+          const derivedHasMore =
+            hasMoreFromMeta !== null
+              ? hasMoreFromMeta
+              : requestedLimit
+                ? conversations.length >= requestedLimit
+                : conversations.length > 0;
+          const derivedNextCursor =
+            String(responseMeta?.nextCursor || '').trim() ||
+            encodeConversationCursor(conversations[conversations.length - 1]);
+          if (wrappedPayload?.success === false) {
+            return {
+              ok: false,
+              error: normalizeServiceErrorMessage(
+                wrappedPayload?.error || wrappedPayload?.message,
+                'Failed to fetch conversations'
+              ),
+              data: [],
+              meta: {
+                limit: Number(responseMeta?.limit || requestedLimit || 0) || null,
+                hasMore: false,
+                nextCursor: null,
+                exhausted: false
+              }
+            };
+          }
+          return {
+            ok: true,
+            data: conversations,
+            meta: {
+              limit: Number(responseMeta?.limit || requestedLimit || 0) || null,
+              hasMore: derivedHasMore,
+              nextCursor: derivedNextCursor || null,
+              previousCursor: String(responseMeta?.previousCursor || '').trim() || null,
+              exhausted: Boolean(responseMeta?.exhausted) || (!derivedHasMore && !derivedNextCursor)
+            }
+          };
+        }
+      });
     } catch (error) {
       logAxiosServiceError('Failed to fetch paged conversations', error, 'Failed to fetch conversations');
       return {
@@ -805,11 +946,22 @@ export const whatsappService = {
   async getConversation(conversationId) {
 
     try {
-
-      const response = await axios.get(`${API_BASE_URL}/api/conversations/${conversationId}`, {
-        headers: getAuthHeaders(false)
+      const normalizedConversationId = String(conversationId || '').trim();
+      const cacheKey = buildInboxRequestCacheKey(
+        'conversation-detail',
+        getInboxRequestScopeKey(),
+        { conversationId: normalizedConversationId }
+      );
+      return getCachedInboxRequest({
+        key: cacheKey,
+        cacheResult: (value) => Boolean(value),
+        loader: async () => {
+          const response = await axios.get(`${API_BASE_URL}/api/conversations/${normalizedConversationId}`, {
+            headers: getAuthHeaders(false)
+          });
+          return response.data;
+        }
       });
-      return response.data;
 
     } catch (error) {
 
@@ -819,6 +971,172 @@ export const whatsappService = {
 
     }
 
+  },
+
+  async getInboxOverview(params = {}) {
+    try {
+      const normalizedParams = params && typeof params === 'object' ? params : {};
+      const cacheKey = buildInboxRequestCacheKey(
+        'inbox-overview',
+        getInboxRequestScopeKey(),
+        normalizedParams
+      );
+      return getCachedInboxRequest({
+        key: cacheKey,
+        cacheResult: (value) => Boolean(value?.success !== false),
+        loader: async () => {
+          const response = await axios.get(`${API_BASE_URL}/api/conversations/overview`, {
+            headers: getAuthHeaders(false),
+            params: normalizedParams
+          });
+          return response.data;
+        }
+      });
+    } catch (error) {
+      console.error('Failed to fetch inbox overview:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  clearInboxRequestCache() {
+    clearInboxRequestCache();
+  },
+
+  async assignConversation(conversationId, assignedTo) {
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/api/conversations/${conversationId}/assign`,
+        { assignedTo },
+        { headers: getAuthHeaders() }
+      );
+      invalidateInboxRequestCache({ conversationId });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to assign conversation:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async bulkAssignConversations(conversationIds = [], assignedTo) {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/conversations/bulk-assign`,
+        { conversationIds, assignedTo },
+        { headers: getAuthHeaders() }
+      );
+      (Array.isArray(conversationIds) ? conversationIds : []).forEach((id) =>
+        invalidateInboxRequestCache({ conversationId: id })
+      );
+      return response.data;
+    } catch (error) {
+      console.error('Failed to bulk assign conversations:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async updateConversationLeadStatus(conversationId, leadStatus, options = {}) {
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/api/conversations/${conversationId}/lead-status`,
+        { leadStatus, ...options },
+        { headers: getAuthHeaders() }
+      );
+      invalidateInboxRequestCache({ conversationId });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to update conversation lead status:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async closeConversation(conversationId) {
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/api/conversations/${conversationId}/close`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+      invalidateInboxRequestCache({ conversationId });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to close conversation:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async reopenConversation(conversationId) {
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/api/conversations/${conversationId}/reopen`,
+        {},
+        { headers: getAuthHeaders() }
+      );
+      invalidateInboxRequestCache({ conversationId });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to reopen conversation:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async setConversationImportant(conversationId, important = true) {
+    try {
+      const response = await axios.patch(
+        `${API_BASE_URL}/api/conversations/${conversationId}/important`,
+        { important },
+        { headers: getAuthHeaders() }
+      );
+      invalidateInboxRequestCache({ conversationId });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to update conversation importance:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async addConversationNote(conversationId, text) {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/conversations/${conversationId}/notes`,
+        { text },
+        { headers: getAuthHeaders() }
+      );
+      invalidateInboxRequestCache({ conversationId });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to add conversation note:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async createConversationFollowup(conversationId, payload = {}) {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/conversations/${conversationId}/followups`,
+        payload,
+        { headers: getAuthHeaders() }
+      );
+      invalidateInboxRequestCache({ conversationId });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to create follow-up:', error);
+      return { success: false, error: error.message };
+    }
+  },
+
+  async createConversationTask(conversationId, payload = {}) {
+    try {
+      const response = await axios.post(
+        `${API_BASE_URL}/api/conversations/${conversationId}/tasks`,
+        payload,
+        { headers: getAuthHeaders() }
+      );
+      invalidateInboxRequestCache({ conversationId });
+      return response.data;
+    } catch (error) {
+      console.error('Failed to create conversation task:', error);
+      return { success: false, error: error.message };
+    }
   },
 
 
@@ -855,6 +1173,7 @@ export const whatsappService = {
       const response = await axios.put(`${API_BASE_URL}/api/conversations/${conversationId}`, updateData, {
         headers: getAuthHeaders()
       });
+      invalidateInboxRequestCache({ conversationId });
       return response.data;
 
     } catch (error) {
@@ -880,6 +1199,7 @@ export const whatsappService = {
         {},
         { headers: getAuthHeaders(false) }
       );
+      invalidateInboxRequestCache({ conversationId });
       return response.data;
 
     } catch (error) {
@@ -899,6 +1219,7 @@ export const whatsappService = {
       const response = await axios.delete(`${API_BASE_URL}/api/conversations/${conversationId}`, {
         headers: getAuthHeaders(false)
       });
+      invalidateInboxRequestCache({ conversationId });
       return response.data;
 
     } catch (error) {
@@ -920,6 +1241,9 @@ export const whatsappService = {
         headers: getAuthHeaders(),
         data: { conversationIds }
       });
+      (Array.isArray(conversationIds) ? conversationIds : []).forEach((id) =>
+        invalidateInboxRequestCache({ conversationId: id })
+      );
       return response.data;
 
     } catch (error) {
@@ -942,8 +1266,14 @@ export const whatsappService = {
         headers: getAuthHeaders(false)
       });
       const data = response.data;
-      const result = data?.data || data;
-      return Array.isArray(result) ? result : [];
+      const result = Array.isArray(data?.messages)
+        ? data.messages
+        : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
+      return result;
 
     } catch (error) {
       if (!isNotFoundError(error)) {
@@ -986,7 +1316,9 @@ export const whatsappService = {
         });
         const data = fallbackPayload?.data;
         if (Array.isArray(data)) return data;
-        return Array.isArray(data?.data) ? data.data : [];
+        if (Array.isArray(data?.messages)) return data.messages;
+        if (Array.isArray(data?.data)) return data.data;
+        return [];
       } catch {
         console.warn('All compatibility fallbacks failed while fetching messages.');
         return [];
@@ -1011,10 +1343,20 @@ export const whatsappService = {
     }
 
     const parsedLimit = Number(options?.limit);
-    const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 80)) : 30;
+    const limit = Number.isFinite(parsedLimit) ? Math.max(1, Math.min(parsedLimit, 20)) : 20;
     const cursor = String(options?.cursor || '').trim();
     const signal = options?.signal || undefined;
-    const shouldTryCompatFallback = !cursor;
+    const scope = String(options?.scope || '').trim();
+    const cacheKey = buildInboxRequestCacheKey(
+      'messages-page',
+      getInboxRequestScopeKey(),
+      {
+        conversationId: normalizedConversationId,
+        limit,
+        cursor,
+        scope
+      }
+    );
     const buildEmptyPage = () => ({
       data: [],
       meta: {
@@ -1024,34 +1366,7 @@ export const whatsappService = {
       }
     });
 
-    try {
-      const response = await axios.get(
-        `${API_BASE_URL}/api/conversations/${normalizedConversationId}/messages`,
-        {
-          headers: getAuthHeaders(false),
-          timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
-          signal,
-          params: {
-            limit,
-            ...(String(options?.scope || '').trim() ? { scope: String(options.scope).trim() } : {}),
-            ...(cursor ? { cursor } : {})
-          }
-        }
-      );
-
-      const payload = response.data;
-      if (payload?.success === false) {
-        return {
-          ok: false,
-          error: normalizeServiceErrorMessage(payload?.error || payload?.message, 'Failed to fetch messages'),
-          data: [],
-          meta: {
-            limit,
-            hasMore: false,
-            nextCursor: null
-          }
-        };
-      }
+    const normalizeMessagesPagePayload = (payload) => {
       if (Array.isArray(payload)) {
         return {
           ok: true,
@@ -1064,87 +1379,136 @@ export const whatsappService = {
         };
       }
 
-      const primaryPage = {
-        ok: true,
-        data: Array.isArray(payload?.data) ? payload.data : [],
-        meta: {
-          limit: Number(payload?.meta?.limit || limit) || limit,
-          hasMore: Boolean(payload?.meta?.hasMore),
-          nextCursor: String(payload?.meta?.nextCursor || '').trim() || null
-        }
-      };
-
-      if (
-        shouldTryCompatFallback &&
-        Array.isArray(primaryPage.data) &&
-        primaryPage.data.length === 0
-      ) {
-        try {
-          const fallbackResponse = await runFallbackSequence({
-            steps: [
-              {
-                name: "paged-messages-conversation-compat",
-                run: async () =>
-                  axios.get(
-                    `${API_BASE_URL}/api/messages/conversation/${encodeURIComponent(normalizedConversationId)}`,
-                    {
-                      headers: getAuthHeaders(false),
-                      timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
-                      signal,
-                      params: { limit }
-                    }
-                  )
-              },
-              {
-                name: "paged-messages-attachments-compat",
-                run: async () =>
-                  axios.get(`${API_BASE_URL}/api/messages/attachments`, {
-                    headers: getAuthHeaders(false),
-                    timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
-                    signal,
-                    params: {
-                      conversationId: normalizedConversationId,
-                      limit
-                    }
-                  })
-              }
-            ],
-            isRetryable: isNotFoundError,
-            onStepFailure: ({ name, retryable }) => {
-              if (retryable) {
-                console.warn(`${name} failed, trying next compatibility fallback.`);
-              }
-            }
-          });
-          const fallbackPayload = fallbackResponse?.data;
-          if (Array.isArray(fallbackPayload)) {
-            return {
-              ok: true,
-              data: fallbackPayload,
-              meta: {
-                limit,
-                hasMore: false,
-                nextCursor: null
-              }
-            };
+      if (payload?.success === false) {
+        return {
+          ok: false,
+          error: normalizeServiceErrorMessage(
+            payload?.error || payload?.message,
+            'Failed to fetch messages'
+          ),
+          data: [],
+          meta: {
+            limit,
+            hasMore: false,
+            nextCursor: null
           }
-          if (Array.isArray(fallbackPayload?.data) && fallbackPayload.data.length > 0) {
-            return {
-              ok: true,
-              data: fallbackPayload.data,
-              meta: {
-                limit: Number(fallbackPayload?.meta?.limit || limit) || limit,
-                hasMore: Boolean(fallbackPayload?.meta?.hasMore),
-                nextCursor: String(fallbackPayload?.meta?.nextCursor || '').trim() || null
-              }
-            };
-          }
-        } catch {
-          console.warn('Compatibility fallback returned no messages after empty primary page.');
-        }
+        };
       }
 
-      return primaryPage;
+      const responseMessages = Array.isArray(payload?.messages)
+        ? payload.messages
+        : Array.isArray(payload?.data)
+          ? payload.data
+          : [];
+      const responseMeta =
+        payload && typeof payload === 'object' && !Array.isArray(payload?.meta)
+          ? payload.meta || {}
+          : {};
+      const responseLimit = Number(responseMeta?.limit || payload?.limit || limit) || limit;
+      const hasMore =
+        typeof payload?.hasMore === 'boolean'
+          ? payload.hasMore
+          : typeof responseMeta?.hasMore === 'boolean'
+            ? responseMeta.hasMore
+            : responseMessages.length >= limit;
+      const nextCursor =
+        String(payload?.nextCursor || responseMeta?.nextCursor || '').trim() || null;
+
+      return {
+        ok: true,
+        data: responseMessages,
+        meta: {
+          limit: responseLimit,
+          hasMore,
+          nextCursor
+        }
+      };
+    };
+
+    const fetchPrimaryMessagesPage = async () => {
+      const response = await axios.get(
+        `${API_BASE_URL}/api/messages/${encodeURIComponent(normalizedConversationId)}`,
+        {
+          headers: getAuthHeaders(false),
+          timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
+          signal,
+          params: {
+            limit,
+            ...(scope ? { scope } : {}),
+            ...(cursor ? { cursor } : {})
+          }
+        }
+      );
+      return normalizeMessagesPagePayload(response.data);
+    };
+
+    const fetchCompatMessagesPage = async () => {
+      const fallbackResponse = await runFallbackSequence({
+        steps: [
+          {
+            name: 'paged-messages-conversation-compat',
+            run: async () =>
+              axios.get(
+                `${API_BASE_URL}/api/messages/conversation/${encodeURIComponent(normalizedConversationId)}`,
+                {
+                  headers: getAuthHeaders(false),
+                  timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
+                  signal,
+                  params: {
+                    limit,
+                    ...(cursor ? { cursor } : {})
+                  }
+                }
+              )
+          },
+          {
+            name: 'paged-messages-attachments-compat',
+            run: async () =>
+              axios.get(`${API_BASE_URL}/api/messages/attachments`, {
+                headers: getAuthHeaders(false),
+                timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
+                signal,
+                params: {
+                  conversationId: normalizedConversationId,
+                  limit,
+                  ...(cursor ? { cursor } : {})
+                }
+              })
+          }
+        ],
+        isRetryable: isNotFoundError,
+        onStepFailure: ({ name, retryable }) => {
+          if (retryable) {
+            console.warn(`${name} failed, trying next compatibility fallback.`);
+          }
+        }
+      });
+
+      return normalizeMessagesPagePayload(fallbackResponse?.data);
+    };
+
+    try {
+      return getCachedInboxRequest({
+        key: cacheKey,
+        enabled: String(options?.skipCache || '').trim().toLowerCase() !== 'true',
+        cacheResult: (value) => Boolean(value?.ok !== false),
+        loader: async () => {
+          try {
+            return await fetchPrimaryMessagesPage();
+          } catch (error) {
+            if (!isNotFoundError(error)) {
+              throw error;
+            }
+
+            try {
+              return await fetchCompatMessagesPage();
+            } catch {
+              console.warn('Compatibility fallback returned no messages after missing primary page.');
+              return buildEmptyPage();
+            }
+          }
+        }
+      });
     } catch (error) {
       const isAbortError =
         error?.name === 'AbortError' ||
@@ -1171,67 +1535,7 @@ export const whatsappService = {
       }
 
       try {
-        const fallbackResponse = await runFallbackSequence({
-          steps: [
-            {
-              name: "paged-messages-conversation-compat",
-              run: async () =>
-                axios.get(
-                  `${API_BASE_URL}/api/messages/conversation/${encodeURIComponent(normalizedConversationId)}`,
-                  {
-                    headers: getAuthHeaders(false),
-                    timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
-                    signal,
-                    params: {
-                      limit,
-                      ...(cursor ? { cursor } : {})
-                    }
-                  }
-                )
-            },
-              {
-                name: "paged-messages-attachments-compat",
-                run: async () =>
-                  axios.get(`${API_BASE_URL}/api/messages/attachments`, {
-                    headers: getAuthHeaders(false),
-                    timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
-                    signal,
-                    params: {
-                      conversationId: normalizedConversationId,
-                      limit,
-                      ...(cursor ? { cursor } : {})
-                    }
-                  })
-              }
-          ],
-          isRetryable: isNotFoundError,
-          onStepFailure: ({ name, retryable }) => {
-            if (retryable) {
-              console.warn(`${name} failed, trying next compatibility fallback.`);
-            }
-          }
-        });
-        const fallbackPayload = fallbackResponse?.data;
-        if (Array.isArray(fallbackPayload)) {
-          return {
-            ok: true,
-            data: fallbackPayload,
-            meta: {
-              limit,
-              hasMore: false,
-              nextCursor: null
-            }
-          };
-        }
-        return {
-          ok: true,
-          data: Array.isArray(fallbackPayload?.data) ? fallbackPayload.data : [],
-          meta: {
-            limit: Number(fallbackPayload?.meta?.limit || limit) || limit,
-            hasMore: Boolean(fallbackPayload?.meta?.hasMore),
-            nextCursor: String(fallbackPayload?.meta?.nextCursor || '').trim() || null
-          }
-        };
+        return await fetchCompatMessagesPage();
       } catch {
         console.warn('All compatibility fallbacks failed while fetching paged messages.');
       }
@@ -1274,13 +1578,14 @@ export const whatsappService = {
 
     try {
       const normalizedFilters = filters && typeof filters === 'object' ? filters : {};
+      const scopedFilters = { ...normalizedFilters, ...getWorkspaceScope("assignedTo") };
       const hasExplicitPaging =
-        Number(normalizedFilters?.limit || 0) > 0 || String(normalizedFilters?.cursor || '').trim();
+        Number(scopedFilters?.limit || 0) > 0 || String(scopedFilters?.cursor || '').trim();
 
       if (hasExplicitPaging) {
         const response = await axios.get(`${API_BASE_URL}/api/contacts`, {
           headers: getAuthHeaders(false),
-          params: normalizedFilters,
+          params: scopedFilters,
           timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
         });
         const data = response.data;
@@ -1299,8 +1604,8 @@ export const whatsappService = {
         const response = await axios.get(`${API_BASE_URL}/api/contacts`, {
           headers: getAuthHeaders(false),
           params: {
-            ...normalizedFilters,
-            limit: Math.min(Number(normalizedFilters?.limit || 0) || 200, 200) || 200,
+            ...scopedFilters,
+            limit: Math.min(Number(scopedFilters?.limit || 0) || 200, 200) || 200,
             ...(cursor ? { cursor } : {})
           },
           timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
@@ -1344,10 +1649,11 @@ export const whatsappService = {
 
   async getContactsPage(filters = {}) {
     try {
-      const requestedLimit = Number(filters?.limit || 0) || null;
+      const scopedFilters = { ...(filters && typeof filters === 'object' ? filters : {}) };
+      const requestedLimit = Number(scopedFilters?.limit || 0) || null;
       const response = await axios.get(`${API_BASE_URL}/api/contacts`, {
         headers: getAuthHeaders(false),
-        params: filters,
+        params: scopedFilters,
         timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
       });
       const payload = response.data;
@@ -1425,8 +1731,9 @@ export const whatsappService = {
   async createContact(contactData) {
 
     try {
+      const payload = applyWorkspaceOwnership(contactData, "createdBy");
 
-      const response = await axios.post(`${API_BASE_URL}/api/contacts`, contactData, {
+      const response = await axios.post(`${API_BASE_URL}/api/contacts`, payload, {
         headers: getAuthHeaders()
       });
       return response.data;
@@ -1585,8 +1892,9 @@ export const whatsappService = {
   async sendBulkMessages(bulkData) {
 
     try {
+      const payload = applyWorkspaceOwnership(bulkData, "createdBy");
 
-      const response = await axios.post(`${API_BASE_URL}/api/bulk/send`, bulkData, {
+      const response = await axios.post(`${API_BASE_URL}/api/bulk/send`, payload, {
         headers: getAuthHeaders()
       });
       return response.data;
@@ -1791,10 +2099,11 @@ export const whatsappService = {
 
   async getBroadcastsPage(params = {}) {
     try {
-      const requestedLimit = Number(params?.limit || 0) || null;
+      const scopedParams = { ...(params && typeof params === 'object' ? params : {}), ...getWorkspaceScope("createdBy") };
+      const requestedLimit = Number(scopedParams?.limit || 0) || null;
       const response = await axios.get(`${API_BASE_URL}/api/broadcasts`, {
         headers: getAuthHeaders(false),
-        params,
+        params: scopedParams,
         timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS
       });
       const payload = response.data;
@@ -1871,8 +2180,9 @@ export const whatsappService = {
   async createBroadcast(broadcastData) {
 
     try {
+      const payload = applyWorkspaceOwnership(broadcastData, "createdBy");
 
-      const response = await axios.post(`${API_BASE_URL}/api/broadcasts`, broadcastData, {
+      const response = await axios.post(`${API_BASE_URL}/api/broadcasts`, payload, {
         headers: getAuthHeaders()
       });
       return response.data;
