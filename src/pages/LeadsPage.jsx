@@ -25,7 +25,7 @@ import useIVRMenus from '../hooks/useIVRMenus';
 import { normalizeLead, normalizePagination } from '../utils/inboundNormalizers';
 import './LeadsPage.css';
 
-const PAGE_SIZE = 50;
+const PAGE_SIZE = 100;
 
 const normalizeDurationSeconds = (lead) => {
   const rawValue = lead?.duration ?? lead?.durationSeconds;
@@ -81,6 +81,8 @@ const LeadsPage = () => {
   });
   const refreshTimerRef = useRef(null);
   const requestSeqRef = useRef(0);
+  const tableScrollRef = useRef(null);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   const selectedIvrName = useMemo(() => {
     if (!filters.workflowId) return '';
@@ -97,20 +99,36 @@ const LeadsPage = () => {
     [leads, activeDrawerLeadId]
   );
 
-  const fetchLeads = useCallback(async () => {
+  const fetchLeads = useCallback(async ({ append = false, pageOverride = null } = {}) => {
     const requestSeq = requestSeqRef.current + 1;
     requestSeqRef.current = requestSeq;
+    const requestFilters = {
+      ...filters,
+      page: pageOverride || filters.page || 1,
+      limit: PAGE_SIZE
+    };
     try {
-      setLoading(true);
-      const response = await leadService.getLeads(filters);
+      if (append) {
+        setLoadingMore(true);
+      } else {
+        setLoading(true);
+      }
+      const response = await leadService.getLeads(requestFilters);
       if (requestSeq !== requestSeqRef.current) return;
       const leadData = response?.data || response || {};
       const fetchedLeads = Array.isArray(leadData?.leads) ? leadData.leads : [];
       const nextPagination = leadData?.pagination || {};
       const normalizedLeads = fetchedLeads.map(mapLeadForView);
-      const safePagination = normalizePagination(nextPagination, filters);
+      const safePagination = normalizePagination(nextPagination, requestFilters);
 
-      setLeads(normalizedLeads);
+      setLeads((prev) => {
+        if (!append) return normalizedLeads;
+        const byId = new Map();
+        [...prev, ...normalizedLeads].forEach((lead) => {
+          byId.set(String(lead._id || lead.id || lead.callSid), lead);
+        });
+        return Array.from(byId.values());
+      });
       setStats({
         contactsUsed: safePagination.total
       });
@@ -121,7 +139,10 @@ const LeadsPage = () => {
       setError('Failed to load leads');
       console.error(error);
     } finally {
-      if (requestSeq === requestSeqRef.current) setLoading(false);
+      if (requestSeq === requestSeqRef.current) {
+        setLoading(false);
+        setLoadingMore(false);
+      }
     }
   }, [filters]);
 
@@ -158,13 +179,11 @@ const LeadsPage = () => {
         } else {
           next.splice(index, 1);
         }
-      } else if (payload?.action !== 'deleted' && matchesFilters && Number(filters.page || 1) === 1) {
+      } else if (payload?.action !== 'deleted' && matchesFilters) {
         next.unshift(mappedLead);
-      } else if (payload?.action !== 'deleted' && matchesFilters && Number(filters.page || 1) === Number(pagination.totalPages || 1)) {
-        next.push(mappedLead);
       }
 
-      return next.slice(0, Number(filters.limit || PAGE_SIZE));
+      return next;
     });
 
     setPagination((prev) => {
@@ -181,7 +200,7 @@ const LeadsPage = () => {
       };
     });
     return true;
-  }, [filters, matchesLeadFilters, pagination.totalPages]);
+  }, [filters, matchesLeadFilters]);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -190,6 +209,9 @@ const LeadsPage = () => {
         search: searchInput.trim(),
         page: 1
       }));
+      if (tableScrollRef.current) {
+        tableScrollRef.current.scrollTop = 0;
+      }
     }, 300);
 
     return () => clearTimeout(timer);
@@ -273,10 +295,16 @@ const LeadsPage = () => {
 
   const handleWorkflowChange = (event) => {
     setFilters((prev) => ({ ...prev, workflowId: event.target.value, page: 1 }));
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollTop = 0;
+    }
   };
 
   const handleStatusFilterChange = (event) => {
     setFilters((prev) => ({ ...prev, status: event.target.value, page: 1 }));
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollTop = 0;
+    }
   };
 
   const handleSelectAll = (event) => {
@@ -353,19 +381,11 @@ const LeadsPage = () => {
     }
   };
 
-  const handlePageChange = (newPage) => {
-    if (newPage < 1 || newPage > (pagination.totalPages || 1)) return;
-    setFilters((prev) => ({ ...prev, page: newPage }));
-  };
-
-  const getVisiblePages = () => {
-    const totalPages = Math.max(1, pagination.totalPages || 1);
-    const current = Math.max(1, pagination.page || 1);
-    const pages = [];
-    const start = Math.max(1, current - 2);
-    const end = Math.min(totalPages, current + 2);
-    for (let pageNo = start; pageNo <= end; pageNo += 1) pages.push(pageNo);
-    return pages;
+  const handleLeadTableScroll = (event) => {
+    const target = event.currentTarget;
+    const nearBottom = target.scrollTop + target.clientHeight >= target.scrollHeight - 96;
+    if (!nearBottom || loading || loadingMore || !pagination.hasMore) return;
+    fetchLeads({ append: true, pageOverride: Number(pagination.page || 1) + 1 });
   };
 
   const handleToggleSelectVisible = () => {
@@ -386,7 +406,7 @@ const LeadsPage = () => {
 
   const handleExportExcel = () => {
     const rows = leads.map((lead, index) => ({
-      slNo: ((pagination.page || 1) - 1) * (pagination.limit || PAGE_SIZE) + index + 1,
+      slNo: index + 1,
       callerName: lead.callerName || 'Unknown Caller',
       callerNumber: lead.callerNumber || '',
       status: (lead.status || 'PENDING_AGENT').replace('_', ' '),
@@ -581,7 +601,11 @@ const LeadsPage = () => {
         </div>
       )}
 
-      <div className="leads-table-container">
+      <div
+        className="leads-table-container"
+        ref={tableScrollRef}
+        onScroll={handleLeadTableScroll}
+      >
         {loading ? (
           <div className="loading-state">Loading leads...</div>
         ) : (
@@ -720,6 +744,14 @@ const LeadsPage = () => {
             </tbody>
           </table>
         )}
+        {!loading && loadingMore && (
+          <div className="leads-scroll-state">Loading more leads...</div>
+        )}
+        {!loading && !loadingMore && pagination.total > 0 && (
+          <div className="leads-scroll-state">
+            Showing {leads.length} of {pagination.total}
+          </div>
+        )}
       </div>
 
       {activeDrawerLead && (
@@ -807,42 +839,6 @@ const LeadsPage = () => {
           </aside>
         </div>
       )}
-
-      <div className="pagination-bar">
-        <span className="pagination-summary">
-          {pagination.total === 0
-            ? 'No leads'
-            : `Showing ${((pagination.page || 1) - 1) * (pagination.limit || PAGE_SIZE) + 1}-${Math.min((pagination.page || 1) * (pagination.limit || PAGE_SIZE), pagination.total)} of ${pagination.total}`}
-        </span>
-        <button
-          className="pagination-btn"
-          onClick={() => handlePageChange((pagination.page || 1) - 1)}
-          disabled={(pagination.page || 1) <= 1 || loading}
-        >
-          Prev
-        </button>
-
-        <div className="pagination-pages">
-          {getVisiblePages().map((pageNo) => (
-            <button
-              key={pageNo}
-              className={`pagination-page ${pageNo === (pagination.page || 1) ? 'active' : ''}`}
-              onClick={() => handlePageChange(pageNo)}
-              disabled={loading}
-            >
-              {pageNo}
-            </button>
-          ))}
-        </div>
-
-        <button
-          className="pagination-btn"
-          onClick={() => handlePageChange((pagination.page || 1) + 1)}
-          disabled={(pagination.page || 1) >= (pagination.totalPages || 1) || loading}
-        >
-          Next
-        </button>
-      </div>
 
       {error && <div className="error-state">{error}</div>}
     </div>

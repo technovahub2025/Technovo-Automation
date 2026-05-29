@@ -19,6 +19,8 @@ import {
   ScanEye,
   Clock,
   CheckCircle,
+  ClipboardPaste,
+  Copy,
   Save,
   Undo2,
   Redo2,
@@ -51,6 +53,8 @@ const NODE_HEIGHT = 110;
 const MAX_HISTORY = 50;
 const MIN_ZOOM = 0.4;
 const MAX_ZOOM = 1.8;
+const WORKFLOW_CLIPBOARD_KEY = 'nexion_ivr_workflow_clipboard_v1';
+const WORKFLOW_CLIPBOARD_PREFIX = 'NEXION_IVR_WORKFLOW_CLIPBOARD_V1';
 const createUniqueId = (prefix) =>
   `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
 const extractCloudinaryPublicId = (value) => {
@@ -200,6 +204,68 @@ const edgeSignatureMatches = (edge, candidate, ignoreEdgeId = null) => {
   );
 };
 
+const cloneWorkflowSnapshot = (workflowData = {}) => ({
+  ...workflowData,
+  nodes: Array.isArray(workflowData.nodes) ? workflowData.nodes.map((node) => ({
+    ...node,
+    position: node?.position ? { ...node.position } : { x: 0, y: 0 },
+    data: node?.data ? { ...node.data } : {}
+  })) : [],
+  edges: Array.isArray(workflowData.edges) ? workflowData.edges.map((edge) => ({
+    ...edge
+  })) : [],
+  settings: workflowData.settings ? { ...workflowData.settings } : undefined
+});
+
+const buildWorkflowClipboardText = (workflowData = {}) => {
+  const payload = {
+    type: 'ivr-workflow',
+    version: 1,
+    copiedAt: new Date().toISOString(),
+    workflow: {
+      displayName: String(workflowData.displayName || workflowData.ivrName || workflowData.name || '').trim(),
+      promptKey: String(workflowData.promptKey || '').trim(),
+      status: String(workflowData.status || 'draft').toLowerCase(),
+      settings: workflowData.settings ? { ...workflowData.settings } : {},
+      nodes: Array.isArray(workflowData.nodes) ? workflowData.nodes : [],
+      edges: Array.isArray(workflowData.edges) ? workflowData.edges : []
+    }
+  };
+
+  return `${WORKFLOW_CLIPBOARD_PREFIX}:${JSON.stringify(payload)}`;
+};
+
+const parseWorkflowClipboardText = (text = '') => {
+  const raw = String(text || '').trim();
+  if (!raw) return null;
+
+  const normalized = raw.startsWith(`${WORKFLOW_CLIPBOARD_PREFIX}:`)
+    ? raw.slice(WORKFLOW_CLIPBOARD_PREFIX.length + 1)
+    : raw;
+
+  try {
+    const parsed = JSON.parse(normalized);
+    const candidate = parsed?.workflow && typeof parsed.workflow === 'object'
+      ? parsed.workflow
+      : parsed;
+
+    if (!candidate || (!Array.isArray(candidate.nodes) && !Array.isArray(candidate.edges))) {
+      return null;
+    }
+
+    return {
+      displayName: String(candidate.displayName || '').trim(),
+      promptKey: String(candidate.promptKey || '').trim(),
+      status: String(candidate.status || 'draft').toLowerCase(),
+      settings: candidate.settings && typeof candidate.settings === 'object' ? { ...candidate.settings } : {},
+      nodes: Array.isArray(candidate.nodes) ? candidate.nodes : [],
+      edges: Array.isArray(candidate.edges) ? candidate.edges : []
+    };
+  } catch {
+    return null;
+  }
+};
+
 const WorkflowBuilderCanvas = ({
   workflow,
   workflowId,
@@ -230,6 +296,7 @@ const WorkflowBuilderCanvas = ({
   const [history, setHistory] = useState([]);
   const [future, setFuture] = useState([]);
   const [deletingNodeIds, setDeletingNodeIds] = useState(() => new Set());
+  const [clipboardState, setClipboardState] = useState('idle');
   const nodes = workflow?.nodes || [];
   const edges = workflow?.edges || [];
 
@@ -237,6 +304,7 @@ const WorkflowBuilderCanvas = ({
   const dragStateRef = useRef(null);
   const lastWorkflowRef = useRef(workflow);
   const structureHashRef = useRef('');
+  const clipboardResetTimerRef = useRef(null);
 
   // Helper to generate a hash of the workflow structure (ignoring positions)
   const generateStructureHash = useCallback((nodesData, edgesData) => {
@@ -418,6 +486,122 @@ const WorkflowBuilderCanvas = ({
       return prev.slice(1);
     });
   }, [onChange]);
+
+  const clearClipboardFeedback = useCallback(() => {
+    if (clipboardResetTimerRef.current) {
+      window.clearTimeout(clipboardResetTimerRef.current);
+      clipboardResetTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => () => {
+    clearClipboardFeedback();
+  }, [clearClipboardFeedback]);
+
+  const setClipboardFeedback = useCallback((state) => {
+    clearClipboardFeedback();
+    setClipboardState(state);
+    clipboardResetTimerRef.current = window.setTimeout(() => {
+      setClipboardState('idle');
+      clipboardResetTimerRef.current = null;
+    }, 2200);
+  }, [clearClipboardFeedback]);
+
+  const writeWorkflowClipboard = useCallback(async (workflowSnapshot) => {
+    const text = buildWorkflowClipboardText(workflowSnapshot);
+    const serialized = text.slice(WORKFLOW_CLIPBOARD_PREFIX.length + 1);
+    localStorage.setItem(WORKFLOW_CLIPBOARD_KEY, serialized);
+
+    if (navigator?.clipboard?.writeText) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (error) {
+        console.warn('Browser clipboard write failed, keeping local fallback.', error);
+      }
+    }
+
+    return text;
+  }, []);
+
+  const readWorkflowClipboard = useCallback(async () => {
+    const fallback = localStorage.getItem(WORKFLOW_CLIPBOARD_KEY) || '';
+
+    if (navigator?.clipboard?.readText) {
+      try {
+        const browserText = await navigator.clipboard.readText();
+        if (browserText && browserText.trim()) {
+          return browserText;
+        }
+      } catch (error) {
+        console.warn('Browser clipboard read failed, using local fallback.', error);
+      }
+    }
+
+    return fallback ? `${WORKFLOW_CLIPBOARD_PREFIX}:${fallback}` : '';
+  }, []);
+
+  const handleCopyWorkflow = useCallback(async () => {
+    if (!nodes.length) {
+      setClipboardFeedback('error');
+      return;
+    }
+
+    try {
+      const workflowSnapshot = cloneWorkflowSnapshot({
+        ...workflow,
+        nodes,
+        edges
+      });
+      await writeWorkflowClipboard(workflowSnapshot);
+      setClipboardFeedback('copied');
+    } catch (error) {
+      console.error('Failed to copy workflow:', error);
+      setClipboardFeedback('error');
+    }
+  }, [edges, nodes, setClipboardFeedback, workflow, writeWorkflowClipboard]);
+
+  const handlePasteWorkflow = useCallback(async () => {
+    try {
+      const clipboardText = await readWorkflowClipboard();
+      const clipboardWorkflow = parseWorkflowClipboardText(clipboardText);
+
+      if (!clipboardWorkflow) {
+        setClipboardFeedback('error');
+        return;
+      }
+
+      if (nodes.length > 0) {
+        const confirmed = window.confirm(
+          'Paste will replace the current workflow layout on this card. Continue?'
+        );
+        if (!confirmed) {
+          return;
+        }
+      }
+
+      const nextWorkflow = {
+        ...workflow,
+        displayName: workflow?.displayName || clipboardWorkflow.displayName || workflow?.displayName,
+        nodes: cloneWorkflowSnapshot({ nodes: clipboardWorkflow.nodes }).nodes,
+        edges: cloneWorkflowSnapshot({ edges: clipboardWorkflow.edges }).edges,
+        settings: {
+          ...(workflow?.settings || {}),
+          ...(clipboardWorkflow.settings || {})
+        }
+      };
+
+      setSelectedNode(null);
+      setSelectedEdge(null);
+      setConnectingFrom(null);
+      setEdgeMenu(null);
+      setReconnectEdgeId(null);
+      applyWorkflowUpdate(nextWorkflow, { recordHistory: true, saveToBackend: false });
+      setClipboardFeedback('pasted');
+    } catch (error) {
+      console.error('Failed to paste workflow:', error);
+      setClipboardFeedback('error');
+    }
+  }, [applyWorkflowUpdate, nodes.length, readWorkflowClipboard, setClipboardFeedback, workflow]);
 
   const toCanvasPoint = useCallback((clientX, clientY) => {
     const rect = canvasRef.current?.getBoundingClientRect();
@@ -1418,6 +1602,16 @@ const WorkflowBuilderCanvas = ({
     if (isTypingTarget) return;
 
     if (event.ctrlKey || event.metaKey) {
+      if (event.key.toLowerCase() === 'c') {
+        event.preventDefault();
+        handleCopyWorkflow();
+        return;
+      }
+      if (event.key.toLowerCase() === 'v') {
+        event.preventDefault();
+        handlePasteWorkflow();
+        return;
+      }
       if (event.key.toLowerCase() === 'z') {
         event.preventDefault();
         if (event.shiftKey) {
@@ -1455,7 +1649,7 @@ const WorkflowBuilderCanvas = ({
         setSelectedNode(null);
       }
     }
-  }, [fitToScreen, handleEdgeRemove, handleNodeRemove, handleRedo, handleUndo, resetView, selectedEdge, selectedNode]);
+  }, [fitToScreen, handleCopyWorkflow, handleEdgeRemove, handleNodeRemove, handlePasteWorkflow, handleRedo, handleUndo, resetView, selectedEdge, selectedNode]);
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown);
@@ -1702,38 +1896,53 @@ const WorkflowBuilderCanvas = ({
           )}
 
           <div className="canvas-controls">
-            <button onClick={() => setZoom(prev => clamp(prev + 0.1, MIN_ZOOM, MAX_ZOOM))}>
+            <button type="button" onClick={handleCopyWorkflow}>
+              <Copy size={16} />
+              <span>Copy</span>
+            </button>
+            <button type="button" onClick={handlePasteWorkflow}>
+              <ClipboardPaste size={16} />
+              <span>Paste</span>
+            </button>
+            <button type="button" onClick={() => setZoom(prev => clamp(prev + 0.1, MIN_ZOOM, MAX_ZOOM))}>
               <ZoomIn size={16} />
               <span>Zoom In</span>
             </button>
-            <button onClick={() => setZoom(prev => clamp(prev - 0.1, MIN_ZOOM, MAX_ZOOM))}>
+            <button type="button" onClick={() => setZoom(prev => clamp(prev - 0.1, MIN_ZOOM, MAX_ZOOM))}>
               <ZoomOut size={16} />
               <span>Zoom Out</span>
             </button>
-            <button onClick={fitToScreen}>
+            <button type="button" onClick={fitToScreen}>
               <Maximize2 size={16} />
               <span>Fit to Screen</span>
             </button>
-            <button onClick={resetView}>
+            <button type="button" onClick={resetView}>
               <Minimize2 size={16} />
               <span>Reset View</span>
             </button>
-            <button onClick={() => setSnapEnabled(prev => !prev)}>
+            <button type="button" onClick={() => setSnapEnabled(prev => !prev)}>
               <LayoutGrid size={16} className={snapEnabled ? 'active' : ''} />
               <span>Snap</span>
             </button>
-            <button onClick={() => setShowMiniMap(prev => !prev)}>
+            <button type="button" onClick={() => setShowMiniMap(prev => !prev)}>
               <ScanEye size={16} className={showMiniMap ? 'active' : ''} />
               <span>Mini Map</span>
             </button>
-            <button onClick={handleUndo} disabled={history.length === 0}>
+            <button type="button" onClick={handleUndo} disabled={history.length === 0}>
               <Undo2 size={16} />
               <span>Undo</span>
             </button>
-            <button onClick={handleRedo} disabled={future.length === 0}>
+            <button type="button" onClick={handleRedo} disabled={future.length === 0}>
               <Redo2 size={16} />
               <span>Redo</span>
             </button>
+            {clipboardState !== 'idle' && (
+              <div className={`clipboard-feedback clipboard-${clipboardState}`}>
+                {clipboardState === 'copied' && 'Workflow copied'}
+                {clipboardState === 'pasted' && 'Workflow pasted'}
+                {clipboardState === 'error' && 'Clipboard unavailable'}
+              </div>
+            )}
           </div>
 
           {validationErrors.length > 0 && (

@@ -365,9 +365,10 @@
     border-radius: 8px;
     border: 1px solid #e2e8f0;
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow: auto;
     max-width: 100%;
+    max-height: min(660px, calc(100vh - 330px));
+    min-height: 360px;
 }
 
 .leads-table {
@@ -378,6 +379,9 @@
 }
 
 .leads-table th {
+    position: sticky;
+    top: 0;
+    z-index: 4;
     background: #f8fafc;
     padding: 11px 14px;
     text-align: left;
@@ -662,24 +666,22 @@
 
 .loading-state,
 .no-data,
-.error-state {
+.error-state,
+.leads-scroll-state {
     text-align: center;
     padding: 16px;
     color: #64748b;
 }
 
-.pagination-bar {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 14px;
-    padding: 12px 16px;
-    background: #f8fafc;
-    border: 1px solid #eef2f7;
-    border-radius: 8px;
-    flex-wrap: nowrap;
-    width: 100%;
+.leads-scroll-state {
+    position: sticky;
+    left: 0;
+    bottom: 0;
+    z-index: 3;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), #ffffff);
+    border-top: 1px solid #eef2f7;
+    font-size: 13px;
+    font-weight: 600;
 }
 
 .actions-cell {
@@ -928,54 +930,6 @@
     margin-top: 10px;
 }
 
-.pagination-summary {
-    color: #64748b;
-    font-size: 13px;
-    font-weight: 500;
-    margin-right: auto;
-    white-space: nowrap;
-}
-
-.pagination-pages {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex: 0 0 auto;
-}
-
-.pagination-btn,
-.pagination-page {
-    min-width: 36px;
-    height: 36px;
-    padding: 0 12px;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    background: #fff;
-    color: #334155;
-    font-size: 13px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.pagination-btn:hover:not(:disabled),
-.pagination-page:hover:not(:disabled) {
-    background: #f8fafc;
-    border-color: #cbd5e1;
-}
-
-.pagination-page.active {
-    background: #eff6ff;
-    border-color: #bfdbfe;
-    color: #1d4ed8;
-}
-
-.pagination-btn:disabled,
-.pagination-page:disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-}
-
 @media (max-width: 768px) {
     .leads-header {
         flex-direction: column;
@@ -1040,17 +994,6 @@
 
     .filter-action-btn.icon-only {
         width: 100%;
-    }
-
-    .pagination-bar {
-        justify-content: center;
-        flex-wrap: wrap;
-    }
-
-    .pagination-summary {
-        width: 100%;
-        margin-right: 0;
-        text-align: center;
     }
 
     .lead-drawer {

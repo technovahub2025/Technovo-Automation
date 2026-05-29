@@ -150,6 +150,11 @@ const IVRMenuConfig = () => {
   }, [newIvrName, createMenu, setError]);
 
   const handleMenuDelete = useCallback(async (menuId) => {
+    const confirmed = window.confirm(
+      'Delete this IVR permanently? This will remove the workflow, monitor logs, bookings, slots, WhatsApp notification logs, call logs, and audio assets. Leads will be kept.'
+    );
+    if (!confirmed) return;
+
     try {
       await deleteMenu(menuId);
       setError(null);
