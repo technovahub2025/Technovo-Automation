@@ -1,4 +1,4 @@
-import { getConversationPreviewMeta } from './teamInboxDisplayUtils.js';
+import { getConversationAssignedLookupId, getConversationPreviewMeta } from './teamInboxDisplayUtils.js';
 import {
   getMappedContactName,
   getConversationPhoneValue,
@@ -35,19 +35,32 @@ export const normalizeConversation = (conversation) => {
     .toLowerCase();
   const previewTextLower = String(previewMeta.previewText || '').trim().toLowerCase();
   const lastMessageLower = String(conversation?.lastMessage || '').trim().toLowerCase();
+  const contactSnapshot = conversation?.contactId;
+  const hasContactOwnerField =
+    contactSnapshot && typeof contactSnapshot === 'object'
+      ? Object.prototype.hasOwnProperty.call(contactSnapshot, 'ownerId')
+      : false;
+  const contactOwnerId = hasContactOwnerField ? String(contactSnapshot?.ownerId || '').trim() : '';
   const assignedLower = String(
-    conversation?.assignedToName ||
-      conversation?.assignedAgentName ||
-      conversation?.assigneeName ||
-      conversation?.assignedTo ||
-      conversation?.assignedAgent ||
-      ''
+    hasContactOwnerField && !contactOwnerId
+      ? 'Unassigned'
+      : contactSnapshot?.ownerName ||
+        contactSnapshot?.assignedToName ||
+        contactSnapshot?.assignedAgentName ||
+        contactSnapshot?.assigneeName ||
+        conversation?.assignedToName ||
+        conversation?.assignedAgentName ||
+        conversation?.assigneeName ||
+        conversation?.assignedTo ||
+        conversation?.assignedAgent ||
+        ''
   )
     .trim()
     .toLowerCase();
   const leadStatusLower = String(conversation?.leadStatus || conversation?.contactId?.leadStatus || '')
     .trim()
     .toLowerCase();
+  const assignedLookupId = String(getConversationAssignedLookupId(conversation) || '').trim();
   const searchParts = [
     summaryId,
     contactNameLower,
@@ -55,7 +68,20 @@ export const normalizeConversation = (conversation) => {
     contactPhoneDigits,
     previewTextLower,
     lastMessageLower,
+    String(
+      conversation?.assignedToName ||
+        conversation?.assignedAgentName ||
+        conversation?.assigneeName ||
+        conversation?.contactId?.assignedToName ||
+        conversation?.contactId?.assignedAgentName ||
+        conversation?.contactId?.assigneeName ||
+        conversation?.contactId?.ownerName ||
+        ''
+    )
+      .trim()
+      .toLowerCase(),
     assignedLower,
+    assignedLookupId,
     leadStatusLower
   ]
     .map((value) => String(value || '').trim().toLowerCase())

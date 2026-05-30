@@ -40,6 +40,7 @@ import {
   resolvePreferredVoiceRecorderMimeType
 } from './voiceRecorderUtils';
 import {
+  getConversationAssignedLookupId,
   resolveConversationAssigneeLabel,
   resolveConversationSlaMeta
 } from './teamInboxDisplayUtils';
@@ -117,9 +118,39 @@ const buildMessageRowSignature = ({
     currentViewerInternalRole,
     hasActiveMessageActions ? reactionBarPlacement.horizontal || '' : '',
     hasActiveMessageActions ? reactionBarPlacement.vertical || '' : '',
-    hasActiveMessageActions ? hoverMenuPlacement.horizontal || '' : '',
-    hasActiveMessageActions ? hoverMenuPlacement.vertical || '' : ''
-  ].join('|');
+  hasActiveMessageActions ? hoverMenuPlacement.horizontal || '' : '',
+  hasActiveMessageActions ? hoverMenuPlacement.vertical || '' : ''
+].join('|');
+
+const isIdLikeLabel = (value = '') => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return true;
+  if (/^[0-9a-f]{24}$/i.test(normalized)) return true;
+  if (/^\d{8,}$/.test(normalized)) return true;
+  return false;
+};
+
+const pickFirstMeaningfulLabel = (...values) => {
+  for (const value of values) {
+    const normalized = String(value || '').trim();
+    if (!normalized) continue;
+    const lower = normalized.toLowerCase();
+    if (['agent', 'admin', 'contact', 'unknown contact', 'unknown'].includes(lower)) {
+      continue;
+    }
+    if (isIdLikeLabel(normalized)) continue;
+    return normalized;
+  }
+  return '';
+};
+
+const resolveInternalMessageSenderName = (message = {}) =>
+  pickFirstMeaningfulLabel(
+    message?.senderName,
+    message?.senderDisplayName,
+    message?.senderFullName,
+    message?.senderUsername
+  );
 
 const resolveInternalMessageSenderMeta = (message = {}, viewerRole = '', viewerUserId = '') => {
   const messageSender = String(message?.sender || '').trim().toLowerCase();
@@ -132,11 +163,18 @@ const resolveInternalMessageSenderMeta = (message = {}, viewerRole = '', viewerU
   }
 
   const senderRole = String(message?.senderRole || '').trim().toLowerCase();
-  const senderName = String(message?.senderName || '').trim();
-  const senderId = String(message?.senderId || '').trim();
   const normalizedRole = senderRole === 'admin' || senderRole === 'agent' ? senderRole : '';
+  const normalizedViewerRole = String(viewerRole || '').trim().toLowerCase();
 
   if (!normalizedRole) {
+    return {
+      role: '',
+      label: '',
+      title: ''
+    };
+  }
+
+  if (normalizedViewerRole && normalizedRole === normalizedViewerRole) {
     return {
       role: '',
       label: '',
@@ -148,15 +186,23 @@ const resolveInternalMessageSenderMeta = (message = {}, viewerRole = '', viewerU
     return {
       role: 'admin',
       label: 'Admin sent',
-      title: senderName ? `Sent by ${senderName}` : 'Sent by Admin'
+      title: 'Admin sent'
     };
   }
 
-  const displayName = senderName || 'Agent';
+  const senderName = resolveInternalMessageSenderName(message);
+  if (senderName) {
+    return {
+      role: 'agent',
+      label: `${senderName} sent`,
+      title: `${senderName} sent`
+    };
+  }
+
   return {
     role: 'agent',
-    label: senderName ? `Agent sent by ${displayName}` : 'Agent sent',
-    title: senderName ? `Sent by ${senderName}` : 'Sent by Agent'
+    label: 'Agent sent',
+    title: 'Agent sent'
   };
 };
 
@@ -804,17 +850,7 @@ const isMediaPipelineDebugVisible = () => {
 };
 
 const getConversationAssigneeUserId = (conversation = {}) => {
-  const directAssignee = conversation?.assignedTo;
-  const owner = conversation?.owner;
-  return String(
-    directAssignee?._id ||
-      directAssignee?.id ||
-      directAssignee?.userId ||
-      owner?._id ||
-      owner?.id ||
-      owner?.userId ||
-      ''
-  ).trim();
+  return String(getConversationAssignedLookupId(conversation) || '').trim();
 };
 
 const VIRTUAL_MESSAGE_OVERSCAN = 8;
@@ -3611,10 +3647,14 @@ const ChatArea = ({
                 const replySourceRole = String(replySourceMessage?.senderRole || '')
                   .trim()
                   .toLowerCase();
+                const replySourceSenderName = resolveInternalMessageSenderName(
+                  replySourceMessage || {}
+                );
                 const replyLabel = replySourceMessage
                   ? replySourceRole && replySourceRole === currentViewerInternalRole
                     ? 'You'
-                    : replySourceMessage?.senderName ||
+                    : replySourceSenderName ||
+                      replySourceMessage?.senderName ||
                       (replySourceRole === 'admin'
                         ? 'Admin'
                         : replySourceRole === 'agent'

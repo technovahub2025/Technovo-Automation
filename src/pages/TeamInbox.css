@@ -862,6 +862,17 @@
         padding: 0;
     }
 
+    .inbox-header-menu--alerts .inbox-notification-menu {
+        position: fixed;
+        top: 66px;
+        right: 12px;
+        left: auto;
+        width: min(360px, calc(100vw - 24px));
+        max-width: min(360px, calc(100vw - 24px));
+        max-height: min(420px, calc(100vh - 84px));
+        z-index: 1200;
+    }
+
     .search-bar {
         padding: 8px 12px 10px;
     }
@@ -1257,6 +1268,9 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
+    position: relative;
+    z-index: 30;
+    overflow: visible;
 }
 
 
@@ -4215,6 +4229,7 @@
     position: relative;
     padding: 8px 16px;
     border-bottom: 1px solid var(--color-border);
+    z-index: 10;
 }
 
 .search-icon {
@@ -6139,10 +6154,10 @@
 }
 
 .contact-info-quick-actions__header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
+    align-items: start;
 }
 
 .contact-info-quick-actions__header h4 {
@@ -6160,6 +6175,15 @@
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 0;
+}
+
+.contact-info-quick-actions__meta {
+    display: flex;
+    align-items: flex-start;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: 8px;
     min-width: 0;
 }
 
@@ -6277,8 +6301,8 @@
 }
 
 .contact-info-quick-actions__row {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
 }
 
@@ -6291,10 +6315,13 @@
     color: #1d4ed8;
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
     font-size: 12px;
     font-weight: 700;
     cursor: pointer;
+    width: 100%;
+    min-width: 0;
     transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 }
 
@@ -7243,8 +7270,11 @@
     }
 
     .contact-info-quick-actions__header {
-        flex-direction: column;
-        align-items: flex-start;
+        grid-template-columns: 1fr;
+    }
+
+    .contact-info-quick-actions__meta {
+        justify-content: flex-start;
     }
 
     .contact-info-followup-badge,
@@ -7274,7 +7304,7 @@
     }
 
     .contact-info-quick-actions__row {
-        flex-direction: column;
+        grid-template-columns: 1fr;
     }
 
     .contact-info-quick-action {
@@ -7390,10 +7420,12 @@
 
 .inbox-header-menu {
     position: relative;
+    z-index: 31;
 }
 
 .inbox-header-menu--alerts {
     position: relative;
+    z-index: 32;
 }
 
 .inbox-alerts-btn {
@@ -7434,6 +7466,7 @@
     z-index: 1000;
     min-width: 150px;
     margin-top: 4px;
+    transform: translateZ(0);
 }
 
 .inbox-filter-menu {
@@ -7506,6 +7539,11 @@
 .inbox-notification-menu {
     width: 280px;
     max-width: min(320px, calc(100vw - 32px));
+    max-height: min(360px, calc(100vh - 96px));
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-sizing: border-box;
 }
 
 .inbox-notification-menu__header {
@@ -7536,11 +7574,15 @@
 }
 
 .inbox-notification-menu__list {
-    max-height: 260px;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow-y: auto;
     padding: 8px;
+    padding-right: 12px;
     display: grid;
     gap: 8px;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
 }
 
 .inbox-notification-menu__item {
@@ -7572,6 +7614,8 @@
     font-size: 12px;
     font-weight: 600;
     line-height: 1.4;
+    word-break: break-word;
+    overflow-wrap: anywhere;
 }
 
 .inbox-notification-menu__meta {

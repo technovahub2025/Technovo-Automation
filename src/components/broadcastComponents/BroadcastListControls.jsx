@@ -123,9 +123,11 @@ const BroadcastListControls = ({
             >
               <option value="all">All</option>
               <option value="any">Any event</option>
+              <option value="needs_retry">Needs Retry</option>
               <option value="suppressed">Suppressed &gt; 0</option>
               <option value="deferred">Deferred &gt; 0</option>
               <option value="retried">Retried &gt; 0</option>
+              <option value="high_risk">High Risk</option>
             </select>
           </div>
 

@@ -171,6 +171,23 @@ const CONTACT_LEAD_STATUS_FILTER_OPTIONS = [
     ...CONTACT_LEAD_STATUS_OPTIONS
 ];
 
+const GENERIC_OWNER_LABELS = new Set([
+    'admin',
+    'agent',
+    'team member',
+    'unknown',
+    'unknown user',
+    'unassigned'
+]);
+
+const isMeaningfulOwnerLabel = (value = '') => {
+    const normalized = String(value || '').trim();
+    if (!normalized) return false;
+    if (/^[0-9a-f]{24}$/i.test(normalized)) return false;
+    if (/^\d{8,}$/.test(normalized)) return false;
+    return !GENERIC_OWNER_LABELS.has(normalized.toLowerCase());
+};
+
 const formatOwnerLabel = (contact = {}, rosterMap = new Map()) => {
     const rawValue = String(
         contact?.assignedTo ||
@@ -180,11 +197,81 @@ const formatOwnerLabel = (contact = {}, rosterMap = new Map()) => {
         ''
     ).trim();
     if (!rawValue) return 'Unassigned';
-    return (
-        rosterMap.get(rawValue) ||
-        String(contact?.assignedToName || contact?.ownerName || contact?.assignedAgentName || rawValue).trim() ||
-        rawValue
-    );
+    const rosterLabel = String(rosterMap.get(rawValue) || '').trim();
+    const directLabel = String(
+        contact?.assignedToName || contact?.assignedAgentName || contact?.ownerName || ''
+    ).trim();
+    if (isMeaningfulOwnerLabel(rosterLabel)) return rosterLabel;
+    if (isMeaningfulOwnerLabel(directLabel)) return directLabel;
+    return 'Unassigned';
+};
+
+const getContactPhoneIdentityKey = (contact = {}) => {
+    const phoneDigits = String(contact?.phoneDigits || contact?.phone || '').replace(/\D/g, '');
+    const phoneKey = String(contact?.phoneKey || phoneDigits || contact?.phone || '').replace(/\D/g, '');
+    return phoneKey.length > 10 ? phoneKey.slice(-10) : phoneKey || phoneDigits;
+};
+
+const dedupeContactsByPhoneIdentity = (contacts = []) => {
+    const grouped = new Map();
+    (Array.isArray(contacts) ? contacts : []).forEach((contact) => {
+        const companyKey = String(contact?.companyId || '').trim();
+        const phoneKey = getContactPhoneIdentityKey(contact);
+        const fallbackKey = String(contact?._id || '').trim();
+        const dedupeKey = `${companyKey || 'no-company'}:${phoneKey || fallbackKey}`;
+        if (!grouped.has(dedupeKey)) {
+            grouped.set(dedupeKey, []);
+        }
+        grouped.get(dedupeKey).push(contact);
+    });
+
+    return Array.from(grouped.values()).map((members) => {
+        const sorted = members
+            .slice()
+            .sort((left, right) => {
+                const leftCreated = new Date(left?.createdAt || 0).getTime() || 0;
+                const rightCreated = new Date(right?.createdAt || 0).getTime() || 0;
+                const leftUpdated = new Date(left?.updatedAt || 0).getTime() || 0;
+                const rightUpdated = new Date(right?.updatedAt || 0).getTime() || 0;
+                return leftCreated - rightCreated || leftUpdated - rightUpdated || String(left?._id || '').localeCompare(String(right?._id || ''));
+            });
+        const keeper = sorted[0] || {};
+        const latestByField = (field) =>
+            members
+                .slice()
+                .sort((left, right) => {
+                    const leftTime = new Date(left?.updatedAt || left?.lastContact || left?.createdAt || 0).getTime() || 0;
+                    const rightTime = new Date(right?.updatedAt || right?.lastContact || right?.createdAt || 0).getTime() || 0;
+                    return rightTime - leftTime;
+                })
+                .map((member) => member?.[field])
+                .find((value) => value !== undefined && value !== null && String(value).trim() !== '');
+
+        return {
+            ...keeper,
+            name: String(latestByField('name') || keeper.name || '').trim(),
+            email: String(latestByField('email') || keeper.email || '').trim(),
+            phone: String(keeper.phone || latestByField('phone') || '').trim(),
+            phoneDigits: String(keeper.phoneDigits || keeper.phone || latestByField('phoneDigits') || '').replace(/\D/g, ''),
+            phoneKey: getContactPhoneIdentityKey(keeper),
+            tags: Array.from(
+                new Set(
+                    members.flatMap((member) => Array.isArray(member?.tags) ? member.tags : [])
+                        .map((tag) => String(tag || '').trim())
+                        .filter(Boolean)
+                )
+            ),
+            leadStatus: String(latestByField('leadStatus') || keeper.leadStatus || '').trim(),
+            status: String(latestByField('status') || keeper.status || '').trim(),
+            source: String(latestByField('source') || keeper.source || '').trim(),
+            sourceType: String(latestByField('sourceType') || keeper.sourceType || '').trim(),
+            ownerId: String(latestByField('ownerId') || keeper.ownerId || '').trim(),
+            assignedTo: String(latestByField('assignedTo') || keeper.assignedTo || '').trim(),
+            assignedAgent: String(latestByField('assignedAgent') || keeper.assignedAgent || '').trim(),
+            createdAt: keeper.createdAt || null,
+            updatedAt: latestByField('updatedAt') || keeper.updatedAt || null
+        };
+    });
 };
 
 const Contacts = () => {
@@ -393,7 +480,7 @@ const Contacts = () => {
             });
             const responseData = response?.data || {};
             const contactsData = Array.isArray(responseData?.data) ? responseData.data : [];
-            const nextContacts = contactsData;
+            const nextContacts = dedupeContactsByPhoneIdentity(contactsData);
             const nextMeta = responseData?.meta || {};
             const nextTotalCount = Number(
                 nextMeta.totalCount ?? response?.headers?.['x-total-count'] ?? contactsData.length

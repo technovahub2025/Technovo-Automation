@@ -694,7 +694,7 @@ const ReportCharts = memo(({ analytics, comparisonAnalytics, lastYearAnalytics, 
                     <tr key={owner.ownerId}>
                       <td>
                         <strong>{owner.ownerName}</strong>
-                        <span>{owner.ownerId}</span>
+                        <span>{owner.ownerName || 'Unassigned'}</span>
                       </td>
                       <td>{owner.leads}</td>
                       <td>{owner.qualified}</td>

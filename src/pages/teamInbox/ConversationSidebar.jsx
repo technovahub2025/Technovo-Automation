@@ -2,6 +2,24 @@ import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from '
 import { Search, Filter, MoreVertical, Trash2, CheckCheck, UserRound, Bell } from 'lucide-react';
 import ConversationListContainer from './inbox/components/ConversationListContainer';
 
+const isIdLikeLabel = (value = '') => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return true;
+  if (/^[0-9a-f]{24}$/i.test(normalized)) return true;
+  if (/^\d{8,}$/.test(normalized)) return true;
+  return false;
+};
+
+const resolveAgentOptionLabel = (agent = {}, fallbackLabel = 'Agent') => {
+  const companyRole = String(agent?.companyRole || agent?.role || '').trim().toLowerCase();
+  const label = String(
+    agent?.label || agent?.displayName || agent?.name || agent?.fullName || agent?.email || ''
+  ).trim();
+  if (label && !isIdLikeLabel(label)) return label;
+  if (companyRole === 'admin') return 'Admin';
+  return fallbackLabel;
+};
+
 const ConversationSidebar = ({
   wsConnected,
   loading,
@@ -55,6 +73,22 @@ const ConversationSidebar = ({
   const [showAdminActionsMenu, setShowAdminActionsMenu] = useState(false);
   const inboxNotificationMenuRef = useRef(null);
   const bulkAssignSelectRef = useRef(null);
+  const displayableAgents = useMemo(() => {
+    return (Array.isArray(availableAgents) ? availableAgents : []).map((agent) => {
+      const agentId = String(agent?.id || agent?._id || agent?.userId || '').trim();
+      const agentLabel = resolveAgentOptionLabel(agent, 'Agent');
+
+      return {
+        ...agent,
+        id: agentId || agent?.id || agent?._id || agent?.userId,
+        _id: agentId || agent?._id || agent?.id || agent?.userId,
+        userId: agentId || agent?.userId || agent?.id || agent?._id,
+        label: agentLabel,
+        displayName: agentLabel,
+        name: agentLabel
+      };
+    });
+  }, [availableAgents]);
 
   const selectedConversationId = String(selectedConversation?._id || '').trim();
   const selectedForDeletionSet = useMemo(
@@ -102,6 +136,16 @@ const ConversationSidebar = ({
     [onConversationClick]
   );
 
+  const handleSelectChatToggle = useCallback((event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    setShowAdminActionsMenu(false);
+    setOpenConversationMenuId('');
+    window.requestAnimationFrame(() => {
+      onToggleSelectMode?.();
+    });
+  }, [onToggleSelectMode]);
+
   return (
     <div className="inbox-sidebar">
       <div className="inbox-header">
@@ -146,7 +190,11 @@ const ConversationSidebar = ({
                         key={notification?.id}
                         className={`inbox-notification-menu__item inbox-notification-menu__item--${String(notification?.tone || 'info').trim()}`}
                       >
-                        <span className="inbox-notification-menu__message">{notification?.message}</span>
+                        <span className="inbox-notification-menu__message">
+                          {String(notification?.message || '')
+                            .replace(/\b[0-9a-f]{24}\b/gi, 'Agent')
+                            .replace(/\b\d{8,}\b/g, 'Agent')}
+                        </span>
                         <span className="inbox-notification-menu__meta">
                           {formatConversationTime(notification?.createdAt)}
                         </span>
@@ -217,7 +265,7 @@ const ConversationSidebar = ({
 
             {showSelectMenu && (
               <div className="inbox-select-menu">
-                <button className="select-menu-item" onClick={onToggleSelectMode}>
+                <button type="button" className="select-menu-item" onClick={handleSelectChatToggle}>
                   {showSelectMode ? 'Cancel Select' : 'Select Chat'}
                 </button>
               </div>
@@ -309,17 +357,10 @@ const ConversationSidebar = ({
                           ref={bulkAssignSelectRef}
                         >
                           <option value="">Choose agent</option>
-                          {Array.isArray(availableAgents)
-                            ? availableAgents.map((agent) => {
+                          {Array.isArray(displayableAgents)
+                            ? displayableAgents.map((agent) => {
                                 const agentId = String(agent?.id || agent?._id || agent?.userId || '').trim();
-                                const agentLabel = String(
-                                  agent?.label ||
-                                    agent?.name ||
-                                    agent?.displayName ||
-                                    agent?.email ||
-                                    agentId ||
-                                    'Agent'
-                                ).trim();
+                                const agentLabel = resolveAgentOptionLabel(agent, 'Agent');
                                 if (!agentId) return null;
                                 return (
                                   <option key={`bulk-agent-${agentId}`} value={agentId}>

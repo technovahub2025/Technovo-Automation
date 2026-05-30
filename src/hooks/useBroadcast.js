@@ -26,6 +26,46 @@ const normalizeBroadcastStatus = (broadcast = {}) => {
   return status;
 };
 
+const getBroadcastReliabilitySignals = (broadcast = {}) => {
+  const retrySummary = broadcast?.retrySummary || {};
+  const analytics = retrySummary?.analytics || {};
+  const stats = broadcast?.stats || {};
+  const status = normalizeBroadcastStatus(broadcast);
+
+  return {
+    suppressed: Number(analytics?.suppressed || 0) > 0,
+    deferred: Number(analytics?.deferred || 0) > 0,
+    retried: Number(analytics?.retried || 0) > 0,
+    failed: Number(stats?.failed || 0) > 0,
+    completedWithErrors: status === "completed_with_errors",
+    skippedQuietHours: Number(broadcast?.retrySummary?.analytics?.skippedQuietHours || 0) > 0,
+  };
+};
+
+const isHighRiskBroadcast = (broadcast = {}) => {
+  const signals = getBroadcastReliabilitySignals(broadcast);
+  return (
+    signals.failed ||
+    signals.completedWithErrors ||
+    signals.suppressed ||
+    signals.deferred ||
+    signals.retried ||
+    signals.skippedQuietHours
+  );
+};
+
+const isNeedsRetryBroadcast = (broadcast = {}) => {
+  const signals = getBroadcastReliabilitySignals(broadcast);
+  const status = normalizeBroadcastStatus(broadcast);
+  return (
+    signals.failed ||
+    signals.retried ||
+    signals.completedWithErrors ||
+    status === "failed" ||
+    status === "sending"
+  );
+};
+
 const normalizeCreatorFilterValue = (value = "") => String(value || "").trim();
 
 const isLikelyObjectId = (value = "") =>
@@ -104,6 +144,59 @@ const sanitizeBroadcastTemplateForCache = (template = {}) => ({
     : [],
 });
 
+const sanitizeBroadcastPolicySummary = (broadcast = {}) => {
+  const retrySummarySource =
+    broadcast?.retrySummary && typeof broadcast.retrySummary === "object"
+      ? broadcast.retrySummary
+      : {};
+  const analyticsSource =
+    retrySummarySource?.analytics &&
+    typeof retrySummarySource.analytics === "object"
+      ? retrySummarySource.analytics
+      : broadcast?.analytics && typeof broadcast.analytics === "object"
+        ? broadcast.analytics
+        : {};
+  const retryPolicySource =
+    retrySummarySource?.retryPolicy &&
+    typeof retrySummarySource.retryPolicy === "object"
+      ? retrySummarySource.retryPolicy
+      : broadcast?.retryPolicy && typeof broadcast.retryPolicy === "object"
+        ? broadcast.retryPolicy
+        : {};
+  const deliveryPolicySource =
+    retrySummarySource?.deliveryPolicy &&
+    typeof retrySummarySource.deliveryPolicy === "object"
+      ? retrySummarySource.deliveryPolicy
+      : broadcast?.deliveryPolicy && typeof broadcast.deliveryPolicy === "object"
+        ? broadcast.deliveryPolicy
+        : {};
+  const compliancePolicySource =
+    retrySummarySource?.compliancePolicy &&
+    typeof retrySummarySource.compliancePolicy === "object"
+      ? retrySummarySource.compliancePolicy
+      : broadcast?.compliancePolicy && typeof broadcast.compliancePolicy === "object"
+        ? broadcast.compliancePolicy
+        : {};
+
+  const skippedQuietHours = Number(analyticsSource?.skippedQuietHours || 0) || 0;
+
+  return {
+    retrySummary: {
+      ...(retrySummarySource || {}),
+      retryPolicy: retryPolicySource,
+      deliveryPolicy: deliveryPolicySource,
+      compliancePolicy: compliancePolicySource,
+      analytics: {
+        ...(analyticsSource || {}),
+        suppressed: Number(analyticsSource?.suppressed || 0) || 0,
+        deferred: Number(analyticsSource?.deferred || 0) || 0,
+        retried: Number(analyticsSource?.retried || 0) || 0,
+        skippedQuietHours,
+      },
+    },
+  };
+};
+
 const sanitizeBroadcastForCache = (broadcast = {}) => ({
   _id: String(broadcast?._id || "").trim(),
   id: String(broadcast?.id || "").trim(),
@@ -133,24 +226,7 @@ const sanitizeBroadcastForCache = (broadcast = {}) => ({
           failed: Number(broadcast.stats.failed || 0) || 0,
         }
       : {},
-  retrySummary:
-    broadcast?.retrySummary && typeof broadcast.retrySummary === "object"
-      ? {
-          analytics:
-            broadcast.retrySummary?.analytics &&
-            typeof broadcast.retrySummary.analytics === "object"
-              ? {
-                  suppressed:
-                    Number(broadcast.retrySummary.analytics.suppressed || 0) ||
-                    0,
-                  deferred:
-                    Number(broadcast.retrySummary.analytics.deferred || 0) || 0,
-                  retried:
-                    Number(broadcast.retrySummary.analytics.retried || 0) || 0,
-                }
-              : {},
-        }
-      : {},
+  ...sanitizeBroadcastPolicySummary(broadcast),
   recipients: Array.isArray(broadcast?.recipients)
     ? broadcast.recipients
         .slice(0, 20)
@@ -368,6 +444,7 @@ export const useBroadcast = () => {
       const normalizedBroadcasts = nextBroadcasts.map((broadcast) => ({
         ...broadcast,
         status: normalizeBroadcastStatus(broadcast),
+        ...sanitizeBroadcastPolicySummary(broadcast),
       }));
       setBroadcasts(normalizedBroadcasts);
       setBroadcastPageMeta(nextMeta);
@@ -611,7 +688,12 @@ export const useBroadcast = () => {
       broadcastPageCacheRef.current = cachedBroadcastPage.data;
 
       if (Array.isArray(cachedBroadcastPage.data.broadcasts)) {
-        setBroadcasts(cachedBroadcastPage.data.broadcasts);
+        setBroadcasts(
+          cachedBroadcastPage.data.broadcasts.map((broadcast) => ({
+            ...sanitizeBroadcastForCache(broadcast),
+            ...sanitizeBroadcastPolicySummary(broadcast),
+          })),
+        );
       }
       if (cachedBroadcastPage.data.broadcastPageMeta) {
         setBroadcastPageMeta({
@@ -1149,10 +1231,28 @@ export const useBroadcast = () => {
         const suppressed = toNonNegative(analytics.suppressed);
         const deferred = toNonNegative(analytics.deferred);
         const retried = toNonNegative(analytics.retried);
+        const failed = toNonNegative(broadcast?.stats?.failed);
+        const status = normalizeBroadcastStatus(broadcast);
+        const completedWithErrors = status === "completed_with_errors";
+        const skippedQuietHours = toNonNegative(analytics?.skippedQuietHours);
 
         if (reliabilityFilter === "suppressed") return suppressed > 0;
         if (reliabilityFilter === "deferred") return deferred > 0;
         if (reliabilityFilter === "retried") return retried > 0;
+        if (reliabilityFilter === "needs_retry") {
+          return failed > 0 || retried > 0 || completedWithErrors || status === "failed" || status === "sending";
+        }
+        if (reliabilityFilter === "high_risk") {
+          return (
+            failed > 0 ||
+            retried > 0 ||
+            suppressed > 0 ||
+            deferred > 0 ||
+            skippedQuietHours > 0 ||
+            completedWithErrors ||
+            status === "failed"
+          );
+        }
         if (reliabilityFilter === "any")
           return suppressed > 0 || deferred > 0 || retried > 0;
         return true;

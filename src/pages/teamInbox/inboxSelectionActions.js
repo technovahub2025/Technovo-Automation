@@ -31,6 +31,8 @@ export const createInboxSelectionActions = ({
   notifyActionFeedback,
   confirmAction,
   refreshInboxOverview,
+  setInboxView,
+  isAgentRestricted = false,
   bulkAssignBusy = false,
   setBulkAssignBusy,
   setBulkAssignTarget
@@ -245,6 +247,10 @@ export const createInboxSelectionActions = ({
         assignedAgent: nextAssignedTo,
         assignedToId: nextAssignedTo
       });
+
+      if (!isAgentRestricted && typeof setInboxView === 'function') {
+        setInboxView('all');
+      }
 
       setSelectedForDeletion([]);
       setShowSelectMode(false);

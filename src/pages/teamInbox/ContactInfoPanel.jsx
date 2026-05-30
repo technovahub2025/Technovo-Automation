@@ -1,5 +1,10 @@
 import React from 'react';
 import {
+  getConversationAssignedLookupId,
+  resolveAgentDisplayLabel,
+  resolveConversationAssigneeLabel
+} from './teamInboxDisplayUtils';
+import {
   CalendarClock,
   Download,
   ExternalLink,
@@ -18,6 +23,12 @@ import {
   X,
   ChevronDown
 } from 'lucide-react';
+
+const resolveAgentOptionLabel = (agent = {}, fallbackLabel = 'Agent') => {
+  const label = resolveAgentDisplayLabel(agent, '');
+  if (label) return label;
+  return String(fallbackLabel || '').trim();
+};
 
 const CRM_DOCUMENT_TYPE_OPTIONS = [
   { value: 'id_proof', label: 'ID Proof' },
@@ -137,8 +148,48 @@ const ContactInfoPanel = ({
   const crmDocumentInputRef = React.useRef(null);
   const assignedAgentSelectRef = React.useRef(null);
   const sectionRefs = React.useRef({});
+  const resolvedAssigneeLabel = React.useMemo(
+    () => resolveConversationAssigneeLabel(selectedConversation || {}, availableAgents),
+    [selectedConversation, availableAgents]
+  );
+  const currentAssigneeValue = React.useMemo(
+    () => String(getConversationAssignedLookupId(selectedConversation) || '').trim(),
+    [selectedConversation]
+  );
+  const hasMeaningfulAssigneeLabel = React.useMemo(() => {
+    const normalized = String(resolvedAssigneeLabel || '').trim().toLowerCase();
+    if (!normalized) return false;
+    return !['unassigned', 'assigned', 'admin', 'agent', 'unknown', 'unknown user'].includes(
+      normalized
+    );
+  }, [resolvedAssigneeLabel]);
+  const displayableAgents = React.useMemo(() => {
+    return (Array.isArray(availableAgents) ? availableAgents : [])
+      .map((agent) => {
+        const agentId = String(agent?.id || agent?._id || agent?.userId || '').trim();
+        const fallbackLabel = resolveAgentOptionLabel(agent, '');
+        const resolvedLabel = String(
+          agentId && agentId === currentAssigneeValue
+            ? resolvedAssigneeLabel
+            : fallbackLabel || ''
+        ).trim();
+
+        if (!resolvedLabel) return null;
+
+        return {
+          ...agent,
+          id: agentId || agent?.id || agent?._id || agent?.userId,
+          _id: agentId || agent?._id || agent?.id || agent?.userId,
+          userId: agentId || agent?.userId || agent?.id || agent?._id,
+          label: resolvedLabel,
+          displayName: resolvedLabel,
+          name: resolvedLabel
+        };
+      })
+      .filter(Boolean);
+  }, [availableAgents, currentAssigneeValue, resolvedAssigneeLabel]);
   const [assignedAgentDraft, setAssignedAgentDraft] = React.useState(
-    String(selectedConversation?.assignedTo || selectedConversation?.assignedAgent || '')
+    hasMeaningfulAssigneeLabel ? currentAssigneeValue : ''
   );
   const [expandedSections, setExpandedSections] = React.useState({
     followUp: false,
@@ -160,8 +211,8 @@ const ContactInfoPanel = ({
   };
 
   React.useEffect(() => {
-    setAssignedAgentDraft(String(selectedConversation?.assignedTo || selectedConversation?.assignedAgent || ''));
-  }, [selectedConversation]);
+    setAssignedAgentDraft(hasMeaningfulAssigneeLabel ? currentAssigneeValue : '');
+  }, [currentAssigneeValue, hasMeaningfulAssigneeLabel]);
 
   const followUpBadgeLabel = React.useMemo(() => {
     const rawValue = String(leadFollowUpDraft || '').trim();
@@ -409,17 +460,22 @@ const ContactInfoPanel = ({
                   disabled={contactInfoActionBusy}
                 >
                   <option value="">Unassigned</option>
-                  {availableAgents.map((agent) => {
+                  {displayableAgents.map((agent) => {
                     const agentId = String(agent?.id || agent?._id || agent?.userId || '').trim();
-                    const agentLabel =
-                      String(agent?.label || agent?.name || agent?.displayName || agent?.email || agentId || 'Agent').trim();
                     if (!agentId) return null;
+                    const agentLabel = resolveAgentOptionLabel(agent, 'Agent');
                     return (
                       <option key={`agent-${agentId}`} value={agentId}>
                         {agentLabel}
                       </option>
                     );
                   })}
+                  {currentAssigneeValue && !displayableAgents.some((agent) => {
+                    const agentId = String(agent?.id || agent?._id || agent?.userId || '').trim();
+                    return agentId === currentAssigneeValue;
+                  }) ? (
+                    <option value={currentAssigneeValue}>{resolvedAssigneeLabel || currentAssigneeValue}</option>
+                  ) : null}
                 </select>
                 <div className="contact-info-assignment__actions">
                   <button
@@ -436,7 +492,7 @@ const ContactInfoPanel = ({
                 </span>
               </div>
             ) : (
-              <strong>{String(selectedConversation?.assignedTo || selectedConversation?.assignedAgent || 'Unassigned')}</strong>
+              <strong>{resolvedAssigneeLabel || 'Unassigned'}</strong>
             )}
           </div>
           <div className="contact-info-item contact-info-item--actions">
@@ -479,26 +535,28 @@ const ContactInfoPanel = ({
               <h4>Quick Actions</h4>
               <p>Jump to common follow-up, task, note, and assignment actions</p>
             </div>
-            <button
-              type="button"
-              className={`contact-info-followup-badge${leadFollowUpDraft ? ' is-set' : ' is-empty'}`}
-              onClick={() => openSection('followUp')}
-            >
-              <CalendarClock size={12} />
-              <span>{followUpBadgeLabel}</span>
-            </button>
-            <button
-              type="button"
-              className={`contact-info-followup-badge contact-info-followup-badge--task${crmTaskDueDraft ? ' is-set' : ' is-empty'}`}
-              onClick={() => openSection('quickTask')}
-            >
-              <NotebookPen size={12} />
-              <span>{taskDueBadgeLabel}</span>
-            </button>
-            <span className={`contact-info-status-chip status-${leadStatusBadgeTone}`}>
-              <span className="contact-info-status-chip__label">Lead status</span>
-              <strong>{leadStatusBadgeLabel}</strong>
-            </span>
+            <div className="contact-info-quick-actions__meta">
+              <button
+                type="button"
+                className={`contact-info-followup-badge${leadFollowUpDraft ? ' is-set' : ' is-empty'}`}
+                onClick={() => openSection('followUp')}
+              >
+                <CalendarClock size={12} />
+                <span>{followUpBadgeLabel}</span>
+              </button>
+              <button
+                type="button"
+                className={`contact-info-followup-badge contact-info-followup-badge--task${crmTaskDueDraft ? ' is-set' : ' is-empty'}`}
+                onClick={() => openSection('quickTask')}
+              >
+                <NotebookPen size={12} />
+                <span>{taskDueBadgeLabel}</span>
+              </button>
+              <span className={`contact-info-status-chip status-${leadStatusBadgeTone}`}>
+                <span className="contact-info-status-chip__label">Lead status</span>
+                <strong>{leadStatusBadgeLabel}</strong>
+              </span>
+            </div>
           </div>
           <div className="contact-info-quick-actions__row">
             <button

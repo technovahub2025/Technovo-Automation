@@ -427,10 +427,30 @@ class WebSocketService extends EventEmitter {
 
   identify() {
     if (!this.currentUserId) return;
+
+    let displayName = '';
+    let email = '';
+    let role = '';
+    try {
+      const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
+      displayName = String(
+        storedUser?.displayName || storedUser?.name || storedUser?.fullName || storedUser?.username || ''
+      ).trim();
+      email = String(storedUser?.email || '').trim();
+      role = String(storedUser?.companyRole || storedUser?.role || storedUser?.normalizedRole || '').trim();
+    } catch {
+      // Ignore storage parse issues and fall back to ID-only identification.
+    }
+
     this.send({
       type: 'identify',
       userId: this.currentUserId,
       companyId: this.currentCompanyId || undefined,
+      displayName: displayName || undefined,
+      name: displayName || undefined,
+      userName: displayName || undefined,
+      email: email || undefined,
+      role: role || undefined,
       activeConversationId: this.activeConversationId || undefined,
       timestamp: Date.now()
     });

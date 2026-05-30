@@ -195,6 +195,9 @@ const Broadcast = ({
     creatorFilter,
     setCreatorFilter,
 
+    reliabilityFilter,
+    setReliabilityFilter,
+
     sortBy,
     setSortBy,
 
@@ -289,6 +292,39 @@ const Broadcast = ({
     campaignRecipients: [],
     additionalContacts: [],
   });
+  const selectedBroadcastPreset =
+    reliabilityFilter === "suppressed"
+      ? "suppressed"
+      : reliabilityFilter === "high_risk"
+        ? "high_risk"
+        : reliabilityFilter === "needs_retry" || reliabilityFilter === "retried"
+          ? "needs_retry"
+          : "all";
+
+  const handleApplyBroadcastPreset = useCallback(
+    (presetKey) => {
+      const normalized = String(presetKey || "all").trim().toLowerCase();
+      if (normalized === "all") {
+        setReliabilityFilter("all");
+        return;
+      }
+      if (normalized === "needs_retry") {
+        setReliabilityFilter("needs_retry");
+        return;
+      }
+      if (normalized === "suppressed") {
+        setReliabilityFilter("suppressed");
+        return;
+      }
+      if (normalized === "high_risk") {
+        setReliabilityFilter("high_risk");
+        return;
+      }
+      setReliabilityFilter("all");
+    },
+    [setReliabilityFilter],
+  );
+
   const [quietHoursEnabled, setQuietHoursEnabled] = useState(false);
   const [quietHoursStartHour, setQuietHoursStartHour] = useState(22);
   const [quietHoursEndHour, setQuietHoursEndHour] = useState(9);
@@ -3360,12 +3396,18 @@ const Broadcast = ({
                   creatorFilter={creatorFilter}
                   onCreatorFilterChange={(value) => setCreatorFilter(value)}
                   creatorOptions={creatorOptions}
+                  reliabilityFilter={reliabilityFilter}
+                  onReliabilityFilterChange={(value) =>
+                    setReliabilityFilter(value)
+                  }
                   sortBy={sortBy}
                   onSortByChange={(value) => setSortBy(value)}
                   sortOrder={sortOrder}
                   onSortOrderChange={(value) => setSortOrder(value)}
                   onRefresh={() => loadBroadcasts()}
                   totalBroadcasts={currentBroadcasts.length}
+                  selectedPreset={selectedBroadcastPreset}
+                  onApplyPreset={handleApplyBroadcastPreset}
                   lastUpdated={
                     broadcasts.length > 0
                       ? Math.max(

@@ -37,6 +37,8 @@ export const createContactCrmActions = ({
   toIsoFromDateTimeLocalInput,
   toDateTimeLocalInputValue,
   refreshInboxOverview,
+  setInboxView,
+  isAgentRestricted = false,
   confirmAction
 }) => {
   const confirmWithFallback = async (message) => {
@@ -586,6 +588,9 @@ export const createContactCrmActions = ({
         assignedAgent: nextAssignedTo,
         assignedToId: nextAssignedTo
       });
+      if (!isAgentRestricted && typeof setInboxView === 'function') {
+        setInboxView('all');
+      }
       setContactInfoMessage('Conversation assigned successfully.');
       setContactInfoMessageTone('success');
       void refreshInboxOverviewSafely();

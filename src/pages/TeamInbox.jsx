@@ -55,7 +55,9 @@ import {
   formatConversationTime,
   buildGroupedMessages,
   formatMessageTime,
-  getMessageKey
+  getMessageKey,
+  getConversationAssignedLookupId,
+  resolveAgentDisplayLabel
 } from './teamInbox/teamInboxDisplayUtils';
 import { resolvePreferredMessageStatus } from './teamInbox/replyMessageMergeUtils';
 import { resolveAgentWorkspaceState, resolveWorkspaceManagementAccessState } from '../utils/agentAccess';
@@ -480,7 +482,7 @@ const TeamInbox = () => {
   const inboxChannelNote = isAgentInbox
     ? 'Assigned conversations only, with follow-up and closure controls.'
     : 'Workspace-wide queue with reassignment, follow-up, and priority monitoring.';
-  const assignableAgents = useMemo(
+  const displayableAgents = useMemo(
     () =>
       (Array.isArray(agentRoster) ? agentRoster : []).filter((agent) => {
         if (!agent || typeof agent !== 'object') return false;
@@ -488,19 +490,28 @@ const TeamInbox = () => {
       }),
     [agentRoster]
   );
+  const assignableAgents = useMemo(
+    () => (canAssignChats ? displayableAgents : []),
+    [canAssignChats, displayableAgents]
+  );
   const normalizeInboxAgentRecord = useCallback((agent = {}) => {
     const agentId = String(agent?.id || agent?._id || agent?.userId || '').trim();
     if (!agentId) return null;
 
     const companyRole = String(agent?.companyRole || agent?.role || '').trim().toLowerCase();
-    const displayName = String(
-      agent?.displayName ||
-        agent?.name ||
-        agent?.username ||
-        agent?.fullName ||
-        agent?.email ||
-        agentId
+    const combinedName = String(
+      [agent?.firstName, agent?.lastName].map((part) => String(part || '').trim()).filter(Boolean).join(' ')
     ).trim();
+    const meaningfulDisplayName = resolveAgentDisplayLabel(
+      {
+        ...agent,
+        name: String(agent?.name || combinedName || '').trim(),
+        displayName: String(agent?.displayName || combinedName || '').trim()
+      },
+      ''
+    );
+    if (!meaningfulDisplayName) return null;
+    const displayName = meaningfulDisplayName;
 
     return {
       _id: agentId,
@@ -508,6 +519,7 @@ const TeamInbox = () => {
       userId: agentId,
       name: displayName,
       displayName,
+      label: displayName,
       email: String(agent?.email || '').trim(),
       role: String(agent?.displayRole || (companyRole === 'admin' ? 'Admin' : 'Agent')).trim() || 'Agent',
       companyRole: companyRole || 'user',
@@ -526,9 +538,15 @@ const TeamInbox = () => {
         if (!normalized) return;
 
         const previous = merged.get(normalized.id);
+        const previousLabel = resolveAgentDisplayLabel(previous || {}, '');
+        const nextLabel = resolveAgentDisplayLabel(normalized || {}, '');
+        const resolvedLabel = nextLabel || previousLabel;
         merged.set(normalized.id, {
           ...(previous || {}),
           ...normalized,
+          label: resolvedLabel || normalized.label || previous?.label || '',
+          displayName: resolvedLabel || normalized.displayName || previous?.displayName || '',
+          name: resolvedLabel || normalized.name || previous?.name || '',
           isEnabled:
             typeof normalized.isEnabled === 'boolean'
               ? normalized.isEnabled
@@ -671,11 +689,6 @@ const TeamInbox = () => {
   }, [currentUserId]);
 
   useEffect(() => {
-    if (!canAssignChats) {
-      setAgentRoster([]);
-      return undefined;
-    }
-
     let cancelled = false;
 
     const loadWorkspaceAgentRoster = async () => {
@@ -702,7 +715,7 @@ const TeamInbox = () => {
       cancelled = true;
       unsubscribe?.();
     };
-  }, [canAssignChats, mergeInboxAgentRoster]);
+  }, [mergeInboxAgentRoster]);
 
   useEffect(() => {
     if (!activeConversationId) return;
@@ -1101,6 +1114,17 @@ const TeamInbox = () => {
     }
   }, [inboxView]);
 
+  const forceInboxViewAll = useCallback(
+    (nextView = 'all') => {
+      const normalizedView = String(nextView || '').trim().toLowerCase() || 'all';
+      setInboxView(normalizedView);
+      const nextParams = new URLSearchParams(searchParams);
+      nextParams.set('view', normalizedView);
+      setSearchParams(nextParams, { replace: true });
+    },
+    [searchParams, setInboxView, setSearchParams]
+  );
+
   const {
     applyContactUpdateLocally,
     loadCrmActivitiesForContact,
@@ -1157,6 +1181,8 @@ const TeamInbox = () => {
     toIsoFromDateTimeLocalInput,
     toDateTimeLocalInputValue,
     refreshInboxOverview,
+    setInboxView: forceInboxViewAll,
+    isAgentRestricted,
     confirmAction: confirmTeamInboxAction
   });
   const {
@@ -1600,7 +1626,7 @@ const TeamInbox = () => {
   useEffect(() => {
     const normalizedUserId = String(currentUserId || '').trim();
     if (!normalizedUserId) return;
-    void refreshInboxOverview();
+    void refreshInboxOverview({ skipCache: true });
   }, [refreshInboxOverview, currentUserId]);
 
   useEffect(() => {
@@ -1800,6 +1826,8 @@ const TeamInbox = () => {
     notifyActionFeedback: showTeamInboxActionFeedback,
     confirmAction: confirmTeamInboxAction,
     refreshInboxOverview,
+    setInboxView: forceInboxViewAll,
+    isAgentRestricted,
     bulkAssignBusy,
     setBulkAssignBusy,
     setBulkAssignTarget
@@ -1811,14 +1839,7 @@ const TeamInbox = () => {
     }
 
     return (Array.isArray(conversations) ? conversations : []).filter((conversation) => {
-      const assigneeId = String(
-        conversation?.assignedTo?._id ||
-          conversation?.assignedTo?.id ||
-          conversation?.assignedTo ||
-          conversation?.agentId ||
-          conversation?.ownerId ||
-          ''
-      ).trim();
+      const assigneeId = String(getConversationAssignedLookupId(conversation) || '').trim();
       return !currentWorkspaceAssigneeId || assigneeId === currentWorkspaceAssigneeId;
     });
   }, [conversations, isAgentRestricted, currentWorkspaceAssigneeId]);
@@ -2107,6 +2128,10 @@ const TeamInbox = () => {
       `${normalizedKey}Count`
     ];
 
+    if (normalizedKey === 'followups') {
+      countKeyCandidates.push('dueTodayFollowUps', 'due_today_followups');
+    }
+
     for (const key of countKeyCandidates) {
       const nextCount = inboxOverview?.[key];
       if (Number.isFinite(Number(nextCount))) {
@@ -2236,7 +2261,7 @@ const TeamInbox = () => {
               getConversationDisplayName={getConversationDisplayName}
               formatConversationTime={formatConversationTime}
               canAssignChats={!isAgentRestricted}
-              availableAgents={assignableAgents}
+              availableAgents={displayableAgents}
               currentUserId={currentUserId}
               setBulkAssignTarget={setBulkAssignTarget}
               inboxView={inboxView}
@@ -2328,7 +2353,7 @@ const TeamInbox = () => {
             leadScoringSettings={leadScoringSettings}
             leadScoringSettingsLoading={leadScoringSettingsLoading}
             leadStageOptions={leadStageOptions}
-            availableAgents={assignableAgents}
+            availableAgents={displayableAgents}
             canAssignChats={!isAgentRestricted}
             handleAssignConversation={handleAssignConversation}
             handleSetConversationImportant={handleSetConversationImportant}

@@ -342,6 +342,26 @@ apiService.getAdminUsers = (config = {}) =>
     timeout: Number(import.meta.env.VITE_ADMIN_USERS_TIMEOUT_MS || 90000),
     ...config
   });
+apiService.getMyAgents = async (params = {}) => {
+  const response = await apiService.get('/api/crm/ops/owner-dashboard', {
+    params: {
+      limit: Number.isFinite(Number(params?.limit)) ? Number(params.limit) : undefined,
+      offset: Number.isFinite(Number(params?.offset)) ? Number(params.offset) : undefined,
+      ...(params?.params || {})
+    }
+  });
+
+  const owners = Array.isArray(response?.data?.data?.owners)
+    ? response.data.data.owners
+    : Array.isArray(response?.data?.owners)
+      ? response.data.owners
+      : [];
+
+  return {
+    ...response,
+    data: owners
+  };
+};
 apiService.saveCustomPackageDraft = (userId, payload) =>
   apiService.post(`${ADMIN_API_BASE_URL}/api/admin/users/${userId}/custom-package/draft`, payload);
 apiService.generateCustomPackagePaymentLink = (userId) =>
