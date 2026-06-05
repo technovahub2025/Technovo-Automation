@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
 import {
   ArrowLeft,
   CalendarDays,
@@ -17,9 +17,11 @@ import {
   X
 } from "lucide-react";
 import apiService from "../../services/api";
+import { AuthContext } from "../authcontext";
 import "./AgentManagementPage.css";
 
-const ROLE_OPTIONS = ["Agent", "Admin"];
+const ROLE_FILTER_OPTIONS = ["Agent", "Admin"];
+const FORM_ROLE_OPTIONS = ["Agent"];
 const STATUS_OPTIONS = ["all", "enabled", "disabled"];
 
 const EMPTY_FORM = {
@@ -62,7 +64,14 @@ const getAgentSortTime = (agent = {}) => {
   return 0;
 };
 
+const buildCompanyEmailDomain = (user = {}) => {
+  const rawDomainSource = String(user?.companySlug || user?.companyName || "").trim().toLowerCase();
+  const cleaned = rawDomainSource.replace(/[^a-z0-9]+/g, "");
+  return cleaned ? `${cleaned}.com` : "companyname.com";
+};
+
 const SettingsAgentManagementPage = () => {
+  const { user } = useContext(AuthContext);
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -74,12 +83,22 @@ const SettingsAgentManagementPage = () => {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [form, setForm] = useState(EMPTY_FORM);
+  const [companyProfile, setCompanyProfile] = useState({
+    companyName: String(user?.companyName || "").trim(),
+    companySlug: String(user?.companySlug || "").trim()
+  });
+
+  const companyEmailDomain = useMemo(
+    () => buildCompanyEmailDomain(companyProfile),
+    [companyProfile.companyName, companyProfile.companySlug]
+  );
+  const defaultAgentEmail = useMemo(() => `agent@${companyEmailDomain}`, [companyEmailDomain]);
 
   const fetchAgents = async () => {
     setLoading(true);
     setError("");
     try {
-      const response = await apiService.getMyAgents();
+      const response = await apiService.listWorkspaceAgents();
       const nextAgents = Array.isArray(response?.data?.data) ? response.data.data.map(normalizeAgent) : [];
       setAgents(nextAgents);
     } catch (err) {
@@ -94,17 +113,53 @@ const SettingsAgentManagementPage = () => {
     fetchAgents();
   }, []);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadCompanySnapshot = async () => {
+      try {
+        const response = await apiService.getUserCredentials();
+        const data = response?.data?.data || {};
+        if (!isMounted || !data) return;
+
+        setCompanyProfile({
+          companyName: String(data.companyName || user?.companyName || "").trim(),
+          companySlug: String(data.companySlug || user?.companySlug || "").trim()
+        });
+      } catch (err) {
+        if (!isMounted) return;
+        setCompanyProfile({
+          companyName: String(user?.companyName || "").trim(),
+          companySlug: String(user?.companySlug || "").trim()
+        });
+      }
+    };
+
+    loadCompanySnapshot();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [user?.companyName, user?.companySlug]);
+
   const stats = useMemo(() => {
-    const total = agents.length;
-    const active = agents.filter((agent) => agent.isEnabled).length;
+    const total = agents.filter((agent) => String(agent.role || "").toLowerCase() !== "admin").length;
+    const active = agents.filter(
+      (agent) => String(agent.role || "").toLowerCase() !== "admin" && agent.isEnabled
+    ).length;
     const disabled = total - active;
     return { total, active, disabled };
   }, [agents]);
 
+  const visibleAgents = useMemo(
+    () => agents.filter((agent) => String(agent.role || "").toLowerCase() !== "admin"),
+    [agents]
+  );
+
   const filteredAgents = useMemo(() => {
     const term = searchTerm.trim().toLowerCase();
 
-    return agents
+    return visibleAgents
       .filter((agent) => {
         if (statusFilter === "enabled") return agent.isEnabled;
         if (statusFilter === "disabled") return !agent.isEnabled;
@@ -120,10 +175,10 @@ const SettingsAgentManagementPage = () => {
         );
       })
       .sort((a, b) => getAgentSortTime(b) - getAgentSortTime(a));
-  }, [agents, roleFilter, searchTerm, statusFilter]);
+  }, [roleFilter, searchTerm, statusFilter, visibleAgents]);
 
-  const isEmpty = !loading && agents.length === 0;
-  const showNoResults = !loading && agents.length > 0 && filteredAgents.length === 0;
+  const isEmpty = !loading && visibleAgents.length === 0;
+  const showNoResults = !loading && visibleAgents.length > 0 && filteredAgents.length === 0;
 
   const closeModal = () => {
     setShowModal(false);
@@ -135,7 +190,10 @@ const SettingsAgentManagementPage = () => {
     setMessage("");
     setError("");
     setEditingAgentId(null);
-    setForm(EMPTY_FORM);
+    setForm({
+      ...EMPTY_FORM,
+      email: defaultAgentEmail
+    });
     setShowModal(true);
   };
 
@@ -318,7 +376,7 @@ const SettingsAgentManagementPage = () => {
               <UserPlus size={14} />
               <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value)}>
                 <option value="all">All Roles</option>
-                {ROLE_OPTIONS.map((role) => (
+                {ROLE_FILTER_OPTIONS.map((role) => (
                   <option key={role} value={role.toLowerCase()}>
                     {role}
                   </option>
@@ -473,8 +531,9 @@ const SettingsAgentManagementPage = () => {
                     type="email"
                     value={form.email}
                     onChange={(event) => setForm((prev) => ({ ...prev, email: event.target.value }))}
-                    placeholder="agent@example.com"
+                    placeholder={`agent@${companyEmailDomain}`}
                   />
+                  <small className="agent-field__hint">Default business domain is {companyEmailDomain}.</small>
                 </label>
 
                 <label className="agent-field">
@@ -493,7 +552,7 @@ const SettingsAgentManagementPage = () => {
                     value={form.role}
                     onChange={(event) => setForm((prev) => ({ ...prev, role: event.target.value }))}
                   >
-                    {ROLE_OPTIONS.map((role) => (
+                    {FORM_ROLE_OPTIONS.map((role) => (
                       <option key={role} value={role}>
                         {role}
                       </option>

@@ -362,6 +362,11 @@ apiService.getMyAgents = async (params = {}) => {
     data: owners
   };
 };
+apiService.listWorkspaceAgents = (params = {}) =>
+  apiService.get(`${ADMIN_API_BASE_URL}/api/agents`, { params });
+apiService.createMyAgent = (payload) => apiService.post(`${ADMIN_API_BASE_URL}/api/agents`, payload);
+apiService.updateMyAgent = (agentId, payload) =>
+  apiService.put(`${ADMIN_API_BASE_URL}/api/agents/${agentId}`, payload);
 apiService.saveCustomPackageDraft = (userId, payload) =>
   apiService.post(`${ADMIN_API_BASE_URL}/api/admin/users/${userId}/custom-package/draft`, payload);
 apiService.generateCustomPackagePaymentLink = (userId) =>

@@ -14,6 +14,7 @@ import {
     isOAuthPopupOpen,
     resolveGoogleOAuthEvent
 } from '../utils/googleOAuthEvents';
+import { resolveWorkspaceSettingsAccessState } from '../utils/agentAccess';
 import {
     LayoutDashboard,
     MessageSquare,
@@ -43,7 +44,7 @@ import {
 import logo from '../../src/assets/logo.png';
 import './Sidebar.css';
 import { stripAppRouteBase } from '../utils/appRouteBase';
-import { resolveAgentWorkspaceState, resolveWorkspaceManagementAccessState } from '../utils/agentAccess';
+import { resolveAgentWorkspaceState } from '../utils/agentAccess';
 
 const ROUTE_PREFETCHERS = {
     '/': () => import('../pages/Dashboard'),
@@ -243,7 +244,8 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         featureFlags.crmLeadScoringSettings ||
         featureFlags.crmTaskCalendar
     );
-    const canAccessUserManagement = resolveWorkspaceManagementAccessState(user) || isAdminWorkspaceUser;
+    const canAccessUserManagement =
+        resolveWorkspaceSettingsAccessState(user) || (isAdminWorkspaceUser && user?.isEnabled !== false);
 
     useEffect(() => {
         if (!isLoggedIn && openMenu) {

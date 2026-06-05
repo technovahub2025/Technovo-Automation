@@ -83,6 +83,9 @@ export const resolveWorkspaceManagementAccessState = (user = {}) => {
   return false;
 };
 
+export const resolveWorkspaceSettingsAccessState = (user = {}) =>
+  resolveWorkspaceManagementAccessState(user) && user?.isEnabled !== false;
+
 export const resolveWorkspaceOwnerId = (user = {}) =>
   String(user?.createdBy || user?.ownerId || user?.parentUserId || normalizeUserId(user)).trim();
 

@@ -3,14 +3,17 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useContext } from 'react';
 import { AuthContext } from '../../pages/authcontext';
 import LoadingSpinner from '../common/LoadingSpinner';
-import { resolveAgentWorkspaceState, resolveWorkspaceManagementAccessState } from '../../utils/agentAccess';
+import {
+    resolveAgentWorkspaceState,
+    resolveWorkspaceSettingsAccessState
+} from '../../utils/agentAccess';
 import { stripAppRouteBase } from '../../utils/appRouteBase';
 
 const hasFeatureAccess = (user, requiredFeature) => {
     if (!requiredFeature) return true;
     if (user?.role === 'superadmin') return true;
     if (requiredFeature === 'userManagement') {
-        return resolveWorkspaceManagementAccessState(user);
+        return resolveWorkspaceSettingsAccessState(user);
     }
 
     const featureFlags = user?.featureFlags || {};
@@ -35,7 +38,6 @@ const ProtectedRoute = ({ children, requiredRole, requiredFeature, requireAuth =
     const isAuthenticated = !!user;
     const isAgentWorkspace = resolveAgentWorkspaceState(user);
     const isAgentRestricted = isAgentWorkspace && user?.role !== 'superadmin';
-    const isDisabledAgent = isAgentWorkspace && user?.isEnabled === false;
     const agentAllowedRoutes = [
         { path: '/inbox', nested: true },
         { path: '/bulk-messages', nested: true },
@@ -55,10 +57,6 @@ const ProtectedRoute = ({ children, requiredRole, requiredFeature, requireAuth =
         );
 
     if (requireAuth && !isAuthenticated) {
-        return <Navigate to="/login" replace />;
-    }
-
-    if (isDisabledAgent) {
         return <Navigate to="/login" replace />;
     }
 

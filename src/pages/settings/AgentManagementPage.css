@@ -644,6 +644,13 @@
   background: #fff;
 }
 
+.agent-field__hint {
+  color: #64748b;
+  font-size: 0.77rem;
+  line-height: 1.4;
+  margin-top: -0.1rem;
+}
+
 .agent-modal__actions {
   display: flex;
   justify-content: flex-end;
