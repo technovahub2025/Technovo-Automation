@@ -141,9 +141,7 @@ const ConversationSidebar = ({
     event?.stopPropagation?.();
     setShowAdminActionsMenu(false);
     setOpenConversationMenuId('');
-    window.requestAnimationFrame(() => {
-      onToggleSelectMode?.();
-    });
+    onToggleSelectMode?.();
   }, [onToggleSelectMode]);
 
   return (
@@ -265,7 +263,12 @@ const ConversationSidebar = ({
 
             {showSelectMenu && (
               <div className="inbox-select-menu">
-                <button type="button" className="select-menu-item" onClick={handleSelectChatToggle}>
+                <button
+                  type="button"
+                  className="select-menu-item"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={handleSelectChatToggle}
+                >
                   {showSelectMode ? 'Cancel Select' : 'Select Chat'}
                 </button>
               </div>

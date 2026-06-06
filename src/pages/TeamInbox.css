@@ -2460,8 +2460,10 @@
     position: absolute;
     top: calc(100% + 10px);
     left: 0;
+    right: 0;
     z-index: 15;
-    width: min(320px, calc(100vw - 36px));
+    width: auto;
+    max-width: 100%;
     padding: 10px;
     border-radius: 16px;
     border: 1px solid rgba(148, 163, 184, 0.22);
@@ -2470,6 +2472,8 @@
     display: flex;
     flex-direction: column;
     gap: 8px;
+    box-sizing: border-box;
+    overflow: visible;
 }
 
 .selection-actions-menu__item {
@@ -2525,6 +2529,8 @@
 .selection-actions-menu__label {
     display: flex;
     flex-direction: column;
+    align-items: stretch;
+    width: 100%;
     gap: 6px;
     font-size: 11px;
     font-weight: 700;
@@ -2534,8 +2540,13 @@
 }
 
 .bulk-assign-select--menu {
+    flex: 0 0 auto;
     min-width: 0;
     width: 100%;
+    max-width: 100%;
+    min-height: 42px;
+    height: 42px;
+    box-sizing: border-box;
 }
 
 .selection-actions__assign {
@@ -2657,6 +2668,7 @@
     }
 
     .bulk-assign-select--menu {
+        height: 42px;
         min-height: 42px;
     }
 
