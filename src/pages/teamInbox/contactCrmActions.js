@@ -749,38 +749,6 @@ export const createContactCrmActions = ({
     }
   };
 
-  const handleConversationLeadStatusChange = async (leadStatus) => {
-    const conversationId = getConversationIdValue(selectedConversation);
-    const nextLeadStatus = String(leadStatus || '').trim().toLowerCase();
-    if (!conversationId || !nextLeadStatus) {
-      setContactInfoMessage('Please choose a lead status.');
-      setContactInfoMessageTone('error');
-      return false;
-    }
-
-    try {
-      setContactInfoActionBusy(true);
-      const result = await whatsappService.updateConversationLeadStatus(conversationId, nextLeadStatus);
-      if (result?.success === false) {
-        throw new Error(result?.error || 'Failed to update lead status.');
-      }
-      applyConversationPatchLocally({
-        leadStatus: nextLeadStatus,
-        status: nextLeadStatus === 'closed' ? 'resolved' : selectedConversation?.status || 'active'
-      });
-      setContactInfoMessage('Lead status updated.');
-      setContactInfoMessageTone('success');
-      void refreshInboxOverviewSafely();
-      return true;
-    } catch (error) {
-      setContactInfoMessage(error?.message || 'Failed to update lead status.');
-      setContactInfoMessageTone('error');
-      return false;
-    } finally {
-      setContactInfoActionBusy(false);
-    }
-  };
-
   return {
     applyContactUpdateLocally,
     loadCrmActivitiesForContact,
@@ -800,7 +768,6 @@ export const createContactCrmActions = ({
     handleCloseConversation,
     handleReopenConversation,
     handleAddInternalNote,
-    handleCreateFollowupTask,
-    handleConversationLeadStatusChange
+    handleCreateFollowupTask
   };
 };

@@ -131,6 +131,26 @@ const buildAuthHeaders = (includeJsonContentType = true) => {
 const isBlobLike = (value) =>
   typeof Blob !== "undefined" && value instanceof Blob;
 
+const chunkArray = (items = [], size = 100) => {
+  const safeItems = Array.isArray(items) ? items : [];
+  const safeSize = Math.max(1, Number(size) || 100);
+  const chunks = [];
+  for (let index = 0; index < safeItems.length; index += safeSize) {
+    chunks.push(safeItems.slice(index, index + safeSize));
+  }
+  return chunks;
+};
+
+const isPayloadTooLargeError = (error) => {
+  const status = Number(error?.response?.status || 0);
+  const message = String(error?.response?.data || error?.message || "").toLowerCase();
+  return (
+    status === 413 ||
+    message.includes("payload too large") ||
+    message.includes("request entity too large")
+  );
+};
+
 const buildFallbackAudienceValidation = (data = {}) => {
   const recipients = Array.isArray(data?.recipients) ? data.recipients : [];
   const eligibleRecipients = [];
@@ -482,8 +502,75 @@ export const apiClient = {
    * Import multiple contacts
    * @param {Array} contacts - Array of contact objects
    */
-  importContacts: (contacts) =>
-    api.post("/contacts/import", { contacts }, { timeout: LONG_TIMEOUT_MS }),
+  importContacts: async (contacts) => {
+    const contactList = Array.isArray(contacts) ? contacts : [];
+    if (contactList.length <= 100) {
+      return api.post("/contacts/import", { contacts: contactList }, { timeout: LONG_TIMEOUT_MS });
+    }
+
+    const aggregatedResults = {
+      imported: 0,
+      failed: 0,
+      warnings: [],
+      errors: []
+    };
+    let overallSuccess = true;
+    const chunkMessages = [];
+
+    const importChunk = async (chunk) => {
+      if (!Array.isArray(chunk) || chunk.length === 0) return;
+
+      try {
+        const response = await api.post(
+          "/contacts/import",
+          { contacts: chunk },
+          { timeout: LONG_TIMEOUT_MS }
+        );
+        const results = response?.data?.results || {};
+        aggregatedResults.imported += Number(results.imported || 0);
+        aggregatedResults.failed += Number(results.failed || 0);
+        if (Array.isArray(results.warnings)) {
+          aggregatedResults.warnings.push(...results.warnings);
+        }
+        if (Array.isArray(results.errors)) {
+          aggregatedResults.errors.push(...results.errors);
+        }
+        if (response?.data?.message) {
+          chunkMessages.push(String(response.data.message).trim());
+        }
+        return;
+      } catch (error) {
+        if (isPayloadTooLargeError(error) && chunk.length > 1) {
+          const mid = Math.ceil(chunk.length / 2);
+          await importChunk(chunk.slice(0, mid));
+          await importChunk(chunk.slice(mid));
+          return;
+        }
+
+        overallSuccess = false;
+        aggregatedResults.failed += Array.isArray(chunk) ? chunk.length : 1;
+        aggregatedResults.errors.push({
+          line: "batch",
+          error: error?.response?.data?.error || error?.message || "Chunk import failed",
+          data: { batchSize: Array.isArray(chunk) ? chunk.length : 0 }
+        });
+      }
+    };
+
+    for (const chunk of chunkArray(contactList, 100)) {
+      await importChunk(chunk);
+    }
+
+    return {
+      data: {
+        success: overallSuccess || aggregatedResults.imported > 0,
+        message: chunkMessages.length
+          ? `Import completed across ${chunkMessages.length} successful batch${chunkMessages.length === 1 ? "" : "es"}`
+          : "Import completed",
+        results: aggregatedResults
+      }
+    };
+  },
 
   /**
    * Update contact

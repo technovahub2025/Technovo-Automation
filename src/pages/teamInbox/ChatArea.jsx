@@ -44,6 +44,7 @@ import {
   resolveConversationAssigneeLabel,
   resolveConversationSlaMeta
 } from './teamInboxDisplayUtils';
+import { getLeadStageLabel, getLeadStageValue } from './teamInboxUtils';
 import { getWhatsAppConversationState } from '../../utils/whatsappContactState';
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -3121,6 +3122,9 @@ const ChatArea = ({
   const isVoiceSending = voiceRecorderState.status === 'sending';
   const showVoiceRecorderComposer = isVoiceRecordingActive || isVoiceSending;
   const slaMeta = resolveConversationSlaMeta(selectedConversation);
+  const leadStageValue = getLeadStageValue(selectedConversation);
+  const leadStageLabel = String(getLeadStageLabel(selectedConversation)).trim() || 'New Lead';
+  const leadStageTone = String(leadStageValue || 'new').trim().toLowerCase() || 'new';
   const whatsappStateLabel = String(whatsappMessagingState?.statusLabel || '').trim();
   const whatsappStateTone = String(whatsappMessagingState?.badgeTone || '').trim() || 'template-only';
   const selectedTypingConversationId = selectedConversationId;
@@ -3196,6 +3200,12 @@ const ChatArea = ({
             <span className="name text-white">{getConversationDisplayName(selectedConversation)}</span>
             <div className="chat-header-status-row">
               <span className="status text-white">{selectedConversation.contactPhone}</span>
+              <span
+                className={`chat-header-operator-chip chat-header-operator-chip--lead chat-header-operator-chip--lead-${leadStageTone}`}
+                title={`Lead stage: ${leadStageLabel}`}
+              >
+                {leadStageLabel}
+              </span>
               {whatsappStateLabel && (
                 <span
                   className={`chat-header-operator-chip chat-header-operator-chip--whatsapp chat-header-operator-chip--whatsapp-${whatsappStateTone}`}

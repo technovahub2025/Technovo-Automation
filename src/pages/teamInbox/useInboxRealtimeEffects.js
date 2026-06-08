@@ -33,8 +33,34 @@ const getRelatedConversationIds = (data = {}, fallbackId = '') =>
       ]
         .map((id) => String(id || '').trim())
         .filter(Boolean)
-    )
+  )
   );
+
+const getConversationContactId = (conversation = {}) =>
+  String(conversation?.contactId?._id || conversation?.contactId?.id || conversation?.contactId || '')
+    .trim();
+
+const mergeContactSnapshotIntoConversation = (conversation = {}, contactUpdate = {}) => {
+  const normalizedContactId = String(contactUpdate?._id || contactUpdate?.id || '').trim();
+  if (!normalizedContactId) return conversation;
+
+  const conversationContactId = getConversationContactId(conversation);
+  if (!conversationContactId || conversationContactId !== normalizedContactId) {
+    return conversation;
+  }
+
+  const currentContact =
+    conversation?.contactId && typeof conversation.contactId === 'object' ? conversation.contactId : {};
+
+  return {
+    ...conversation,
+    contactId: {
+      ...currentContact,
+      ...contactUpdate
+    },
+    contactName: String(contactUpdate?.name || '').trim() || conversation?.contactName || ''
+  };
+};
 
 const getErrorMessageFromPayload = (payload = {}) =>
   String(
@@ -849,6 +875,21 @@ export const useInboxRealtimeEffects = ({
       const assigneeLabel = getAssigneeLabel(data);
       const taskTitle = getTaskTitle(data);
       const followUpLabel = getFollowUpLabel(data);
+      const contactUpdate = data?.contact && typeof data.contact === 'object' ? data.contact : null;
+
+      if (contactUpdate) {
+        if (typeof setConversations === 'function') {
+          setConversations((prev) =>
+            Array.isArray(prev)
+              ? prev.map((conversation) => mergeContactSnapshotIntoConversation(conversation, contactUpdate))
+              : prev
+          );
+        }
+
+        if (typeof setSelectedConversation === 'function') {
+          setSelectedConversation((prev) => mergeContactSnapshotIntoConversation(prev, contactUpdate));
+        }
+      }
 
       if (eventType === 'inbox_assignment_updated') {
         notify(
@@ -858,7 +899,7 @@ export const useInboxRealtimeEffects = ({
           'success'
         );
       } else if (eventType === 'inbox_lead_status_updated') {
-        notify(`${conversationLabel} lead status updated`, 'info');
+        notify(`${conversationLabel} lead stage updated`, 'info');
       } else if (eventType === 'inbox_conversation_closed') {
         notify(`${conversationLabel} closed`, 'info');
       } else if (eventType === 'inbox_conversation_reopened') {

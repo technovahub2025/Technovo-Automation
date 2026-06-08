@@ -596,7 +596,6 @@ const TeamInbox = () => {
     getConversationLeadScore,
     getContactIdFromConversation,
     getContactTagsRaw,
-    deriveLeadStatus,
     getLeadStageValue,
     getCrmActivityLabel,
     getCrmActivityDescription
@@ -1141,7 +1140,6 @@ const TeamInbox = () => {
     handleReopenConversation,
     handleAddInternalNote,
     handleCreateFollowupTask,
-    handleConversationLeadStatusChange,
     handleOpenCrmDocument,
     handleDownloadCrmDocument,
     handleDeleteCrmDocument,
@@ -2342,7 +2340,6 @@ const TeamInbox = () => {
             selectedConversation={selectedConversation}
             showContactInfo={showContactInfo}
             setShowContactInfo={setShowContactInfo}
-            deriveLeadStatus={deriveLeadStatus}
             getConversationLeadScore={getConversationLeadScore}
             getLeadStageValue={getLeadStageValue}
             handleLeadStageChange={handleLeadStageChange}
@@ -2359,7 +2356,6 @@ const TeamInbox = () => {
             handleSetConversationImportant={handleSetConversationImportant}
             handleCloseConversation={handleCloseConversation}
             handleReopenConversation={handleReopenConversation}
-            handleConversationLeadStatusChange={handleConversationLeadStatusChange}
             openTemplateSendModal={openTemplateSendModal}
             onSendOptInPrompt={handleSendOptInPrompt}
             onMarkWhatsAppOptIn={handleMarkSelectedConversationOptIn}

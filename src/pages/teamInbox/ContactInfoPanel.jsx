@@ -4,6 +4,7 @@ import {
   resolveAgentDisplayLabel,
   resolveConversationAssigneeLabel
 } from './teamInboxDisplayUtils';
+import { getLeadStageLabel } from './teamInboxUtils';
 import {
   CalendarClock,
   Download,
@@ -53,7 +54,6 @@ const ContactInfoPanel = ({
   selectedConversation,
   showContactInfo,
   setShowContactInfo,
-  deriveLeadStatus,
   getConversationLeadScore,
   getLeadStageValue,
   handleLeadStageChange,
@@ -70,7 +70,6 @@ const ContactInfoPanel = ({
   handleSetConversationImportant,
   handleCloseConversation,
   handleReopenConversation,
-  handleConversationLeadStatusChange,
   openTemplateSendModal,
   onSendOptInPrompt,
   onMarkWhatsAppOptIn,
@@ -241,8 +240,9 @@ const ContactInfoPanel = ({
     .slice(0, 2)
     .map((part) => part.charAt(0).toUpperCase())
     .join('') || 'UN';
-  const leadStatus = deriveLeadStatus(selectedConversation);
   const leadScore = getConversationLeadScore(selectedConversation);
+  const leadStageValue = getLeadStageValue(selectedConversation);
+  const leadStageLabel = String(getLeadStageLabel(selectedConversation, leadStageOptions)).trim() || 'New Lead';
   const isUnknownContact = contactName === 'Unknown Contact';
   const contactOptInScope = String(selectedConversation?.contactId?.whatsappOptInScope || 'unknown').trim() || 'unknown';
   const selectedContactUserId = String(selectedConversation?.contactId?.userId || '').trim();
@@ -265,8 +265,7 @@ const ContactInfoPanel = ({
   const marketingNextAllowedAt = selectedConversation?.contactId?.whatsappMarketingWindowStartedAt
     ? whatsappMessagingState?.marketingNextAllowedAt
     : null;
-  const leadStatusBadgeLabel = String(leadStatus || 'New Lead').trim() || 'New Lead';
-  const leadStatusBadgeTone = String(selectedConversation?.leadStatus || '').trim().toLowerCase() || 'new_lead';
+  const leadStageBadgeTone = String(leadStageValue || 'new').trim().toLowerCase() || 'new';
   const taskDueBadgeLabel = (() => {
     const rawValue = String(crmTaskDueDraft || '').trim();
     if (!rawValue) return 'No task due';
@@ -403,10 +402,10 @@ const ContactInfoPanel = ({
             <strong>{contactPhone}</strong>
           </div>
           <div className="contact-info-item">
-            <span>Status</span>
+            <span>Lead Stage</span>
             <strong>
-              <span className={`lead-status-badge status-${leadStatus.toLowerCase()}`}>
-                {leadStatus}
+              <span className={`lead-status-badge status-${leadStageBadgeTone}`}>
+                {leadStageLabel}
               </span>
             </strong>
           </div>
@@ -427,22 +426,6 @@ const ContactInfoPanel = ({
                   {stage.label}
                 </option>
               ))}
-            </select>
-          </div>
-          <div className="contact-info-item">
-            <span>Lead Status</span>
-            <select
-              className="lead-stage-select"
-              value={String(selectedConversation?.leadStatus || 'new_lead')}
-              onChange={(event) => handleConversationLeadStatusChange?.(event.target.value)}
-              disabled={contactInfoActionBusy}
-            >
-              <option value="new_lead">New Lead</option>
-              <option value="interested">Interested</option>
-              <option value="follow_up">Follow Up</option>
-              <option value="proposal_sent">Proposal Sent</option>
-              <option value="converted">Converted</option>
-              <option value="closed">Closed</option>
             </select>
           </div>
           <div className="contact-info-item contact-info-item--admin-strip">
@@ -552,9 +535,9 @@ const ContactInfoPanel = ({
                 <NotebookPen size={12} />
                 <span>{taskDueBadgeLabel}</span>
               </button>
-              <span className={`contact-info-status-chip status-${leadStatusBadgeTone}`}>
-                <span className="contact-info-status-chip__label">Lead status</span>
-                <strong>{leadStatusBadgeLabel}</strong>
+              <span className={`contact-info-status-chip status-${leadStageBadgeTone}`}>
+                <span className="contact-info-status-chip__label">Lead stage</span>
+                <strong>{leadStageLabel}</strong>
               </span>
             </div>
           </div>

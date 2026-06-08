@@ -2143,6 +2143,27 @@
     border: 1px solid rgba(255, 255, 255, 0.22);
 }
 
+.chat-header-operator-chip--lead {
+    border: 1px solid rgba(96, 165, 250, 0.28);
+    background: rgba(37, 99, 235, 0.18);
+    color: #dbeafe;
+}
+
+.chat-header-operator-chip--lead.chat-header-operator-chip--lead-contacted {
+    background: rgba(59, 130, 246, 0.22);
+    color: #dbeafe;
+}
+
+.chat-header-operator-chip--lead.chat-header-operator-chip--lead-qualified {
+    background: rgba(16, 185, 129, 0.22);
+    color: #d1fae5;
+}
+
+.chat-header-operator-chip--lead.chat-header-operator-chip--lead-unqualified {
+    background: rgba(239, 68, 68, 0.22);
+    color: #fee2e2;
+}
+
 .chat-header-operator-chip--whatsapp.chat-header-operator-chip--whatsapp-service-open {
     background: rgba(16, 185, 129, 0.22);
     color: #d1fae5;

@@ -98,6 +98,15 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
     return Array.isArray(buttonsComponent?.buttons) ? buttonsComponent.buttons : [];
   };
 
+  const normalizeButtonType = (value = '') => String(value || '').trim().toLowerCase();
+
+  const normalizeTemplateButtons = (buttons = []) =>
+    (Array.isArray(buttons) ? buttons : []).map((button) => ({
+      ...button,
+      type: normalizeButtonType(button?.type),
+      phoneNumber: String(button?.phoneNumber || button?.phone_number || '').trim()
+    }));
+
   const [templateData, setTemplateData] = useState({
     name: '',
     category: 'marketing',
@@ -329,7 +338,7 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
     const preparedBody = prepareMetaTemplateText(bodyText);
     const header = getTemplateHeader(initialTemplate);
     const footerText = getTemplateFooterText(initialTemplate);
-    const buttons = getTemplateButtons(initialTemplate);
+    const buttons = normalizeTemplateButtons(getTemplateButtons(initialTemplate));
 
     setTemplateData({
       name: String(initialTemplate.name || ''),
@@ -607,7 +616,7 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
           },
           body: sanitizedBody,
           footer: sanitizedFooter,
-          buttons: templateData.content.buttons
+          buttons: normalizeTemplateButtons(templateData.content.buttons)
         },
         components: [],
         variables: []
@@ -673,16 +682,16 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
 
       // Add buttons component if present
       if (templateData.content.buttons.length > 0) {
-        const buttons = templateData.content.buttons.map(button => ({
+        const buttons = normalizeTemplateButtons(templateData.content.buttons).map(button => ({
           type:
-            button.type === 'quick_reply'
+            normalizeButtonType(button.type) === 'quick_reply'
               ? 'QUICK_REPLY'
-              : button.type === 'phone_number'
+              : normalizeButtonType(button.type) === 'phone_number'
               ? 'PHONE_NUMBER'
               : 'URL',
           text: button.text,
-          ...(button.type === 'url' && { url: button.url }),
-          ...(button.type === 'phone_number' && { phone_number: button.phoneNumber })
+          ...(normalizeButtonType(button.type) === 'url' && { url: button.url }),
+          ...(normalizeButtonType(button.type) === 'phone_number' && { phone_number: button.phoneNumber })
         }));
 
         metaFormatData.components.push({

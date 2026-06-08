@@ -60,6 +60,9 @@ export const normalizeConversation = (conversation) => {
   const leadStatusLower = String(conversation?.leadStatus || conversation?.contactId?.leadStatus || '')
     .trim()
     .toLowerCase();
+  const leadStageLower = String(conversation?.contactId?.stage || conversation?.contactId?.customFields?.stage || '')
+    .trim()
+    .toLowerCase();
   const assignedLookupId = String(getConversationAssignedLookupId(conversation) || '').trim();
   const searchParts = [
     summaryId,
@@ -82,7 +85,8 @@ export const normalizeConversation = (conversation) => {
       .toLowerCase(),
     assignedLower,
     assignedLookupId,
-    leadStatusLower
+    leadStatusLower,
+    leadStageLower
   ]
     .map((value) => String(value || '').trim().toLowerCase())
     .filter(Boolean);
@@ -566,6 +570,14 @@ export const getLeadStageValue = (conversation, stageOptions = leadStageOptions)
     .toLowerCase();
   if (stageOptions.some((option) => option.value === rawStage)) return rawStage;
   return 'new';
+};
+
+export const getLeadStageLabel = (conversation, stageOptions = leadStageOptions) => {
+  const stageValue = getLeadStageValue(conversation, stageOptions);
+  const matchedStage = (Array.isArray(stageOptions) ? stageOptions : leadStageOptions).find(
+    (stage) => String(stage?.value || '').trim().toLowerCase() === stageValue
+  );
+  return String(matchedStage?.label || getPipelineStageLabel(stageValue)).trim() || 'New Lead';
 };
 
 export const getCrmActivityLabel = (activity = {}) => {

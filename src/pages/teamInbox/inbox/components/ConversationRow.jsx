@@ -1,15 +1,7 @@
 import React, { memo, useRef } from 'react';
 import { ChevronDown, CheckCheck, Trash2, UserRound, Image as ImageIcon, FileText, Video, Mic } from 'lucide-react';
 import { getConversationPreviewMeta, resolveConversationAssigneeLabel, resolveConversationSlaMeta } from '../../teamInboxDisplayUtils';
-
-const LEAD_STATUS_LABELS = {
-  new_lead: 'New Lead',
-  interested: 'Interested',
-  follow_up: 'Follow Up',
-  proposal_sent: 'Proposal Sent',
-  converted: 'Converted',
-  closed: 'Closed'
-};
+import { getLeadStageLabel, getLeadStageValue } from '../../teamInboxUtils';
 
 const renderConversationMediaIcon = (mediaType = '') => {
   switch (String(mediaType || '').trim().toLowerCase()) {
@@ -54,10 +46,9 @@ const ConversationRow = ({
   const previewMeta = getConversationPreviewMeta(conversation);
   const slaMeta = resolveConversationSlaMeta(conversation);
   const assigneeLabel = resolveConversationAssigneeLabel(conversation, availableAgents);
-  const leadStatusLabel =
-    LEAD_STATUS_LABELS[String(conversation?.leadStatus || conversation?.contactId?.leadStatus || '').trim().toLowerCase()] ||
-    'Nurturing';
-  const leadStatusTone = String(conversation?.leadStatus || conversation?.contactId?.leadStatus || '').trim().toLowerCase();
+  const leadStageValue = getLeadStageValue(conversation);
+  const leadStageLabel = getLeadStageLabel(conversation);
+  const leadStageTone = String(leadStageValue || '').trim().toLowerCase();
   const conversationTags = Array.isArray(conversation?.contactId?.tags)
     ? conversation.contactId.tags.map((tag) => String(tag || '').trim()).filter(Boolean).slice(0, 3)
     : [];
@@ -175,10 +166,10 @@ const ConversationRow = ({
             {assigneeLabel}
           </span>
           <span
-            className={`conversation-operator-chip conversation-operator-chip--lead conversation-operator-chip--${leadStatusTone}`}
-            title={`Lead status: ${leadStatusLabel}`}
+            className={`conversation-operator-chip conversation-operator-chip--lead conversation-operator-chip--${leadStageTone}`}
+            title={`Lead stage: ${leadStageLabel}`}
           >
-            {leadStatusLabel}
+            {leadStageLabel}
           </span>
           {conversationTags.map((tag) => (
             <span
