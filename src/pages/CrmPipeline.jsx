@@ -8,6 +8,7 @@ import {
   BadgeCheck,
   Check,
   CalendarClock,
+  Download,
   GripVertical,
   Flame,
   MoreVertical,
@@ -111,6 +112,66 @@ const formatDate = (value) => {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return "-";
   return parsed.toLocaleDateString();
+};
+
+const formatDateTime = (value) => {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return "-";
+  return parsed.toLocaleString();
+};
+
+const escapeHtml = (value = "") =>
+  String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+const buildExcelBlob = ({ title, subtitle, headers = [], rows = [] } = {}) => {
+  const tableRows = rows
+    .map(
+      (row) => `
+        <tr>
+          ${row.map((cell) => `<td>${escapeHtml(cell ?? "")}</td>`).join("")}
+        </tr>
+      `
+    )
+    .join("");
+
+  const html = `
+    <html xmlns:o="urn:schemas-microsoft-com:office:office"
+          xmlns:x="urn:schemas-microsoft-com:office:excel"
+          xmlns="http://www.w3.org/TR/REC-html40">
+    <head>
+      <meta charset="UTF-8" />
+      <style>
+        body { font-family: Arial, sans-serif; color: #0f2440; }
+        .meta { margin-bottom: 14px; }
+        .meta h1 { font-size: 18px; margin: 0 0 6px; }
+        .meta p { margin: 0; color: #48617d; font-size: 12px; }
+        table { border-collapse: collapse; width: 100%; }
+        th, td { border: 1px solid #d1d5db; padding: 8px; font-size: 12px; text-align: left; vertical-align: top; }
+        th { background: #f3f4f6; font-weight: 700; }
+      </style>
+    </head>
+    <body>
+      <div class="meta">
+        <h1>${escapeHtml(title || "CRM Leads Export")}</h1>
+        <p>${escapeHtml(subtitle || "")}</p>
+      </div>
+      <table>
+        <thead>
+          <tr>${headers.map((header) => `<th>${escapeHtml(header)}</th>`).join("")}</tr>
+        </thead>
+        <tbody>${tableRows}</tbody>
+      </table>
+    </body>
+    </html>
+  `;
+
+  return new Blob([`\ufeff${html}`], { type: "application/vnd.ms-excel;charset=utf-8;" });
 };
 
 const getEntityId = (value) => String(value?._id || value?.id || "").trim();
@@ -264,6 +325,7 @@ const CrmPipeline = () => {
   const [bulkOwnerId, setBulkOwnerId] = useState("");
   const [bulkTagDraft, setBulkTagDraft] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [exportBusy, setExportBusy] = useState(false);
   const [filterPresets, setFilterPresets] = useState([]);
   const [showFilters, setShowFilters] = useState(false);
   const [filterDraft, setFilterDraft] = useState({
@@ -865,6 +927,118 @@ const CrmPipeline = () => {
     return activePreset?.label || "Lead view";
   }, [archiveFilter, filterPresets, ownerFilter, queueFilter, searchQuery, sortOrder, statusFilter]);
 
+  const handleExportExcel = useCallback(async () => {
+    if (exportBusy) return;
+
+    setExportBusy(true);
+    try {
+      const exportFilters = {
+        limit: LEADS_SCROLL_PAGE_SIZE,
+        sortOrder,
+        cursorMode: "true",
+        search: String(searchQuery || "").trim() || undefined,
+        queue: queueFilter !== "all" ? queueFilter : undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        ownerId: ownerFilter !== "all" ? ownerFilter : undefined,
+        archive: archiveFilter !== "active" ? archiveFilter : undefined
+      };
+
+      const exportedContacts = [];
+      let cursor = "";
+      let hasMore = true;
+
+      while (hasMore) {
+        const response = await crmService.getContacts({
+          ...exportFilters,
+          cursor: cursor || undefined
+        });
+
+        if (response?.success === false) {
+          throw new Error(response?.error || "Failed to export CRM leads");
+        }
+
+        const batch = Array.isArray(response?.data) ? response.data.map(normalizeContact) : [];
+        exportedContacts.push(...batch);
+        hasMore = Boolean(response?.hasMore);
+        cursor = String(response?.nextCursor || "").trim();
+        if (!cursor) break;
+      }
+
+      const rowsSource = exportedContacts.length ? exportedContacts : visibleContacts;
+      const exportRows = rowsSource.map((contact, index) => [
+        index + 1,
+        contact?.name || "Untitled Lead",
+        contact?.phone || "-",
+        contact?.email || "-",
+        formatLeadStatusLabel(contact?.status || contact?.stage || "new"),
+        getPipelineStageLabel(normalizeLeadStage(contact?.stage), stageOptions),
+        Number.isFinite(Number(contact?.leadScore)) ? Number(contact.leadScore) : 0,
+        formatCurrency(contact?.dealValue),
+        contact?.ownerId || "Unassigned",
+        contact?.source || "-",
+        formatDateTime(contact?.nextFollowUpAt),
+        formatDateTime(contact?.lastContact),
+        Array.isArray(contact?.tags) && contact.tags.length ? contact.tags.join(", ") : "-",
+        contact?.notes || "-"
+      ]);
+
+      const blob = buildExcelBlob({
+        title: "CRM Leads Export",
+        subtitle: `Filters: ${[
+          `Search=${String(searchQuery || "").trim() || "All"}`,
+          `Queue=${queueFilter}`,
+          `Status=${statusFilter}`,
+          `Owner=${ownerFilter}`,
+          `Archive=${archiveFilter}`,
+          `Sort=${sortOrder}`
+        ].join(" | ")}`,
+        headers: [
+          "Sl No",
+          "Name",
+          "Phone",
+          "Email",
+          "Status",
+          "Stage",
+          "Lead Score",
+          "Lead Value",
+          "Owner",
+          "Source",
+          "Next Follow-up",
+          "Last Contact",
+          "Tags",
+          "Notes"
+        ],
+        rows: exportRows
+      });
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      const datePart = new Date().toISOString().slice(0, 10);
+      link.href = url;
+      link.download = `crm_leads_export_${datePart}.xls`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+      setToast({ type: "success", message: `Exported ${exportRows.length} lead(s) to Excel.` });
+    } catch (error) {
+      setToast({ type: "error", message: error?.message || "Failed to export CRM leads" });
+    } finally {
+      setExportBusy(false);
+    }
+  }, [
+    archiveFilter,
+    exportBusy,
+    ownerFilter,
+    queueFilter,
+    searchQuery,
+    sortOrder,
+    stageOptions,
+    statusFilter,
+    visibleContacts,
+    normalizeLeadStage
+  ]);
+
   const persistContactStage = useCallback(
     async (contact, nextStage) => {
       const contactId = getEntityId(contact);
@@ -1272,6 +1446,16 @@ const CrmPipeline = () => {
           subtitle="Manage lead flow, lead queues, and saved lead views."
           actions={
             <div className="crm-page-header__action-group">
+              <button
+                type="button"
+                className="crm-btn crm-btn-secondary"
+                onClick={() => void handleExportExcel()}
+                disabled={loading || exportBusy || (!visibleContacts.length && !contacts.length)}
+                title="Export the current CRM lead view to Excel"
+              >
+                <Download size={16} />
+                {exportBusy ? "Exporting..." : "Export Excel"}
+              </button>
               <button
                 type="button"
                 className="crm-btn crm-btn-secondary"
