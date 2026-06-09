@@ -5,6 +5,18 @@ import "./BroadcastPolicyChip.css";
 import "./AudienceBadge.css";
 import "./BroadcastCard.css";
 
+const normalizeText = (value = "") => String(value || "").trim();
+
+const getCreatorLabel = (broadcast = {}) => {
+  const createdBy = normalizeText(broadcast?.createdBy);
+  if (createdBy) return createdBy;
+  const createdByEmail = normalizeText(broadcast?.createdByEmail);
+  if (createdByEmail) return createdByEmail;
+  const createdById = normalizeText(broadcast?.createdById);
+  if (createdById) return `Agent ${createdById.slice(-6)}`;
+  return "Unknown";
+};
+
 const BroadcastCard = ({
   broadcast,
   selectionMode,
@@ -260,23 +272,36 @@ const BroadcastCard = ({
         </div>
       </td>
 
+      <td className="col-created-by">
+        <div className="broadcast-creator-meta">
+          <span className="broadcast-creator-meta__label">
+            {getCreatorLabel(broadcast)}
+          </span>
+          {normalizeText(broadcast?.createdById) ? (
+            <span className="broadcast-creator-meta__subtext">
+              ID {normalizeText(broadcast.createdById).slice(-6)}
+            </span>
+          ) : null}
+        </div>
+      </td>
+
       <td className="col-time">{getDisplayDateTime(broadcast)}</td>
 
-      <td>
+      <td className="col-success">
         {renderProgressCircle(
           getSuccessPercentage(broadcast),
           getMetricTooltip("successful", broadcast),
         )}
       </td>
 
-      <td>
+      <td className="col-read">
         {renderProgressCircle(
           getReadPercentage(broadcast),
           getMetricTooltip("read", broadcast),
         )}
       </td>
 
-      <td>
+      <td className="col-replied">
         {renderProgressCircle(
           getRepliedPercentage(broadcast),
           getMetricTooltip("replied", broadcast),
@@ -376,6 +401,9 @@ const areEqual = (prevProps, nextProps) => {
       String(
         next?.audienceSource?.type || next?.audienceSnapshot?.sourceType || "",
       ) &&
+    String(prev?.createdBy || "") === String(next?.createdBy || "") &&
+    String(prev?.createdByEmail || "") === String(next?.createdByEmail || "") &&
+    String(prev?.createdById || "") === String(next?.createdById || "") &&
     prev.scheduledAt === next.scheduledAt &&
     prev.startedAt === next.startedAt &&
     prev.createdAt === next.createdAt &&

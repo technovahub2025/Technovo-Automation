@@ -23,7 +23,8 @@ import {
   ZoomOut,
   MessageSquare,
   ChevronLeft,
-  ChevronRight
+  ChevronRight,
+  Star
 } from 'lucide-react';
 import AttachmentComposerOverlay from './AttachmentComposerOverlay';
 import webSocketService from '../../services/websocketService';
@@ -39,9 +40,11 @@ import {
   resolvePreferredVoiceRecorderMimeType
 } from './voiceRecorderUtils';
 import {
+  getConversationAssignedLookupId,
   resolveConversationAssigneeLabel,
   resolveConversationSlaMeta
 } from './teamInboxDisplayUtils';
+import { getLeadStageLabel, getLeadStageValue } from './teamInboxUtils';
 import { getWhatsAppConversationState } from '../../utils/whatsappContactState';
 
 const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
@@ -51,6 +54,8 @@ const IMAGE_PREVIEW_MAX_ZOOM = 3;
 const IMAGE_PREVIEW_ZOOM_STEP = 0.25;
 
 const THREAD_SKELETON_ROWS = 6;
+const MIN_THREAD_PAGE_SIZE_FOR_OLDER_PROBE = 20;
+const INITIAL_THREAD_TOP_LOAD_LOCK_MS = 900;
 
 const buildMessageRowSignature = ({
   messageKey = '',
@@ -77,6 +82,7 @@ const buildMessageRowSignature = ({
   useCompactInlineMeta = false,
   useTrailingCompactMeta = false,
   useOverlayCompactHoverMenu = false,
+  currentViewerInternalRole = '',
   reactionBarPlacement = {},
   hoverMenuPlacement = {}
 }) =>
@@ -84,6 +90,8 @@ const buildMessageRowSignature = ({
     messageKey,
     message?._id || message?.whatsappMessageId || '',
     message?.sender || '',
+    message?.senderRole || '',
+    message?.senderName || '',
     message?.status || '',
     message?.timestamp || message?.whatsappTimestamp || message?.createdAt || '',
     showMessageSelectMode ? '1' : '0',
@@ -108,11 +116,131 @@ const buildMessageRowSignature = ({
     useCompactInlineMeta ? '1' : '0',
     useTrailingCompactMeta ? '1' : '0',
     useOverlayCompactHoverMenu ? '1' : '0',
+    currentViewerInternalRole,
     hasActiveMessageActions ? reactionBarPlacement.horizontal || '' : '',
     hasActiveMessageActions ? reactionBarPlacement.vertical || '' : '',
-    hasActiveMessageActions ? hoverMenuPlacement.horizontal || '' : '',
-    hasActiveMessageActions ? hoverMenuPlacement.vertical || '' : ''
-  ].join('|');
+  hasActiveMessageActions ? hoverMenuPlacement.horizontal || '' : '',
+  hasActiveMessageActions ? hoverMenuPlacement.vertical || '' : ''
+].join('|');
+
+const isIdLikeLabel = (value = '') => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return true;
+  if (/^[0-9a-f]{24}$/i.test(normalized)) return true;
+  if (/^\d{8,}$/.test(normalized)) return true;
+  return false;
+};
+
+const pickFirstMeaningfulLabel = (...values) => {
+  for (const value of values) {
+    const normalized = String(value || '').trim();
+    if (!normalized) continue;
+    const lower = normalized.toLowerCase();
+    if (['agent', 'admin', 'contact', 'unknown contact', 'unknown'].includes(lower)) {
+      continue;
+    }
+    if (isIdLikeLabel(normalized)) continue;
+    return normalized;
+  }
+  return '';
+};
+
+const resolveInternalMessageSenderName = (message = {}) =>
+  pickFirstMeaningfulLabel(
+    message?.senderName,
+    message?.senderDisplayName,
+    message?.senderFullName,
+    message?.senderUsername
+  );
+
+const resolveInternalMessageSenderMeta = (message = {}, viewerRole = '', viewerUserId = '') => {
+  const messageSender = String(message?.sender || '').trim().toLowerCase();
+  if (messageSender !== 'agent') {
+    return {
+      role: '',
+      label: '',
+      title: ''
+    };
+  }
+
+  const senderRole = String(message?.senderRole || '').trim().toLowerCase();
+  const normalizedRole = senderRole === 'admin' || senderRole === 'agent' ? senderRole : '';
+  const normalizedViewerRole = String(viewerRole || '').trim().toLowerCase();
+
+  if (!normalizedRole) {
+    return {
+      role: '',
+      label: '',
+      title: ''
+    };
+  }
+
+  if (normalizedViewerRole && normalizedRole === normalizedViewerRole) {
+    return {
+      role: '',
+      label: '',
+      title: ''
+    };
+  }
+
+  if (normalizedRole === 'admin') {
+    return {
+      role: 'admin',
+      label: 'Admin sent',
+      title: 'Admin sent'
+    };
+  }
+
+  const senderName = resolveInternalMessageSenderName(message);
+  if (senderName) {
+    return {
+      role: 'agent',
+      label: `${senderName} sent`,
+      title: `${senderName} sent`
+    };
+  }
+
+  return {
+    role: 'agent',
+    label: 'Agent sent',
+    title: 'Agent sent'
+  };
+};
+
+const resolveMessageDirection = (message = {}, viewerRole = '', viewerUserId = '') => {
+  const messageSender = String(message?.sender || '').trim().toLowerCase();
+  if (messageSender === 'contact') {
+    return {
+      isOutgoing: false,
+      senderRole: 'contact'
+    };
+  }
+
+  const senderRole = String(message?.senderRole || '').trim().toLowerCase();
+  const normalizedSenderRole = senderRole === 'admin' || senderRole === 'agent' ? senderRole : '';
+  const normalizedViewerRole = String(viewerRole || '').trim().toLowerCase();
+  const senderId = String(message?.senderId || '').trim();
+  const normalizedViewerUserId = String(viewerUserId || '').trim();
+
+  if (normalizedSenderRole && normalizedViewerRole) {
+    return {
+      isOutgoing: normalizedSenderRole === normalizedViewerRole,
+      senderRole: normalizedSenderRole
+    };
+  }
+
+  if (normalizedSenderRole && normalizedViewerUserId && senderId) {
+    return {
+      isOutgoing: senderId === normalizedViewerUserId,
+      senderRole: normalizedSenderRole
+    };
+  }
+
+  return {
+    isOutgoing: messageSender === 'agent',
+    senderRole: normalizedSenderRole || messageSender
+  };
+};
 
 const ChatMessageRow = React.memo(
   function ChatMessageRow({
@@ -144,6 +272,8 @@ const ChatMessageRow = React.memo(
     useCompactInlineMeta = false,
     useTrailingCompactMeta = false,
     useOverlayCompactHoverMenu = false,
+    currentViewerUserId = '',
+    currentViewerInternalRole = '',
     renderHoverReactionTrigger,
     renderReactionBar,
     renderMessageHoverMenu,
@@ -165,11 +295,18 @@ const ChatMessageRow = React.memo(
     const messageTimestampLabel = formatMessageTime(
       message.timestamp || message.whatsappTimestamp || message.createdAt
     );
+    const isOutgoingMessage = String(message?.sender || '').trim().toLowerCase() === 'agent';
+    const internalSenderMeta = resolveInternalMessageSenderMeta(
+      message,
+      currentViewerInternalRole,
+      currentViewerUserId
+    );
+    const showInternalSenderBadge = Boolean(internalSenderMeta.label);
 
     return (
       <div
         key={messageKey}
-        className={`message ${message.sender === 'agent' ? 'outgoing' : 'incoming'} ${
+        className={`message ${isOutgoingMessage ? 'outgoing' : 'incoming'} ${
           showMessageSelectMode ? 'select-mode' : ''
         } ${isReplyTargetHighlighted ? 'reply-target-highlight' : ''} ${
           hasPersistedReaction ? 'has-reaction-chip' : ''
@@ -207,7 +344,10 @@ const ChatMessageRow = React.memo(
           {showReplyPreview && (
             <div
               className={`message-reply-preview ${replySourceMessageKey ? 'is-clickable' : ''} ${
-                replySourceMessage?.sender === 'agent' ? 'is-self-source' : 'is-contact-source'
+                String(replySourceMessage?.senderRole || '').trim().toLowerCase() ===
+                String(currentViewerInternalRole || '').trim().toLowerCase()
+                  ? 'is-self-source'
+                  : 'is-contact-source'
               }`}
               onClick={(event) => {
                 event.stopPropagation();
@@ -229,8 +369,16 @@ const ChatMessageRow = React.memo(
             >
               {displayText}
               <span className="message-inline-meta message-inline-meta--compact">
+                {showInternalSenderBadge && (
+                  <span
+                    className={`message-sender-badge message-sender-badge--${internalSenderMeta.role}`}
+                    title={internalSenderMeta.title}
+                  >
+                    {internalSenderMeta.label}
+                  </span>
+                )}
                 <span className="timestamp">{messageTimestampLabel}</span>
-                {message.sender === 'agent' && getStatusIcon(message.status)}
+                {isOutgoingMessage && getStatusIcon(message.status)}
                 {!useOverlayCompactHoverMenu &&
                   renderMessageHoverMenu({
                     message,
@@ -259,15 +407,23 @@ const ChatMessageRow = React.memo(
               <span className="message-media-caption-text">{displayText}</span>
               <span className="message-inline-meta message-inline-meta--compact">
                 <span className="timestamp">{messageTimestampLabel}</span>
-                {message.sender === 'agent' && getStatusIcon(message.status)}
+                {isOutgoingMessage && getStatusIcon(message.status)}
               </span>
             </div>
           )}
           {renderReactionChip(messageKey)}
           {showInlineMeta && !useCompactInlineMeta && !showAttachmentCaption && (
             <div className="message-inline-meta">
+              {showInternalSenderBadge && (
+                <span
+                  className={`message-sender-badge message-sender-badge--${internalSenderMeta.role}`}
+                  title={internalSenderMeta.title}
+                >
+                  {internalSenderMeta.label}
+                </span>
+              )}
               <span className="timestamp">{messageTimestampLabel}</span>
-              {message.sender === 'agent' && getStatusIcon(message.status)}
+              {isOutgoingMessage && getStatusIcon(message.status)}
               {!hasDocumentAttachment &&
                 !hasAudioAttachment &&
                 renderMessageHoverMenu({
@@ -282,8 +438,16 @@ const ChatMessageRow = React.memo(
 
         {!showInlineMeta && !hasImageAttachment && (
           <div className="message-info">
+            {showInternalSenderBadge && (
+              <span
+                className={`message-sender-badge message-sender-badge--${internalSenderMeta.role}`}
+                title={internalSenderMeta.title}
+              >
+                {internalSenderMeta.label}
+              </span>
+            )}
             <span className="timestamp">{messageTimestampLabel}</span>
-            {message.sender === 'agent' && getStatusIcon(message.status)}
+            {isOutgoingMessage && getStatusIcon(message.status)}
           </div>
         )}
       </div>
@@ -687,17 +851,7 @@ const isMediaPipelineDebugVisible = () => {
 };
 
 const getConversationAssigneeUserId = (conversation = {}) => {
-  const directAssignee = conversation?.assignedTo;
-  const owner = conversation?.owner;
-  return String(
-    directAssignee?._id ||
-      directAssignee?.id ||
-      directAssignee?.userId ||
-      owner?._id ||
-      owner?.id ||
-      owner?.userId ||
-      ''
-  ).trim();
+  return String(getConversationAssignedLookupId(conversation) || '').trim();
 };
 
 const VIRTUAL_MESSAGE_OVERSCAN = 8;
@@ -761,6 +915,9 @@ const estimateMessageHeight = (item = {}) => {
 const ChatArea = ({
   selectedConversation,
   currentThreadConversationId = '',
+  currentViewerUserId = '',
+  currentViewerInternalRole = '',
+  currentViewerDisplayName = '',
   messages,
   messagesLoading,
   hasOlderMessages,
@@ -791,6 +948,8 @@ const ChatArea = ({
   onDeleteConversation,
   onOpenContactInformation,
   onOpenTemplateSendModal,
+  onToggleConversationImportant,
+  onCloseConversation,
   onToggleMessageSelection,
   deleteSelectedMessages,
   onMessageInputChange,
@@ -802,6 +961,7 @@ const ChatArea = ({
   onDeleteMessage,
   onRetryAttachment,
   onLoadOlderMessages,
+  onVisibleMessageWindowChange,
   onToggleEmojiPicker,
   onEmojiInsert,
   getMessageKey,
@@ -818,6 +978,11 @@ const ChatArea = ({
   const pendingPrependAnchorKeyRef = useRef('');
   const selectedConversationScrollKeyRef = useRef('');
   const canTriggerOlderLoadRef = useRef(false);
+  const olderLoadInFlightRef = useRef(false);
+  const topLoadUnlockAtRef = useRef(0);
+  const userRequestedOlderLoadRef = useRef(false);
+  const initialScrollTimersRef = useRef([]);
+  const olderLoadGuardConversationIdRef = useRef('');
   const setChatMessagesScrollerRef = useCallback((node) => {
     chatMessagesRef.current = node;
   }, [chatMessagesRef]);
@@ -864,6 +1029,12 @@ const ChatArea = ({
       selectedConversation?.id ||
       ''
   ).trim();
+  if (selectedConversationId && olderLoadGuardConversationIdRef.current !== selectedConversationId) {
+    olderLoadGuardConversationIdRef.current = selectedConversationId;
+    canTriggerOlderLoadRef.current = false;
+    userRequestedOlderLoadRef.current = false;
+    topLoadUnlockAtRef.current = Date.now() + INITIAL_THREAD_TOP_LOAD_LOCK_MS;
+  }
   const displayedConversationId = String(currentThreadConversationId || '').trim();
   const isSwitchingDisplayedConversation =
     Boolean(selectedConversationId) &&
@@ -1336,6 +1507,59 @@ const ChatArea = ({
     return indexByKey;
   }, [virtualMessageLayout.items]);
 
+  const handleVirtualRangeChanged = useCallback(
+    ({ startIndex = 0, endIndex = 0 } = {}) => {
+      if (typeof onVisibleMessageWindowChange !== 'function') return;
+
+      const visibleKeys = [];
+      const safeStartIndex = Math.max(0, Number(startIndex) || 0);
+      const safeEndIndex = Math.max(safeStartIndex, Number(endIndex) || 0);
+
+      for (let index = safeStartIndex; index <= safeEndIndex; index += 1) {
+        const item = virtualMessageLayout.items[index];
+        if (!item || item?.type !== 'message') continue;
+        const messageKey = String(item?.virtualKey || '').trim();
+        if (messageKey) visibleKeys.push(messageKey);
+      }
+
+      if (visibleKeys.length === 0) return;
+      onVisibleMessageWindowChange({
+        startIndex: safeStartIndex,
+        endIndex: safeEndIndex,
+        visibleMessageKeys: visibleKeys
+      });
+    },
+    [onVisibleMessageWindowChange, virtualMessageLayout.items]
+  );
+
+  const scrollThreadToBottom = useCallback(
+    (behavior = 'auto') => {
+      const lastIndex = virtualMessageLayout.items.length - 1;
+      if (lastIndex < 0) return;
+
+      messageListRef.current?.scrollToIndex?.({
+        index: lastIndex,
+        align: 'end',
+        behavior
+      });
+      messageListRef.current?.scrollTo?.({
+        top: Number.MAX_SAFE_INTEGER,
+        behavior
+      });
+
+      const scroller = chatMessagesRef?.current;
+      if (scroller) {
+        const top = Number(scroller.scrollHeight || Number.MAX_SAFE_INTEGER);
+        if (typeof scroller.scrollTo === 'function') {
+          scroller.scrollTo({ top, behavior });
+        } else {
+          scroller.scrollTop = top;
+        }
+      }
+    },
+    [chatMessagesRef, virtualMessageLayout.items.length]
+  );
+
   useLayoutEffect(() => {
     if (!selectedConversationId) return;
     if (selectedConversationScrollKeyRef.current === selectedConversationId) return;
@@ -1345,16 +1569,50 @@ const ChatArea = ({
     if (lastIndex < 0) return;
 
     canTriggerOlderLoadRef.current = false;
+    userRequestedOlderLoadRef.current = false;
+    topLoadUnlockAtRef.current = Date.now() + INITIAL_THREAD_TOP_LOAD_LOCK_MS;
+    initialScrollTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+    initialScrollTimersRef.current = [];
     window.requestAnimationFrame(() => {
-      messageListRef.current?.scrollToIndex?.({
-        index: lastIndex,
-        align: 'end',
-        behavior: 'auto'
-      });
-      selectedConversationScrollKeyRef.current = selectedConversationId;
-      canTriggerOlderLoadRef.current = true;
+      scrollThreadToBottom('auto');
+
+      const correctionTimers = [40, 120, 260, 520, INITIAL_THREAD_TOP_LOAD_LOCK_MS].map((delay) =>
+        window.setTimeout(() => {
+          scrollThreadToBottom('auto');
+          if (delay >= INITIAL_THREAD_TOP_LOAD_LOCK_MS) {
+            selectedConversationScrollKeyRef.current = selectedConversationId;
+            canTriggerOlderLoadRef.current = true;
+            topLoadUnlockAtRef.current = Date.now();
+          }
+        }, delay)
+      );
+      initialScrollTimersRef.current = correctionTimers;
     });
-  }, [selectedConversationId, virtualMessageLayout.items.length]);
+  }, [scrollThreadToBottom, selectedConversationId, virtualMessageLayout.items.length]);
+
+  useEffect(
+    () => () => {
+      initialScrollTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
+      initialScrollTimersRef.current = [];
+    },
+    []
+  );
+
+  useLayoutEffect(() => {
+    if (!selectedConversationId) return;
+    if (messagesLoading || olderMessagesLoading || isSwitchingDisplayedConversation) return;
+    if (selectedConversationScrollKeyRef.current === selectedConversationId) return;
+    if (virtualMessageLayout.items.length === 0) return;
+
+    scrollThreadToBottom('auto');
+  }, [
+    isSwitchingDisplayedConversation,
+    messagesLoading,
+    olderMessagesLoading,
+    scrollThreadToBottom,
+    selectedConversationId,
+    virtualMessageLayout.items.length
+  ]);
 
   useLayoutEffect(() => {
     const anchorKey = String(pendingPrependAnchorKeyRef.current || '').trim();
@@ -2031,7 +2289,7 @@ const ChatArea = ({
 
   const handleMessageInfo = (message = {}) => {
     const statusLabel =
-      message?.sender === 'agent'
+      String(message?.sender || '').trim().toLowerCase() === 'agent'
         ? getMessageStatusLabel(message?.status)
         : 'Received';
     const timeLabel = formatMessageDateTime(
@@ -2047,11 +2305,12 @@ const ChatArea = ({
   };
 
   const handleReplyToMessage = (message = {}, messageKey = '') => {
+    const isOutgoingMessage = String(message?.sender || '').trim().toLowerCase() === 'agent';
     setActiveReplyContext({
       messageKey,
       sourceMessage: message,
       preview: getMessagePreviewText(message),
-      senderLabel: message?.sender === 'agent' ? 'Replying to yourself' : 'Replying to contact'
+      senderLabel: isOutgoingMessage ? 'Replying to yourself' : 'Replying to contact'
     });
     closeMessageActionSurfaces();
     messageInputRef?.current?.focus?.();
@@ -2111,7 +2370,7 @@ const ChatArea = ({
           message?.timestamp || message?.whatsappTimestamp || message?.createdAt
         ),
         senderLabel:
-          message?.sender === 'agent'
+          String(message?.sender || '').trim().toLowerCase() === 'agent'
             ? 'You'
             : String(getConversationDisplayName(selectedConversation) || 'Contact').trim(),
         message,
@@ -2299,7 +2558,7 @@ const ChatArea = ({
     const copyableText = getMessageDisplayText(message);
     const canCopy = Boolean(copyableText);
     const canDownload = hasAttachment;
-    const isOutgoingMessage = message?.sender === 'agent';
+    const isOutgoingMessage = String(message?.sender || '').trim().toLowerCase() === 'agent';
     const canDelete = Boolean(onDeleteMessage);
     const isOpen = activeHoverMenuKey === messageKey;
     const isPlacementReady = Boolean(
@@ -2339,13 +2598,10 @@ const ChatArea = ({
         hoverMenuPlacement={hoverMenuPlacement}
         openMenuRef={openMenuRef}
         onToggleMenu={(targetKey) => {
-          setActiveHoverMenuKey((current) => {
-            if (current === targetKey) {
-              return '';
-            }
+          setActiveHoverMenuKey((current) => (current === targetKey ? '' : targetKey));
+          if (activeHoverMenuKey !== targetKey) {
             alignMessageForActionMenu(targetKey);
-            return targetKey;
-          });
+          }
           setActiveReactionPickerKey('');
         }}
         onReply={handleReplyToMessage}
@@ -2401,6 +2657,7 @@ const ChatArea = ({
     const mediaPipelineRequestId = String(message?.mediaPipelineRequestId || '').trim();
     const showMediaPipelineRequestId =
       Boolean(mediaPipelineRequestId) && isMediaPipelineDebugVisible();
+    const isOutgoingMessage = String(message?.sender || '').trim().toLowerCase() === 'agent';
 
     if (!hasMedia && !message?.attachment && !isAudio && !isVideo && !isSticker) return null;
 
@@ -2446,7 +2703,7 @@ const ChatArea = ({
             {!hasCaptionText && (
               <span className="message-image-meta">
                 <span className="timestamp">{messageTimestamp}</span>
-                {message.sender === 'agent' && getStatusIcon(message.status)}
+                {isOutgoingMessage && getStatusIcon(message.status)}
               </span>
             )}
           </button>
@@ -2798,37 +3055,76 @@ const ChatArea = ({
   );
 
   const handleLoadOlderMessages = useCallback(async () => {
+    const canProbeOlderMessages =
+      Boolean(hasOlderMessages) ||
+      (Array.isArray(messages) && messages.length >= MIN_THREAD_PAGE_SIZE_FOR_OLDER_PROBE);
+
     if (
       !onLoadOlderMessages ||
-      !hasOlderMessages ||
+      !canProbeOlderMessages ||
       olderMessagesLoading ||
       messagesLoading ||
-      !canTriggerOlderLoadRef.current
+      !canTriggerOlderLoadRef.current ||
+      Date.now() < Number(topLoadUnlockAtRef.current || 0) ||
+      !userRequestedOlderLoadRef.current ||
+      olderLoadInFlightRef.current
     ) {
       return false;
     }
 
+    olderLoadInFlightRef.current = true;
     pendingPrependAnchorKeyRef.current = String(
       virtualMessageLayout.items[0]?.virtualKey || ''
     ).trim();
 
-    const didLoad = await onLoadOlderMessages();
-    if (didLoad === false) {
-      pendingPrependAnchorKeyRef.current = '';
+    try {
+      const didLoad = await onLoadOlderMessages();
+      if (didLoad === false) {
+        pendingPrependAnchorKeyRef.current = '';
+      }
+      userRequestedOlderLoadRef.current = false;
+      return didLoad;
+    } finally {
+      olderLoadInFlightRef.current = false;
     }
-    return didLoad;
   }, [
     hasOlderMessages,
+    messages,
     messagesLoading,
     onLoadOlderMessages,
     olderMessagesLoading,
     virtualMessageLayout.items
   ]);
 
+  const handleAtTopStateChange = useCallback(
+    (isAtTop) => {
+      if (!isAtTop) {
+        return;
+      }
+      void handleLoadOlderMessages();
+    },
+    [handleLoadOlderMessages]
+  );
+
+  const handleThreadScrollIntent = useCallback((event) => {
+    if (!canTriggerOlderLoadRef.current) {
+      return;
+    }
+
+    if (event?.type === 'wheel' && Number(event?.deltaY || 0) >= 0) {
+      return;
+    }
+
+    userRequestedOlderLoadRef.current = true;
+  }, []);
+
   const isVoiceRecordingActive = voiceRecorderState.status === 'recording';
   const isVoiceSending = voiceRecorderState.status === 'sending';
   const showVoiceRecorderComposer = isVoiceRecordingActive || isVoiceSending;
   const slaMeta = resolveConversationSlaMeta(selectedConversation);
+  const leadStageValue = getLeadStageValue(selectedConversation);
+  const leadStageLabel = String(getLeadStageLabel(selectedConversation)).trim() || 'New Lead';
+  const leadStageTone = String(leadStageValue || 'new').trim().toLowerCase() || 'new';
   const whatsappStateLabel = String(whatsappMessagingState?.statusLabel || '').trim();
   const whatsappStateTone = String(whatsappMessagingState?.badgeTone || '').trim() || 'template-only';
   const selectedTypingConversationId = selectedConversationId;
@@ -2847,30 +3143,10 @@ const ChatArea = ({
     ? userPresenceMap?.[selectedConversationAssigneeId]
     : null;
   const selectedConversationAssigneeIsOnline = Boolean(selectedConversationAssigneePresence?.online);
-  const threadCacheSource = String(threadCacheInfo?.source || '').trim().toLowerCase();
   const isThreadTransitioning =
     Boolean(showConversationOpeningSkeleton) ||
     Boolean(messagesLoading) ||
     isSwitchingDisplayedConversation;
-  const showThreadCacheBadge = threadCacheSource === 'cache' && !isThreadTransitioning;
-  const showThreadFreshBadge = threadCacheSource === 'fresh' && !isThreadTransitioning;
-  const showThreadLoadingBadge = isThreadTransitioning;
-  const threadCacheUpdatedLabel = threadCacheInfo?.updatedAt
-    ? new Intl.DateTimeFormat(undefined, {
-        dateStyle: 'medium',
-        timeStyle: 'short'
-      }).format(new Date(threadCacheInfo.updatedAt))
-    : '';
-  const threadCacheBadgeLabel = threadCacheInfo?.isStale ? 'Cached thread (stale)' : 'Cached thread';
-  const threadFreshBadgeLabel = 'Synced live';
-  const threadStatusTimestampLabel = threadCacheUpdatedLabel
-    ? `Last updated ${threadCacheUpdatedLabel}`
-    : '';
-  const debugSelectedConversationId = selectedConversationId;
-  const debugMessageCount = Array.isArray(messages) ? messages.length : 0;
-  const debugThreadSource = String(threadCacheInfo?.source || '').trim() || 'unknown';
-  const debugEventLabel = String(inboxDebugInfo?.lastEvent || 'idle').trim() || 'idle';
-  const debugEventDetails = String(inboxDebugInfo?.details || '').trim();
   const selectedMessagesForDeletionSet = useMemo(
     () =>
       new Set(
@@ -2922,70 +3198,14 @@ const ChatArea = ({
 
           <div className="chat-header-info">
             <span className="name text-white">{getConversationDisplayName(selectedConversation)}</span>
-            <span className="status text-white">{selectedConversation.contactPhone}</span>
-            <div className="chat-header-operator-meta">
-              {(showThreadCacheBadge || showThreadFreshBadge || showThreadLoadingBadge) && (
-                <div className="chat-header-thread-status">
-                  {showThreadLoadingBadge && (
-                    <span className="chat-header-operator-chip chat-header-operator-chip--loading">
-                      Opening chat...
-                    </span>
-                  )}
-                  {showThreadCacheBadge && (
-                    <span
-                      className={`chat-header-operator-chip chat-header-operator-chip--cache ${
-                        threadCacheInfo?.isStale
-                          ? 'chat-header-operator-chip--cache-stale'
-                          : 'chat-header-operator-chip--cache-fresh'
-                      }`}
-                      title={
-                        threadCacheUpdatedLabel
-                          ? `Restored from cached thread at ${threadCacheUpdatedLabel}`
-                          : 'Restored from cached thread'
-                      }
-                    >
-                      {threadCacheBadgeLabel}
-                    </span>
-                  )}
-                  {showThreadFreshBadge && (
-                    <span
-                      className="chat-header-operator-chip chat-header-operator-chip--live"
-                      title={
-                        threadCacheUpdatedLabel
-                          ? `Fetched from the API at ${threadCacheUpdatedLabel}`
-                          : 'Fetched from the API'
-                      }
-                    >
-                      {threadFreshBadgeLabel}
-                    </span>
-                  )}
-                  {threadStatusTimestampLabel && (
-                    <span className="chat-header-thread-status-timestamp">
-                      {threadStatusTimestampLabel}
-                    </span>
-                  )}
-                </div>
-              )}
-              {isInboxDebugVisible && (
-                <div className="chat-header-debug-strip" aria-live="polite">
-                  <span>conv: {debugSelectedConversationId || 'none'}</span>
-                  <span>source: {debugThreadSource}</span>
-                  <span>messages: {debugMessageCount}</span>
-                  <span>loading: {messagesLoading ? 'yes' : 'no'}</span>
-                  <span>older: {olderMessagesLoading ? 'yes' : 'no'}</span>
-                  <span>event: {debugEventLabel}</span>
-                  {debugEventDetails && <span title={debugEventDetails}>detail: {debugEventDetails}</span>}
-                </div>
-              )}
-              {slaMeta.label && (
-                <span
-                  className={`chat-header-operator-chip chat-header-operator-chip--sla ${
-                    slaMeta.tone ? `chat-header-operator-chip--${slaMeta.tone}` : ''
-                  }`}
-                >
-                  {slaMeta.label}
-                </span>
-              )}
+            <div className="chat-header-status-row">
+              <span className="status text-white">{selectedConversation.contactPhone}</span>
+              <span
+                className={`chat-header-operator-chip chat-header-operator-chip--lead chat-header-operator-chip--lead-${leadStageTone}`}
+                title={`Lead stage: ${leadStageLabel}`}
+              >
+                {leadStageLabel}
+              </span>
               {whatsappStateLabel && (
                 <span
                   className={`chat-header-operator-chip chat-header-operator-chip--whatsapp chat-header-operator-chip--whatsapp-${whatsappStateTone}`}
@@ -2998,6 +3218,17 @@ const ChatArea = ({
                   }
                 >
                   {whatsappStateLabel}
+                </span>
+              )}
+            </div>
+            <div className="chat-header-operator-meta">
+              {slaMeta.label && (
+                <span
+                  className={`chat-header-operator-chip chat-header-operator-chip--sla ${
+                    slaMeta.tone ? `chat-header-operator-chip--${slaMeta.tone}` : ''
+                  }`}
+                >
+                  {slaMeta.label}
                 </span>
               )}
             </div>
@@ -3018,11 +3249,49 @@ const ChatArea = ({
                     ? `${selectedConversationAssigneeLabel} is online`
                     : `${selectedConversationAssigneeLabel} is offline`
                 }
-              >
+                >
                 <span className="chat-header-presence-dot" aria-hidden="true" />
                 {selectedConversationAssigneeLabel}
               </span>
             )}
+            <div className="chat-header-quick-actions" aria-label="Quick conversation actions">
+              <button
+                type="button"
+                className="chat-header-quick-action"
+                onClick={onOpenContactInformation}
+                title="Open contact details"
+              >
+                <Info size={14} />
+                <span>Contact</span>
+              </button>
+              <button
+                type="button"
+                className="chat-header-quick-action"
+                onClick={onOpenTemplateSendModal}
+                title="Send a template"
+              >
+                <MessageSquare size={14} />
+                <span>Template</span>
+              </button>
+              <button
+                type="button"
+                className="chat-header-quick-action"
+                onClick={() => onToggleConversationImportant?.(!selectedConversation?.important)}
+                title={selectedConversation?.important ? 'Remove important flag' : 'Mark as important'}
+              >
+                <Star size={14} />
+                <span>{selectedConversation?.important ? 'Unmark' : 'Important'}</span>
+              </button>
+              <button
+                type="button"
+                className="chat-header-quick-action chat-header-quick-action--danger"
+                onClick={() => onCloseConversation?.()}
+                title="Close chat"
+              >
+                <X size={14} />
+                <span>Close</span>
+              </button>
+            </div>
           </div>
 
           <div className="chat-header-actions">
@@ -3063,6 +3332,44 @@ const ChatArea = ({
             </div>
           </div>
         </div>
+
+        {isInboxDebugVisible && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              zIndex: 25,
+              minWidth: 260,
+              maxWidth: 360,
+              padding: '10px 12px',
+              borderRadius: 12,
+              background: 'rgba(17, 24, 39, 0.82)',
+              color: '#e5e7eb',
+              fontSize: 11,
+              lineHeight: 1.45,
+              boxShadow: '0 8px 24px rgba(0, 0, 0, 0.24)',
+              backdropFilter: 'blur(8px)',
+              pointerEvents: 'none'
+            }}
+          >
+            <div style={{ fontWeight: 700, marginBottom: 6 }}>Inbox load trace</div>
+            <div>Thread: {currentThreadConversationId || 'none'}</div>
+            <div>Last event: {inboxDebugInfo?.lastEvent || 'idle'}</div>
+            <div>Reason: {inboxDebugInfo?.reason || 'n/a'}</div>
+            <div>Source: {inboxDebugInfo?.source || 'n/a'}</div>
+            <div>Details: {inboxDebugInfo?.details || 'n/a'}</div>
+            <div>Cache: {threadCacheInfo?.source || 'n/a'} / {threadCacheInfo?.messageCount ?? 0} msgs</div>
+            <div>
+              State:{' '}
+              {messagesLoading
+                ? 'loading'
+                : olderMessagesLoading
+                  ? 'loading older'
+                  : 'idle'}
+            </div>
+          </div>
+        )}
 
         {isAttachmentDragActive && (
           <div className="chat-attachment-drop-overlay" aria-hidden="true">
@@ -3282,7 +3589,12 @@ const ChatArea = ({
           </div>
         )}
 
-        <div className="chat-messages">
+        <div
+          className="chat-messages"
+          onWheel={handleThreadScrollIntent}
+          onTouchMove={handleThreadScrollIntent}
+          onPointerDown={handleThreadScrollIntent}
+        >
           {isThreadTransitioning && (
             <div className="chat-thread-loading-banner" aria-label="Loading conversation">
               <span className="chat-thread-loading-spinner" aria-hidden="true" />
@@ -3301,6 +3613,7 @@ const ChatArea = ({
 
               {shouldRenderMessageList ? (
                 <Virtuoso
+              key={selectedConversationId || 'thread'}
               ref={messageListRef}
               scrollerRef={setChatMessagesScrollerRef}
               className="chat-messages-virtuoso"
@@ -3308,10 +3621,16 @@ const ChatArea = ({
               data={virtualMessageLayout.items}
               computeItemKey={(_index, item) => String(item?.virtualKey || '').trim()}
               defaultItemHeight={defaultVirtualItemHeight}
+              initialTopMostItemIndex={{
+                index: Math.max(0, virtualMessageLayout.items.length - 1),
+                align: 'end'
+              }}
               increaseViewportBy={{ top: 320, bottom: 520 }}
               followOutput={isAtBottom ? 'smooth' : false}
               atBottomStateChange={setIsAtBottom}
+              atTopStateChange={handleAtTopStateChange}
               startReached={handleLoadOlderMessages}
+              rangeChanged={handleVirtualRangeChanged}
               itemContent={(_index, item) => {
                 const message = item?.message || {};
                 const messageKey = String(item?.virtualKey || '').trim();
@@ -3335,10 +3654,22 @@ const ChatArea = ({
                 const replyPreview = replySourceMessage
                   ? getMessagePreviewText(replySourceMessage)
                   : 'Original message';
+                const replySourceRole = String(replySourceMessage?.senderRole || '')
+                  .trim()
+                  .toLowerCase();
+                const replySourceSenderName = resolveInternalMessageSenderName(
+                  replySourceMessage || {}
+                );
                 const replyLabel = replySourceMessage
-                  ? replySourceMessage?.sender === 'agent'
+                  ? replySourceRole && replySourceRole === currentViewerInternalRole
                     ? 'You'
-                    : conversationReplyLabel
+                    : replySourceSenderName ||
+                      replySourceMessage?.senderName ||
+                      (replySourceRole === 'admin'
+                        ? 'Admin'
+                        : replySourceRole === 'agent'
+                          ? 'Agent'
+                          : conversationReplyLabel)
                   : 'Quoted message';
 
                 const hasAttachment =
@@ -3397,6 +3728,7 @@ const ChatArea = ({
                   useCompactInlineMeta,
                   useTrailingCompactMeta,
                   useOverlayCompactHoverMenu,
+                  currentViewerInternalRole,
                   reactionBarPlacement,
                   hoverMenuPlacement
                 });
@@ -3426,6 +3758,8 @@ const ChatArea = ({
                     useCompactInlineMeta={useCompactInlineMeta}
                     useTrailingCompactMeta={useTrailingCompactMeta}
                     useOverlayCompactHoverMenu={useOverlayCompactHoverMenu}
+                    currentViewerUserId={currentViewerUserId}
+                    currentViewerInternalRole={currentViewerInternalRole}
                     hasImageAttachment={hasImageAttachment}
                     hasAudioAttachment={hasAudioAttachment}
                     hasDocumentAttachment={hasDocumentAttachment}

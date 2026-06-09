@@ -15,10 +15,10 @@ const getConversationId = (conversation) =>
 export const useConversationSelectionEffects = ({
   locationState,
   conversations,
+  conversationLookupMap,
   setSelectedConversation,
   selectedConversationId,
   isConversationSwitchRef,
-  loadMessages,
   loadConversationById,
   conversationId,
   getUnreadCount,
@@ -27,7 +27,6 @@ export const useConversationSelectionEffects = ({
   getConversationDisplayName
 }) => {
   const lastLoadedConversationIdRef = useRef('');
-  const lastLoadedAtRef = useRef(0);
   const pendingHydrationConversationIdRef = useRef('');
 
   useEffect(() => {
@@ -42,11 +41,13 @@ export const useConversationSelectionEffects = ({
     const activeConversationId = String(selectedConversationId || '').trim();
     if (activeConversationId === routeConversationId) return;
 
-    const matchedConversation = (Array.isArray(conversations) ? conversations : []).find(
-      (conversation) =>
-        getConversationId(conversation) === routeConversationId ||
-        String(conversation?.summaryId || '').trim() === routeConversationId
-    );
+    const matchedConversation =
+      conversationLookupMap?.get(routeConversationId) ||
+      (Array.isArray(conversations) ? conversations : []).find(
+        (conversation) =>
+          getConversationId(conversation) === routeConversationId ||
+          String(conversation?.summaryId || '').trim() === routeConversationId
+      );
 
     if (matchedConversation) {
       if (pendingConversationRouteSyncRef) {
@@ -60,28 +61,6 @@ export const useConversationSelectionEffects = ({
 
       if (typeof markAsRead === 'function' && getUnreadCount(matchedConversation) > 0) {
         markAsRead(routeConversationId);
-      }
-
-      if (
-        typeof loadConversationById === 'function' &&
-        pendingHydrationConversationIdRef.current !== routeConversationId
-      ) {
-        pendingHydrationConversationIdRef.current = routeConversationId;
-        void Promise.resolve(loadConversationById(routeConversationId, { silent: true }))
-          .then((hydratedConversation) => {
-            const hydratedConversationId = getConversationId(hydratedConversation);
-            if (hydratedConversationId !== routeConversationId) return;
-            setSelectedConversation((current) => {
-              const currentConversationId = getConversationId(current);
-              if (currentConversationId !== routeConversationId) return current;
-              return hydratedConversation || current;
-            });
-          })
-          .finally(() => {
-            if (pendingHydrationConversationIdRef.current === routeConversationId) {
-              pendingHydrationConversationIdRef.current = '';
-            }
-          });
       }
 
       return;
@@ -121,6 +100,7 @@ export const useConversationSelectionEffects = ({
   }, [
     conversationId,
     conversations,
+    conversationLookupMap,
     getUnreadCount,
     isConversationSwitchRef,
     loadConversationById,
@@ -134,35 +114,14 @@ export const useConversationSelectionEffects = ({
     const activeConversationId = String(selectedConversationId || '').trim();
     if (!activeConversationId) return;
 
-    const now = Date.now();
-    const sameConversation = lastLoadedConversationIdRef.current === activeConversationId;
-    if (sameConversation && now - lastLoadedAtRef.current < RELOAD_DEDUP_WINDOW_MS) {
+    if (lastLoadedConversationIdRef.current === activeConversationId) {
       return;
     }
 
     lastLoadedConversationIdRef.current = activeConversationId;
-    lastLoadedAtRef.current = now;
 
     if (isConversationSwitchRef) {
       isConversationSwitchRef.current = false;
     }
-
-    if (typeof loadMessages === 'function') {
-      loadMessages(activeConversationId);
-    }
-
-    if (
-      typeof loadConversationById === 'function' &&
-      pendingHydrationConversationIdRef.current !== activeConversationId
-    ) {
-      pendingHydrationConversationIdRef.current = activeConversationId;
-      void Promise.resolve(loadConversationById(activeConversationId, { silent: true })).finally(
-        () => {
-          if (pendingHydrationConversationIdRef.current === activeConversationId) {
-            pendingHydrationConversationIdRef.current = '';
-          }
-        }
-      );
-    }
-  }, [isConversationSwitchRef, loadConversationById, loadMessages, selectedConversationId, setSelectedConversation]);
+  }, [isConversationSwitchRef, selectedConversationId]);
 };

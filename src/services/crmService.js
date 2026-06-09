@@ -2,6 +2,12 @@ import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
 import { handleUnauthorizedServiceError } from "./serviceAuth";
 import webSocketService from "./websocketService";
+import {
+  buildWorkspaceOwnershipPayload,
+  buildWorkspaceQueryScope,
+  getStoredWorkspaceUser,
+  resolveAgentWorkspaceState
+} from "../utils/agentAccess";
 
 const API_BASE_URL = resolveApiBaseUrl();
 const CRM_REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_CRM_REQUEST_TIMEOUT_MS || 15000);
@@ -23,6 +29,13 @@ let crmUserRosterSource = "";
 let crmUserRosterUpdatedAt = 0;
 let crmUserRosterSocketListenerBound = false;
 const crmUserRosterListeners = new Set();
+const crmUserProfileCache = new Map();
+
+const getWorkspaceScope = (scopeType = "createdBy") =>
+  buildWorkspaceQueryScope(getStoredWorkspaceUser(), { scopeType });
+
+const applyWorkspaceOwnership = (payload = {}, scopeType = "createdBy") =>
+  buildWorkspaceOwnershipPayload(getStoredWorkspaceUser(), payload, { scopeType });
 
 const readPipelineStagesAvailability = () => {
   try {
@@ -73,37 +86,117 @@ const withServiceError = (error, fallback) => {
 };
 
 const buildRequestConfig = (includeJson = true, extra = {}) => {
-  const { headers: extraHeaders = {}, ...rest } = extra || {};
+  const { headers: extraHeaders = {}, workspaceScopeType, ...rest } = extra || {};
+  const scopeType =
+    workspaceScopeType === false
+      ? ""
+      : String(
+          workspaceScopeType || (resolveAgentWorkspaceState(getStoredWorkspaceUser()) ? "createdBy" : "")
+        ).trim();
+  const nextRest = { ...rest };
+  if (scopeType) {
+    nextRest.params = {
+      ...(nextRest.params || {}),
+      ...getWorkspaceScope(scopeType)
+    };
+  }
   return {
     timeout: CRM_REQUEST_TIMEOUT_MS,
     headers: {
       ...getAuthHeaders(includeJson),
       ...extraHeaders
     },
-    ...rest
+    ...nextRest
   };
 };
 
-const normalizeCrmUserLabel = (user = {}, fallbackId = "") => {
-  const resolvedId = String(user?._id || user?.id || user?.userId || fallbackId || "").trim();
-  const name = String(user?.name || user?.displayName || user?.fullName || "").trim();
-  const email = String(user?.email || "").trim();
-  return name || email || resolvedId || "Unknown user";
+const GENERIC_CRM_USER_LABELS = new Set([
+  'agent',
+  'admin',
+  'team member',
+  'unknown',
+  'unknown user',
+  'unassigned'
+]);
+
+const isGenericCrmUserLabel = (value = '') => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return Boolean(normalized) && GENERIC_CRM_USER_LABELS.has(normalized);
+};
+
+const pickMeaningfulCrmUserLabel = (...values) => {
+  for (const value of values) {
+    const normalized = String(value || '').trim();
+    if (!normalized) continue;
+    if (/^[0-9a-f]{24}$/i.test(normalized)) continue;
+    if (/^\d{8,}$/.test(normalized)) continue;
+    if (isGenericCrmUserLabel(normalized)) continue;
+    return normalized;
+  }
+  return '';
+};
+
+const resolveCrmUserDisplayLabel = (user = {}) => {
+  const firstName = String(user?.firstName || user?.givenName || "").trim();
+  const lastName = String(user?.lastName || user?.familyName || "").trim();
+  const combinedName = [firstName, lastName].filter(Boolean).join(" ").trim();
+  return pickMeaningfulCrmUserLabel(
+    user?.name,
+    user?.displayName,
+    user?.fullName,
+    combinedName,
+    user?.username,
+    user?.email,
+    user?.label
+  );
+};
+
+const isIdLikeCrmLabel = (value = '') => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return true;
+  if (/^[0-9a-f]{24}$/i.test(normalized)) return true;
+  if (/^\d{8,}$/.test(normalized)) return true;
+  return false;
+};
+
+const hasMeaningfulCrmUserLabel = (user = {}) => {
+  return Boolean(resolveCrmUserDisplayLabel(user));
 };
 
 const normalizeCrmUserRecord = (user = {}, fallbackId = "") => {
   const id = String(user?._id || user?.id || user?.userId || fallbackId || "").trim();
   if (!id) return null;
 
+  const firstName = String(user?.firstName || user?.givenName || "").trim();
+  const lastName = String(user?.lastName || user?.familyName || "").trim();
+  const combinedName = [firstName, lastName].filter(Boolean).join(" ").trim();
+  const name = String(
+    user?.name ||
+      user?.displayName ||
+      user?.fullName ||
+      combinedName ||
+      user?.username ||
+      ""
+  ).trim();
+  const email = String(user?.email || "").trim();
+  const label = resolveCrmUserDisplayLabel(user);
+  const source = String(user?.source || "").trim();
+
+  // If we can't resolve a real human label, skip the row so we never show
+  // generic Admin/Agent placeholders in assignment pickers.
+  if (!label) {
+    return null;
+  }
+
   return {
     _id: id,
     id,
     userId: id,
-    name: String(user?.name || user?.displayName || user?.fullName || "").trim(),
-    displayName: String(user?.displayName || user?.name || user?.fullName || "").trim(),
-    email: String(user?.email || "").trim(),
-    label: normalizeCrmUserLabel(user, id),
-    source: String(user?.source || "").trim(),
+    name: String(user?.name || label || combinedName || user?.fullName || user?.username || "").trim(),
+    displayName: String(user?.displayName || label || combinedName || user?.fullName || user?.username || "").trim(),
+    email,
+    label,
+    source,
     connected: user?.connected !== false,
     lastSeenAt: String(user?.lastSeenAt || "").trim()
   };
@@ -142,6 +235,9 @@ const normalizeCrmUserRosterList = (value = {}) => {
 
 const emitCrmUserRoster = (users, meta = {}) => {
   crmUserRosterCache = Array.isArray(users) ? users : [];
+  if (!crmUserRosterCache.some((user) => hasMeaningfulCrmUserLabel(user))) {
+    crmUserRosterCache = [];
+  }
   crmUserRosterSource = String(meta?.source || "").trim() || crmUserRosterSource || "websocket";
   crmUserRosterUpdatedAt = Date.now();
 
@@ -168,7 +264,14 @@ const ensureCrmUserRosterSocketBinding = () => {
     if (String(payload?.type || "").trim() !== "user_list") return;
     const nextUsers = normalizeCrmUserRosterList(payload);
     if (!nextUsers.length) return;
-    emitCrmUserRoster(nextUsers, { source: "websocket" });
+    Promise.resolve(enrichCrmUserRosterUsers(nextUsers))
+      .then((enrichedUsers) => {
+        const nextRoster = Array.isArray(enrichedUsers) && enrichedUsers.length ? enrichedUsers : nextUsers;
+        emitCrmUserRoster(nextRoster, { source: "websocket" });
+      })
+      .catch(() => {
+        emitCrmUserRoster(nextUsers, { source: "websocket" });
+      });
   };
 
   webSocketService.on("user_list", handleUserList);
@@ -198,6 +301,76 @@ const fetchCrmUserRosterFallback = async () => {
       })
     )
     .filter(Boolean);
+};
+
+const enrichCrmUserRosterUsers = async (users = []) => {
+  const nextUsers = Array.isArray(users) ? users.filter(Boolean) : [];
+  if (!nextUsers.length) return [];
+
+  const enrichedUsers = await Promise.all(
+    nextUsers.map(async (user) => {
+      const id = String(user?._id || user?.id || user?.userId || '').trim();
+      if (!id) return null;
+
+      const currentLabel = resolveCrmUserDisplayLabel(user);
+      if (currentLabel) {
+        return user;
+      }
+
+      if (crmUserProfileCache.has(id)) {
+        const cachedProfile = crmUserProfileCache.get(id);
+        if (cachedProfile) {
+          return {
+            ...user,
+            ...cachedProfile,
+            id,
+            _id: id,
+            userId: id
+          };
+        }
+      }
+
+      try {
+        const profileResponse = await axios.get(`${API_BASE_URL}/api/users/${id}`, {
+          ...buildRequestConfig(false)
+        });
+        const profile = profileResponse?.data?.data || profileResponse?.data || {};
+        const profileCombinedName = [profile?.firstName, profile?.lastName]
+          .map((part) => String(part || "").trim())
+          .filter(Boolean)
+          .join(" ")
+          .trim();
+        const profileLabel = String(
+          profile?.name ||
+            profile?.displayName ||
+            profile?.fullName ||
+            profileCombinedName ||
+            profile?.username ||
+            profile?.email ||
+            ''
+        ).trim();
+        const nextRecord = profileLabel
+          ? {
+              ...user,
+              ...profile,
+              id,
+              _id: id,
+              userId: id,
+              name: profile?.name || profileLabel,
+              displayName: profile?.displayName || profileLabel,
+              label: profileLabel
+            }
+          : user;
+
+        crmUserProfileCache.set(id, nextRecord);
+        return nextRecord;
+      } catch {
+        return user;
+      }
+    })
+  );
+
+  return enrichedUsers.filter(Boolean);
 };
 
 const waitForCrmUserList = (waitMs = CRM_USER_ROSTER_WAIT_MS) =>
@@ -259,21 +432,27 @@ export const getCrmUserRoster = async ({ preferWebSocket = true, waitMs = CRM_US
   ensureCrmUserRosterSocketBinding();
 
   if (Array.isArray(crmUserRosterCache) && crmUserRosterCache.length) {
-    return {
-      success: true,
-      data: crmUserRosterCache,
-      source: crmUserRosterSource || "websocket",
-      updatedAt: crmUserRosterUpdatedAt
-    };
+    if (crmUserRosterCache.some((user) => !hasMeaningfulCrmUserLabel(user))) {
+      crmUserRosterCache = [];
+    } else {
+      return {
+        success: true,
+        data: crmUserRosterCache,
+        source: crmUserRosterSource || "websocket",
+        updatedAt: crmUserRosterUpdatedAt
+      };
+    }
   }
 
   if (preferWebSocket && webSocketService?.isConnected?.()) {
     const nextUsers = await waitForCrmUserList(waitMs);
     if (nextUsers.length) {
-      emitCrmUserRoster(nextUsers, { source: "websocket" });
+      const enrichedUsers = await enrichCrmUserRosterUsers(nextUsers);
+      const nextRoster = enrichedUsers.length ? enrichedUsers : nextUsers;
+      emitCrmUserRoster(nextRoster, { source: "websocket" });
       return {
         success: true,
-        data: nextUsers,
+        data: nextRoster,
         source: "websocket",
         updatedAt: crmUserRosterUpdatedAt
       };
@@ -282,10 +461,12 @@ export const getCrmUserRoster = async ({ preferWebSocket = true, waitMs = CRM_US
 
   try {
     const fallbackUsers = await fetchCrmUserRosterFallback();
-    emitCrmUserRoster(fallbackUsers, { source: "fallback", fallback: true });
+    const enrichedFallbackUsers = await enrichCrmUserRosterUsers(fallbackUsers);
+    const nextRoster = enrichedFallbackUsers.length ? enrichedFallbackUsers : fallbackUsers;
+    emitCrmUserRoster(nextRoster, { source: "fallback", fallback: true });
     return {
       success: true,
-      data: fallbackUsers,
+      data: nextRoster,
       source: "fallback",
       fallback: true,
       updatedAt: crmUserRosterUpdatedAt
@@ -299,7 +480,10 @@ export const crmService = {
   async getContacts(filters = {}) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/contacts`, {
-        ...buildRequestConfig(false, { params: filters })
+        ...buildRequestConfig(false, {
+          params: filters,
+          workspaceScopeType: false
+        })
       });
       return response.data;
     } catch (error) {
@@ -331,7 +515,8 @@ export const crmService = {
 
   async createFilterPreset(payload = {}) {
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/crm/filter-presets`, payload, {
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
+      const response = await axios.post(`${API_BASE_URL}/api/crm/filter-presets`, nextPayload, {
         ...buildRequestConfig()
       });
       return response.data;
@@ -401,7 +586,8 @@ export const crmService = {
     }
 
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/crm/pipeline-stages`, payload, {
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
+      const response = await axios.post(`${API_BASE_URL}/api/crm/pipeline-stages`, nextPayload, {
         ...buildRequestConfig()
       });
       writePipelineStagesAvailability(true);
@@ -552,9 +738,10 @@ export const crmService = {
     try {
       const payload = { note };
       if (nextFollowUpAt !== undefined) payload.nextFollowUpAt = nextFollowUpAt;
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
       const response = await axios.post(
         `${API_BASE_URL}/api/crm/contacts/${contactId}/notes`,
-        payload,
+        nextPayload,
         buildRequestConfig()
       );
       return response.data;
@@ -563,10 +750,15 @@ export const crmService = {
     }
   },
 
-  async listContactDocuments(contactId) {
+  async listContactDocuments(contactId, options = {}) {
     try {
+      const params = {};
+      const conversationId = String(options?.conversationId || '').trim();
+      if (conversationId) {
+        params.conversationId = conversationId;
+      }
       const response = await axios.get(`${API_BASE_URL}/api/crm/contacts/${contactId}/documents`, {
-        ...buildRequestConfig(false)
+        ...buildRequestConfig(false, { params })
       });
       return response.data;
     } catch (error) {
@@ -637,7 +829,7 @@ export const crmService = {
   async getDeals(filters = {}) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/deals`, {
-        ...buildRequestConfig(false, { params: filters })
+        ...buildRequestConfig(false, { params: filters, workspaceScopeType: false })
       });
       return response.data;
     } catch (error) {
@@ -648,7 +840,7 @@ export const crmService = {
   async getDealMetrics(filters = {}) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/deals/metrics`, {
-        ...buildRequestConfig(false, { params: filters })
+        ...buildRequestConfig(false, { params: filters, workspaceScopeType: false })
       });
       return response.data;
     } catch (error) {
@@ -658,7 +850,8 @@ export const crmService = {
 
   async createDeal(payload) {
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/crm/deals`, payload, {
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
+      const response = await axios.post(`${API_BASE_URL}/api/crm/deals`, nextPayload, {
         ...buildRequestConfig()
       });
       return response.data;
@@ -702,7 +895,8 @@ export const crmService = {
 
   async createTask(payload) {
     try {
-      const response = await axios.post(`${API_BASE_URL}/api/crm/tasks`, payload, {
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
+      const response = await axios.post(`${API_BASE_URL}/api/crm/tasks`, nextPayload, {
         ...buildRequestConfig()
       });
       return response.data;
@@ -724,9 +918,10 @@ export const crmService = {
 
   async addTaskComment(taskId, text) {
     try {
+      const nextPayload = applyWorkspaceOwnership({ text }, "createdBy");
       const response = await axios.post(
         `${API_BASE_URL}/api/crm/tasks/${taskId}/comments`,
-        { text },
+        nextPayload,
         buildRequestConfig()
       );
       return response.data;
@@ -794,9 +989,10 @@ export const crmService = {
 
   async scheduleReportExport(payload = {}) {
     try {
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
       const response = await axios.post(
         `${API_BASE_URL}/api/crm/reports/schedule`,
-        payload,
+        nextPayload,
         buildRequestConfig()
       );
       return response.data;
@@ -889,9 +1085,10 @@ export const crmService = {
 
   async runFollowUpAutomation(payload = {}) {
     try {
+      const nextPayload = applyWorkspaceOwnership(payload, "createdBy");
       const response = await axios.post(
         `${API_BASE_URL}/api/crm/ops/follow-up-automation`,
-        payload,
+        nextPayload,
         buildRequestConfig()
       );
       return response.data;

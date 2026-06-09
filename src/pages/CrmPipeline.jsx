@@ -36,12 +36,15 @@ import CrmFilterBar from "../components/crm/CrmFilterBar";
 import CrmEmptyState from "../components/crm/CrmEmptyState";
 import CrmRealtimeStatus from "../components/crm/CrmRealtimeStatus";
 import useCrmDebouncedValue from "../hooks/useCrmDebouncedValue";
+import useCrmUserRoster from "../hooks/useCrmUserRoster";
 import { crmLeadPageCache } from "../utils/crm/lruCache";
 import {
   DEFAULT_PIPELINE_STAGE_OPTIONS,
   normalizePipelineStageOption,
   getPipelineStageLabel
 } from "../utils/crmPipelineStages";
+import { getStoredWorkspaceUser, resolveWorkspaceManagementAccessState } from "../utils/agentAccess";
+import apiService from "../services/api";
 import "./CrmWorkspace.css";
 
 const DEFAULT_LEAD_STAGE_ORDER = DEFAULT_PIPELINE_STAGE_OPTIONS.map((stage) => ({
@@ -86,6 +89,15 @@ const LEAD_ARCHIVE_OPTIONS = [
   { key: "archived", label: "Archived leads" },
   { key: "all", label: "All leads" }
 ];
+
+const getUserDisplayLabel = (user = {}, currentUserId = "") => {
+  const name = String(user?.name || user?.displayName || user?.fullName || "").trim();
+  const email = String(user?.email || "").trim();
+  const id = String(user?._id || user?.id || user?.userId || "").trim();
+  const resolved = name || email || id || "Unknown user";
+  if (currentUserId && id === currentUserId) return `${resolved} (Me)`;
+  return resolved;
+};
 
 const DEFAULT_STAGE_COLORS = {
   new: "#5f8fc3",
@@ -326,7 +338,13 @@ const CrmPipeline = () => {
   const [bulkTagDraft, setBulkTagDraft] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
   const [exportBusy, setExportBusy] = useState(false);
+  const [bulkAssignTargetId, setBulkAssignTargetId] = useState("");
+  const [bulkAssignBusy, setBulkAssignBusy] = useState(false);
   const [filterPresets, setFilterPresets] = useState([]);
+  const [ownerDashboard, setOwnerDashboard] = useState(null);
+  const [adminAgents, setAdminAgents] = useState([]);
+  const [adminAgentsLoading, setAdminAgentsLoading] = useState(false);
+  const [adminAgentsError, setAdminAgentsError] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [filterDraft, setFilterDraft] = useState({
     queue: "all",
@@ -349,6 +367,9 @@ const CrmPipeline = () => {
   const [dropTargetStageId, setDropTargetStageId] = useState("");
   const [stageDropIndex, setStageDropIndex] = useState(null);
   const currentUserId = resolveCacheUserId();
+  const { users: crmUsers } = useCrmUserRoster();
+  const workspaceUser = getStoredWorkspaceUser();
+  const isAdminWorkspace = resolveWorkspaceManagementAccessState(workspaceUser);
   const debouncedSearchQuery = useCrmDebouncedValue(searchQuery, 300);
   const hasInitializedFiltersRef = useRef(false);
   const workspaceLoadRequestIdRef = useRef(0);
@@ -397,10 +418,11 @@ const CrmPipeline = () => {
           setSelectionMode(false);
         }
 
-        const [metricsResult, stagesResult, presetsResult] = await Promise.all([
+        const [metricsResult, stagesResult, presetsResult, ownerDashboardResult] = await Promise.all([
           crmService.getMetrics(),
           crmService.getPipelineStages(),
-          crmService.getFilterPresets()
+          crmService.getFilterPresets(),
+          crmService.getOwnerDashboard()
         ]);
         if (requestId !== workspaceLoadRequestIdRef.current) return;
 
@@ -412,6 +434,9 @@ const CrmPipeline = () => {
         }
         if (presetsResult?.success === false) {
           throw new Error(presetsResult?.error || "Failed to load filter presets");
+        }
+        if (ownerDashboardResult?.success === false) {
+          throw new Error(ownerDashboardResult?.error || "Failed to load owner dashboard");
         }
 
         const nextPipelineStagesAvailable = stagesResult?.data?.apiAvailable !== false;
@@ -472,6 +497,7 @@ const CrmPipeline = () => {
           return nextDrafts;
         });
         setMetrics(nextMetrics);
+        setOwnerDashboard(ownerDashboardResult?.data || null);
         setContacts((previous) => {
           if (!append) return nextContacts;
           const existingIds = new Set(previous.map(getEntityId));
@@ -517,6 +543,45 @@ const CrmPipeline = () => {
   useEffect(() => {
     loadWorkspace();
   }, [loadWorkspace]);
+
+  useEffect(() => {
+    if (!isAdminWorkspace) {
+      setAdminAgents([]);
+      setAdminAgentsError("");
+      setAdminAgentsLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+    setAdminAgentsLoading(true);
+    setAdminAgentsError("");
+
+    apiService
+      .getMyAgents()
+      .then((result) => {
+        if (!active) return;
+        const nextAgents = Array.isArray(result?.data)
+          ? result.data.filter((agent) => {
+              const role = String(agent?.companyRole || agent?.role || "").toLowerCase();
+              return role !== "admin" && agent?.isEnabled !== false;
+            })
+          : [];
+        setAdminAgents(nextAgents);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setAdminAgents([]);
+        setAdminAgentsError(error?.message || "Failed to load workspace agents");
+      })
+      .finally(() => {
+        if (!active) return;
+        setAdminAgentsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isAdminWorkspace]);
 
   useEffect(() => {
     if (!hasInitializedFiltersRef.current) {
@@ -589,6 +654,13 @@ const CrmPipeline = () => {
     const options = new Map();
     options.set("all", "All Owners");
 
+    crmUsers.forEach((user) => {
+      const ownerId = String(user?._id || user?.id || user?.userId || "").trim();
+      if (ownerId) {
+        options.set(ownerId, getUserDisplayLabel(user, currentUserId));
+      }
+    });
+
     visibleContacts.forEach((contact) => {
       const ownerId = String(contact?.ownerId || "").trim();
       if (ownerId) {
@@ -596,12 +668,27 @@ const CrmPipeline = () => {
       }
     });
 
+    if (currentUserId) {
+      options.set(currentUserId, options.get(currentUserId) || `${currentUserId} (Me)`);
+    }
+
     if (ownerFilter !== "all" && !options.has(ownerFilter)) {
       options.set(ownerFilter, ownerFilter);
     }
 
     return Array.from(options.entries()).map(([key, label]) => ({ key, label }));
-  }, [ownerFilter, visibleContacts]);
+  }, [crmUsers, currentUserId, ownerFilter, visibleContacts]);
+
+  const activeAgentOptions = useMemo(() => {
+    return (Array.isArray(adminAgents) ? adminAgents : [])
+      .map((agent) => ({
+        id: String(agent?._id || agent?.id || agent?.userId || "").trim(),
+        label: getUserDisplayLabel(agent, currentUserId)
+      }))
+      .filter((agent) => agent.id);
+  }, [adminAgents, currentUserId]);
+
+  const unassignedLeadCount = Number(ownerDashboard?.summary?.unassignedLeads || 0);
 
   const activeFilterCount = useMemo(
     () =>
@@ -839,6 +926,66 @@ const CrmPipeline = () => {
     },
     [archiveFilter, contacts, loadWorkspace, selectedLeadIdSet, selectedLeadIds, selectedLeads]
   );
+
+  const assignAllUnassignedLeads = useCallback(async () => {
+    if (!isAdminWorkspace) return;
+
+    const targetOwnerId = String(bulkAssignTargetId || "").trim();
+    if (!targetOwnerId) {
+      setToast({ type: "error", message: "Choose an active agent first." });
+      return;
+    }
+
+    if (!unassignedLeadCount) {
+      setToast({ type: "info", message: "No unassigned leads available to assign." });
+      return;
+    }
+
+    const targetAgent = activeAgentOptions.find((agent) => agent.id === targetOwnerId);
+    const targetLabel = targetAgent?.label || "selected agent";
+    const confirmed = window.confirm(
+      `Assign all ${unassignedLeadCount} unassigned lead${unassignedLeadCount === 1 ? "" : "s"} to ${targetLabel}?`
+    );
+    if (!confirmed) return;
+
+    setBulkAssignBusy(true);
+    try {
+      const result = await crmService.bulkUpdateContacts({
+        action: "assign",
+        matchAll: true,
+        criteria: {
+          queue: "unassigned",
+          archive: "active"
+        },
+        ownerId: targetOwnerId
+      });
+
+      if (result?.success === false) {
+        throw new Error(result?.error || "Failed to assign unassigned leads");
+      }
+
+      const assignedCount = Number(result?.data?.count || unassignedLeadCount || 0);
+      setBulkAssignTargetId("");
+      setToast({
+        type: "success",
+        message: `Assigned ${assignedCount} lead${assignedCount === 1 ? "" : "s"} to ${targetLabel}.`
+      });
+      await loadWorkspace({ silent: true });
+    } catch (assignError) {
+      setToast({
+        type: "error",
+        message: assignError?.message || "Failed to assign unassigned leads"
+      });
+    } finally {
+      setBulkAssignBusy(false);
+    }
+  }, [
+    activeAgentOptions,
+    bulkAssignTargetId,
+    isAdminWorkspace,
+    loadWorkspace,
+    unassignedLeadCount
+  ]);
 
   const updateLeadArchiveFromRow = useCallback(
     async (contact, action) => {
@@ -1481,6 +1628,86 @@ const CrmPipeline = () => {
           <CrmMetricCard icon={CalendarClock} value={openTaskCount} label="Follow-ups Open" />
           <CrmMetricCard icon={Flame} value={dueTodayCount} label="Due Today" />
         </div>
+
+        {isAdminWorkspace ? (
+          <section className="crm-admin-assign-card" aria-labelledby="crm-admin-assign-title">
+            <div className="crm-admin-assign-card__header">
+              <div>
+                <span className="crm-admin-assign-card__eyebrow">Admin bulk action</span>
+                <h2 id="crm-admin-assign-title">Assign unassigned leads to an active agent</h2>
+                <p>
+                  Move all workspace leads sitting in the unassigned queue to one active agent. CRM owner
+                  and inbox ownership stay in sync.
+                </p>
+              </div>
+              <div className="crm-admin-assign-card__count">
+                <strong>{unassignedLeadCount}</strong>
+                <span>Unassigned leads</span>
+              </div>
+            </div>
+
+            <div className="crm-admin-assign-card__body">
+              <div className="crm-admin-assign-card__stats">
+                <div className="crm-admin-assign-card__stat">
+                  <span>Active agents</span>
+                  <strong>{activeAgentOptions.length}</strong>
+                </div>
+                <div className="crm-admin-assign-card__stat">
+                  <span>Assignment mode</span>
+                  <strong>Workspace sync</strong>
+                </div>
+              </div>
+
+              <div className="crm-admin-assign-card__actions">
+                <label className="crm-inline-field crm-admin-assign-card__select">
+                  <span>Choose agent</span>
+                  <select
+                    className="crm-select"
+                    value={bulkAssignTargetId}
+                    onChange={(event) => setBulkAssignTargetId(event.target.value)}
+                    disabled={adminAgentsLoading || bulkAssignBusy || activeAgentOptions.length === 0}
+                  >
+                    <option value="">
+                      {adminAgentsLoading
+                        ? "Loading active agents..."
+                        : activeAgentOptions.length
+                          ? "Select an active agent"
+                          : "No active agents available"}
+                    </option>
+                    {activeAgentOptions.map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <button
+                  type="button"
+                  className="crm-btn crm-btn-primary crm-btn--compact"
+                  onClick={assignAllUnassignedLeads}
+                  disabled={
+                    !isAdminWorkspace ||
+                    bulkAssignBusy ||
+                    adminAgentsLoading ||
+                    !bulkAssignTargetId ||
+                    unassignedLeadCount <= 0
+                  }
+                >
+                  {bulkAssignBusy ? "Assigning..." : "Assign all unassigned leads"}
+                </button>
+              </div>
+
+              <div className="crm-admin-assign-card__footnote">
+                {adminAgentsError ? (
+                  <span className="crm-admin-assign-card__error">{adminAgentsError}</span>
+                ) : (
+                  <span>Backend will update lead owner, inbox assignee, and live summaries together.</span>
+                )}
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {showPipelineSettings ? (
           <div

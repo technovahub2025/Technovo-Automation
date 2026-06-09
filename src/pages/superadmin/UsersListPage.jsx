@@ -87,6 +87,32 @@ const getUserLifoTime = (user = {}) => {
   return 0;
 };
 
+const isAgentLikeUser = (user = {}) => {
+  const normalizedRole = String(user.role || "").trim().toLowerCase();
+  const normalizedCompanyRole = String(user.companyRole || "").trim().toLowerCase();
+
+  const hasAgentMarkers = Boolean(
+    user.isAgentWorkspace === true ||
+      user.createdBy ||
+      user.ownerId ||
+      user.parentUserId ||
+      normalizedCompanyRole === "agent" ||
+      normalizedCompanyRole === "user" ||
+      normalizedRole === "agent" ||
+      String(user.workspaceAccessState || "").trim().toLowerCase() === "agent_workspace"
+  );
+
+  if (hasAgentMarkers) {
+    return true;
+  }
+
+  if (["superadmin", "admin", "manager"].includes(normalizedRole) || normalizedCompanyRole === "admin") {
+    return false;
+  }
+
+  return normalizedRole === "user";
+};
+
 const UsersListPage = () => {
   const [users, setUsers] = useState([]);
   const [usersLoading, setUsersLoading] = useState(true);
@@ -1068,7 +1094,7 @@ const UsersListPage = () => {
                   </div>
                   <div className="users-list-cell">
                     <span className="status-chip status-chip--neutral">
-                      {String(listedUser.role || "user")}
+                      {isAgentLikeUser(listedUser) ? "Agent" : String(listedUser.role || "user")}
                     </span>
                   </div>
                   <div className="users-list-cell">
@@ -1084,9 +1110,11 @@ const UsersListPage = () => {
                     {listedUser._id?.slice(-8) || "N/A"}
                   </div>
                   <div className="user-card-actions user-card-actions--list">
-                    <button className="edit-btn" onClick={() => handleEdit(listedUser)}>
-                      Edit
-                    </button>
+                    {!isAgentLikeUser(listedUser) && (
+                      <button className="edit-btn" onClick={() => handleEdit(listedUser)}>
+                        Edit
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}

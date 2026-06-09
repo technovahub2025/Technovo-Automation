@@ -17,7 +17,12 @@ const BroadcastTable = ({
   onResumeBroadcast,
   onCancelBroadcast,
   onDeleteClick,
-  onViewAnalytics
+  onViewAnalytics,
+  scrollContainerRef,
+  infiniteScrollSentinelRef,
+  isLoadingMore = false,
+  hasMoreBroadcasts = false,
+  hasMoreVisibleBroadcasts = false,
 }) => {
   if (broadcasts.length === 0) {
     return (
@@ -32,24 +37,25 @@ const BroadcastTable = ({
   }
 
   return (
-    <div className="table-container">
+    <div className="table-container" ref={scrollContainerRef}>
       <table className="data-table">
         <thead>
           <tr>
-            {selectionMode && (
-              <th className="checkbox-column">
+          {selectionMode && (
+            <th className="checkbox-column">
                 <input
                   type="checkbox"
                   onChange={onSelectAll}
                   checked={broadcasts.length > 0 && selectedCampaigns.length === broadcasts.length}
                 />
-              </th>
-            )}
-            <th className="col-name">Campaign Name</th>
-            <th className="col-time">Scheduled Time</th>
-            <th>Successful</th>
-            <th>Read</th>
-            <th>Replied</th>
+            </th>
+          )}
+          <th className="col-name">Campaign Name</th>
+          <th className="col-created-by">Created By</th>
+          <th className="col-time">Scheduled Time</th>
+          <th className="col-success">Successful</th>
+          <th className="col-read">Read</th>
+          <th className="col-replied">Replied</th>
             <th className="col-recipients">Recipients</th>
             <th className="col-failed">Failed</th>
             <th className="col-reliability">Suppressed</th>
@@ -79,6 +85,32 @@ const BroadcastTable = ({
               onViewAnalytics={onViewAnalytics}
             />
           ))}
+
+          <tr className="broadcast-loading-row">
+            <td colSpan={selectionMode ? 14 : 13}>
+              <div
+                className={`broadcast-loading-state ${isLoadingMore ? "is-loading" : ""}`}
+                aria-live="polite"
+                aria-busy={isLoadingMore ? "true" : "false"}
+              >
+                {isLoadingMore ? (
+                  <>
+                    <span className="broadcast-loading-spinner" aria-hidden="true" />
+                    <span>Loading more campaigns...</span>
+                  </>
+                ) : hasMoreVisibleBroadcasts || hasMoreBroadcasts ? (
+                  <span>Scroll to load more</span>
+                ) : (
+                  <span>All campaigns loaded</span>
+                )}
+                <div
+                  ref={infiniteScrollSentinelRef}
+                  className="broadcast-table-sentinel"
+                  aria-hidden="true"
+                />
+              </div>
+            </td>
+          </tr>
         </tbody>
       </table>
     </div>

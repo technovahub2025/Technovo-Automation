@@ -884,6 +884,7 @@ const CrmContactDrawer = ({
   const consentAudit = detail?.consentAudit || {};
   const leadScoringInsight = detail?.leadScoring || {};
   const timelineItems = Array.isArray(detail?.timeline) ? detail.timeline : [];
+  const timelinePreviewItems = timelineItems.slice(0, 2);
 
   return (
     <div className="crm-drawer-shell" role="dialog" aria-modal="true">
@@ -897,6 +898,32 @@ const CrmContactDrawer = ({
               <span>{currentContact?.phone || "-"}</span>
               <span>{currentContact?.email || "No email"}</span>
             </div>
+            {timelinePreviewItems.length > 0 ? (
+              <div className="crm-contact-drawer-timeline-preview" aria-label="Recent CRM activity">
+                {timelinePreviewItems.map((entry, index) => {
+                  const previewId = getEntityId(entry) || `timeline-preview-${index}`;
+                  const payload = entry?.payload || {};
+                  const isMessage = entry?.type === "message";
+                  return (
+                    <div key={previewId} className="crm-contact-drawer-timeline-preview__item">
+                      <strong className="crm-contact-drawer-timeline-preview__title">
+                        {isMessage
+                          ? `Message from ${toReadableLabel(payload?.senderName || payload?.sender || "contact")}`
+                          : getCrmActivityLabel(payload)}
+                      </strong>
+                      <span className="crm-contact-drawer-timeline-preview__description">
+                        {isMessage
+                          ? payload?.text || payload?.mediaCaption || payload?.mediaType || "Media message"
+                          : getCrmActivityDescription(payload)}
+                      </span>
+                      <time className="crm-contact-drawer-timeline-preview__time">
+                        {formatDateTimeForActivity(entry?.createdAt)}
+                      </time>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
           <div className="crm-contact-drawer-header-actions">
             {crmPresenceEnabled && presenceUsers.length > 0 ? (

@@ -103,24 +103,159 @@ const pickFirstLabel = (...values) => {
   return '';
 };
 
-export const resolveConversationAssigneeLabel = (conversation = {}) => {
+const isIdLikeLabel = (value = '') => {
+  const normalized = toCleanString(value);
+  if (!normalized) return true;
+  if (/^[0-9a-f]{24}$/i.test(normalized)) return true;
+  if (/^\d{8,}$/.test(normalized)) return true;
+  return false;
+};
+
+const GENERIC_AGENT_LABELS = new Set([
+  'agent',
+  'admin',
+  'team member',
+  'unknown',
+  'unknown user',
+  'unassigned'
+]);
+
+const isGenericAgentLabel = (value = '') => {
+  const normalized = toCleanString(value).toLowerCase();
+  return Boolean(normalized) && GENERIC_AGENT_LABELS.has(normalized);
+};
+
+const isMeaningfulAgentLabel = (value = '') => {
+  const normalized = toCleanString(value);
+  if (!normalized) return false;
+  if (isIdLikeLabel(normalized)) return false;
+  if (isGenericAgentLabel(normalized)) return false;
+  return true;
+};
+
+const pickMeaningfulAgentLabel = (...values) => {
+  for (const value of values) {
+    const normalized = toCleanString(value);
+    if (!isMeaningfulAgentLabel(normalized)) continue;
+    return normalized;
+  }
+  return '';
+};
+
+const normalizeAgentLookupId = (value) => toCleanString(value).toLowerCase();
+
+export const getConversationAssignedLookupId = (conversation = {}) =>
+  (() => {
+    const contactSnapshot = conversation?.contactId;
+    const conversationAssigneeId = pickFirstLabel(
+      conversation?.assignedTo?._id,
+      conversation?.assignedTo?.id,
+      conversation?.assignedTo?.userId,
+      conversation?.assignedTo?.agentId,
+      typeof conversation?.assignedTo === 'string' ? conversation.assignedTo : '',
+      conversation?.assignedToId,
+      conversation?.assignedAgentId,
+      conversation?.assignedAgent,
+      conversation?.assignedAgent?._id,
+      conversation?.assignedAgent?.id,
+      conversation?.assignedAgent?.userId,
+      conversation?.assigneeId,
+      conversation?.ownerId
+    );
+
+    if (conversationAssigneeId) {
+      return conversationAssigneeId;
+    }
+
+    if (contactSnapshot && typeof contactSnapshot === 'object') {
+      const hasOwnerField = Object.prototype.hasOwnProperty.call(contactSnapshot, 'ownerId');
+      if (hasOwnerField) {
+        return toCleanString(contactSnapshot?.ownerId);
+      }
+    }
+
+    return '';
+  })();
+
+export const resolveAgentDisplayLabel = (agent = {}, fallbackLabel = '') =>
+  pickMeaningfulAgentLabel(
+    agent?.label,
+    agent?.displayName,
+    agent?.name,
+    agent?.fullName,
+    agent?.username,
+    agent?.email
+  ) || toCleanString(fallbackLabel);
+
+const getAgentDisplayLabel = (agent = {}) => resolveAgentDisplayLabel(agent, '');
+
+export const resolveConversationAssigneeLabel = (conversation = {}, availableAgents = []) => {
   const directAssignee = conversation?.assignedTo;
   const owner = conversation?.owner;
+  const contactSnapshot = conversation?.contactId;
+  const lookupId = normalizeAgentLookupId(getConversationAssignedLookupId(conversation));
+  if (lookupId) {
+    const agentRecord = (Array.isArray(availableAgents) ? availableAgents : []).find((agent) => {
+      if (!agent || typeof agent !== 'object') return false;
+      const agentIds = [
+        agent?.id,
+        agent?._id,
+        agent?.userId,
+        agent?.agentId,
+        agent?.assignedToId
+      ]
+        .map(normalizeAgentLookupId)
+        .filter(Boolean);
+      return agentIds.includes(lookupId);
+    });
 
-  const label = pickFirstLabel(
+    const agentLabel = getAgentDisplayLabel(agentRecord);
+    if (agentLabel) return agentLabel;
+  }
+
+  const label = pickMeaningfulAgentLabel(
     conversation?.assignedToName,
     conversation?.assigneeName,
-    conversation?.ownerName,
     conversation?.assignedAgentName,
+    contactSnapshot?.assignedToName,
+    contactSnapshot?.assignedAgentName,
+    contactSnapshot?.assigneeName,
+    contactSnapshot?.ownerName,
     directAssignee?.name,
+    directAssignee?.displayName,
     directAssignee?.fullName,
+    directAssignee?.username,
     directAssignee?.email,
+    conversation?.ownerName,
     owner?.name,
+    owner?.displayName,
     owner?.fullName,
+    owner?.username,
     owner?.email
   );
 
-  return label || 'Unassigned';
+  if (label && !isIdLikeLabel(label)) return label;
+
+  const directAssigneeId = pickFirstLabel(
+    directAssignee?._id,
+    directAssignee?.id,
+    directAssignee?.userId,
+    typeof directAssignee === 'string' ? directAssignee : ''
+  );
+  if (directAssigneeId) return 'Unassigned';
+
+  const hasContactOwnerField =
+    contactSnapshot && typeof contactSnapshot === 'object'
+      ? Object.prototype.hasOwnProperty.call(contactSnapshot, 'ownerId')
+      : false;
+  if (hasContactOwnerField) {
+    const contactOwnerId = toCleanString(contactSnapshot?.ownerId);
+    if (!contactOwnerId) {
+      return 'Unassigned';
+    }
+  }
+
+  return 'Unassigned';
 };
 
 const getSlaDueAtValue = (conversation = {}) =>
@@ -226,19 +361,27 @@ export const filterConversations = ({
   getConversationDisplayName
 }) => {
   const safeConversations = Array.isArray(conversations) ? conversations : [];
+  const normalizedSearchTerm = String(searchTerm || '').trim().toLowerCase();
 
-  return safeConversations
-    .filter((conversation) =>
-      doesConversationMatchSearch({
+  if (!normalizedSearchTerm && conversationFilter === 'all') {
+    return safeConversations;
+  }
+
+  return safeConversations.filter((conversation) => {
+    if (
+      normalizedSearchTerm &&
+      !doesConversationMatchSearch({
         conversation,
-        searchTerm,
+        searchTerm: normalizedSearchTerm,
         getConversationDisplayName
       })
-    )
-    .filter((conversation) => {
-      if (conversationFilter === 'unread') return getUnreadCount(conversation) > 0;
-      if (conversationFilter === 'read') return getUnreadCount(conversation) === 0;
-      return true;
+    ) {
+      return false;
+    }
+
+    if (conversationFilter === 'unread') return getUnreadCount(conversation) > 0;
+    if (conversationFilter === 'read') return getUnreadCount(conversation) === 0;
+    return true;
     });
 };
 

@@ -1,8 +1,10 @@
-import React, { Suspense, lazy } from "react";
+import React, { Suspense, lazy, useContext } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 import { AuthProvider } from "./pages/authcontext";
+import { AuthContext } from "./pages/authcontext";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 import MainLayout from "./layout/MainLayout";
+import { resolveAgentWorkspaceState } from "./utils/agentAccess";
 import Login from "./pages/login";
 import Register from "./pages/register";
 import ForgotPassword from "./pages/forgotpassword";
@@ -46,6 +48,8 @@ const MetaVerification = lazy(() => import("./pages/MetaVerification"));
 const RegisterDocuments = lazy(() => import("./pages/RegisterDocuments"));
 const WhatsAppWorkflow = lazy(() => import("./pages/WhatsAppWorkflow"));
 const AdminMultiStep = lazy(() => import("./pages/admin"));
+const AgentManagementPage = lazy(() => import("./pages/superadmin/AgentManagementPage"));
+const SettingsAgentManagementPage = lazy(() => import("./pages/settings/AgentManagementPage"));
 const UsersListPage = lazy(() => import("./pages/superadmin/UsersListPage"));
 const AdminSetupPage = lazy(() => import("./pages/superadmin/AdminSetupPage"));
 const PaymentsDetailsPage = lazy(() => import("./pages/superadmin/PaymentsDetailsPage"));
@@ -54,6 +58,15 @@ const ConsentLogsPage = lazy(() => import("./pages/superadmin/ConsentLogsPage"))
 const renderLazyRoute = (element, label = "Loading page...") => (
   <Suspense fallback={<div style={{ padding: 24 }}>{label}</div>}>{element}</Suspense>
 );
+
+const WorkspaceHome = () => {
+  const { user } = useContext(AuthContext);
+  if (resolveAgentWorkspaceState(user)) {
+    return <Navigate to="/inbox" replace />;
+  }
+
+  return renderLazyRoute(<Dashboard />, "Loading dashboard...");
+};
 
 
 
@@ -83,9 +96,11 @@ function App() {
         />
 
         {/* App layout with nested routes */}
-        <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}> 
-          <Route index element={renderLazyRoute(<Dashboard />, "Loading dashboard...")} />
-          <Route path="crm" element={<Navigate to="/crm/home" replace />} />
+          <Route path="/" element={<ProtectedRoute><MainLayout /></ProtectedRoute>}> 
+          <Route index element={<WorkspaceHome />} />
+          <Route path="crm" element={renderLazyRoute(<CrmHome />, "Loading CRM home...")} />
+          <Route path="bulk-messages" element={renderLazyRoute(<BroadcastDashboard />, "Loading bulk messages...")} />
+          <Route path="meta-ads" element={renderLazyRoute(<CampaignManagement />, "Loading meta ads...")} />
           <Route
             path="crm/home"
             element={
@@ -218,9 +233,25 @@ function App() {
             }
           />
           <Route
-            path="admin/users"
+            path="agent-management"
             element={
               <ProtectedRoute requiredRole="superadmin">
+                {renderLazyRoute(<AgentManagementPage />, "Loading agent management...")}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="settings/agent-management"
+            element={
+              <ProtectedRoute requiredFeature="userManagement">
+                {renderLazyRoute(<SettingsAgentManagementPage />, "Loading agent management...")}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/users"
+            element={
+              <ProtectedRoute requiredFeature="userManagement">
                 {renderLazyRoute(<UsersListPage />, "Loading users...")}
               </ProtectedRoute>
             }

@@ -561,13 +561,13 @@
 
 .users-list-table {
   display: grid;
-  grid-template-columns: minmax(300px, 2.5fr) minmax(120px, 0.8fr) minmax(190px, 1.1fr) minmax(120px, 0.8fr) minmax(110px, 0.6fr);
+  grid-template-columns: minmax(300px, 2.5fr) minmax(120px, 0.8fr) minmax(190px, 1.1fr) minmax(120px, 0.8fr) minmax(140px, 0.8fr) minmax(170px, 0.95fr);
   align-items: center;
   gap: 16px;
 }
 
 .users-list-table--selecting {
-  grid-template-columns: 60px minmax(300px, 2.5fr) minmax(120px, 0.8fr) minmax(190px, 1.1fr) minmax(120px, 0.8fr) minmax(110px, 0.6fr);
+  grid-template-columns: 60px minmax(300px, 2.5fr) minmax(120px, 0.8fr) minmax(190px, 1.1fr) minmax(120px, 0.8fr) minmax(140px, 0.8fr) minmax(170px, 0.95fr);
 }
 
 .users-list-table--header {
@@ -587,7 +587,8 @@
 .users-list-table--header span:nth-child(2),
 .users-list-table--header span:nth-child(3),
 .users-list-table--header span:nth-child(4),
-.users-list-table--header span:nth-child(5) {
+.users-list-table--header span:nth-child(5),
+.users-list-table--header span:nth-child(6) {
   padding-left: 6px;
 }
 
@@ -714,6 +715,13 @@
 
 .user-card-actions--list {
   flex-wrap: nowrap;
+  gap: 6px;
+}
+
+.user-card-actions--list .edit-btn {
+  min-width: 60px;
+  padding: 0 10px;
+  white-space: nowrap;
 }
 
 .edit-btn {

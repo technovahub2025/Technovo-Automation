@@ -8,6 +8,7 @@ import { AuthContext } from "./authcontext";
 import { auth, googleProvider } from "../firebase/firebase";
 import { signInWithPopup } from "firebase/auth";
 import loginPageLogo from "../assets/logo(new).png";
+import { resolveAgentWorkspaceState } from "../utils/agentAccess";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -67,6 +68,8 @@ const Login = () => {
 
     if (user.role === "superadmin") {
       navigate("/admin", { replace: true });
+    } else if (resolveAgentWorkspaceState(user)) {
+      navigate("/inbox", { replace: true });
     } else {
       navigate("/", { replace: true });
     }
@@ -130,6 +133,8 @@ const Login = () => {
 
       if (user.role === "superadmin") {
         navigate("/admin", { replace: true });
+      } else if (resolveAgentWorkspaceState(user)) {
+        navigate("/inbox", { replace: true });
       } else {
         navigate("/", { replace: true });
       }

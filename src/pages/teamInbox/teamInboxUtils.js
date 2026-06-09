@@ -1,4 +1,4 @@
-import { getConversationPreviewMeta } from './teamInboxDisplayUtils.js';
+import { getConversationAssignedLookupId, getConversationPreviewMeta } from './teamInboxDisplayUtils.js';
 import {
   getMappedContactName,
   getConversationPhoneValue,
@@ -28,6 +28,69 @@ export const getUnreadCount = (conversation) => {
 export const normalizeConversation = (conversation) => {
   const previewMeta = getConversationPreviewMeta(conversation);
   const summaryId = String(conversation?.summaryId || conversation?._id || '').trim();
+  const contactPhone = getConversationPhoneValue(conversation);
+  const contactPhoneDigits = normalizePhone(contactPhone);
+  const contactNameLower = String(conversation?.contactId?.name || conversation?.contactName || '')
+    .trim()
+    .toLowerCase();
+  const previewTextLower = String(previewMeta.previewText || '').trim().toLowerCase();
+  const lastMessageLower = String(conversation?.lastMessage || '').trim().toLowerCase();
+  const contactSnapshot = conversation?.contactId;
+  const hasContactOwnerField =
+    contactSnapshot && typeof contactSnapshot === 'object'
+      ? Object.prototype.hasOwnProperty.call(contactSnapshot, 'ownerId')
+      : false;
+  const contactOwnerId = hasContactOwnerField ? String(contactSnapshot?.ownerId || '').trim() : '';
+  const assignedLower = String(
+    hasContactOwnerField && !contactOwnerId
+      ? 'Unassigned'
+      : contactSnapshot?.ownerName ||
+        contactSnapshot?.assignedToName ||
+        contactSnapshot?.assignedAgentName ||
+        contactSnapshot?.assigneeName ||
+        conversation?.assignedToName ||
+        conversation?.assignedAgentName ||
+        conversation?.assigneeName ||
+        conversation?.assignedTo ||
+        conversation?.assignedAgent ||
+        ''
+  )
+    .trim()
+    .toLowerCase();
+  const leadStatusLower = String(conversation?.leadStatus || conversation?.contactId?.leadStatus || '')
+    .trim()
+    .toLowerCase();
+  const leadStageLower = String(conversation?.contactId?.stage || conversation?.contactId?.customFields?.stage || '')
+    .trim()
+    .toLowerCase();
+  const assignedLookupId = String(getConversationAssignedLookupId(conversation) || '').trim();
+  const searchParts = [
+    summaryId,
+    contactNameLower,
+    contactPhone,
+    contactPhoneDigits,
+    previewTextLower,
+    lastMessageLower,
+    String(
+      conversation?.assignedToName ||
+        conversation?.assignedAgentName ||
+        conversation?.assigneeName ||
+        conversation?.contactId?.assignedToName ||
+        conversation?.contactId?.assignedAgentName ||
+        conversation?.contactId?.assigneeName ||
+        conversation?.contactId?.ownerName ||
+        ''
+    )
+      .trim()
+      .toLowerCase(),
+    assignedLower,
+    assignedLookupId,
+    leadStatusLower,
+    leadStageLower
+  ]
+    .map((value) => String(value || '').trim().toLowerCase())
+    .filter(Boolean);
+  const sidebarSearchText = Array.from(new Set(searchParts)).join(' ');
   const canonicalConversationId = String(
     conversation?.conversationId ||
       conversation?.conversation_id ||
@@ -41,10 +104,14 @@ export const normalizeConversation = (conversation) => {
     ...(summaryId ? { summaryId } : {}),
     _id: canonicalConversationId || String(conversation?._id || '').trim(),
     id: canonicalConversationId || String(conversation?.id || '').trim() || String(conversation?._id || '').trim(),
+    contactPhone,
+    contactPhoneDigits,
+    contactNameLower,
     unreadCount: getUnreadCount(conversation),
     lastMessageMediaType:
       previewMeta.mediaType || String(conversation?.lastMessageMediaType || '').trim(),
-    lastMessagePreviewText: previewMeta.previewText
+    lastMessagePreviewText: previewMeta.previewText,
+    sidebarSearchText
   };
 };
 
@@ -337,6 +404,39 @@ export const patchConversationInOrderedList = (
   return nextConversations;
 };
 
+export const removeConversationByIdFromOrderedList = (conversations = [], conversationId = '') => {
+  const normalizedConversationId = String(conversationId || '').trim();
+  if (!normalizedConversationId) return Array.isArray(conversations) ? [...conversations] : [];
+
+  const nextConversations = Array.isArray(conversations) ? [...conversations] : [];
+  const existingIndex = nextConversations.findIndex(
+    (conversation) => getConversationIdValue(conversation) === normalizedConversationId
+  );
+  if (existingIndex < 0) return nextConversations;
+
+  nextConversations.splice(existingIndex, 1);
+  return nextConversations;
+};
+
+export const patchConversationsByIds = (
+  conversations = [],
+  conversationIds = [],
+  patch = {}
+) => {
+  const idSet = new Set(
+    (Array.isArray(conversationIds) ? conversationIds : [])
+      .map((conversationId) => String(conversationId || '').trim())
+      .filter(Boolean)
+  );
+  if (idSet.size === 0) return Array.isArray(conversations) ? [...conversations] : [];
+
+  return (Array.isArray(conversations) ? conversations : []).map((conversation) => {
+    const conversationId = getConversationIdValue(conversation);
+    if (!idSet.has(conversationId)) return conversation;
+    return typeof patch === 'function' ? patch(conversation) : { ...conversation, ...patch };
+  });
+};
+
 export const dedupeConversationListByIdentity = (conversations = []) => {
   let nextConversations = [];
   (Array.isArray(conversations) ? conversations : []).forEach((conversation) => {
@@ -434,6 +534,21 @@ export const getContactTags = (conversation) =>
   getContactTagsRaw(conversation).map((tag) => tag.toLowerCase());
 
 export const deriveLeadStatus = (conversation) => {
+  const explicitLeadStatus = String(
+    conversation?.leadStatus ||
+      conversation?.contactId?.leadStatus ||
+      conversation?.status ||
+      ''
+  )
+    .trim()
+    .toLowerCase();
+  if (explicitLeadStatus === 'new_lead') return 'New Lead';
+  if (explicitLeadStatus === 'interested') return 'Interested';
+  if (explicitLeadStatus === 'follow_up') return 'Follow Up';
+  if (explicitLeadStatus === 'proposal_sent') return 'Proposal Sent';
+  if (explicitLeadStatus === 'converted') return 'Converted';
+  if (explicitLeadStatus === 'closed') return 'Closed';
+
   const normalizedStatus = String(conversation?.contactId?.status || '').trim().toLowerCase();
   if (normalizedStatus === 'qualified') return 'Qualified';
   if (normalizedStatus === 'unqualified') return 'Unqualified';
@@ -455,6 +570,14 @@ export const getLeadStageValue = (conversation, stageOptions = leadStageOptions)
     .toLowerCase();
   if (stageOptions.some((option) => option.value === rawStage)) return rawStage;
   return 'new';
+};
+
+export const getLeadStageLabel = (conversation, stageOptions = leadStageOptions) => {
+  const stageValue = getLeadStageValue(conversation, stageOptions);
+  const matchedStage = (Array.isArray(stageOptions) ? stageOptions : leadStageOptions).find(
+    (stage) => String(stage?.value || '').trim().toLowerCase() === stageValue
+  );
+  return String(matchedStage?.label || getPipelineStageLabel(stageValue)).trim() || 'New Lead';
 };
 
 export const getCrmActivityLabel = (activity = {}) => {

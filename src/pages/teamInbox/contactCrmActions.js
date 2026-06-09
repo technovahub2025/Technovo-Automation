@@ -33,8 +33,12 @@ export const createContactCrmActions = ({
   getContactIdFromConversation,
   getContactTagsRaw,
   getConversationIdValue,
+  currentUserId,
   toIsoFromDateTimeLocalInput,
   toDateTimeLocalInputValue,
+  refreshInboxOverview,
+  setInboxView,
+  isAgentRestricted = false,
   confirmAction
 }) => {
   const confirmWithFallback = async (message) => {
@@ -43,6 +47,15 @@ export const createContactCrmActions = ({
     }
     console.warn('Team Inbox confirm callback missing:', String(message || '').trim());
     return false;
+  };
+
+  const refreshInboxOverviewSafely = async () => {
+    if (typeof refreshInboxOverview !== 'function') return;
+    try {
+      await refreshInboxOverview();
+    } catch (error) {
+      console.warn('Failed to refresh Team Inbox overview:', error);
+    }
   };
 
   const applyContactUpdateLocally = (updatedContact) => {
@@ -94,6 +107,47 @@ export const createContactCrmActions = ({
 
     setConversations((prev) => prev.map((conversation) => mergeConversationWithContact(conversation)));
     setSelectedConversation((prev) => mergeConversationWithContact(prev));
+  };
+
+  const applyConversationPatchLocally = (patch = {}) => {
+    const conversationId = getConversationIdValue(selectedConversation);
+    if (!conversationId) return;
+
+    setConversations((prev) =>
+      prev.map((conversation) =>
+        getConversationIdValue(conversation) === conversationId
+          ? {
+              ...conversation,
+              ...patch,
+              ...(patch.assignedTo !== undefined ? { assignedTo: patch.assignedTo } : {}),
+              ...(patch.assignedAgent !== undefined ? { assignedAgent: patch.assignedAgent } : {}),
+              ...(patch.leadStatus !== undefined ? { leadStatus: patch.leadStatus } : {}),
+              ...(patch.followupAt !== undefined ? { followupAt: patch.followupAt } : {}),
+              ...(patch.important !== undefined ? { important: patch.important } : {}),
+              ...(patch.status !== undefined ? { status: patch.status } : {}),
+              ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+              ...(Array.isArray(patch.internalNotes) ? { internalNotes: patch.internalNotes } : {})
+            }
+          : conversation
+      )
+    );
+
+    setSelectedConversation((prev) =>
+      getConversationIdValue(prev) === conversationId
+        ? {
+            ...prev,
+            ...patch,
+            ...(patch.assignedTo !== undefined ? { assignedTo: patch.assignedTo } : {}),
+            ...(patch.assignedAgent !== undefined ? { assignedAgent: patch.assignedAgent } : {}),
+            ...(patch.leadStatus !== undefined ? { leadStatus: patch.leadStatus } : {}),
+            ...(patch.followupAt !== undefined ? { followupAt: patch.followupAt } : {}),
+            ...(patch.important !== undefined ? { important: patch.important } : {}),
+            ...(patch.status !== undefined ? { status: patch.status } : {}),
+            ...(patch.notes !== undefined ? { notes: patch.notes } : {}),
+            ...(Array.isArray(patch.internalNotes) ? { internalNotes: patch.internalNotes } : {})
+          }
+        : prev
+    );
   };
 
   const ensureSelectedContactExists = async () => {
@@ -215,7 +269,9 @@ export const createContactCrmActions = ({
 
     try {
       if (!silent) setCrmDocumentsLoading(true);
-      const result = await crmService.listContactDocuments(resolvedContactId);
+      const result = await crmService.listContactDocuments(resolvedContactId, {
+        conversationId: getConversationIdValue(selectedConversation)
+      });
       if (result?.success === false) {
         throw new Error(result?.error || 'Failed to load contact documents');
       }
@@ -512,6 +568,187 @@ export const createContactCrmActions = ({
     }
   };
 
+  const handleAssignConversation = async (assignedTo) => {
+    const conversationId = getConversationIdValue(selectedConversation);
+    const nextAssignedTo = String(assignedTo || '').trim();
+    if (!conversationId || !nextAssignedTo) {
+      setContactInfoMessage('Please choose an agent to assign this chat.');
+      setContactInfoMessageTone('error');
+      return false;
+    }
+
+    try {
+      setContactInfoActionBusy(true);
+      const result = await whatsappService.assignConversation(conversationId, nextAssignedTo);
+      if (result?.success === false) {
+        throw new Error(result?.error || 'Failed to assign conversation.');
+      }
+      applyConversationPatchLocally({
+        assignedTo: nextAssignedTo,
+        assignedAgent: nextAssignedTo,
+        assignedToId: nextAssignedTo
+      });
+      if (!isAgentRestricted && typeof setInboxView === 'function') {
+        setInboxView('all');
+      }
+      setContactInfoMessage('Conversation assigned successfully.');
+      setContactInfoMessageTone('success');
+      void refreshInboxOverviewSafely();
+      return true;
+    } catch (error) {
+      setContactInfoMessage(error?.message || 'Failed to assign conversation.');
+      setContactInfoMessageTone('error');
+      return false;
+    } finally {
+      setContactInfoActionBusy(false);
+    }
+  };
+
+  const handleSetConversationImportant = async (important) => {
+    const conversationId = getConversationIdValue(selectedConversation);
+    if (!conversationId) return false;
+
+    try {
+      setContactInfoActionBusy(true);
+      const result = await whatsappService.setConversationImportant(conversationId, Boolean(important));
+      if (result?.success === false) {
+        throw new Error(result?.error || 'Failed to update conversation flag.');
+      }
+      applyConversationPatchLocally({ important: Boolean(important) });
+      setContactInfoMessage(important ? 'Conversation marked important.' : 'Important flag cleared.');
+      setContactInfoMessageTone('success');
+      void refreshInboxOverviewSafely();
+      return true;
+    } catch (error) {
+      setContactInfoMessage(error?.message || 'Failed to update conversation flag.');
+      setContactInfoMessageTone('error');
+      return false;
+    } finally {
+      setContactInfoActionBusy(false);
+    }
+  };
+
+  const handleCloseConversation = async () => {
+    const conversationId = getConversationIdValue(selectedConversation);
+    if (!conversationId) return false;
+
+    try {
+      setContactInfoActionBusy(true);
+      const result = await whatsappService.closeConversation(conversationId);
+      if (result?.success === false) {
+        throw new Error(result?.error || 'Failed to close conversation.');
+      }
+      applyConversationPatchLocally({ status: 'resolved', leadStatus: 'closed' });
+      setContactInfoMessage('Conversation closed.');
+      setContactInfoMessageTone('success');
+      void refreshInboxOverviewSafely();
+      return true;
+    } catch (error) {
+      setContactInfoMessage(error?.message || 'Failed to close conversation.');
+      setContactInfoMessageTone('error');
+      return false;
+    } finally {
+      setContactInfoActionBusy(false);
+    }
+  };
+
+  const handleReopenConversation = async () => {
+    const conversationId = getConversationIdValue(selectedConversation);
+    if (!conversationId) return false;
+
+    try {
+      setContactInfoActionBusy(true);
+      const result = await whatsappService.reopenConversation(conversationId);
+      if (result?.success === false) {
+        throw new Error(result?.error || 'Failed to reopen conversation.');
+      }
+      applyConversationPatchLocally({ status: 'active', leadStatus: 'new_lead' });
+      setContactInfoMessage('Conversation reopened.');
+      setContactInfoMessageTone('success');
+      void refreshInboxOverviewSafely();
+      return true;
+    } catch (error) {
+      setContactInfoMessage(error?.message || 'Failed to reopen conversation.');
+      setContactInfoMessageTone('error');
+      return false;
+    } finally {
+      setContactInfoActionBusy(false);
+    }
+  };
+
+  const handleAddInternalNote = async (noteText) => {
+    const conversationId = getConversationIdValue(selectedConversation);
+    const text = String(noteText || '').trim();
+    if (!conversationId || !text) {
+      setContactInfoMessage('Please enter a note before saving.');
+      setContactInfoMessageTone('error');
+      return false;
+    }
+
+    try {
+      setContactInfoActionBusy(true);
+      const result = await whatsappService.addConversationNote(conversationId, text);
+      if (result?.success === false) {
+        throw new Error(result?.error || 'Failed to save note.');
+      }
+      applyConversationPatchLocally({
+        notes: text,
+        internalNotes: Array.isArray(result?.data?.internalNotes)
+          ? result.data.internalNotes
+          : [
+              ...(Array.isArray(selectedConversation?.internalNotes) ? selectedConversation.internalNotes : []),
+              {
+                text,
+                createdBy: currentUserId || null,
+                createdAt: new Date().toISOString()
+              }
+            ]
+      });
+      setContactInfoMessage('Internal note saved.');
+      setContactInfoMessageTone('success');
+      void refreshInboxOverviewSafely();
+      return true;
+    } catch (error) {
+      setContactInfoMessage(error?.message || 'Failed to save note.');
+      setContactInfoMessageTone('error');
+      return false;
+    } finally {
+      setContactInfoActionBusy(false);
+    }
+  };
+
+  const handleCreateFollowupTask = async ({ followupAt, title, description, priority, assignedTo } = {}) => {
+    const conversationId = getConversationIdValue(selectedConversation);
+    if (!conversationId) return false;
+
+    try {
+      setContactInfoActionBusy(true);
+      const result = await whatsappService.createConversationFollowup(conversationId, {
+        followupAt,
+        title,
+        description,
+        priority,
+        assignedTo
+      });
+      if (result?.success === false) {
+        throw new Error(result?.error || 'Failed to create follow-up.');
+      }
+      applyConversationPatchLocally({
+        followupAt: followupAt || null
+      });
+      setContactInfoMessage('Follow-up saved.');
+      setContactInfoMessageTone('success');
+      void refreshInboxOverviewSafely();
+      return true;
+    } catch (error) {
+      setContactInfoMessage(error?.message || 'Failed to create follow-up.');
+      setContactInfoMessageTone('error');
+      return false;
+    } finally {
+      setContactInfoActionBusy(false);
+    }
+  };
+
   return {
     applyContactUpdateLocally,
     loadCrmActivitiesForContact,
@@ -525,6 +762,12 @@ export const createContactCrmActions = ({
     handleOpenCrmDocument,
     handleDownloadCrmDocument,
     handleDeleteCrmDocument,
-    handleUploadCrmDocument
+    handleUploadCrmDocument,
+    handleAssignConversation,
+    handleSetConversationImportant,
+    handleCloseConversation,
+    handleReopenConversation,
+    handleAddInternalNote,
+    handleCreateFollowupTask
   };
 };

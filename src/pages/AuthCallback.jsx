@@ -2,6 +2,8 @@ import { useEffect, useContext } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { AuthContext } from "./authcontext";
 import axios from "axios";
+import { buildAgentAccessPayload } from "../utils/agentAccess";
+import { resolveAgentWorkspaceState } from "../utils/agentAccess";
 
 const AuthCallback = () => {
   const [params] = useSearchParams();
@@ -44,11 +46,12 @@ const AuthCallback = () => {
             trialLimits: data.trialLimits || null,
             documentStatus: data.documentStatus || "not_required",
             workspaceAccessState: data.workspaceAccessState || "",
+            ...buildAgentAccessPayload(data),
             canPerformActions: data.canPerformActions !== false,
             canViewAnalytics: data.canViewAnalytics !== false
           };
           login(user, token, "local");
-          navigate("/", { replace: true });
+          navigate(resolveAgentWorkspaceState(user) ? "/inbox" : "/", { replace: true });
         })
         .catch(() => {
           navigate("/login", { replace: true });

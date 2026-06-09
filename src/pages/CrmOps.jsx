@@ -1450,7 +1450,7 @@ const CrmOps = () => {
                       <tr key={owner.ownerId || owner.ownerName}>
                         <td>
                           <strong>{owner.ownerName || "Unassigned"}</strong>
-                          <span>{owner.ownerId || "No owner id"}</span>
+                          <span>{owner.ownerName || "Unassigned"}</span>
                         </td>
                         <td>{owner.contactCount}</td>
                         <td>{owner.overdueFollowUps}</td>

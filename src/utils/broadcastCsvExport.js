@@ -14,6 +14,8 @@ export const BROADCAST_CAMPAIGN_EXPORT_HEADERS = [
   'Campaign Name',
   'Campaign Id',
   'Status',
+  'Created By',
+  'Created By Id',
   'Created Time',
   'Scheduled Time',
   'Recipients',
@@ -93,11 +95,15 @@ export const mapBroadcastToCampaignExportRow = (broadcast = {}) => {
     compliancePolicy?.suppressionListCount ||
     (Array.isArray(compliancePolicy?.suppressionList) ? compliancePolicy.suppressionList.length : 0)
   );
+  const createdBy = String(broadcast?.createdBy || broadcast?.createdByEmail || '').trim();
+  const createdById = String(broadcast?.createdById || '').trim();
 
   return [
     broadcast?.name || '',
     broadcast?._id || broadcast?.id || '',
     broadcast?.status || '',
+    createdBy,
+    createdById,
     formatDateTime(broadcast?.createdAt),
     formatDateTime(broadcast?.scheduledAt) || 'Immediate',
     recipients,

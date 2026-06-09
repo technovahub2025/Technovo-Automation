@@ -125,7 +125,10 @@ export const useTeamInboxViewEffects = ({
       }
 
       if (typeof loadMessages === 'function') {
-        loadMessages(normalizedConversationId);
+        loadMessages(normalizedConversationId, {
+          reason: 'realtime_resync',
+          forceRefresh: false
+        });
       }
     }, REALTIME_RESYNC_DEBOUNCE_MS);
   };

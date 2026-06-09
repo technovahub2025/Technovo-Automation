@@ -1,181 +1,38 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Virtuoso } from 'react-virtuoso';
-import {
-  Search,
-  Filter,
-  MoreVertical,
-  ChevronDown,
-  ArrowUpToLine,
-  Loader2,
-  Trash2,
-  CheckCheck,
-  Image as ImageIcon,
-  FileText,
-  Video,
-  Mic
-} from 'lucide-react';
-import {
-  getConversationPreviewMeta,
-  resolveConversationSlaMeta
-} from './teamInboxDisplayUtils';
+import { Search, Filter, MoreVertical, Trash2, CheckCheck, UserRound, Bell } from 'lucide-react';
+import ConversationListContainer from './inbox/components/ConversationListContainer';
 
-const renderConversationMediaIcon = (mediaType = '') => {
-  switch (String(mediaType || '').trim().toLowerCase()) {
-    case 'image':
-      return <ImageIcon size={14} className="conversation-preview-media-icon" aria-hidden="true" />;
-    case 'document':
-      return <FileText size={14} className="conversation-preview-media-icon" aria-hidden="true" />;
-    case 'video':
-      return <Video size={14} className="conversation-preview-media-icon" aria-hidden="true" />;
-    case 'audio':
-      return <Mic size={14} className="conversation-preview-media-icon" aria-hidden="true" />;
-    default:
-      return null;
-  }
+const isIdLikeLabel = (value = '') => {
+  const normalized = String(value || '').trim();
+  if (!normalized) return true;
+  if (/^[0-9a-f]{24}$/i.test(normalized)) return true;
+  if (/^\d{8,}$/.test(normalized)) return true;
+  return false;
 };
 
-const ConversationRow = memo(function ConversationRow({
-  conversation,
-  selectedConversationId,
-  showSelectMode,
-  selectedForDeletionSet,
-  openConversationMenuId,
-  onConversationClick,
-  onDeleteConversation,
-  onToggleSelectForDeletion,
-  getUnreadCount,
-  getConversationAvatarText,
-  getConversationDisplayName,
-  formatConversationTime
-}) {
-  const activeConversationMenuRef = useRef(null);
-  const conversationId = String(conversation?._id || '').trim();
-  const isConversationMenuOpen = !showSelectMode && openConversationMenuId === conversationId;
-  const unreadCount = getUnreadCount(conversation);
-  const leadScoreRaw = Number(conversation?.contactId?.leadScore ?? conversation?.leadScore ?? 0);
-  const leadScore = Number.isFinite(leadScoreRaw) ? Math.max(0, Math.round(leadScoreRaw)) : 0;
-  const previewMeta = getConversationPreviewMeta(conversation);
-  const slaMeta = resolveConversationSlaMeta(conversation);
-  const hasOpsMeta = Boolean(slaMeta.label);
-  const isActiveConversation = selectedConversationId === conversationId;
-  const isSelectedForDeletion = selectedForDeletionSet.has(conversationId);
-
-  return (
-    <div
-      className={`conversation-item ${isActiveConversation ? 'active' : ''} ${
-        showSelectMode ? 'select-mode' : ''
-      } ${unreadCount > 0 ? 'has-unread' : ''} ${isConversationMenuOpen ? 'menu-open' : ''}`}
-      onClick={() => {
-        if (showSelectMode) {
-          onToggleSelectForDeletion(conversationId);
-          return;
-        }
-        onConversationClick(conversation);
-      }}
-    >
-      {showSelectMode && (
-        <div className="select-checkbox">
-          <input
-            type="checkbox"
-            checked={isSelectedForDeletion}
-            onChange={() => onToggleSelectForDeletion(conversationId)}
-            onClick={(event) => event.stopPropagation()}
-          />
-        </div>
-      )}
-
-      <div className="avatar">{getConversationAvatarText(conversation)}</div>
-
-      <div className="conversation-info">
-        <div className="conversation-top">
-          <div className="conversation-name-row">
-            <span className="name">{getConversationDisplayName(conversation)}</span>
-            <span className="conversation-score-chip" title={`Lead score: ${leadScore}`}>
-              {leadScore}
-            </span>
-          </div>
-          <div className="conversation-meta-right">
-            <span className={`time conversation-time-label ${unreadCount > 0 ? 'unread' : ''}`}>
-              {formatConversationTime(conversation.lastMessageTime)}
-            </span>
-            <div className="conversation-meta-bottom">
-              {unreadCount > 0 && <span className="team-unread-badge">{unreadCount}</span>}
-              {!showSelectMode && (
-                <div
-                  className="conversation-menu-anchor"
-                  ref={isConversationMenuOpen ? activeConversationMenuRef : null}
-                >
-                  <button
-                    className="conversation-hover-chevron"
-                    type="button"
-                    aria-label="Conversation actions"
-                    aria-haspopup="menu"
-                    aria-expanded={isConversationMenuOpen}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onConversationClick?.(conversation, { toggleMenu: true });
-                    }}
-                  >
-                    <ChevronDown size={17} strokeWidth={2.3} />
-                  </button>
-
-                  {isConversationMenuOpen && (
-                    <div className="inbox-select-menu conversation-row-menu" role="menu">
-                      <button
-                        className="select-menu-item conversation-row-menu-item danger"
-                        type="button"
-                        role="menuitem"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          onDeleteConversation?.(conversation);
-                        }}
-                      >
-                        <Trash2 size={16} strokeWidth={2} />
-                        <span>Delete chat</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        <div className="conversation-bottom">
-          <div className="conversation-preview-line">
-            {previewMeta.showStatusIcon && (
-              <CheckCheck size={14} className="conversation-preview-status-icon" aria-hidden="true" />
-            )}
-            {previewMeta.isMedia && renderConversationMediaIcon(previewMeta.mediaType)}
-            <p className="preview">{previewMeta.previewText}</p>
-          </div>
-        </div>
-        {hasOpsMeta && (
-          <div className="conversation-operator-meta">
-            {slaMeta.label && (
-              <span
-                className={`conversation-operator-chip conversation-operator-chip--sla ${
-                  slaMeta.tone ? `conversation-operator-chip--${slaMeta.tone}` : ''
-                }`}
-              >
-                {slaMeta.label}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-});
+const resolveAgentOptionLabel = (agent = {}, fallbackLabel = 'Agent') => {
+  const companyRole = String(agent?.companyRole || agent?.role || '').trim().toLowerCase();
+  const label = String(
+    agent?.label || agent?.displayName || agent?.name || agent?.fullName || agent?.email || ''
+  ).trim();
+  if (label && !isIdLikeLabel(label)) return label;
+  if (companyRole === 'admin') return 'Admin';
+  return fallbackLabel;
+};
 
 const ConversationSidebar = ({
   wsConnected,
-  refreshing,
+  loading,
   loadingMoreConversations,
+  hasMoreConversations,
+  conversationListExhausted,
   showFilterMenu,
   showSelectMenu,
+  showInboxNotificationsMenu,
   showSelectMode,
   selectedForDeletion,
-  loading,
+  bulkAssignTarget,
+  bulkAssignBusy,
   filteredConversations,
   selectedConversation,
   searchTerm,
@@ -184,79 +41,84 @@ const ConversationSidebar = ({
   onToggleFilterMenu,
   onSelectFilter,
   onToggleSelectMenu,
+  onToggleInboxNotificationsMenu,
   onToggleSelectMode,
   onDeleteSelectedChats,
   onDeleteConversation,
   onResolveSelection,
   onConversationClick,
   onToggleSelectForDeletion,
-  allowLoadMoreConversations,
-  hasMoreConversations,
-  conversationListExhausted,
   onLoadMoreConversations,
   getUnreadCount,
   getConversationAvatarText,
   getConversationDisplayName,
-  formatConversationTime
+  formatConversationTime,
+  onAssignConversation,
+  canAssignChats = false,
+  currentUserId = '',
+  availableAgents = [],
+  setBulkAssignTarget,
+  onBulkAssignSelectedChats,
+  inboxView = 'all',
+  inboxFilterOptions = [],
+  onInboxViewChange,
+  inboxFilterTitle = 'Chat Filters',
+  inboxFilterDescription = '',
+  inboxWorkspaceLabel = '',
+  inboxWorkspaceHint = '',
+  inboxNotifications = [],
+  onClearInboxNotifications
 }) => {
   const [openConversationMenuId, setOpenConversationMenuId] = useState('');
-  const [showJumpToNewest, setShowJumpToNewest] = useState(false);
-  const [showLoadMoreIndicator, setShowLoadMoreIndicator] = useState(false);
+  const [showAdminActionsMenu, setShowAdminActionsMenu] = useState(false);
+  const inboxNotificationMenuRef = useRef(null);
+  const bulkAssignSelectRef = useRef(null);
+  const displayableAgents = useMemo(() => {
+    return (Array.isArray(availableAgents) ? availableAgents : []).map((agent) => {
+      const agentId = String(agent?.id || agent?._id || agent?.userId || '').trim();
+      const agentLabel = resolveAgentOptionLabel(agent, 'Agent');
+
+      return {
+        ...agent,
+        id: agentId || agent?.id || agent?._id || agent?.userId,
+        _id: agentId || agent?._id || agent?.id || agent?.userId,
+        userId: agentId || agent?.userId || agent?.id || agent?._id,
+        label: agentLabel,
+        displayName: agentLabel,
+        name: agentLabel
+      };
+    });
+  }, [availableAgents]);
+
   const selectedConversationId = String(selectedConversation?._id || '').trim();
-  const virtuosoRef = useRef(null);
-  const scrollerRef = useRef(null);
-  const bottomLoadTriggeredRef = useRef(false);
-  const loadMoreRequestLockRef = useRef(false);
-  const loadMoreIndicatorStartedAtRef = useRef(0);
-  const loadMoreIndicatorHideTimerRef = useRef(null);
-  const unreadConversationCount = useMemo(
-    () =>
-      (Array.isArray(filteredConversations) ? filteredConversations : []).reduce(
-        (total, conversation) => total + (Number(getUnreadCount(conversation)) > 0 ? 1 : 0),
-        0
-      ),
-    [filteredConversations, getUnreadCount]
-  );
   const selectedForDeletionSet = useMemo(
     () => new Set((Array.isArray(selectedForDeletion) ? selectedForDeletion : []).map((id) => String(id || '').trim())),
     [selectedForDeletion]
   );
 
-  const setSidebarScrollerRef = useCallback((node) => {
-    scrollerRef.current = node || null;
-  }, []);
+  useEffect(() => {
+    if (!showAdminActionsMenu) return undefined;
+    if (!canAssignChats) return undefined;
+    const timer = window.setTimeout(() => {
+      bulkAssignSelectRef.current?.focus?.();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [showAdminActionsMenu, canAssignChats]);
 
   useEffect(() => {
-    if (!openConversationMenuId) return undefined;
+    if (!showInboxNotificationsMenu) return undefined;
 
     const handlePointerDown = (event) => {
       const target = event?.target;
       if (!target) return;
-      const menu = document.querySelector('.conversation-row-menu[role="menu"]');
+      const menu = inboxNotificationMenuRef.current;
       if (menu && menu.contains(target)) return;
-      setOpenConversationMenuId('');
+      onToggleInboxNotificationsMenu?.();
     };
 
     document.addEventListener('mousedown', handlePointerDown);
     return () => document.removeEventListener('mousedown', handlePointerDown);
-  }, [openConversationMenuId]);
-
-  useEffect(() => {
-    const element = scrollerRef.current;
-    if (!element) return undefined;
-
-    const updateJumpState = () => {
-      const scrollTop = Number(element.scrollTop || 0);
-      setShowJumpToNewest((current) => {
-        if (current) return scrollTop > 90;
-        return scrollTop > 260;
-      });
-    };
-
-    updateJumpState();
-    element.addEventListener('scroll', updateJumpState, { passive: true });
-    return () => element.removeEventListener('scroll', updateJumpState);
-  }, [loading, refreshing]);
+  }, [onToggleInboxNotificationsMenu, showInboxNotificationsMenu]);
 
   const handleConversationClick = useCallback(
     (conversation, options = {}) => {
@@ -264,208 +126,23 @@ const ConversationSidebar = ({
       if (!conversationId) return;
 
       if (options?.toggleMenu) {
-        setOpenConversationMenuId((prev) => (prev === conversationId ? '' : conversationId));
+        setOpenConversationMenuId((current) => (current === conversationId ? '' : conversationId));
         return;
       }
 
       setOpenConversationMenuId('');
-      onConversationClick(conversation);
+      onConversationClick?.(conversation);
     },
     [onConversationClick]
   );
 
-  const triggerLoadMore = useCallback(async () => {
-    if (!allowLoadMoreConversations || loadingMoreConversations || loadMoreRequestLockRef.current) {
-      return false;
-    }
-
-    loadMoreRequestLockRef.current = true;
-    bottomLoadTriggeredRef.current = true;
-    loadMoreIndicatorStartedAtRef.current = Date.now();
-    setShowLoadMoreIndicator(true);
-
-    try {
-      return await onLoadMoreConversations?.();
-    } catch {
-      bottomLoadTriggeredRef.current = false;
-      return false;
-    } finally {
-      loadMoreRequestLockRef.current = false;
-    }
-  }, [allowLoadMoreConversations, loadingMoreConversations, onLoadMoreConversations]);
-
-  useEffect(() => {
-    if (loadingMoreConversations) {
-      if (loadMoreIndicatorHideTimerRef.current) {
-        window.clearTimeout(loadMoreIndicatorHideTimerRef.current);
-        loadMoreIndicatorHideTimerRef.current = null;
-      }
-      return undefined;
-    }
-
-    const startedAt = Number(loadMoreIndicatorStartedAtRef.current || 0);
-    const minVisibleMs = 900;
-    const elapsed = startedAt > 0 ? Date.now() - startedAt : minVisibleMs;
-    const remaining = Math.max(0, minVisibleMs - elapsed);
-
-    loadMoreIndicatorHideTimerRef.current = window.setTimeout(() => {
-      bottomLoadTriggeredRef.current = false;
-      setShowLoadMoreIndicator(false);
-      loadMoreIndicatorHideTimerRef.current = null;
-      loadMoreIndicatorStartedAtRef.current = 0;
-    }, remaining);
-
-    return () => {
-      if (loadMoreIndicatorHideTimerRef.current) {
-        window.clearTimeout(loadMoreIndicatorHideTimerRef.current);
-        loadMoreIndicatorHideTimerRef.current = null;
-      }
-    };
-  }, [loadingMoreConversations, filteredConversations.length]);
-
-  const handleEndReached = useCallback(() => {
-    if (!allowLoadMoreConversations || !hasMoreConversations) return;
-    if (loadingMoreConversations || loadMoreRequestLockRef.current) return;
-    if (bottomLoadTriggeredRef.current) return;
-
-    bottomLoadTriggeredRef.current = true;
-    void triggerLoadMore();
-  }, [allowLoadMoreConversations, hasMoreConversations, loadingMoreConversations, triggerLoadMore]);
-
-  useEffect(() => {
-    const element = scrollerRef.current;
-    if (!element) return undefined;
-
-    const handleScrollLoadMore = () => {
-      if (!allowLoadMoreConversations || !hasMoreConversations) {
-        bottomLoadTriggeredRef.current = false;
-        return;
-      }
-
-      if (loadingMoreConversations || loadMoreRequestLockRef.current) return;
-
-      const scrollTop = Number(element.scrollTop || 0);
-      const clientHeight = Number(element.clientHeight || 0);
-      const scrollHeight = Number(element.scrollHeight || 0);
-      const distanceFromBottom = scrollHeight - scrollTop - clientHeight;
-
-      if (distanceFromBottom > 280) {
-        bottomLoadTriggeredRef.current = false;
-        return;
-      }
-
-      if (bottomLoadTriggeredRef.current) return;
-      bottomLoadTriggeredRef.current = true;
-      void triggerLoadMore();
-    };
-
-    handleScrollLoadMore();
-    element.addEventListener('scroll', handleScrollLoadMore, { passive: true });
-    return () => element.removeEventListener('scroll', handleScrollLoadMore);
-  }, [
-    allowLoadMoreConversations,
-    hasMoreConversations,
-    loadingMoreConversations,
-    triggerLoadMore,
-    filteredConversations.length
-  ]);
-
-  const scrollToNewest = useCallback(() => {
-    const virtuoso = virtuosoRef.current;
-    if (virtuoso && typeof virtuoso.scrollToIndex === 'function') {
-      virtuoso.scrollToIndex({ index: 0, align: 'start', behavior: 'smooth' });
-    } else if (scrollerRef.current && typeof scrollerRef.current.scrollTo === 'function') {
-      scrollerRef.current.scrollTo({ top: 0, behavior: 'smooth' });
-    }
-    setShowJumpToNewest(false);
-  }, []);
-
-  const footer = useMemo(
-    () =>
-      function Footer() {
-        if (conversationListExhausted) {
-          return (
-            <div className="conversation-load-more-wrap conversation-load-more-wrap--end" aria-live="polite">
-              <div className="conversation-load-more-status conversation-load-more-status--end">
-                <span>No more chats</span>
-              </div>
-            </div>
-          );
-        }
-
-        if (!allowLoadMoreConversations && !loadingMoreConversations) {
-          return (
-            <div className="conversation-load-more-wrap" aria-hidden="true">
-              <div className="conversation-load-more-status conversation-load-more-status--idle">
-                <span className="conversation-load-more-divider" />
-              </div>
-            </div>
-          );
-        }
-
-        const isLoading = loadingMoreConversations || showLoadMoreIndicator;
-
-        return (
-          <div className={`conversation-load-more-wrap ${isLoading ? 'is-loading' : ''}`.trim()} aria-live="polite">
-            {isLoading ? (
-              <div
-                className="conversation-load-more-status conversation-load-more-status--loading conversation-load-more-status--blend"
-                role="status"
-                aria-live="polite"
-              >
-                <span className="conversation-load-more-divider conversation-load-more-divider--soft" />
-                <span className="conversation-load-more-loading-copy">
-                  <Loader2 size={13} className="conversation-load-more-spinner" aria-hidden="true" />
-                  <span className="conversation-load-more-text">Loading more chats...</span>
-                </span>
-                <span className="conversation-load-more-divider conversation-load-more-divider--soft" />
-              </div>
-            ) : (
-              <div className="conversation-load-more-status conversation-load-more-status--idle" aria-hidden="true">
-                <span className="conversation-load-more-divider" />
-              </div>
-            )}
-          </div>
-        );
-      },
-    [allowLoadMoreConversations, conversationListExhausted, loadingMoreConversations, showLoadMoreIndicator]
-  );
-
-  const itemContent = useCallback(
-    (_index, conversation) => (
-      <ConversationRow
-        conversation={conversation}
-        selectedConversationId={selectedConversationId}
-        showSelectMode={showSelectMode}
-        selectedForDeletionSet={selectedForDeletionSet}
-        openConversationMenuId={openConversationMenuId}
-        onConversationClick={handleConversationClick}
-        onDeleteConversation={onDeleteConversation}
-        onToggleSelectForDeletion={onToggleSelectForDeletion}
-        getUnreadCount={getUnreadCount}
-        getConversationAvatarText={getConversationAvatarText}
-        getConversationDisplayName={getConversationDisplayName}
-        formatConversationTime={formatConversationTime}
-      />
-    ),
-    [
-      getConversationAvatarText,
-      getConversationDisplayName,
-      getUnreadCount,
-      handleConversationClick,
-      onDeleteConversation,
-      onToggleSelectForDeletion,
-      openConversationMenuId,
-      selectedConversationId,
-      selectedForDeletionSet,
-      showSelectMode,
-      formatConversationTime
-    ]
-  );
-
-  const computeItemKey = useCallback((index, conversation) => {
-    return String(conversation?._id || conversation?.id || index).trim();
-  }, []);
+  const handleSelectChatToggle = useCallback((event) => {
+    event?.preventDefault?.();
+    event?.stopPropagation?.();
+    setShowAdminActionsMenu(false);
+    setOpenConversationMenuId('');
+    onToggleSelectMode?.();
+  }, [onToggleSelectMode]);
 
   return (
     <div className="inbox-sidebar">
@@ -473,6 +150,61 @@ const ConversationSidebar = ({
         <h2>Team Inbox</h2>
         <div className="inbox-actions">
           <div className={`connection-indicator ${wsConnected ? 'connected' : 'disconnected'}`} />
+
+          <div className="inbox-header-menu inbox-header-menu--alerts" ref={inboxNotificationMenuRef}>
+            <button
+              className={`icon-btn inbox-alerts-btn ${
+                Array.isArray(inboxNotifications) && inboxNotifications.length > 0 ? 'has-alerts' : ''
+              }`}
+              type="button"
+              aria-label="Inbox notifications"
+              title="Inbox notifications"
+              onClick={onToggleInboxNotificationsMenu}
+            >
+              <Bell size={18} />
+              {Array.isArray(inboxNotifications) && inboxNotifications.length > 0 ? (
+                <span className="inbox-alerts-badge">
+                  {inboxNotifications.length > 9 ? '9+' : inboxNotifications.length}
+                </span>
+              ) : null}
+            </button>
+            {showInboxNotificationsMenu ? (
+              <div className="inbox-select-menu inbox-notification-menu" role="menu">
+                <div className="inbox-notification-menu__header">
+                  <strong>Inbox alerts</strong>
+                  <button
+                    type="button"
+                    className="select-menu-item inbox-notification-menu__clear"
+                    onClick={() => onClearInboxNotifications?.()}
+                    disabled={!Array.isArray(inboxNotifications) || inboxNotifications.length === 0}
+                  >
+                    Clear
+                  </button>
+                </div>
+                {Array.isArray(inboxNotifications) && inboxNotifications.length > 0 ? (
+                  <div className="inbox-notification-menu__list">
+                    {inboxNotifications.map((notification) => (
+                      <div
+                        key={notification?.id}
+                        className={`inbox-notification-menu__item inbox-notification-menu__item--${String(notification?.tone || 'info').trim()}`}
+                      >
+                        <span className="inbox-notification-menu__message">
+                          {String(notification?.message || '')
+                            .replace(/\b[0-9a-f]{24}\b/gi, 'Agent')
+                            .replace(/\b\d{8,}\b/g, 'Agent')}
+                        </span>
+                        <span className="inbox-notification-menu__meta">
+                          {formatConversationTime(notification?.createdAt)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="inbox-notification-menu__empty">No recent alerts</div>
+                )}
+              </div>
+            ) : null}
+          </div>
 
           <div className="inbox-header-menu">
             <button
@@ -485,16 +217,35 @@ const ConversationSidebar = ({
               <Filter size={18} />
             </button>
             {showFilterMenu && (
-              <div className="inbox-select-menu">
-                <button className="select-menu-item" onClick={() => onSelectFilter('all')}>
-                  All Chats
-                </button>
-                <button className="select-menu-item" onClick={() => onSelectFilter('unread')}>
-                  Unread
-                </button>
-                <button className="select-menu-item" onClick={() => onSelectFilter('read')}>
-                  Read
-                </button>
+              <div className="inbox-select-menu inbox-filter-menu">
+                <div className="inbox-filter-menu__header">
+                  <strong>{inboxFilterTitle || 'Chat Filters'}</strong>
+                  <span>{inboxFilterDescription || 'Role-aware queue and workload filters'}</span>
+                </div>
+                <div className="inbox-filter-menu__list">
+                  {(Array.isArray(inboxFilterOptions) ? inboxFilterOptions : []).map((option) => {
+                    const isActive =
+                      String(inboxView || '').trim().toLowerCase() ===
+                      String(option?.value || '').trim().toLowerCase();
+                    return (
+                      <button
+                        key={`inbox-filter-menu-${option.value}`}
+                        className={`select-menu-item inbox-filter-menu__item ${isActive ? 'is-active' : ''} ${
+                          option?.disabled ? 'is-disabled' : ''
+                        }`.trim()}
+                        onClick={() => {
+                          if (option?.disabled) return;
+                          onInboxViewChange?.(option.value);
+                          onToggleFilterMenu?.();
+                        }}
+                        disabled={Boolean(option?.disabled)}
+                      >
+                        <span>{option?.label}</span>
+                        <span className="inbox-filter-menu__count">{Number(option?.count || 0)}</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             )}
           </div>
@@ -512,7 +263,12 @@ const ConversationSidebar = ({
 
             {showSelectMenu && (
               <div className="inbox-select-menu">
-                <button className="select-menu-item" onClick={onToggleSelectMode}>
+                <button
+                  type="button"
+                  className="select-menu-item"
+                  onPointerDown={(event) => event.stopPropagation()}
+                  onClick={handleSelectChatToggle}
+                >
                   {showSelectMode ? 'Cancel Select' : 'Select Chat'}
                 </button>
               </div>
@@ -530,101 +286,168 @@ const ConversationSidebar = ({
           ref={searchInputRef}
           onChange={(event) => onSearchTermChange(event.target.value)}
         />
-        {refreshing ? (
-          <div className="conversation-refresh-indicator" aria-live="polite">
-            Updating...
-          </div>
-        ) : null}
       </div>
 
       <div className="conversation-list">
-        {loading ? (
-          <div className="loading">Loading chats...</div>
-        ) : (
-          <>
-            {showSelectMode && (
-              <div className="selection-actions">
-                <button
-                  className="delete-selected-btn"
-                  onClick={onDeleteSelectedChats}
-                  disabled={selectedForDeletion.length === 0}
-                  style={{ opacity: selectedForDeletion.length === 0 ? 0.5 : 1 }}
-                >
-                  Delete Selected ({selectedForDeletion.length})
-                </button>
-                <button className="resolve-btn" onClick={onResolveSelection}>
-                  Resolve
-                </button>
+        {showSelectMode && (
+          <div className="selection-actions">
+            <div className="selection-actions__topbar">
+              <div className="selection-actions__summary">
+                Admin actions
+                <strong>{selectedForDeletion.length}</strong>
               </div>
-            )}
-
-            {filteredConversations.length === 0 ? (
-              <div className="conversation-empty-state" role="status" aria-live="polite">
-                <h4 className="conversation-empty-title">
-                  {String(searchTerm || '').trim()
-                    ? 'No conversations match your search'
-                    : 'No conversations found'}
-                </h4>
-                <p className="conversation-empty-copy">
-                  {String(searchTerm || '').trim()
-                    ? 'Try a different keyword or clear filters to see more chats.'
-                    : 'New chats will appear here once customers start messaging your team.'}
-                </p>
-                <div className="conversation-empty-actions">
-                  {String(searchTerm || '').trim() && (
-                    <button
-                      type="button"
-                      className="conversation-empty-btn"
-                      onClick={() => onSearchTermChange('')}
-                    >
-                      Clear Search
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className="conversation-empty-btn conversation-empty-btn--ghost"
-                    onClick={() => onSelectFilter('all')}
-                  >
-                    Show All Chats
-                  </button>
-                </div>
+              <div className="selection-actions__eyebrow">
+                Reassign selected chats or resolve them in one place.
               </div>
-            ) : (
-              <>
-                <Virtuoso
-                  ref={virtuosoRef}
-                  scrollerRef={setSidebarScrollerRef}
-                  style={{ height: '100%' }}
-                data={filteredConversations}
-                computeItemKey={computeItemKey}
-                itemContent={itemContent}
-                increaseViewportBy={220}
-                defaultItemHeight={88}
-                endReached={handleEndReached}
-                components={{ Footer: footer }}
-                className="conversation-virtuoso"
-              />
+            </div>
+            <div className="selection-actions__toolbar">
+              <button
+                type="button"
+                className="selection-actions__trigger"
+                onClick={() => setShowAdminActionsMenu((current) => !current)}
+                aria-haspopup="menu"
+                aria-expanded={showAdminActionsMenu}
+              >
+                <MoreVertical size={16} />
+                <span>Admin actions</span>
+              </button>
+              {canAssignChats ? (
                 <button
                   type="button"
-                  className={`conversation-jump-to-newest ${showJumpToNewest ? 'is-visible' : ''}`}
-                  onClick={scrollToNewest}
-                  aria-label="Jump to newest chats"
+                  className="selection-actions__quick"
+                  onClick={() => setShowAdminActionsMenu(true)}
                 >
-                  <ArrowUpToLine size={16} />
-                  <span>Newest</span>
-                  {unreadConversationCount > 0 && (
-                    <span className="conversation-jump-to-newest-badge">
-                      {unreadConversationCount > 99 ? '99+' : unreadConversationCount}
-                    </span>
-                  )}
+                  <UserRound size={14} />
+                  <span>Bulk assign</span>
                 </button>
-              </>
-            )}
-          </>
+              ) : null}
+              {showAdminActionsMenu ? (
+                <div className="selection-actions-menu" role="menu">
+                  <button
+                    type="button"
+                    className="selection-actions-menu__item"
+                    onClick={() => {
+                      setShowAdminActionsMenu(false);
+                      onDeleteSelectedChats?.();
+                    }}
+                    disabled={selectedForDeletion.length === 0}
+                  >
+                    <Trash2 size={14} />
+                    <span>Delete selected</span>
+                  </button>
+                  <button
+                    type="button"
+                    className="selection-actions-menu__item"
+                    onClick={() => {
+                      setShowAdminActionsMenu(false);
+                      onResolveSelection?.();
+                    }}
+                    disabled={selectedForDeletion.length === 0}
+                  >
+                    <CheckCheck size={14} />
+                    <span>Resolve selected</span>
+                  </button>
+                  {canAssignChats ? <div className="selection-actions-menu__divider" /> : null}
+                  {canAssignChats ? (
+                    <>
+                      <label className="selection-actions-menu__label">
+                        Reassign to
+                        <select
+                          className="lead-stage-select bulk-assign-select bulk-assign-select--menu"
+                          value={bulkAssignTarget}
+                          onChange={(event) => setBulkAssignTarget?.(event.target.value)}
+                          disabled={bulkAssignBusy}
+                          ref={bulkAssignSelectRef}
+                        >
+                          <option value="">Choose agent</option>
+                          {Array.isArray(displayableAgents)
+                            ? displayableAgents.map((agent) => {
+                                const agentId = String(agent?.id || agent?._id || agent?.userId || '').trim();
+                                const agentLabel = resolveAgentOptionLabel(agent, 'Agent');
+                                if (!agentId) return null;
+                                return (
+                                  <option key={`bulk-agent-${agentId}`} value={agentId}>
+                                    {agentLabel}
+                                  </option>
+                                );
+                              })
+                            : null}
+                        </select>
+                      </label>
+                      <button
+                        type="button"
+                        className="selection-actions-menu__item selection-actions-menu__item--primary"
+                        onClick={async () => {
+                          setShowAdminActionsMenu(false);
+                          await onBulkAssignSelectedChats?.(bulkAssignTarget);
+                        }}
+                        disabled={
+                          bulkAssignBusy ||
+                          selectedForDeletion.length === 0 ||
+                          !String(bulkAssignTarget || '').trim()
+                        }
+                      >
+                        <UserRound size={14} />
+                        <span>{bulkAssignBusy ? 'Reassigning...' : 'Reassign selected'}</span>
+                      </button>
+                      <button
+                        type="button"
+                        className="selection-actions-menu__item selection-actions-menu__item--ghost"
+                        onClick={async () => {
+                          setShowAdminActionsMenu(false);
+                          await onBulkAssignSelectedChats?.(currentUserId);
+                        }}
+                        disabled={
+                          bulkAssignBusy ||
+                          selectedForDeletion.length === 0 ||
+                          !String(currentUserId || '').trim()
+                        }
+                      >
+                        <UserRound size={14} />
+                        <span>Assign to me</span>
+                      </button>
+                    </>
+                  ) : null}
+                </div>
+              ) : null}
+            </div>
+            {canAssignChats ? (
+              <p className="selection-actions__hint">
+                Admins can reassign selected chats to an active agent or take ownership themselves.
+              </p>
+            ) : null}
+          </div>
         )}
+
+        <ConversationListContainer
+          conversations={filteredConversations}
+          loading={loading}
+          loadingMoreConversations={loadingMoreConversations}
+        hasMoreConversations={hasMoreConversations}
+        conversationListExhausted={conversationListExhausted}
+        onLoadMoreConversations={onLoadMoreConversations}
+          selectedConversationId={selectedConversationId}
+          showSelectMode={showSelectMode}
+          selectedForDeletion={selectedForDeletion}
+          openConversationMenuId={openConversationMenuId}
+          onConversationClick={handleConversationClick}
+          onDeleteConversation={onDeleteConversation}
+          onToggleSelectForDeletion={onToggleSelectForDeletion}
+          onAssignConversation={onAssignConversation}
+          onCloseConversationMenu={() => setOpenConversationMenuId('')}
+          getUnreadCount={getUnreadCount}
+          getConversationAvatarText={getConversationAvatarText}
+          getConversationDisplayName={getConversationDisplayName}
+          formatConversationTime={formatConversationTime}
+          canAssignChats={canAssignChats}
+          currentUserId={currentUserId}
+          availableAgents={availableAgents}
+          onBulkAssignSelectedChats={onBulkAssignSelectedChats}
+          bulkAssignBusy={bulkAssignBusy}
+        />
       </div>
     </div>
   );
 };
 
-export default React.memo(ConversationSidebar);
+export default memo(ConversationSidebar);

@@ -32,6 +32,8 @@ import {
 } from "../utils/sidebarPageCache";
 import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
 import useCrmUserRoster from "../hooks/useCrmUserRoster";
+import { getStoredWorkspaceUser, resolveWorkspaceManagementAccessState } from "../utils/agentAccess";
+import apiService from "../services/api";
 import CrmContactDrawer from "../components/crm/CrmContactDrawer";
 import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
 import CrmToast from "../components/crm/CrmToast";
@@ -256,6 +258,12 @@ const CrmTasks = () => {
   const [submitting, setSubmitting] = useState(false);
   const [busyTaskId, setBusyTaskId] = useState("");
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [taskAdminAgents, setTaskAdminAgents] = useState([]);
+  const [taskAdminAgentsLoading, setTaskAdminAgentsLoading] = useState(false);
+  const [taskAdminAgentsError, setTaskAdminAgentsError] = useState("");
+  const [taskAdminBulkAssignTarget, setTaskAdminBulkAssignTarget] = useState("");
+  const [taskAdminBulkAssignBucket, setTaskAdminBulkAssignBucket] = useState("overdue");
+  const [taskAdminBulkAssignBusy, setTaskAdminBulkAssignBusy] = useState(false);
   const [error, setError] = useState("");
   const [statusFilter, setStatusFilter] = useState(() =>
     TASK_STATUSES.some((status) => status.key === requestedStatusFilter)
@@ -308,10 +316,52 @@ const CrmTasks = () => {
   const taskLoadRequestIdRef = useRef(0);
   const loadDataRef = useRef(null);
   const currentUserId = resolveCacheUserId();
+  const workspaceUser = getStoredWorkspaceUser();
+  const isAdminWorkspace = resolveWorkspaceManagementAccessState(workspaceUser);
   const {
     users,
     loading: usersLoading
   } = useCrmUserRoster();
+
+  useEffect(() => {
+    if (!isAdminWorkspace) {
+      setTaskAdminAgents([]);
+      setTaskAdminAgentsError("");
+      setTaskAdminAgentsLoading(false);
+      return undefined;
+    }
+
+    let active = true;
+    setTaskAdminAgentsLoading(true);
+    setTaskAdminAgentsError("");
+
+    apiService
+      .getMyAgents()
+      .then((result) => {
+        if (!active) return;
+        const nextAgents = Array.isArray(result?.data?.agents)
+          ? result.data.agents.filter((agent) => {
+              const role = String(agent?.companyRole || agent?.role || "").trim().toLowerCase();
+              return role !== "admin" && agent?.isEnabled !== false;
+            })
+          : [];
+        setTaskAdminAgents(nextAgents);
+      })
+      .catch((error) => {
+        if (!active) return;
+        setTaskAdminAgents([]);
+        setTaskAdminAgentsError(error?.message || "Failed to load workspace agents");
+      })
+      .finally(() => {
+        if (!active) return;
+        setTaskAdminAgentsLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [isAdminWorkspace]);
+
   const [form, setForm] = useState(() => getInitialTaskForm(currentUserId));
   const isDefaultView =
     statusFilter === "all" &&
@@ -736,6 +786,22 @@ const CrmTasks = () => {
     return uniqueUsers;
   }, [bulkAssignedTo, currentUserId, form.assignedTo, users]);
 
+  const activeAgentOptions = useMemo(() => {
+    return (Array.isArray(taskAdminAgents) ? taskAdminAgents : [])
+      .map((agent) => ({
+        id: String(agent?._id || agent?.id || agent?.userId || "").trim(),
+        label: getUserDisplayLabel(agent, currentUserId)
+      }))
+      .filter((agent) => agent.id);
+  }, [currentUserId, taskAdminAgents]);
+
+  const taskAdminBulkAssignCount =
+    taskAdminBulkAssignBucket === "due_today"
+      ? Number(summary?.dueToday ?? 0)
+      : taskAdminBulkAssignBucket === "open"
+        ? Number(summary?.open ?? 0)
+        : Number(summary?.overdue ?? 0);
+
   const selectedTaskIdSet = useMemo(() => new Set(selectedTaskIds), [selectedTaskIds]);
   const selectionMode = selectedTaskIds.length > 0;
   const isEditingTask = Boolean(editingTaskId);
@@ -1013,6 +1079,74 @@ const CrmTasks = () => {
     }
   }, [loadData, selectedTaskIds]);
 
+  const assignAllFollowupTasks = useCallback(async () => {
+    if (!isAdminWorkspace) return;
+
+    const targetAssignedTo = String(taskAdminBulkAssignTarget || "").trim();
+    if (!targetAssignedTo) {
+      setToast({ type: "error", message: "Choose an active agent first." });
+      return;
+    }
+
+    if (!taskAdminBulkAssignCount) {
+      setToast({ type: "info", message: "No matching follow-up tasks available to assign." });
+      return;
+    }
+
+    const targetAgent = activeAgentOptions.find((agent) => agent.id === targetAssignedTo);
+    const targetLabel = targetAgent?.label || "selected agent";
+    const bucketLabel =
+      taskAdminBulkAssignBucket === "due_today"
+        ? "due today"
+        : taskAdminBulkAssignBucket === "open"
+          ? "open"
+          : "overdue";
+    const confirmed = window.confirm(
+      `Assign all ${taskAdminBulkAssignCount} ${bucketLabel} follow-up task${
+        taskAdminBulkAssignCount === 1 ? "" : "s"
+      } to ${targetLabel}?`
+    );
+    if (!confirmed) return;
+
+    setTaskAdminBulkAssignBusy(true);
+    try {
+      const result = await crmService.bulkUpdateTasks({
+        action: "assign",
+        matchAll: true,
+        criteria: {
+          bucket: taskAdminBulkAssignBucket
+        },
+        assignedTo: targetAssignedTo
+      });
+
+      if (result?.success === false) {
+        throw new Error(result?.error || "Failed to assign overdue tasks");
+      }
+
+      const assignedCount = Number(result?.data?.updatedCount || taskAdminBulkAssignCount || 0);
+      setTaskAdminBulkAssignTarget("");
+      setToast({
+        type: "success",
+        message: `Assigned ${assignedCount} task${assignedCount === 1 ? "" : "s"} to ${targetLabel}.`
+      });
+      await loadData({ silent: true });
+    } catch (assignError) {
+      setToast({
+        type: "error",
+        message: assignError?.message || "Failed to assign overdue tasks"
+      });
+    } finally {
+      setTaskAdminBulkAssignBusy(false);
+    }
+  }, [
+    activeAgentOptions,
+    isAdminWorkspace,
+    loadData,
+    taskAdminBulkAssignBucket,
+    taskAdminBulkAssignCount,
+    taskAdminBulkAssignTarget
+  ]);
+
   const openContactDrawer = useCallback((contact) => {
     const normalizedId = getEntityId(contact);
     setSelectedContactId(normalizedId);
@@ -1230,6 +1364,105 @@ const CrmTasks = () => {
             )
           )}
         </div>
+
+        {isAdminWorkspace ? (
+          <section className="crm-admin-task-assign-card" aria-labelledby="crm-admin-task-assign-title">
+            <div className="crm-admin-task-assign-card__header">
+              <div>
+                <span className="crm-admin-task-assign-card__eyebrow">Admin bulk action</span>
+                <h2 id="crm-admin-task-assign-title">Assign follow-up tasks to an active agent</h2>
+                <p>
+                  Push the follow-up queue into one agent workstream. The task owner updates cleanly and stays
+                  aligned with CRM ownership flows.
+                </p>
+              </div>
+              <div className="crm-admin-task-assign-card__count">
+                <strong>{taskAdminBulkAssignCount}</strong>
+                <span>
+                  {taskAdminBulkAssignBucket === "due_today"
+                    ? "Due today"
+                    : taskAdminBulkAssignBucket === "open"
+                      ? "Open tasks"
+                      : "Overdue"}
+                </span>
+              </div>
+            </div>
+
+            <div className="crm-admin-task-assign-card__body">
+              <div className="crm-admin-task-assign-card__stats">
+                <div className="crm-admin-task-assign-card__stat">
+                  <span>Active agents</span>
+                  <strong>{activeAgentOptions.length}</strong>
+                </div>
+                <div className="crm-admin-task-assign-card__stat">
+                  <span>Assignment mode</span>
+                  <strong>Workspace sync</strong>
+                </div>
+              </div>
+
+              <div className="crm-admin-task-assign-card__actions">
+                <label className="crm-field crm-admin-task-assign-card__select">
+                  <span>Follow-up queue</span>
+                  <select
+                    className="crm-select"
+                    value={taskAdminBulkAssignBucket}
+                    onChange={(event) => setTaskAdminBulkAssignBucket(event.target.value)}
+                    disabled={taskAdminBulkAssignBusy || taskAdminAgentsLoading}
+                  >
+                    <option value="overdue">Overdue follow-ups</option>
+                    <option value="due_today">Due today</option>
+                    <option value="open">Open follow-ups</option>
+                  </select>
+                </label>
+
+                <label className="crm-field crm-admin-task-assign-card__select">
+                  <span>Choose agent</span>
+                  <select
+                    className="crm-select"
+                    value={taskAdminBulkAssignTarget}
+                    onChange={(event) => setTaskAdminBulkAssignTarget(event.target.value)}
+                    disabled={taskAdminAgentsLoading || taskAdminBulkAssignBusy || activeAgentOptions.length === 0}
+                  >
+                    <option value="">
+                      {taskAdminAgentsLoading
+                        ? "Loading active agents..."
+                        : activeAgentOptions.length
+                          ? "Select an active agent"
+                          : "No active agents available"}
+                    </option>
+                    {activeAgentOptions.map((agent) => (
+                      <option key={agent.id} value={agent.id}>
+                        {agent.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <button
+                  type="button"
+                  className="crm-btn crm-btn-primary crm-btn--compact"
+                  onClick={assignAllFollowupTasks}
+                  disabled={
+                    taskAdminBulkAssignBusy ||
+                    taskAdminAgentsLoading ||
+                    !taskAdminBulkAssignTarget ||
+                    taskAdminBulkAssignCount <= 0
+                  }
+                >
+                  {taskAdminBulkAssignBusy ? "Assigning..." : "Assign follow-up tasks"}
+                </button>
+              </div>
+
+              <div className="crm-admin-task-assign-card__footnote">
+                {taskAdminAgentsError ? (
+                  <span className="crm-admin-task-assign-card__error">{taskAdminAgentsError}</span>
+                ) : (
+                  <span>Selected agent will own the chosen follow-up queue and task list stays in sync.</span>
+                )}
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {createTaskOpen && (
           <div className="crm-create-task-overlay" role="presentation">

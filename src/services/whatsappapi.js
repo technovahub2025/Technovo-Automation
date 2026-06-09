@@ -6,6 +6,11 @@ import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
 import { registerUnauthorizedAxiosInterceptor } from "./serviceAuth";
 import { normalizeError } from "../utils/errorUtils";
+import {
+  buildWorkspaceQueryScope,
+  getStoredWorkspaceUser,
+  resolveAgentWorkspaceState
+} from "../utils/agentAccess";
 
 const API_BASE_URL = resolveApiBaseUrl();
 const ADMIN_API_BASE_URL = String(import.meta.env.VITE_API_ADMIN_URL || "")
@@ -15,6 +20,64 @@ const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 30000);
 const LONG_TIMEOUT_MS = Number(
   import.meta.env.VITE_API_LONG_TIMEOUT_MS || 300000,
 );
+
+const getWorkspaceScope = (method = "get", url = "") => {
+  const user = getStoredWorkspaceUser();
+  if (!resolveAgentWorkspaceState(user)) return {};
+
+  const normalizedUrl = String(url || "").toLowerCase();
+  const scopeType =
+    normalizedUrl.includes("/contacts") ||
+    normalizedUrl.includes("/crm/contacts") ||
+    normalizedUrl.includes("/conversations") ||
+    normalizedUrl.includes("/messages")
+      ? "assignedTo"
+      : "createdBy";
+  return buildWorkspaceQueryScope(user, { scopeType });
+};
+
+axios.interceptors.request.use((config) => {
+  const url = String(config?.url || "").trim();
+  const method = String(config?.method || "get").toLowerCase();
+  const isWorkspaceUrl =
+    /^\/api\/(conversations|contacts|broadcasts|bulk|messages|templates|lead-scoring|crm)/i.test(url) ||
+    /^\/(api\/)?(conversations|contacts|broadcasts|bulk|messages|templates|lead-scoring|crm)/i.test(url);
+  if (!isWorkspaceUrl) return config;
+
+  const scope = getWorkspaceScope(method, url);
+  if (!scope || Object.keys(scope).length === 0) return config;
+
+  if (method === "get" || method === "delete") {
+    config.params = {
+      ...scope,
+      ...(config.params || {})
+    };
+    return config;
+  }
+
+  const data = config.data;
+  if (data instanceof FormData) {
+    Object.entries(scope).forEach(([key, value]) => {
+      if (typeof value === "undefined" || value === null || value === "") return;
+      if (!data.has(key)) data.append(key, String(value));
+    });
+    return config;
+  }
+
+  if (data && typeof data === "object" && !Array.isArray(data)) {
+    config.data = {
+      ...scope,
+      ...data
+    };
+  } else {
+    config.data = {
+      ...scope,
+      ...(typeof data === "undefined" ? {} : { payload: data })
+    };
+  }
+
+  return config;
+});
 
 const getStoredAuthToken = () => {
   const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
@@ -67,6 +130,26 @@ const buildAuthHeaders = (includeJsonContentType = true) => {
 
 const isBlobLike = (value) =>
   typeof Blob !== "undefined" && value instanceof Blob;
+
+const chunkArray = (items = [], size = 100) => {
+  const safeItems = Array.isArray(items) ? items : [];
+  const safeSize = Math.max(1, Number(size) || 100);
+  const chunks = [];
+  for (let index = 0; index < safeItems.length; index += safeSize) {
+    chunks.push(safeItems.slice(index, index + safeSize));
+  }
+  return chunks;
+};
+
+const isPayloadTooLargeError = (error) => {
+  const status = Number(error?.response?.status || 0);
+  const message = String(error?.response?.data || error?.message || "").toLowerCase();
+  return (
+    status === 413 ||
+    message.includes("payload too large") ||
+    message.includes("request entity too large")
+  );
+};
 
 const buildFallbackAudienceValidation = (data = {}) => {
   const recipients = Array.isArray(data?.recipients) ? data.recipients : [];
@@ -281,6 +364,19 @@ export const apiClient = {
   getMessages: (conversationId) =>
     api.get(`/conversations/${conversationId}/messages`, {
       timeout: LONG_TIMEOUT_MS,
+    }).then((response) => {
+      const data = response?.data;
+      const normalizedMessages = Array.isArray(data?.messages)
+        ? data.messages
+        : Array.isArray(data?.data)
+          ? data.data
+          : Array.isArray(data)
+            ? data
+            : [];
+      return {
+        ...response,
+        data: normalizedMessages
+      };
     }),
 
   /**
@@ -406,8 +502,75 @@ export const apiClient = {
    * Import multiple contacts
    * @param {Array} contacts - Array of contact objects
    */
-  importContacts: (contacts) =>
-    api.post("/contacts/import", { contacts }, { timeout: LONG_TIMEOUT_MS }),
+  importContacts: async (contacts) => {
+    const contactList = Array.isArray(contacts) ? contacts : [];
+    if (contactList.length <= 100) {
+      return api.post("/contacts/import", { contacts: contactList }, { timeout: LONG_TIMEOUT_MS });
+    }
+
+    const aggregatedResults = {
+      imported: 0,
+      failed: 0,
+      warnings: [],
+      errors: []
+    };
+    let overallSuccess = true;
+    const chunkMessages = [];
+
+    const importChunk = async (chunk) => {
+      if (!Array.isArray(chunk) || chunk.length === 0) return;
+
+      try {
+        const response = await api.post(
+          "/contacts/import",
+          { contacts: chunk },
+          { timeout: LONG_TIMEOUT_MS }
+        );
+        const results = response?.data?.results || {};
+        aggregatedResults.imported += Number(results.imported || 0);
+        aggregatedResults.failed += Number(results.failed || 0);
+        if (Array.isArray(results.warnings)) {
+          aggregatedResults.warnings.push(...results.warnings);
+        }
+        if (Array.isArray(results.errors)) {
+          aggregatedResults.errors.push(...results.errors);
+        }
+        if (response?.data?.message) {
+          chunkMessages.push(String(response.data.message).trim());
+        }
+        return;
+      } catch (error) {
+        if (isPayloadTooLargeError(error) && chunk.length > 1) {
+          const mid = Math.ceil(chunk.length / 2);
+          await importChunk(chunk.slice(0, mid));
+          await importChunk(chunk.slice(mid));
+          return;
+        }
+
+        overallSuccess = false;
+        aggregatedResults.failed += Array.isArray(chunk) ? chunk.length : 1;
+        aggregatedResults.errors.push({
+          line: "batch",
+          error: error?.response?.data?.error || error?.message || "Chunk import failed",
+          data: { batchSize: Array.isArray(chunk) ? chunk.length : 0 }
+        });
+      }
+    };
+
+    for (const chunk of chunkArray(contactList, 100)) {
+      await importChunk(chunk);
+    }
+
+    return {
+      data: {
+        success: overallSuccess || aggregatedResults.imported > 0,
+        message: chunkMessages.length
+          ? `Import completed across ${chunkMessages.length} successful batch${chunkMessages.length === 1 ? "" : "es"}`
+          : "Import completed",
+        results: aggregatedResults
+      }
+    };
+  },
 
   /**
    * Update contact

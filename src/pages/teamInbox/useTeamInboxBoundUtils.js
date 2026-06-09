@@ -19,8 +19,8 @@ import {
   getConversationLeadScore,
   getContactIdFromConversation,
   getContactTagsRaw,
-  deriveLeadStatus,
   getLeadStageValue,
+  getLeadStageLabel,
   getCrmActivityLabel,
   getCrmActivityDescription
 } from './teamInboxUtils';
@@ -50,9 +50,10 @@ export const useTeamInboxBoundUtils = (contactNameMap, stageOptions = leadStageO
       getConversationLeadScore,
       getContactIdFromConversation,
       getContactTagsRaw,
-      deriveLeadStatus,
       getLeadStageValue: (conversation) =>
         getLeadStageValue(conversation, Array.isArray(stageOptions) && stageOptions.length ? stageOptions : leadStageOptions),
+      getLeadStageLabel: (conversation) =>
+        getLeadStageLabel(conversation, Array.isArray(stageOptions) && stageOptions.length ? stageOptions : leadStageOptions),
       getCrmActivityLabel,
       getCrmActivityDescription
     }),

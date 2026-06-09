@@ -15,7 +15,7 @@ import {
 
 const BROADCAST_PAGE_CACHE_NAMESPACE = "broadcast-page";
 const BROADCAST_PAGE_CACHE_TTL_MS = 10 * 60 * 1000;
-const BROADCAST_PAGE_LIMIT = 25;
+const BROADCAST_PAGE_LIMIT = 10;
 
 const normalizeBroadcastStatus = (broadcast = {}) => {
   const status = String(broadcast?.status || "").trim().toLowerCase();
@@ -24,6 +24,71 @@ const normalizeBroadcastStatus = (broadcast = {}) => {
     return "completed";
   }
   return status;
+};
+
+const getBroadcastReliabilitySignals = (broadcast = {}) => {
+  const retrySummary = broadcast?.retrySummary || {};
+  const analytics = retrySummary?.analytics || {};
+  const stats = broadcast?.stats || {};
+  const status = normalizeBroadcastStatus(broadcast);
+
+  return {
+    suppressed: Number(analytics?.suppressed || 0) > 0,
+    deferred: Number(analytics?.deferred || 0) > 0,
+    retried: Number(analytics?.retried || 0) > 0,
+    failed: Number(stats?.failed || 0) > 0,
+    completedWithErrors: status === "completed_with_errors",
+    skippedQuietHours: Number(broadcast?.retrySummary?.analytics?.skippedQuietHours || 0) > 0,
+  };
+};
+
+const isHighRiskBroadcast = (broadcast = {}) => {
+  const signals = getBroadcastReliabilitySignals(broadcast);
+  return (
+    signals.failed ||
+    signals.completedWithErrors ||
+    signals.suppressed ||
+    signals.deferred ||
+    signals.retried ||
+    signals.skippedQuietHours
+  );
+};
+
+const isNeedsRetryBroadcast = (broadcast = {}) => {
+  const signals = getBroadcastReliabilitySignals(broadcast);
+  const status = normalizeBroadcastStatus(broadcast);
+  return (
+    signals.failed ||
+    signals.retried ||
+    signals.completedWithErrors ||
+    status === "failed" ||
+    status === "sending"
+  );
+};
+
+const normalizeCreatorFilterValue = (value = "") => String(value || "").trim();
+
+const isLikelyObjectId = (value = "") =>
+  /^[a-f0-9]{24}$/i.test(String(value || "").trim());
+
+const matchesCreatorFilter = (broadcast = {}, filterValue = "") => {
+  const normalizedFilter = normalizeCreatorFilterValue(filterValue);
+  if (!normalizedFilter || normalizedFilter === "all") return true;
+
+  const broadcastCreatorId = normalizeCreatorFilterValue(broadcast?.createdById);
+  const broadcastCreatorEmail = normalizeCreatorFilterValue(
+    broadcast?.createdByEmail,
+  );
+  const broadcastCreatorName = normalizeCreatorFilterValue(broadcast?.createdBy);
+
+  if (isLikelyObjectId(normalizedFilter)) {
+    return broadcastCreatorId === normalizedFilter;
+  }
+
+  const loweredFilter = normalizedFilter.toLowerCase();
+  return [broadcastCreatorName, broadcastCreatorEmail]
+    .filter(Boolean)
+    .some((value) => value.toLowerCase().includes(loweredFilter));
 };
 
 const dedupeTemplatesById = (items = []) => {
@@ -79,6 +144,59 @@ const sanitizeBroadcastTemplateForCache = (template = {}) => ({
     : [],
 });
 
+const sanitizeBroadcastPolicySummary = (broadcast = {}) => {
+  const retrySummarySource =
+    broadcast?.retrySummary && typeof broadcast.retrySummary === "object"
+      ? broadcast.retrySummary
+      : {};
+  const analyticsSource =
+    retrySummarySource?.analytics &&
+    typeof retrySummarySource.analytics === "object"
+      ? retrySummarySource.analytics
+      : broadcast?.analytics && typeof broadcast.analytics === "object"
+        ? broadcast.analytics
+        : {};
+  const retryPolicySource =
+    retrySummarySource?.retryPolicy &&
+    typeof retrySummarySource.retryPolicy === "object"
+      ? retrySummarySource.retryPolicy
+      : broadcast?.retryPolicy && typeof broadcast.retryPolicy === "object"
+        ? broadcast.retryPolicy
+        : {};
+  const deliveryPolicySource =
+    retrySummarySource?.deliveryPolicy &&
+    typeof retrySummarySource.deliveryPolicy === "object"
+      ? retrySummarySource.deliveryPolicy
+      : broadcast?.deliveryPolicy && typeof broadcast.deliveryPolicy === "object"
+        ? broadcast.deliveryPolicy
+        : {};
+  const compliancePolicySource =
+    retrySummarySource?.compliancePolicy &&
+    typeof retrySummarySource.compliancePolicy === "object"
+      ? retrySummarySource.compliancePolicy
+      : broadcast?.compliancePolicy && typeof broadcast.compliancePolicy === "object"
+        ? broadcast.compliancePolicy
+        : {};
+
+  const skippedQuietHours = Number(analyticsSource?.skippedQuietHours || 0) || 0;
+
+  return {
+    retrySummary: {
+      ...(retrySummarySource || {}),
+      retryPolicy: retryPolicySource,
+      deliveryPolicy: deliveryPolicySource,
+      compliancePolicy: compliancePolicySource,
+      analytics: {
+        ...(analyticsSource || {}),
+        suppressed: Number(analyticsSource?.suppressed || 0) || 0,
+        deferred: Number(analyticsSource?.deferred || 0) || 0,
+        retried: Number(analyticsSource?.retried || 0) || 0,
+        skippedQuietHours,
+      },
+    },
+  };
+};
+
 const sanitizeBroadcastForCache = (broadcast = {}) => ({
   _id: String(broadcast?._id || "").trim(),
   id: String(broadcast?.id || "").trim(),
@@ -87,6 +205,9 @@ const sanitizeBroadcastForCache = (broadcast = {}) => ({
   messageType: String(broadcast?.messageType || "").trim(),
   templateName: String(broadcast?.templateName || "").trim(),
   language: String(broadcast?.language || "").trim(),
+  createdBy: String(broadcast?.createdBy || "").trim(),
+  createdById: String(broadcast?.createdById || "").trim(),
+  createdByEmail: String(broadcast?.createdByEmail || "").trim(),
   createdAt: String(broadcast?.createdAt || "").trim(),
   scheduledAt: String(broadcast?.scheduledAt || "").trim(),
   completedAt: String(broadcast?.completedAt || "").trim(),
@@ -105,24 +226,7 @@ const sanitizeBroadcastForCache = (broadcast = {}) => ({
           failed: Number(broadcast.stats.failed || 0) || 0,
         }
       : {},
-  retrySummary:
-    broadcast?.retrySummary && typeof broadcast.retrySummary === "object"
-      ? {
-          analytics:
-            broadcast.retrySummary?.analytics &&
-            typeof broadcast.retrySummary.analytics === "object"
-              ? {
-                  suppressed:
-                    Number(broadcast.retrySummary.analytics.suppressed || 0) ||
-                    0,
-                  deferred:
-                    Number(broadcast.retrySummary.analytics.deferred || 0) || 0,
-                  retried:
-                    Number(broadcast.retrySummary.analytics.retried || 0) || 0,
-                }
-              : {},
-        }
-      : {},
+  ...sanitizeBroadcastPolicySummary(broadcast),
   recipients: Array.isArray(broadcast?.recipients)
     ? broadcast.recipients
         .slice(0, 20)
@@ -170,6 +274,7 @@ export const useBroadcast = () => {
   const loadRequestSeqRef = useRef(0);
   const latestAppliedSeqRef = useRef(0);
   const broadcastRefreshTimerRef = useRef(null);
+  const hasMountedBroadcastFilterRef = useRef(false);
   const currentUserId = resolveCacheUserId();
   const broadcastPageCacheRef = useRef(null);
   const broadcastsRef = useRef([]);
@@ -177,6 +282,7 @@ export const useBroadcast = () => {
   // Search and filter states
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [creatorFilter, setCreatorFilter] = useState("all");
   const [reliabilityFilter, setReliabilityFilter] = useState("all");
   const [sortBy, setSortBy] = useState("createdAt");
   const [sortOrder, setSortOrder] = useState("desc");
@@ -299,9 +405,20 @@ export const useBroadcast = () => {
         setLoadingMoreBroadcasts(true);
       }
 
+      const selectedCreatorFilter = normalizeCreatorFilterValue(creatorFilter);
+      const creatorQuery = {};
+      if (selectedCreatorFilter && selectedCreatorFilter !== "all") {
+        if (isLikelyObjectId(selectedCreatorFilter)) {
+          creatorQuery.createdById = selectedCreatorFilter;
+        } else {
+          creatorQuery.createdBy = selectedCreatorFilter;
+        }
+      }
+
       const result = await apiClient.getBroadcasts({
         limit: BROADCAST_PAGE_LIMIT,
         ...(cursor ? { cursor } : {}),
+        ...creatorQuery,
       });
       const responseData = result?.data?.data ?? result?.data ?? [];
       const broadcastItems = Array.isArray(responseData?.items)
@@ -327,6 +444,7 @@ export const useBroadcast = () => {
       const normalizedBroadcasts = nextBroadcasts.map((broadcast) => ({
         ...broadcast,
         status: normalizeBroadcastStatus(broadcast),
+        ...sanitizeBroadcastPolicySummary(broadcast),
       }));
       setBroadcasts(normalizedBroadcasts);
       setBroadcastPageMeta(nextMeta);
@@ -347,7 +465,7 @@ export const useBroadcast = () => {
         setLoadingMoreBroadcasts(false);
       }
     }
-  }, [persistBroadcastPageCache]);
+  }, [creatorFilter, persistBroadcastPageCache]);
 
   const loadMoreBroadcasts = useCallback(async () => {
     const nextCursor = String(broadcastPageMeta?.nextCursor || "").trim();
@@ -357,6 +475,14 @@ export const useBroadcast = () => {
 
     return loadBroadcasts({ append: true, cursor: nextCursor });
   }, [broadcastPageMeta, loadBroadcasts, loadingMoreBroadcasts]);
+
+  useEffect(() => {
+    if (!hasMountedBroadcastFilterRef.current) {
+      hasMountedBroadcastFilterRef.current = true;
+      return;
+    }
+    loadBroadcasts();
+  }, [creatorFilter, loadBroadcasts]);
 
   const syncTemplates = useCallback(async () => {
     try {
@@ -562,7 +688,12 @@ export const useBroadcast = () => {
       broadcastPageCacheRef.current = cachedBroadcastPage.data;
 
       if (Array.isArray(cachedBroadcastPage.data.broadcasts)) {
-        setBroadcasts(cachedBroadcastPage.data.broadcasts);
+        setBroadcasts(
+          cachedBroadcastPage.data.broadcasts.map((broadcast) => ({
+            ...sanitizeBroadcastForCache(broadcast),
+            ...sanitizeBroadcastPolicySummary(broadcast),
+          })),
+        );
       }
       if (cachedBroadcastPage.data.broadcastPageMeta) {
         setBroadcastPageMeta({
@@ -1088,16 +1219,40 @@ export const useBroadcast = () => {
       );
     }
 
+    if (creatorFilter !== "all") {
+      filtered = filtered.filter((broadcast) => {
+        return matchesCreatorFilter(broadcast, creatorFilter);
+      });
+    }
+
     if (reliabilityFilter !== "all") {
       filtered = filtered.filter((broadcast) => {
         const analytics = broadcast?.retrySummary?.analytics || {};
         const suppressed = toNonNegative(analytics.suppressed);
         const deferred = toNonNegative(analytics.deferred);
         const retried = toNonNegative(analytics.retried);
+        const failed = toNonNegative(broadcast?.stats?.failed);
+        const status = normalizeBroadcastStatus(broadcast);
+        const completedWithErrors = status === "completed_with_errors";
+        const skippedQuietHours = toNonNegative(analytics?.skippedQuietHours);
 
         if (reliabilityFilter === "suppressed") return suppressed > 0;
         if (reliabilityFilter === "deferred") return deferred > 0;
         if (reliabilityFilter === "retried") return retried > 0;
+        if (reliabilityFilter === "needs_retry") {
+          return failed > 0 || retried > 0 || completedWithErrors || status === "failed" || status === "sending";
+        }
+        if (reliabilityFilter === "high_risk") {
+          return (
+            failed > 0 ||
+            retried > 0 ||
+            suppressed > 0 ||
+            deferred > 0 ||
+            skippedQuietHours > 0 ||
+            completedWithErrors ||
+            status === "failed"
+          );
+        }
         if (reliabilityFilter === "any")
           return suppressed > 0 || deferred > 0 || retried > 0;
         return true;
@@ -1274,6 +1429,8 @@ export const useBroadcast = () => {
     setSearchTerm,
     statusFilter,
     setStatusFilter,
+    creatorFilter,
+    setCreatorFilter,
     reliabilityFilter,
     setReliabilityFilter,
     sortBy,

@@ -25,6 +25,42 @@ const WhatsAppBusinessPlatform = () => {
   const [showContactEditModal, setShowContactEditModal] = useState(false);
   const [editingContactId, setEditingContactId] = useState(null);
   const [editingName, setEditingName] = useState('');
+  const isGenericAgentLabel = (value = '') => {
+    const normalized = String(value || '').trim().toLowerCase();
+    return Boolean(normalized) && ['agent', 'admin', 'team member', 'unknown', 'unknown user'].includes(normalized);
+  };
+  const pickMeaningfulAssignedLabel = (...values) => {
+    for (const value of values) {
+      const normalized = String(value || '').trim();
+      if (!normalized) continue;
+      if (/^[0-9a-f]{24}$/i.test(normalized)) continue;
+      if (/^\d{8,}$/.test(normalized)) continue;
+      if (isGenericAgentLabel(normalized)) continue;
+      return normalized;
+    }
+    return '';
+  };
+  const resolveAssignedLabel = (conversation = {}) => {
+    const directLabel = pickMeaningfulAssignedLabel(
+      conversation?.assignedToName,
+      conversation?.assignedAgentName,
+      conversation?.assigneeName,
+      conversation?.ownerName,
+      conversation?.assignedTo?.name,
+      conversation?.assignedTo?.displayName,
+      conversation?.assignedTo?.fullName,
+      conversation?.assignedTo?.username,
+      conversation?.assignedTo?.email,
+      conversation?.owner?.name,
+      conversation?.owner?.displayName,
+      conversation?.owner?.fullName,
+      conversation?.owner?.username,
+      conversation?.owner?.email
+    );
+    if (directLabel) return directLabel;
+    const rawAssigned = String(conversation?.assignedTo || conversation?.assignedAgent || '').trim();
+    return rawAssigned ? 'Assigned' : 'Unassigned';
+  };
 
   // Initialize WebSocket connection
   useEffect(() => {
@@ -459,7 +495,7 @@ const WhatsAppBusinessPlatform = () => {
                     </div>
                     <p className="text-sm text-gray-600 truncate">{convo.lastMessage || 'No messages'}</p>
                     <div className="flex items-center justify-between mt-1">
-                      <span className="text-xs text-gray-500">Assigned to: {convo.assignedTo || 'Unassigned'}</span>
+                      <span className="text-xs text-gray-500">Assigned to: {resolveAssignedLabel(convo)}</span>
                       {convo.unreadCount > 0 && (
                         <span className="bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">
                           {convo.unreadCount}
