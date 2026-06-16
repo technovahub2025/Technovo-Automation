@@ -1581,13 +1581,7 @@ const ScheduleForm = ({
                       type="button"
                       className="replace-upload-btn"
                       onClick={() => handleAddRecipientMenuAction("contacts")}
-                      style={{
-                        justifyContent: "flex-start",
-                        borderColor: "#93c5fd",
-                        background: "#eff6ff",
-                        color: "#1d4ed8",
-                        boxShadow: "inset 0 0 0 1px rgba(37, 99, 235, 0.15)",
-                      }}
+                      style={{ justifyContent: "flex-start" }}
                     >
                       <Users size={16} />
                       From CRM
@@ -1886,38 +1880,6 @@ const ScheduleForm = ({
                         <span>{csvUploadPercent}%</span>
                       </div>
                     ) : null}
-
-                    <div className="contacts-source-toggle">
-                      {typeof onOpenContactAudiencePicker === "function" ? (
-                        <button
-                          type="button"
-                          className={`contacts-source-toggle__btn${audienceSourceMode === "contacts" ? " is-active" : ""}`}
-                          onClick={onOpenContactAudiencePicker}
-                        >
-                          <Users size={16} />
-                          From CRM
-                        </button>
-                      ) : null}
-                      {typeof onOpenCampaignAudiencePicker === "function" ? (
-                        <button
-                          type="button"
-                          className={`contacts-source-toggle__btn${audienceSourceMode === "campaign" ? " is-active" : ""}`}
-                          onClick={onOpenCampaignAudiencePicker}
-                        >
-                          <Calendar size={16} />
-                          From Past Campaigns
-                        </button>
-                      ) : null}
-                      {typeof onClearSelectedAudience === "function" ? (
-                        <button
-                          type="button"
-                          className="contacts-source-toggle__btn is-secondary"
-                          onClick={onClearSelectedAudience}
-                        >
-                          Clear Selected Contacts
-                        </button>
-                      ) : null}
-                    </div>
 
                     {audienceSourceLabel ? (
                       <p className="contacts-more-row" style={{ marginTop: 0 }}>

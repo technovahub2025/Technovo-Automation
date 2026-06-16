@@ -564,13 +564,7 @@ const NewBroadcastPopup = ({
                     type="button"
                     className="replace-upload-btn"
                     onClick={() => handleAddRecipientMenuAction("contacts")}
-                    style={{
-                      justifyContent: "flex-start",
-                      borderColor: "#93c5fd",
-                      background: "#eff6ff",
-                      color: "#1d4ed8",
-                      boxShadow: "inset 0 0 0 1px rgba(37, 99, 235, 0.15)",
-                    }}
+                    style={{ justifyContent: "flex-start" }}
                   >
                     <Users size={16} />
                     From CRM
@@ -609,26 +603,6 @@ const NewBroadcastPopup = ({
             <div style={{ display: "grid", gap: 12 }}>
               {audienceSourceMode === "contacts" ? (
                 <>
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className="replace-upload-btn"
-                      onClick={triggerAudienceSelection}
-                    >
-                      <Users size={16} />
-                      Select from Contacts
-                    </button>
-                    {typeof onClearSelectedAudience === "function" ? (
-                      <button
-                        type="button"
-                        className="clear-upload-btn"
-                        onClick={onClearSelectedAudience}
-                      >
-                        Clear Selected Contacts
-                      </button>
-                    ) : null}
-                  </div>
-
                   <div
                     className={`file-upload-area ${csvUploadPhase !== "idle" ? `is-${csvUploadPhase}` : ""}`}
                     onClick={
@@ -809,26 +783,6 @@ const NewBroadcastPopup = ({
                       </div>
                     </div>
                   ) : null}
-
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <button
-                      type="button"
-                      className="replace-upload-btn"
-                      onClick={triggerAudienceSelection}
-                    >
-                      <Users size={16} />
-                      Select from Contacts
-                    </button>
-                    {typeof onClearSelectedAudience === "function" ? (
-                      <button
-                        type="button"
-                        className="clear-upload-btn"
-                        onClick={onClearSelectedAudience}
-                      >
-                        Clear Selected Contacts
-                      </button>
-                    ) : null}
-                  </div>
 
                   <div
                     className={`file-upload-area ${csvUploadPhase !== "idle" ? `is-${csvUploadPhase}` : ""}`}
