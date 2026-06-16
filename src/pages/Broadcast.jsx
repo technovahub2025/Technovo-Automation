@@ -909,8 +909,6 @@ const Broadcast = ({
       lastPercent: -1,
       lastUpdateAt: 0,
     };
-    setRecipients([]);
-    setFileVariables([]);
     setUploadedFile(file);
     setCsvUploadState({
       phase: "parsing",
@@ -1239,7 +1237,9 @@ const Broadcast = ({
         }
       }
 
-      setRecipients(enrichedRecipients);
+      setRecipients((current) =>
+        mergeRecipientCollections(current, enrichedRecipients),
+      );
 
       if (enrichedRecipients.length > 0) {
         const firstRecipient = enrichedRecipients[0];
@@ -1345,6 +1345,86 @@ const Broadcast = ({
 
   const normalizePhoneForLookup = (value = "") =>
     String(value || "").replace(/\D/g, "");
+
+  const mergeDefinedRecipientFields = (
+    existingRecipient = {},
+    incomingRecipient = {},
+  ) => {
+    const existingData =
+      existingRecipient?.data && typeof existingRecipient.data === "object"
+        ? existingRecipient.data
+        : {};
+    const incomingData =
+      incomingRecipient?.data && typeof incomingRecipient.data === "object"
+        ? incomingRecipient.data
+        : {};
+    const existingFullData =
+      existingRecipient?.fullData && typeof existingRecipient.fullData === "object"
+        ? existingRecipient.fullData
+        : {};
+    const incomingFullData =
+      incomingRecipient?.fullData && typeof incomingRecipient.fullData === "object"
+        ? incomingRecipient.fullData
+        : {};
+
+    return {
+      ...existingRecipient,
+      ...incomingRecipient,
+      phone: incomingRecipient?.phone || existingRecipient?.phone || "",
+      name: incomingRecipient?.name || existingRecipient?.name || "",
+      contactId:
+        incomingRecipient?.contactId || existingRecipient?.contactId || undefined,
+      sourceType:
+        incomingRecipient?.sourceType || existingRecipient?.sourceType || "manual",
+      variables:
+        Array.isArray(incomingRecipient?.variables) &&
+        incomingRecipient.variables.length > 0
+          ? incomingRecipient.variables
+          : Array.isArray(existingRecipient?.variables)
+            ? existingRecipient.variables
+            : [],
+      data: {
+        ...existingData,
+        ...incomingData,
+      },
+      fullData: {
+        ...existingFullData,
+        ...incomingFullData,
+      },
+    };
+  };
+
+  const mergeRecipientCollections = (baseRecipients = [], incomingRecipients = []) => {
+    const merged = [];
+    const indexByPhone = new Map();
+
+    const appendOrMerge = (recipient, preferIncoming = false) => {
+      const normalized = normalizeContactToRecipient(recipient);
+      const phoneKey = normalizePhoneForLookup(normalized?.phone || "");
+      if (!phoneKey) return;
+
+      const existingIndex = indexByPhone.get(phoneKey);
+      if (typeof existingIndex === "number") {
+        const previous = merged[existingIndex] || {};
+        merged[existingIndex] = preferIncoming
+          ? mergeDefinedRecipientFields(previous, normalized)
+          : mergeDefinedRecipientFields(normalized, previous);
+        return;
+      }
+
+      indexByPhone.set(phoneKey, merged.length);
+      merged.push(normalized);
+    };
+
+    (Array.isArray(baseRecipients) ? baseRecipients : []).forEach((recipient) =>
+      appendOrMerge(recipient, false),
+    );
+    (Array.isArray(incomingRecipients) ? incomingRecipients : []).forEach(
+      (recipient) => appendOrMerge(recipient, true),
+    );
+
+    return merged;
+  };
 
   const buildContactLookupMap = (contacts = []) => {
     const map = new Map();
@@ -2146,30 +2226,6 @@ const Broadcast = ({
     return rawContacts;
   }, []);
 
-  const mergeBroadcastRecipients = useCallback(
-    (baseRecipients = [], incomingContacts = []) => {
-      const merged = Array.isArray(baseRecipients) ? [...baseRecipients] : [];
-      const seenPhones = new Set(
-        merged
-          .map((recipient) => normalizePhoneForLookup(recipient?.phone || ""))
-          .filter(Boolean),
-      );
-
-      (Array.isArray(incomingContacts) ? incomingContacts : []).forEach(
-        (contact) => {
-          const normalized = normalizeContactToRecipient(contact);
-          const phoneKey = normalizePhoneForLookup(normalized?.phone || "");
-          if (!phoneKey || seenPhones.has(phoneKey)) return;
-          seenPhones.add(phoneKey);
-          merged.push(normalized);
-        },
-      );
-
-      return merged;
-    },
-    [],
-  );
-
   const applySavedGroupToBroadcast = useCallback(
     async (group = {}) => {
       const groupId = String(group?._id || group?.id || "").trim();
@@ -2184,10 +2240,8 @@ const Broadcast = ({
           : [];
 
         setRecipients((current) =>
-          mergeBroadcastRecipients(current, normalizedContacts),
+          mergeRecipientCollections(current, normalizedContacts),
         );
-        setUploadedFile(null);
-        setFileVariables([]);
         setSelectedAudienceMeta({
           segmentId: groupId,
           segmentName: String(group?.name || "").trim(),
@@ -2206,9 +2260,7 @@ const Broadcast = ({
     },
     [
       loadGroupContactsForBroadcast,
-      mergeBroadcastRecipients,
-      normalizeContactToRecipient,
-      setFileVariables,
+      mergeRecipientCollections,
       setRecipients,
       setSelectedAudienceMeta,
       setUploadedFile,
@@ -2263,9 +2315,9 @@ const Broadcast = ({
         };
       });
     } else {
-      setRecipients(normalized);
-      setUploadedFile(null);
-      setFileVariables([]);
+      setRecipients((current) =>
+        mergeRecipientCollections(current, normalized),
+      );
       setSelectedAudienceMeta({
         segmentId: String(segmentMeta?.segmentId || "").trim(),
         segmentName: String(segmentMeta?.segmentName || "").trim(),
@@ -2342,10 +2394,8 @@ const Broadcast = ({
           : [];
 
         setRecipients((current) =>
-          mergeBroadcastRecipients(current, normalizedContacts),
+          mergeRecipientCollections(current, normalizedContacts),
         );
-        setUploadedFile(null);
-        setFileVariables([]);
         setSelectedAudienceMeta({
           segmentId: groupId,
           segmentName: "",
@@ -2357,12 +2407,10 @@ const Broadcast = ({
     })();
   }, [
     loadGroupContactsForBroadcast,
-    mergeBroadcastRecipients,
+    mergeRecipientCollections,
     searchParams,
-    setFileVariables,
     setRecipients,
     setSelectedAudienceMeta,
-    setUploadedFile,
   ]);
 
   const clearSelectedCampaignAudience = () => {

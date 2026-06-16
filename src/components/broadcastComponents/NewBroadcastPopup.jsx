@@ -293,12 +293,16 @@ const NewBroadcastPopup = ({
 
   const handleAddRecipientMenuAction = (action) => {
     if (action === "contacts") {
-      triggerAudienceSelection();
+      onAudienceSourceModeChange?.("contacts");
+      onOpenContactAudiencePicker?.();
     } else if (action === "groups") {
+      onAudienceSourceModeChange?.("contacts");
       onOpenGroupAudiencePicker?.();
     } else if (action === "campaign") {
+      onAudienceSourceModeChange?.("campaign");
       onOpenCampaignAudiencePicker?.();
     } else if (action === "csv") {
+      onAudienceSourceModeChange?.("csv");
       triggerCsvPicker();
     } else if (action === "clear") {
       onClearSelectedAudience?.();
