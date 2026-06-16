@@ -1581,7 +1581,13 @@ const ScheduleForm = ({
                       type="button"
                       className="replace-upload-btn"
                       onClick={() => handleAddRecipientMenuAction("contacts")}
-                      style={{ justifyContent: "flex-start" }}
+                      style={{
+                        justifyContent: "flex-start",
+                        borderColor: "#93c5fd",
+                        background: "#eff6ff",
+                        color: "#1d4ed8",
+                        boxShadow: "inset 0 0 0 1px rgba(37, 99, 235, 0.15)",
+                      }}
                     >
                       <Users size={16} />
                       From CRM
@@ -1613,52 +1619,10 @@ const ScheduleForm = ({
                       <Upload size={16} />
                       CSV first
                     </button>
-                    {typeof onClearSelectedAudience === "function" ? (
-                      <button
-                        type="button"
-                        className="clear-upload-btn"
-                        onClick={() => handleAddRecipientMenuAction("clear")}
-                        style={{ justifyContent: "flex-start" }}
-                      >
-                        Clear Selected Contacts
-                      </button>
-                    ) : null}
                   </div>
                 ) : null}
               </div>
             </div>
-
-            <div className="audience-source-toggle">
-              <button
-                type="button"
-                className={`audience-source-toggle__btn${audienceSourceMode === "contacts" ? " is-active" : ""}`}
-                onClick={() =>
-                  typeof onAudienceSourceModeChange === "function" &&
-                  onAudienceSourceModeChange("contacts")
-                }
-              >
-                <Users size={16} />
-                Contacts first
-              </button>
-              <button
-                type="button"
-                className={`audience-source-toggle__btn${audienceSourceMode === "csv" ? " is-active" : ""}`}
-                onClick={() =>
-                  typeof onAudienceSourceModeChange === "function" &&
-                  onAudienceSourceModeChange("csv")
-                }
-              >
-                <Upload size={16} />
-                CSV first
-              </button>
-            </div>
-            <p className="audience-source-helper">
-              {audienceSourceMode === "contacts"
-                ? "Audience source: CRM contacts"
-                : audienceSourceMode === "campaign" || hasCampaignAudience
-                  ? "Audience source: Past campaign contacts"
-                  : "Audience source: CSV upload"}
-            </p>
 
             <div className="voice-style-upload-wrapper">
               <input
@@ -1689,38 +1653,6 @@ const ScheduleForm = ({
                         title="Clear campaign audience"
                       >
                         ×
-                      </button>
-                    ) : null}
-                  </div>
-
-                  <div className="contacts-source-toggle">
-                    {typeof onOpenContactAudiencePicker === "function" ? (
-                      <button
-                        type="button"
-                        className={`contacts-source-toggle__btn${audienceSourceMode === "contacts" ? " is-active" : ""}`}
-                        onClick={onOpenContactAudiencePicker}
-                      >
-                        <Users size={16} />
-                        From CRM
-                      </button>
-                    ) : null}
-                    {typeof onOpenCampaignAudiencePicker === "function" ? (
-                      <button
-                        type="button"
-                        className={`contacts-source-toggle__btn${audienceSourceMode === "campaign" ? " is-active" : ""}`}
-                        onClick={onOpenCampaignAudiencePicker}
-                      >
-                        <Calendar size={16} />
-                        From Past Campaigns
-                      </button>
-                    ) : null}
-                    {typeof onClearSelectedAudience === "function" ? (
-                      <button
-                        type="button"
-                        className="contacts-source-toggle__btn is-secondary"
-                        onClick={onClearSelectedAudience}
-                      >
-                        Clear Selected Contacts
                       </button>
                     ) : null}
                   </div>
@@ -1800,38 +1732,6 @@ const ScheduleForm = ({
                 </div>
               ) : recipients.length === 0 ? (
                 <>
-                  <div className="contacts-source-toggle">
-                    {typeof onOpenContactAudiencePicker === "function" ? (
-                      <button
-                        type="button"
-                        className={`contacts-source-toggle__btn${audienceSourceMode === "contacts" ? " is-active" : ""}`}
-                        onClick={onOpenContactAudiencePicker}
-                      >
-                        <Users size={16} />
-                        From CRM
-                      </button>
-                    ) : null}
-                    {typeof onOpenCampaignAudiencePicker === "function" ? (
-                      <button
-                        type="button"
-                        className={`contacts-source-toggle__btn${audienceSourceMode === "campaign" ? " is-active" : ""}`}
-                        onClick={onOpenCampaignAudiencePicker}
-                      >
-                        <Calendar size={16} />
-                        From Past Campaigns
-                      </button>
-                    ) : null}
-                    {typeof onClearSelectedAudience === "function" ? (
-                      <button
-                        type="button"
-                        className="contacts-source-toggle__btn is-secondary"
-                        onClick={onClearSelectedAudience}
-                      >
-                        Clear Selected Contacts
-                      </button>
-                    ) : null}
-                  </div>
-
                   {audienceSourceMode === "contacts" ? (
                     <>
                       <div

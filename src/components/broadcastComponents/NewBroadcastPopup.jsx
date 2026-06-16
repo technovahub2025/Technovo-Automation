@@ -564,7 +564,13 @@ const NewBroadcastPopup = ({
                     type="button"
                     className="replace-upload-btn"
                     onClick={() => handleAddRecipientMenuAction("contacts")}
-                    style={{ justifyContent: "flex-start" }}
+                    style={{
+                      justifyContent: "flex-start",
+                      borderColor: "#93c5fd",
+                      background: "#eff6ff",
+                      color: "#1d4ed8",
+                      boxShadow: "inset 0 0 0 1px rgba(37, 99, 235, 0.15)",
+                    }}
                   >
                     <Users size={16} />
                     From CRM
@@ -596,28 +602,10 @@ const NewBroadcastPopup = ({
                     <Upload size={16} />
                     CSV first
                   </button>
-                  {typeof onClearSelectedAudience === "function" ? (
-                    <button
-                      type="button"
-                      className="clear-upload-btn"
-                      onClick={() => handleAddRecipientMenuAction("clear")}
-                      style={{ justifyContent: "flex-start" }}
-                    >
-                      Clear Selected Contacts
-                    </button>
-                  ) : null}
                 </div>
               ) : null}
             </div>
           </div>
-          <p className="audience-source-helper">
-            {audienceSourceMode === "contacts"
-              ? "Audience source: CRM contacts"
-                : audienceSourceMode === "campaign"
-                  ? "Audience source: previous campaign"
-                  : "Audience source: CSV upload"}
-            </p>
-
             <div style={{ display: "grid", gap: 12 }}>
               {audienceSourceMode === "contacts" ? (
                 <>
