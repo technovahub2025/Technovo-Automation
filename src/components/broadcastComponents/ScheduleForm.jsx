@@ -1559,59 +1559,42 @@ const ScheduleForm = ({
                   <ChevronDown size={14} />
                 </button>
 
-                {showAddRecipientMenu ? (
-                  <div
-                    role="menu"
-                    style={{
-                      position: "absolute",
-                      top: "calc(100% + 10px)",
-                      right: 0,
-                      zIndex: 20,
-                      minWidth: 220,
-                      padding: 8,
-                      border: "1px solid #dbe4ff",
-                      borderRadius: 14,
-                      background: "#fff",
-                      boxShadow: "0 18px 36px rgba(15, 23, 42, 0.12)",
-                      display: "grid",
-                      gap: 6,
-                    }}
+              {showAddRecipientMenu ? (
+                <div
+                  className="recipient-source-menu"
+                  role="menu"
+                >
+                  <button
+                    type="button"
+                    className="recipient-source-menu__item"
+                    onClick={() => handleAddRecipientMenuAction("contacts")}
                   >
-                    <button
-                      type="button"
-                      className="replace-upload-btn"
-                      onClick={() => handleAddRecipientMenuAction("contacts")}
-                      style={{ justifyContent: "flex-start" }}
-                    >
-                      <Users size={16} />
-                      From CRM
-                    </button>
-                    <button
-                      type="button"
-                      className="replace-upload-btn"
-                      onClick={() => handleAddRecipientMenuAction("groups")}
-                      style={{ justifyContent: "flex-start" }}
-                    >
-                      <Users size={16} />
-                      Saved Groups
-                    </button>
-                    <button
-                      type="button"
-                      className="replace-upload-btn"
-                      onClick={() => handleAddRecipientMenuAction("campaign")}
-                      style={{ justifyContent: "flex-start" }}
-                    >
-                      <Calendar size={16} />
-                      From Past Campaigns
-                    </button>
-                    <button
-                      type="button"
-                      className="replace-upload-btn"
-                      onClick={() => handleAddRecipientMenuAction("csv")}
-                      style={{ justifyContent: "flex-start" }}
-                    >
-                      <Upload size={16} />
-                      CSV first
+                    <Users size={16} />
+                    From CRM
+                  </button>
+                  <button
+                    type="button"
+                    className="recipient-source-menu__item"
+                    onClick={() => handleAddRecipientMenuAction("groups")}
+                  >
+                    <Users size={16} />
+                    Saved Groups
+                  </button>
+                  <button
+                    type="button"
+                    className="recipient-source-menu__item"
+                    onClick={() => handleAddRecipientMenuAction("campaign")}
+                  >
+                    <Calendar size={16} />
+                    From Past Campaigns
+                  </button>
+                  <button
+                    type="button"
+                    className="recipient-source-menu__item"
+                    onClick={() => handleAddRecipientMenuAction("csv")}
+                  >
+                    <Upload size={16} />
+                    CSV first
                     </button>
                   </div>
                 ) : null}
