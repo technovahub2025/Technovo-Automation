@@ -31,7 +31,7 @@ export const BROADCAST_CAMPAIGN_EXPORT_HEADERS = [
   'Audience Mode',
   'Audience Source',
   'Audience Type',
-  'Audience Segment',
+  'Audience Group',
   'Audience Snapshot',
   'Quiet Hours Enabled',
   'Quiet Hours Window',

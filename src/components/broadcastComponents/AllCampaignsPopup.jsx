@@ -85,16 +85,16 @@ const AllCampaignsPopup = ({
       const explicitLabel = String(audienceSource?.label || audienceSnapshot?.label || '').trim();
       if (explicitLabel) return explicitLabel;
       const segmentName = String(audienceSnapshot?.segmentName || audienceSource?.segmentName || '').trim();
-      if (segmentName) return `Saved segment: ${segmentName}`;
+      if (segmentName) return `Saved group: ${segmentName}`;
       if (audienceMode === 'csv') return 'CSV upload';
-      if (audienceMode === 'saved_segment') return 'Saved segment';
+      if (audienceMode === 'saved_segment') return 'Saved group';
       if (audienceMode === 'contacts') return 'CRM contacts';
       if (audienceMode === 'manual') return 'Manual audience';
       return '';
     })();
     const audienceChipLabel = (() => {
       if (audienceMode === 'csv') return 'CSV';
-      if (audienceMode === 'saved_segment') return 'Segment';
+      if (audienceMode === 'saved_segment') return 'Group';
       if (audienceMode === 'contacts') return 'Contacts';
       if (audienceMode === 'manual') return 'Manual';
       return 'Audience';

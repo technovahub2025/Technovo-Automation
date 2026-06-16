@@ -166,9 +166,246 @@
   flex-shrink: 0;
 }
 
+.segment-picker-modal {
+  width: min(920px, 96vw);
+}
+
+.segment-picker-toolbar {
+  padding: 18px 24px 0;
+  display: grid;
+  gap: 10px;
+}
+
+.segment-picker-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 1px solid #dbe3f0;
+  background: #f8fbff;
+  border-radius: 12px;
+  padding: 0 14px;
+  min-height: 46px;
+}
+
+.segment-picker-search-wrap svg {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.segment-picker-search {
+  border: 0;
+  background: transparent;
+  width: 100%;
+  font-size: 14px;
+  color: #0f172a;
+  outline: none;
+}
+
+.segment-picker-hint {
+  margin: 0;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.segment-picker-error {
+  margin: 14px 24px 0;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.segment-picker-panel {
+  padding: 18px 24px 24px;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.segment-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 14px;
+}
+
+.segment-picker-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  background: #ffffff;
+  padding: 16px;
+  text-align: left;
+  cursor: pointer;
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+  transition:
+    transform 0.15s ease,
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.segment-picker-card:hover {
+  transform: translateY(-1px);
+  border-color: #93c5fd;
+  box-shadow: 0 12px 28px rgba(37, 99, 235, 0.08);
+}
+
+.segment-picker-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.segment-picker-card__header strong {
+  display: block;
+  font-size: 15px;
+  color: #0f172a;
+}
+
+.segment-picker-card__header span {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: #64748b;
+  text-transform: capitalize;
+}
+
+.segment-picker-card p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #334155;
+}
+
+.segment-picker-card__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 14px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.segment-picker-empty {
+  padding: 28px 20px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 14px;
+  text-align: center;
+  color: #64748b;
+  background: #f8fafc;
+}
+
 .contact-audience-modal-overlay .broadcast-validation-table-wrap {
   flex: 1;
   min-height: 0;
+}
+
+.recipient-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.recipient-toolbar__copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.recipient-toolbar__copy label {
+  margin: 0;
+}
+
+.audience-source-helper--compact {
+  margin: 0;
+}
+
+.recipient-toolbar__actions {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.recipient-add-btn {
+  min-height: 44px;
+  padding-inline: 15px;
+  border-radius: 14px;
+  box-shadow: 0 10px 20px rgba(37, 99, 235, 0.14);
+}
+
+.recipient-add-btn:hover {
+  box-shadow: 0 14px 28px rgba(37, 99, 235, 0.18);
+  transform: translateY(-1px);
+}
+
+.recipient-add-btn:focus-visible {
+  outline: 3px solid rgba(59, 130, 246, 0.25);
+  outline-offset: 2px;
+}
+
+.recipient-source-menu {
+  position: absolute;
+  top: calc(100% + 12px);
+  right: 0;
+  z-index: 25;
+  min-width: 270px;
+  padding: 10px;
+  border: 1px solid rgba(148, 163, 184, 0.26);
+  border-radius: 16px;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.98),
+    rgba(248, 250, 252, 0.98)
+  );
+  box-shadow:
+    0 24px 60px rgba(15, 23, 42, 0.16),
+    0 2px 8px rgba(15, 23, 42, 0.04);
+  display: grid;
+  gap: 6px;
+  backdrop-filter: blur(12px);
+}
+
+.recipient-source-menu__item {
+  width: 100%;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: #0f172a;
+  padding: 11px 12px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  transition:
+    background-color 0.15s ease,
+    transform 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.recipient-source-menu__item:hover {
+  background: #eff6ff;
+  box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.18);
+  transform: translateX(1px);
+}
+
+.recipient-source-menu__item:focus-visible {
+  outline: 2px solid rgba(37, 99, 235, 0.35);
+  outline-offset: 2px;
+}
+
+.recipient-source-menu__item svg {
+  color: #2563eb;
+  flex-shrink: 0;
+  opacity: 0.95;
 }
 
 .contact-audience-modal-overlay .secondary-btn,

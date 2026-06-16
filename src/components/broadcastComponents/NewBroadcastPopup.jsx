@@ -1,5 +1,6 @@
 import React from "react";
 import {
+  ChevronDown,
   X,
   Upload,
   Calendar,
@@ -10,6 +11,7 @@ import {
   Trash2,
   Users,
   Download,
+  UserPlus,
 } from "lucide-react";
 import MessagePreview from "./MessagePreview";
 import { downloadCsv } from "../../utils/csvExport";
@@ -39,6 +41,7 @@ const NewBroadcastPopup = ({
     percent: 0,
   },
   onOpenContactAudiencePicker,
+  onOpenGroupAudiencePicker,
   onOpenCampaignExtraContactsPicker,
   onOpenCampaignAudiencePicker,
   onClearSelectedAudience,
@@ -82,6 +85,9 @@ const NewBroadcastPopup = ({
 }) => {
   const [isTemplateHeaderDragOver, setIsTemplateHeaderDragOver] =
     React.useState(false);
+  const [showAddRecipientMenu, setShowAddRecipientMenu] =
+    React.useState(false);
+  const addRecipientMenuRef = React.useRef(null);
   const selectedTemplate =
     (officialTemplates || []).find(
       (template) => template.name === templateName,
@@ -252,6 +258,53 @@ const NewBroadcastPopup = ({
   const triggerCsvPicker = () => {
     const input = document.getElementById("csv-file-popup");
     if (input) input.click();
+  };
+
+  React.useEffect(() => {
+    if (!showAddRecipientMenu) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (
+        addRecipientMenuRef.current &&
+        !addRecipientMenuRef.current.contains(event.target)
+      ) {
+        setShowAddRecipientMenu(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setShowAddRecipientMenu(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [showAddRecipientMenu]);
+
+  const handleToggleAddRecipientMenu = () => {
+    setShowAddRecipientMenu((current) => !current);
+  };
+
+  const handleAddRecipientMenuAction = (action) => {
+    if (action === "contacts") {
+      triggerAudienceSelection();
+    } else if (action === "groups") {
+      onOpenGroupAudiencePicker?.();
+    } else if (action === "campaign") {
+      onOpenCampaignAudiencePicker?.();
+    } else if (action === "csv") {
+      triggerCsvPicker();
+    } else if (action === "clear") {
+      onClearSelectedAudience?.();
+    }
+
+    setShowAddRecipientMenu(false);
   };
 
   const triggerAudienceSelection = () => {
@@ -459,46 +512,107 @@ const NewBroadcastPopup = ({
             </div>
           )}
 
-          <div className="form-group">
-            <label>Recipients *</label>
-            <div className="audience-source-toggle">
+        <div className="form-group">
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              marginBottom: 8,
+              flexWrap: "wrap",
+            }}
+          >
+            <label style={{ marginBottom: 0 }}>Recipients *</label>
+            <div style={{ position: "relative" }} ref={addRecipientMenuRef}>
               <button
                 type="button"
-                className={`audience-source-toggle__btn${audienceSourceMode === "contacts" ? " is-active" : ""}`}
-                onClick={() =>
-                  typeof onAudienceSourceModeChange === "function" &&
-                  onAudienceSourceModeChange("contacts")
-                }
+                className="replace-upload-btn"
+                onClick={handleToggleAddRecipientMenu}
+                aria-haspopup="menu"
+                aria-expanded={showAddRecipientMenu}
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 8,
+                }}
               >
-                <Users size={16} />
-                Contacts first
+                <UserPlus size={16} />
+                Add
+                <ChevronDown size={14} />
               </button>
-              <button
-                type="button"
-                className={`audience-source-toggle__btn${audienceSourceMode === "campaign" ? " is-active" : ""}`}
-                onClick={() =>
-                  typeof onAudienceSourceModeChange === "function" &&
-                  onAudienceSourceModeChange("campaign")
-                }
-              >
-                <Calendar size={16} />
-                Campaign first
-              </button>
-              <button
-                type="button"
-                className={`audience-source-toggle__btn${audienceSourceMode === "csv" ? " is-active" : ""}`}
-                onClick={() =>
-                  typeof onAudienceSourceModeChange === "function" &&
-                  onAudienceSourceModeChange("csv")
-                }
-              >
-                <Upload size={16} />
-                CSV first
-              </button>
+
+              {showAddRecipientMenu ? (
+                <div
+                  role="menu"
+                  style={{
+                    position: "absolute",
+                    top: "calc(100% + 10px)",
+                    right: 0,
+                    zIndex: 50,
+                    minWidth: 240,
+                    padding: 8,
+                    border: "1px solid #dbe4ff",
+                    borderRadius: 14,
+                    background: "#fff",
+                    boxShadow: "0 18px 36px rgba(15, 23, 42, 0.12)",
+                    display: "grid",
+                    gap: 6,
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="replace-upload-btn"
+                    onClick={() => handleAddRecipientMenuAction("contacts")}
+                    style={{ justifyContent: "flex-start" }}
+                  >
+                    <Users size={16} />
+                    From CRM
+                  </button>
+                  <button
+                    type="button"
+                    className="replace-upload-btn"
+                    onClick={() => handleAddRecipientMenuAction("groups")}
+                    style={{ justifyContent: "flex-start" }}
+                  >
+                    <Users size={16} />
+                    Saved Groups
+                  </button>
+                  <button
+                    type="button"
+                    className="replace-upload-btn"
+                    onClick={() => handleAddRecipientMenuAction("campaign")}
+                    style={{ justifyContent: "flex-start" }}
+                  >
+                    <Calendar size={16} />
+                    From Past Campaigns
+                  </button>
+                  <button
+                    type="button"
+                    className="replace-upload-btn"
+                    onClick={() => handleAddRecipientMenuAction("csv")}
+                    style={{ justifyContent: "flex-start" }}
+                  >
+                    <Upload size={16} />
+                    CSV first
+                  </button>
+                  {typeof onClearSelectedAudience === "function" ? (
+                    <button
+                      type="button"
+                      className="clear-upload-btn"
+                      onClick={() => handleAddRecipientMenuAction("clear")}
+                      style={{ justifyContent: "flex-start" }}
+                    >
+                      Clear Selected Contacts
+                    </button>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
-            <p className="audience-source-helper">
-              {audienceSourceMode === "contacts"
-                ? "Audience source: CRM contacts"
+          </div>
+          <p className="audience-source-helper">
+            {audienceSourceMode === "contacts"
+              ? "Audience source: CRM contacts"
                 : audienceSourceMode === "campaign"
                   ? "Audience source: previous campaign"
                   : "Audience source: CSV upload"}

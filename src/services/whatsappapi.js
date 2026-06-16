@@ -580,6 +580,9 @@ export const apiClient = {
   updateContact: (id, data) =>
     api.put(`/contacts/${id}`, data, { timeout: LONG_TIMEOUT_MS }),
 
+  getContact: (id) =>
+    api.get(`/contacts/${id}`, { timeout: LONG_TIMEOUT_MS }),
+
   markContactWhatsAppOptIn: (id, data = {}) =>
     api.post(`/contacts/${id}/whatsapp-opt-in`, data, {
       timeout: LONG_TIMEOUT_MS,
@@ -600,8 +603,24 @@ export const apiClient = {
 
   getAudienceSegments: (params = {}) =>
     api.get("/audience-segments", { params, timeout: LONG_TIMEOUT_MS }),
+  getAudienceSegmentContacts: (id, params = {}) =>
+    api.get(`/audience-segments/${id}/contacts`, {
+      params,
+      timeout: LONG_TIMEOUT_MS,
+    }),
   createAudienceSegment: (data) =>
     api.post("/audience-segments", data, { timeout: LONG_TIMEOUT_MS }),
+  updateAudienceSegment: (id, data) =>
+    api.patch(`/audience-segments/${id}`, data, { timeout: LONG_TIMEOUT_MS }),
+  addAudienceSegmentContacts: (id, data) =>
+    api.post(`/audience-segments/${id}/contacts`, data, {
+      timeout: LONG_TIMEOUT_MS,
+    }),
+  removeAudienceSegmentContacts: (id, data) =>
+    api.delete(`/audience-segments/${id}/contacts`, {
+      data,
+      timeout: LONG_TIMEOUT_MS,
+    }),
   deleteAudienceSegment: (id) =>
     api.delete(`/audience-segments/${id}`, { timeout: LONG_TIMEOUT_MS }),
 

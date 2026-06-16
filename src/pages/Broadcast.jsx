@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation, useNavigate } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import Papa from "papaparse";
 
 import { apiClient } from "../services/whatsappapi";
@@ -33,6 +33,7 @@ import BroadcastAnalyticsModal from "../components/broadcastComponents/Broadcast
 import BroadcastAudienceValidationModal from "../components/broadcastComponents/BroadcastAudienceValidationModal";
 import ContactAudiencePickerModal from "../components/broadcastComponents/ContactAudiencePickerModal";
 import CampaignAudiencePickerModal from "../components/broadcastComponents/CampaignAudiencePickerModal";
+import SegmentAudiencePickerModal from "../components/broadcastComponents/SegmentAudiencePickerModal";
 import OutboundDialer from "../components/outbound/OutboundDialer";
 import { stripAppRouteBase } from "../utils/appRouteBase";
 
@@ -121,6 +122,7 @@ const Broadcast = ({
 }) => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const currentPath = stripAppRouteBase(location.pathname);
   const currentUserId = resolveCacheUserId();
 
@@ -278,11 +280,19 @@ const Broadcast = ({
     useState("direct");
   const [showCampaignAudiencePicker, setShowCampaignAudiencePicker] =
     useState(false);
+  const [showGroupAudiencePicker, setShowGroupAudiencePicker] =
+    useState(false);
+  const [savedAudienceGroups, setSavedAudienceGroups] = useState([]);
+  const [groupAudiencePickerLoading, setGroupAudiencePickerLoading] =
+    useState(false);
+  const [groupAudiencePickerError, setGroupAudiencePickerError] = useState("");
+  const [groupAudienceSearch, setGroupAudienceSearch] = useState("");
   const [audienceSourceMode, setAudienceSourceMode] = useState("contacts");
   const [selectedAudienceMeta, setSelectedAudienceMeta] = useState({
     segmentId: "",
     segmentName: "",
   });
+  const lastAppliedGroupRunRef = useRef("");
   const [selectedCampaignAudience, setSelectedCampaignAudience] = useState({
     campaignBroadcastId: "",
     campaignName: "",
@@ -2067,10 +2077,143 @@ const Broadcast = ({
     setShowCampaignAudiencePicker(false);
   };
 
+  const loadSavedAudienceGroups = useCallback(
+    async ({ silent = false } = {}) => {
+      try {
+        if (!silent) setGroupAudiencePickerLoading(true);
+        setGroupAudiencePickerError("");
+        const response = await apiClient.getAudienceSegments({});
+        const nextGroups = Array.isArray(response?.data?.data)
+          ? response.data.data
+          : Array.isArray(response?.data)
+            ? response.data
+            : [];
+        setSavedAudienceGroups(nextGroups);
+        return nextGroups;
+      } catch (error) {
+        setSavedAudienceGroups([]);
+        setGroupAudiencePickerError(
+          error?.response?.data?.error ||
+            error?.message ||
+            "Failed to load saved groups.",
+        );
+        return [];
+      } finally {
+        if (!silent) setGroupAudiencePickerLoading(false);
+      }
+    },
+    [],
+  );
+
+  const openGroupAudiencePicker = useCallback(async () => {
+    setGroupAudienceSearch("");
+    setGroupAudiencePickerError("");
+    setShowGroupAudiencePicker(true);
+    if (!savedAudienceGroups.length) {
+      await loadSavedAudienceGroups({ silent: false });
+    }
+  }, [loadSavedAudienceGroups, savedAudienceGroups.length]);
+
+  const closeGroupAudiencePicker = useCallback(() => {
+    setShowGroupAudiencePicker(false);
+    setGroupAudienceSearch("");
+    setGroupAudiencePickerError("");
+  }, []);
+
   const openCampaignExtraContactsPicker = () => {
     setContactAudiencePickerPurpose("campaign_extra");
     setShowContactAudiencePicker(true);
   };
+
+  const loadGroupContactsForBroadcast = useCallback(async (groupId) => {
+    const normalizedGroupId = String(groupId || "").trim();
+    if (!normalizedGroupId) return [];
+
+    const response = await apiClient.getAudienceSegmentContacts(
+      normalizedGroupId,
+      { page: 1, pageSize: 100000 },
+    );
+    const payload = response?.data?.data || response?.data || {};
+    const rawContacts = Array.isArray(payload?.contacts)
+      ? payload.contacts
+      : Array.isArray(payload?.items)
+        ? payload.items
+        : Array.isArray(payload?.docs)
+          ? payload.docs
+          : Array.isArray(payload)
+            ? payload
+            : [];
+    return rawContacts;
+  }, []);
+
+  const mergeBroadcastRecipients = useCallback(
+    (baseRecipients = [], incomingContacts = []) => {
+      const merged = Array.isArray(baseRecipients) ? [...baseRecipients] : [];
+      const seenPhones = new Set(
+        merged
+          .map((recipient) => normalizePhoneForLookup(recipient?.phone || ""))
+          .filter(Boolean),
+      );
+
+      (Array.isArray(incomingContacts) ? incomingContacts : []).forEach(
+        (contact) => {
+          const normalized = normalizeContactToRecipient(contact);
+          const phoneKey = normalizePhoneForLookup(normalized?.phone || "");
+          if (!phoneKey || seenPhones.has(phoneKey)) return;
+          seenPhones.add(phoneKey);
+          merged.push(normalized);
+        },
+      );
+
+      return merged;
+    },
+    [],
+  );
+
+  const applySavedGroupToBroadcast = useCallback(
+    async (group = {}) => {
+      const groupId = String(group?._id || group?.id || "").trim();
+      if (!groupId) return;
+
+      setGroupAudiencePickerError("");
+      try {
+        setGroupAudiencePickerLoading(true);
+        const contacts = await loadGroupContactsForBroadcast(groupId);
+        const normalizedContacts = Array.isArray(contacts)
+          ? contacts.map((contact) => normalizeContactToRecipient(contact))
+          : [];
+
+        setRecipients((current) =>
+          mergeBroadcastRecipients(current, normalizedContacts),
+        );
+        setUploadedFile(null);
+        setFileVariables([]);
+        setSelectedAudienceMeta({
+          segmentId: groupId,
+          segmentName: String(group?.name || "").trim(),
+        });
+        setAudienceSourceMode("contacts");
+        setShowGroupAudiencePicker(false);
+      } catch (error) {
+        setGroupAudiencePickerError(
+          error?.response?.data?.error ||
+            error?.message ||
+            "Failed to load group contacts.",
+        );
+      } finally {
+        setGroupAudiencePickerLoading(false);
+      }
+    },
+    [
+      loadGroupContactsForBroadcast,
+      mergeBroadcastRecipients,
+      normalizeContactToRecipient,
+      setFileVariables,
+      setRecipients,
+      setSelectedAudienceMeta,
+      setUploadedFile,
+    ],
+  );
 
   const handleAudienceSourceModeChange = useCallback((nextMode) => {
     setAudienceSourceMode(nextMode);
@@ -2183,6 +2326,44 @@ const Broadcast = ({
     setShowCampaignAudiencePicker(false);
     setShowContactAudiencePicker(false);
   };
+
+  useEffect(() => {
+    const groupId = String(searchParams.get("groupId") || "").trim();
+    const groupRun = String(searchParams.get("groupRun") || "").trim();
+    if (!groupId || !groupRun) return;
+    if (lastAppliedGroupRunRef.current === groupRun) return;
+
+    lastAppliedGroupRunRef.current = groupRun;
+    void (async () => {
+      try {
+        const contacts = await loadGroupContactsForBroadcast(groupId);
+        const normalizedContacts = Array.isArray(contacts)
+          ? contacts.map((contact) => normalizeContactToRecipient(contact))
+          : [];
+
+        setRecipients((current) =>
+          mergeBroadcastRecipients(current, normalizedContacts),
+        );
+        setUploadedFile(null);
+        setFileVariables([]);
+        setSelectedAudienceMeta({
+          segmentId: groupId,
+          segmentName: "",
+        });
+        setAudienceSourceMode("contacts");
+      } catch (error) {
+        console.error("Failed to load broadcast group audience:", error);
+      }
+    })();
+  }, [
+    loadGroupContactsForBroadcast,
+    mergeBroadcastRecipients,
+    searchParams,
+    setFileVariables,
+    setRecipients,
+    setSelectedAudienceMeta,
+    setUploadedFile,
+  ]);
 
   const clearSelectedCampaignAudience = () => {
     setSelectedCampaignAudience({
@@ -3163,6 +3344,7 @@ const Broadcast = ({
           onClearUpload={handleClearUpload}
           onPrepareCsvReplace={handlePrepareCsvReplace}
           onOpenContactAudiencePicker={openContactAudiencePicker}
+          onOpenGroupAudiencePicker={openGroupAudiencePicker}
           onOpenCampaignAudiencePicker={openCampaignAudiencePicker}
           onClearSelectedAudience={clearSelectedAudience}
           audienceSourceMode={audienceSourceMode}
@@ -3232,6 +3414,16 @@ const Broadcast = ({
           additionalContacts={
             selectedCampaignAudience?.additionalContacts || []
           }
+        />
+        <SegmentAudiencePickerModal
+          open={showGroupAudiencePicker}
+          groups={savedAudienceGroups}
+          loading={groupAudiencePickerLoading}
+          error={groupAudiencePickerError}
+          search={groupAudienceSearch}
+          onSearchChange={setGroupAudienceSearch}
+          onClose={closeGroupAudiencePicker}
+          onSelectGroup={applySavedGroupToBroadcast}
         />
       </div>
     );
@@ -3555,6 +3747,7 @@ const Broadcast = ({
             onTemplateHeaderMediaUpload={handleTemplateHeaderMediaFileUpload}
             onClearTemplateHeaderMedia={clearTemplateHeaderMedia}
             onOpenContactAudiencePicker={openContactAudiencePicker}
+            onOpenGroupAudiencePicker={openGroupAudiencePicker}
             onOpenCampaignExtraContactsPicker={openCampaignExtraContactsPicker}
             onOpenCampaignAudiencePicker={openCampaignAudiencePicker}
             onClearSelectedAudience={clearSelectedAudience}
@@ -3618,6 +3811,16 @@ const Broadcast = ({
             additionalContacts={
               selectedCampaignAudience?.additionalContacts || []
             }
+          />
+          <SegmentAudiencePickerModal
+            open={showGroupAudiencePicker}
+            groups={savedAudienceGroups}
+            loading={groupAudiencePickerLoading}
+            error={groupAudiencePickerError}
+            search={groupAudienceSearch}
+            onSearchChange={setGroupAudienceSearch}
+            onClose={closeGroupAudiencePicker}
+            onSelectGroup={applySavedGroupToBroadcast}
           />
 
           <AllCampaignsPopup

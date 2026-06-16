@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, useContext } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, Send, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X, FileText, Copy, ExternalLink, MoreVertical, ScanLine } from 'lucide-react';
+import { Search, UserPlus, Filter, Edit, Trash2, MessageCircle, Send, CheckSquare, Square, ChevronDown, ArrowUpDown, Upload, Download, X, FileText, Copy, ExternalLink, MoreVertical, ScanLine, Users } from 'lucide-react';
 import Papa from 'papaparse';
 import { apiClient } from '../services/whatsappapi';
 import { AuthContext } from './authcontext';
@@ -14,6 +14,7 @@ import { startLoadingTimeoutGuard } from '../utils/loadingGuard';
 import { buildPublicWhatsAppOptInDemoUrl, buildWhatsAppOutreachState } from '../utils/whatsappOutreachNavigation';
 import { getWhatsAppConversationState } from '../utils/whatsappContactState';
 import { resolveWorkspaceManagementAccessState } from '../utils/agentAccess';
+import { toAppPath } from '../utils/appRouteBase';
 import './Contacts.css';
 
 const CONTACTS_LOADING_TIMEOUT_MS = 8000;
@@ -301,6 +302,20 @@ const Contacts = () => {
     );
     const [sortOption, setSortOption] = useState(initialRouteStateRef.current.sortOption);
     const [showImportModal, setShowImportModal] = useState(false);
+    const [showManageGroupsModal, setShowManageGroupsModal] = useState(false);
+    const [manageGroups, setManageGroups] = useState([]);
+    const [manageGroupsLoading, setManageGroupsLoading] = useState(false);
+    const [manageGroupsError, setManageGroupsError] = useState('');
+    const [manageGroupsSearch, setManageGroupsSearch] = useState('');
+    const [showGroupEditorModal, setShowGroupEditorModal] = useState(false);
+    const [groupEditorMode, setGroupEditorMode] = useState('create');
+    const [groupEditorId, setGroupEditorId] = useState('');
+    const [groupName, setGroupName] = useState('');
+    const [groupDescription, setGroupDescription] = useState('');
+    const [groupContacts, setGroupContacts] = useState([]);
+    const [groupContactsLoading, setGroupContactsLoading] = useState(false);
+    const [groupContactsError, setGroupContactsError] = useState('');
+    const [groupSaving, setGroupSaving] = useState(false);
     const [importFile, setImportFile] = useState(null);
     const [importRows, setImportRows] = useState([]);
     const [importHeaders, setImportHeaders] = useState([]);
@@ -547,6 +562,249 @@ const Contacts = () => {
         }
     }, []);
 
+    const loadManageGroups = useCallback(async ({ silent = false } = {}) => {
+        try {
+            if (!silent) setManageGroupsLoading(true);
+            setManageGroupsError('');
+            const response = await apiClient.getAudienceSegments({});
+            const nextGroups = Array.isArray(response?.data?.data)
+                ? response.data.data
+                : Array.isArray(response?.data)
+                    ? response.data
+                    : [];
+            setManageGroups(nextGroups);
+        } catch (error) {
+            setManageGroups([]);
+            setManageGroupsError(error?.response?.data?.error || error?.message || 'Failed to load saved groups.');
+        } finally {
+            if (!silent) setManageGroupsLoading(false);
+        }
+    }, []);
+
+    const normalizeGroupContactDraft = useCallback((contact = {}) => ({
+        contactId: String(contact?._id || contact?.id || contact?.contactId || '').trim(),
+        phone: String(contact?.phone || '').trim(),
+        name: String(contact?.name || '').trim(),
+        sourceType: String(contact?.sourceType || 'manual').trim() || 'manual',
+        whatsappOptInStatus: String(contact?.whatsappOptInStatus || contact?.optInStatus || 'unknown').trim() || 'unknown'
+    }), []);
+
+    const loadContactsForGroupEditor = useCallback(async (contactIds = []) => {
+        const selectedIds = Array.from(new Set(
+            (Array.isArray(contactIds) ? contactIds : [])
+                .map((contactId) => String(contactId || '').trim())
+                .filter(Boolean)
+        ));
+
+        if (!selectedIds.length) return [];
+
+        const nextContactsMap = new Map();
+        const visibleMap = new Map(
+            (Array.isArray(contacts) ? contacts : []).map((contact) => [String(contact?._id || '').trim(), contact])
+        );
+
+        selectedIds.forEach((contactId) => {
+            const match = visibleMap.get(contactId);
+            if (match) {
+                nextContactsMap.set(contactId, normalizeGroupContactDraft(match));
+            }
+        });
+
+        const missingIds = selectedIds.filter((contactId) => !nextContactsMap.has(contactId));
+        if (missingIds.length) {
+            const fetchedContacts = await Promise.all(
+                missingIds.map(async (contactId) => {
+                    try {
+                        const response = await apiClient.getContact(contactId);
+                        return response?.data?.data || response?.data || null;
+                    } catch {
+                        return null;
+                    }
+                })
+            );
+
+            fetchedContacts.filter(Boolean).forEach((contact) => {
+                const contactId = String(contact?._id || contact?.id || contact?.contactId || '').trim();
+                if (!contactId) return;
+                nextContactsMap.set(contactId, normalizeGroupContactDraft(contact));
+            });
+        }
+
+        return selectedIds
+            .map((contactId) => nextContactsMap.get(contactId))
+            .filter((contact) => contact && contact.phone);
+    }, [contacts, normalizeGroupContactDraft]);
+
+    const resetGroupEditor = useCallback(() => {
+        setGroupEditorMode('create');
+        setGroupEditorId('');
+        setGroupName('');
+        setGroupDescription('');
+        setGroupContacts([]);
+        setGroupContactsLoading(false);
+        setGroupContactsError('');
+        setGroupSaving(false);
+    }, []);
+
+    const openGroupEditorForCreate = useCallback(async () => {
+        if (selectedContacts.size === 0) {
+            showNotification('Select at least one contact first.', 'error');
+            return;
+        }
+
+        setGroupEditorMode('create');
+        setGroupEditorId('');
+        setGroupName('');
+        setGroupDescription('');
+        setGroupContactsError('');
+        setGroupContactsLoading(true);
+        setShowGroupEditorModal(true);
+
+        try {
+            const nextContacts = await loadContactsForGroupEditor(Array.from(selectedContacts));
+            setGroupContacts(nextContacts);
+            if (!nextContacts.length) {
+                setGroupContactsError('Unable to load the selected contacts for this group.');
+            }
+        } catch (error) {
+            setGroupContacts([]);
+            setGroupContactsError(error?.message || 'Unable to load the selected contacts for this group.');
+        } finally {
+            setGroupContactsLoading(false);
+        }
+    }, [loadContactsForGroupEditor, selectedContacts, showNotification]);
+
+    const openGroupEditorForEdit = useCallback(async (group = {}) => {
+        const groupId = String(group?._id || group?.id || '').trim();
+        if (!groupId) return;
+
+        setGroupEditorMode('edit');
+        setGroupEditorId(groupId);
+        setGroupName(String(group?.name || '').trim());
+        setGroupDescription(String(group?.description || '').trim());
+        setGroupContactsError('');
+        setGroupContactsLoading(true);
+        setShowGroupEditorModal(true);
+
+        try {
+            const response = await apiClient.getAudienceSegmentContacts(groupId, { page: 1, pageSize: 100 });
+            const payload = response?.data?.data || response?.data || {};
+            const nextContacts = Array.isArray(payload?.contacts)
+                ? payload.contacts
+                : Array.isArray(payload)
+                    ? payload
+                    : [];
+            setGroupContacts(nextContacts.map(normalizeGroupContactDraft));
+            if (!nextContacts.length) {
+                setGroupContactsError('This group has no saved contacts yet.');
+            }
+        } catch (error) {
+            setGroupContacts([]);
+            setGroupContactsError(error?.response?.data?.error || error?.message || 'Unable to load group contacts.');
+        } finally {
+            setGroupContactsLoading(false);
+        }
+    }, [normalizeGroupContactDraft]);
+
+    const handleRemoveGroupEditorContact = useCallback((contactId) => {
+        const nextContactId = String(contactId || '').trim();
+        if (!nextContactId) return;
+        setGroupContacts((current) => current.filter((contact) => String(contact?.contactId || '').trim() !== nextContactId));
+    }, []);
+
+    const closeGroupEditor = useCallback(() => {
+        if (groupSaving) return;
+        resetGroupEditor();
+        setShowGroupEditorModal(false);
+    }, [groupSaving, resetGroupEditor]);
+
+    const handleSaveGroup = useCallback(async () => {
+        const nextName = String(groupName || '').trim();
+        if (!nextName) {
+            showNotification('Group name is required.', 'error');
+            return;
+        }
+
+        const contactIds = groupContacts
+            .map((contact) => String(contact?.contactId || '').trim())
+            .filter(Boolean);
+
+        if (groupEditorMode === 'edit' && !groupEditorId) {
+            showNotification('Group id is missing.', 'error');
+            return;
+        }
+
+        if (contactIds.length === 0) {
+            showNotification('Select at least one contact first.', 'error');
+            return;
+        }
+
+        setGroupSaving(true);
+        try {
+            const payload = {
+                id: groupEditorMode === 'edit' ? groupEditorId : undefined,
+                name: nextName,
+                description: String(groupDescription || '').trim(),
+                contactIds
+            };
+
+            const response = await apiClient.createAudienceSegment(payload);
+            if (response?.data?.success === false) {
+                throw new Error(response?.data?.error || 'Failed to save group');
+            }
+
+            await loadManageGroups({ silent: true });
+            showNotification(groupEditorMode === 'edit' ? 'Group updated successfully.' : 'Group saved successfully.');
+            setShowGroupEditorModal(false);
+            resetGroupEditor();
+        } catch (error) {
+            showNotification(error?.response?.data?.error || error?.message || 'Failed to save group.', 'error');
+        } finally {
+            setGroupSaving(false);
+        }
+    }, [groupContacts, groupDescription, groupEditorId, groupEditorMode, groupName, loadManageGroups, resetGroupEditor, showNotification]);
+
+    const openManageGroupsModal = useCallback(() => {
+        setManageGroupsSearch('');
+        setManageGroupsError('');
+        setShowManageGroupsModal(true);
+    }, []);
+
+    const closeManageGroupsModal = useCallback(() => {
+        setShowManageGroupsModal(false);
+        setManageGroupsSearch('');
+        setManageGroupsError('');
+    }, []);
+
+    const handleSelectManageGroup = useCallback((group = {}) => {
+    const groupId = String(group?._id || group?.id || '').trim();
+    if (!groupId) return;
+    setShowManageGroupsModal(false);
+    navigate(
+        toAppPath(
+            `/broadcast/new/template?groupId=${encodeURIComponent(groupId)}&groupRun=${Date.now()}`,
+        ),
+    );
+    }, [navigate]);
+
+    const handleDeleteManageGroup = useCallback(async (group = {}) => {
+        const groupId = String(group?._id || group?.id || '').trim();
+        if (!groupId) return;
+        const groupNameLabel = String(group?.name || 'this group').trim() || 'this group';
+        if (!window.confirm(`Delete group "${groupNameLabel}"?`)) return;
+
+        try {
+            const response = await apiClient.deleteAudienceSegment(groupId);
+            if (response?.data?.success === false) {
+                throw new Error(response?.data?.error || 'Failed to delete group');
+            }
+            await loadManageGroups({ silent: true });
+            showNotification(`Group "${groupNameLabel}" deleted successfully.`);
+        } catch (error) {
+            showNotification(error?.response?.data?.error || error?.message || 'Failed to delete group.', 'error');
+        }
+    }, [loadManageGroups, showNotification]);
+
     useEffect(() => {
         loadContacts();
     }, [loadContacts]);
@@ -554,6 +812,22 @@ const Contacts = () => {
     useEffect(() => {
         loadCrmMetrics();
     }, [loadCrmMetrics]);
+
+    useEffect(() => {
+        if (!showManageGroupsModal) return undefined;
+        let isActive = true;
+
+        const run = async () => {
+            await loadManageGroups({ silent: false });
+            if (!isActive) return;
+        };
+
+        void run();
+
+        return () => {
+            isActive = false;
+        };
+    }, [loadManageGroups, showManageGroupsModal]);
 
     useEffect(() => {
         socketService.connect(import.meta.env.VITE_SOCKET_URL || import.meta.env.VITE_WS_URL);
@@ -1718,6 +1992,15 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                     Delete Selected ({selectedContacts.size})
                                 </button>
                             )}
+                            {selectedContacts.size > 0 && (
+                                <button
+                                    className="secondary-btn"
+                                    onClick={openGroupEditorForCreate}
+                                >
+                                    <Users size={18} />
+                                    Save Group ({selectedContacts.size})
+                                </button>
+                            )}
                             <button 
                                 className="secondary-btn" 
                                 onClick={() => {
@@ -1748,6 +2031,10 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                     Export
                                 </button>
                             )}
+                            <button className="secondary-btn" onClick={openManageGroupsModal}>
+                                <Users size={18} />
+                                Manage Groups
+                            </button>
                             {canCreateContacts && (
                                 <button className="primary-btn" onClick={() => openAddContactModal()}>
                                     <UserPlus size={18} />
@@ -2569,6 +2856,192 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                     </div>
                 )}
             </div>
+
+            {showManageGroupsModal && (
+                <div className="modal-overlay">
+                    <div className="modal group-editor-modal" role="dialog" aria-modal="true" aria-labelledby="manage-groups-title">
+                        <div className="modal-header">
+                            <h3 id="manage-groups-title">Manage Groups</h3>
+                            <button className="close-btn" type="button" aria-label="Close manage groups dialog" onClick={closeManageGroupsModal}>{"\u00D7"}</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="group-editor-summary">
+                                <strong>Saved audience groups</strong>
+                                <span>Edit, delete, or reuse groups without changing the Broadcast group picker.</span>
+                            </div>
+
+                            <div className="group-editor-panel__content" style={{ padding: 0, borderTop: 'none' }}>
+                                <div className="search-box" style={{ maxWidth: 'none', width: '100%', marginBottom: 14 }}>
+                                    <Search size={18} />
+                                    <input
+                                        type="text"
+                                        placeholder="Search saved groups..."
+                                        aria-label="Search saved groups"
+                                        value={manageGroupsSearch}
+                                        onChange={(e) => setManageGroupsSearch(e.target.value)}
+                                    />
+                                </div>
+                            </div>
+
+                            {manageGroupsError ? (
+                                <div className="contacts-import-warning" role="status">
+                                    <strong>Group load error</strong>
+                                    <p>{manageGroupsError}</p>
+                                </div>
+                            ) : null}
+
+                            <div className="group-editor-contact-list" style={{ maxHeight: '52vh' }}>
+                                {manageGroupsLoading ? (
+                                    <div className="segment-picker-empty">Loading groups...</div>
+                                ) : (() => {
+                                    const filteredGroups = manageGroups.filter((group) => {
+                                        const term = String(manageGroupsSearch || '').trim().toLowerCase();
+                                        if (!term) return true;
+                                        return [
+                                            group?.name,
+                                            group?.description,
+                                            group?.sourceType
+                                        ].some((value) => String(value || '').toLowerCase().includes(term));
+                                    });
+
+                                    if (!filteredGroups.length) {
+                                        return <div className="segment-picker-empty">No saved groups found.</div>;
+                                    }
+
+                                    return filteredGroups.map((group) => {
+                                        const memberCount = Number(group?.recipientCount || group?.contacts?.length || 0);
+                                        return (
+                                            <div key={group?._id || group?.id || group?.name} className="group-editor-contact-card">
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'flex-start' }}>
+                                                    <div>
+                                                        <strong>{group?.name || 'Unnamed group'}</strong>
+                                                        <span>{String(group?.sourceType || 'manual').replace(/_/g, ' ')} Group</span>
+                                                    </div>
+                                                    <small>{memberCount.toLocaleString()} contacts</small>
+                                                </div>
+                                                <span>{group?.description || 'No description provided.'}</span>
+                                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginTop: 10 }}>
+                                                    <button type="button" className="secondary-btn" onClick={() => handleSelectManageGroup(group)}>
+                                                        Use in Broadcast
+                                                    </button>
+                                                    <button type="button" className="secondary-btn" onClick={() => openGroupEditorForEdit(group)}>
+                                                        Edit
+                                                    </button>
+                                                    <button type="button" className="secondary-btn delete-selected" onClick={() => handleDeleteManageGroup(group)}>
+                                                        Delete
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        );
+                                    });
+                                })()}
+                            </div>
+                        </div>
+                        <div className="modal-footer group-editor-modal__footer">
+                            <button type="button" className="secondary-btn" onClick={closeManageGroupsModal}>
+                                Close
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showGroupEditorModal && (
+                <div className="modal-overlay">
+                    <div className="modal group-editor-modal" role="dialog" aria-modal="true" aria-labelledby="group-editor-title">
+                        <div className="modal-header">
+                            <h3 id="group-editor-title">
+                                {groupEditorMode === 'edit' ? 'Edit Group' : 'Save Group'}
+                            </h3>
+                            <button className="close-btn" type="button" aria-label="Close group editor dialog" onClick={closeGroupEditor}>{"\u00D7"}</button>
+                        </div>
+                        <div className="modal-body">
+                            <div className="group-editor-summary">
+                                <strong>
+                                    {groupEditorMode === 'edit'
+                                        ? 'Update the group name, description, or members.'
+                                        : 'Save the selected contacts as a reusable group.'}
+                                </strong>
+                                <span>
+                                    {groupEditorMode === 'edit'
+                                        ? 'Changes will update the existing saved group.'
+                                        : `${selectedContacts.size} selected contact(s) will be saved into a new group.`}
+                                </span>
+                            </div>
+
+                            {groupContactsError ? (
+                                <div className="contacts-import-warning" role="status">
+                                    <strong>Group members</strong>
+                                    <p>{groupContactsError}</p>
+                                </div>
+                            ) : null}
+
+                            <details className="group-editor-panel" open>
+                                <summary className="group-editor-panel__summary">
+                                    <span>Selected Contacts</span>
+                                    <span className="group-editor-panel__badge">
+                                        {groupContactsLoading ? '...' : groupContacts.length}
+                                    </span>
+                                </summary>
+                                <div className="group-editor-panel__content">
+                                    {groupContactsLoading ? (
+                                        <div className="segment-picker-empty">Loading contacts...</div>
+                                    ) : groupContacts.length > 0 ? (
+                                        <div className="group-editor-contact-list">
+                                            {groupContacts.map((contact, index) => (
+                                                <div key={contact.contactId || contact.phone || index} className="group-editor-contact-card">
+                                                    <strong>{contact.name || 'Unnamed contact'}</strong>
+                                                    <span>{contact.phone || 'No phone'}</span>
+                                                    <small>{contact.sourceType || 'manual'} | {contact.whatsappOptInStatus || 'unknown'}</small>
+                                                    <div style={{ marginTop: 8 }}>
+                                                        <button
+                                                            type="button"
+                                                            className="secondary-btn delete-selected"
+                                                            onClick={() => handleRemoveGroupEditorContact(contact.contactId)}
+                                                        >
+                                                            Remove
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    ) : (
+                                        <div className="segment-picker-empty">No contacts loaded.</div>
+                                    )}
+                                </div>
+                            </details>
+
+                            <div className="form-group">
+                                <label>Group Name *</label>
+                                <input
+                                    type="text"
+                                    value={groupName}
+                                    onChange={(e) => setGroupName(e.target.value)}
+                                    placeholder="Enter group name"
+                                />
+                            </div>
+
+                            <div className="form-group">
+                                <label>Description</label>
+                                <textarea
+                                    rows="4"
+                                    value={groupDescription}
+                                    onChange={(e) => setGroupDescription(e.target.value)}
+                                    placeholder="Optional note about this group"
+                                />
+                            </div>
+                        </div>
+                        <div className="modal-footer group-editor-modal__footer">
+                            <button type="button" className="secondary-btn" onClick={closeGroupEditor} disabled={groupSaving}>
+                                Cancel
+                            </button>
+                            <button type="button" className="primary-btn" onClick={handleSaveGroup} disabled={groupSaving}>
+                                {groupSaving ? 'Saving...' : (groupEditorMode === 'edit' ? 'Update Group' : 'Save Group')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* Add Contact Modal */}
             {showAddModal && (

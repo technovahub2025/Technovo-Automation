@@ -1,6 +1,7 @@
 ﻿import React from "react";
 import {
   CheckCircle,
+  ChevronDown,
   FileText,
   Upload,
   Calendar,
@@ -9,6 +10,7 @@ import {
   Users,
   Download,
   Settings,
+  UserPlus,
 } from "lucide-react";
 import MessagePreview from "./MessagePreview";
 import "./ScheduleForm.css";
@@ -56,6 +58,7 @@ const ScheduleForm = ({
   },
   onOpenContactAudiencePicker,
   onOpenCampaignAudiencePicker,
+  onOpenGroupAudiencePicker,
   onCloseContactAudiencePicker,
   onClearSelectedAudience,
   audienceSourceMode = "contacts",
@@ -128,6 +131,9 @@ const ScheduleForm = ({
   const campaignAudienceRows = Array.isArray(selectedCampaignAudienceRecipients)
     ? selectedCampaignAudienceRecipients
     : [];
+  const [showAddRecipientMenu, setShowAddRecipientMenu] =
+    React.useState(false);
+  const addRecipientMenuRef = React.useRef(null);
 
   React.useEffect(() => {
     if (!hasAppliedResetVersion.current) {
@@ -146,6 +152,33 @@ const ScheduleForm = ({
       // ignore storage errors
     }
   }, [resetVersion]);
+
+  React.useEffect(() => {
+    if (!showAddRecipientMenu) return undefined;
+
+    const handlePointerDown = (event) => {
+      if (
+        addRecipientMenuRef.current &&
+        !addRecipientMenuRef.current.contains(event.target)
+      ) {
+        setShowAddRecipientMenu(false);
+      }
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === "Escape") {
+        setShowAddRecipientMenu(false);
+      }
+    };
+
+    window.addEventListener("mousedown", handlePointerDown);
+    window.addEventListener("keydown", handleEscape);
+
+    return () => {
+      window.removeEventListener("mousedown", handlePointerDown);
+      window.removeEventListener("keydown", handleEscape);
+    };
+  }, [showAddRecipientMenu]);
 
   React.useEffect(() => {
     if (!canUseSessionStorage() || hasRestoredDraftRef.current) return;
@@ -527,7 +560,36 @@ const ScheduleForm = ({
       onOpenContactAudiencePicker();
       return;
     }
+    if (
+      audienceSourceMode === "campaign" &&
+      typeof onOpenCampaignAudiencePicker === "function"
+    ) {
+      onOpenCampaignAudiencePicker();
+      return;
+    }
     triggerCsvPicker();
+  };
+
+  const handleToggleAddRecipientMenu = () => {
+    setShowAddRecipientMenu((current) => !current);
+  };
+
+  const handleAddRecipientMenuAction = (action) => {
+    if (action === "contacts") {
+      onAudienceSourceModeChange?.("contacts");
+      onOpenContactAudiencePicker?.();
+    } else if (action === "groups") {
+      onOpenGroupAudiencePicker?.();
+    } else if (action === "campaign") {
+      onAudienceSourceModeChange?.("campaign");
+      onOpenCampaignAudiencePicker?.();
+    } else if (action === "csv") {
+      onAudienceSourceModeChange?.("csv");
+      triggerCsvPicker();
+    } else if (action === "clear") {
+      onClearSelectedAudience?.();
+    }
+    setShowAddRecipientMenu(false);
   };
 
   const handleCsvDragOver = (event) => {
@@ -1472,7 +1534,99 @@ const ScheduleForm = ({
           */}
 
           <div className="form-group">
-            <label>Recipients *</label>
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                gap: 12,
+                marginBottom: 8,
+                flexWrap: "wrap",
+              }}
+            >
+              <label style={{ marginBottom: 0 }}>Recipients *</label>
+              <div style={{ position: "relative" }} ref={addRecipientMenuRef}>
+                <button
+                  type="button"
+                  className="replace-upload-btn"
+                  onClick={handleToggleAddRecipientMenu}
+                  aria-haspopup="menu"
+                  aria-expanded={showAddRecipientMenu}
+                  style={{ display: "inline-flex", alignItems: "center", gap: 8 }}
+                >
+                  <UserPlus size={16} />
+                  Add
+                  <ChevronDown size={14} />
+                </button>
+
+                {showAddRecipientMenu ? (
+                  <div
+                    role="menu"
+                    style={{
+                      position: "absolute",
+                      top: "calc(100% + 10px)",
+                      right: 0,
+                      zIndex: 20,
+                      minWidth: 220,
+                      padding: 8,
+                      border: "1px solid #dbe4ff",
+                      borderRadius: 14,
+                      background: "#fff",
+                      boxShadow: "0 18px 36px rgba(15, 23, 42, 0.12)",
+                      display: "grid",
+                      gap: 6,
+                    }}
+                  >
+                    <button
+                      type="button"
+                      className="replace-upload-btn"
+                      onClick={() => handleAddRecipientMenuAction("contacts")}
+                      style={{ justifyContent: "flex-start" }}
+                    >
+                      <Users size={16} />
+                      From CRM
+                    </button>
+                    <button
+                      type="button"
+                      className="replace-upload-btn"
+                      onClick={() => handleAddRecipientMenuAction("groups")}
+                      style={{ justifyContent: "flex-start" }}
+                    >
+                      <Users size={16} />
+                      Saved Groups
+                    </button>
+                    <button
+                      type="button"
+                      className="replace-upload-btn"
+                      onClick={() => handleAddRecipientMenuAction("campaign")}
+                      style={{ justifyContent: "flex-start" }}
+                    >
+                      <Calendar size={16} />
+                      From Past Campaigns
+                    </button>
+                    <button
+                      type="button"
+                      className="replace-upload-btn"
+                      onClick={() => handleAddRecipientMenuAction("csv")}
+                      style={{ justifyContent: "flex-start" }}
+                    >
+                      <Upload size={16} />
+                      CSV first
+                    </button>
+                    {typeof onClearSelectedAudience === "function" ? (
+                      <button
+                        type="button"
+                        className="clear-upload-btn"
+                        onClick={() => handleAddRecipientMenuAction("clear")}
+                        style={{ justifyContent: "flex-start" }}
+                      >
+                        Clear Selected Contacts
+                      </button>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            </div>
 
             <div className="audience-source-toggle">
               <button

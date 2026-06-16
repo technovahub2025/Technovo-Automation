@@ -1345,6 +1345,15 @@
     box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
 }
 
+.group-editor-modal {
+    display: flex;
+    flex-direction: column;
+    width: min(92vw, 760px);
+    max-width: 760px;
+    max-height: 90vh;
+    overflow: hidden;
+}
+
 .modal-header {
     display: flex;
     justify-content: space-between;
@@ -1379,6 +1388,129 @@
 
 .modal-body {
     padding: 20px;
+}
+
+.group-editor-modal .modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    overflow-y: auto;
+    flex: 1 1 auto;
+}
+
+.group-editor-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px 16px;
+    border: 1px solid color-mix(in srgb, var(--color-primary) 16%, var(--color-border));
+    border-radius: 16px;
+    background: linear-gradient(180deg, rgba(239, 246, 255, 0.82), rgba(255, 255, 255, 1));
+}
+
+.group-editor-summary strong {
+    color: var(--color-text-primary);
+    font-size: 15px;
+    font-weight: 700;
+}
+
+.group-editor-summary span {
+    color: var(--color-text-secondary);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.group-editor-panel {
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+    background: var(--color-bg-surface);
+    overflow: hidden;
+}
+
+.group-editor-panel[open] {
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.04);
+}
+
+.group-editor-panel__summary {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    list-style: none;
+    padding: 14px 16px;
+    cursor: pointer;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(255, 255, 255, 1));
+}
+
+.group-editor-panel__summary::-webkit-details-marker {
+    display: none;
+}
+
+.group-editor-panel__summary svg {
+    color: var(--color-text-secondary);
+    transition: transform 0.18s ease;
+}
+
+.group-editor-panel[open] > .group-editor-panel__summary svg {
+    transform: rotate(180deg);
+}
+
+.group-editor-panel__badge {
+    min-width: 28px;
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: rgba(29, 78, 216, 0.1);
+    color: #1d4ed8;
+    font-size: 12px;
+    font-weight: 700;
+    text-align: center;
+}
+
+.group-editor-panel__content {
+    padding: 16px;
+    border-top: 1px solid var(--color-border);
+}
+
+.group-editor-contact-list {
+    display: grid;
+    gap: 10px;
+    max-height: 260px;
+    overflow: auto;
+    padding-right: 2px;
+}
+
+.group-editor-contact-card {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 12px 14px;
+    border: 1px solid var(--color-border);
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.88), rgba(255, 255, 255, 1));
+}
+
+.group-editor-contact-card strong {
+    color: var(--color-text-primary);
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.group-editor-contact-card span {
+    color: var(--color-text-secondary);
+    font-size: 13px;
+}
+
+.group-editor-contact-card small {
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.group-editor-modal__footer {
+    flex-shrink: 0;
 }
 
 .form-group {
