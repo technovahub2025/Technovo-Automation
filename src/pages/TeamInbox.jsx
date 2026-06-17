@@ -122,6 +122,8 @@ const INBOX_VIEW_OPTIONS = new Set([
   'followups'
 ]);
 
+const LEAD_SCORE_BAND_OPTIONS = new Set(['all', 'hot', 'warm', 'cold']);
+
 const normalizeInboxViewOption = (value = '') => {
   const normalized = String(value || '').trim().toLowerCase();
   return INBOX_VIEW_OPTIONS.has(normalized) ? normalized : '';
@@ -248,6 +250,38 @@ const resolveInitialInboxView = () => {
   return 'all';
 };
 
+const resolveInitialLeadScoreBand = () => {
+  if (typeof window !== 'undefined') {
+    try {
+      const params = new URLSearchParams(window.location.search || '');
+      const requestedBand = String(params.get('leadScoreBand') || '').trim().toLowerCase();
+      if (LEAD_SCORE_BAND_OPTIONS.has(requestedBand)) {
+        return requestedBand;
+      }
+    } catch {
+      // fall through to default
+    }
+  }
+
+  return 'all';
+};
+
+const getConversationLeadScoreValue = (conversation = {}) =>
+  Number(conversation?.contactId?.leadScore ?? conversation?.leadScore ?? 0) || 0;
+
+const matchesLeadScoreBand = (conversation = {}, band = 'all') => {
+  const normalizedBand = String(band || 'all').trim().toLowerCase();
+  if (!LEAD_SCORE_BAND_OPTIONS.has(normalizedBand) || normalizedBand === 'all') {
+    return true;
+  }
+
+  const leadScore = getConversationLeadScoreValue(conversation);
+  if (normalizedBand === 'hot') return leadScore >= 80;
+  if (normalizedBand === 'warm') return leadScore >= 40 && leadScore < 80;
+  if (normalizedBand === 'cold') return leadScore < 40;
+  return true;
+};
+
 const TeamInbox = () => {
 
   const location = useLocation();
@@ -315,6 +349,7 @@ const TeamInbox = () => {
     const initialFilter = String(searchParams.get('filter') || 'all').trim().toLowerCase();
     return ['all', 'unread', 'read'].includes(initialFilter) ? initialFilter : 'all';
   });
+  const [leadScoreBand, setLeadScoreBand] = useState(() => resolveInitialLeadScoreBand());
   const [inboxView, setInboxView] = useState(() => {
     return resolveInitialInboxView();
   });
@@ -752,6 +787,14 @@ const TeamInbox = () => {
   }, [requestedConversationFilter]);
 
   useEffect(() => {
+    const requestedLeadScoreBand = String(searchParams.get('leadScoreBand') || '').trim().toLowerCase();
+    const normalizedLeadScoreBand = LEAD_SCORE_BAND_OPTIONS.has(requestedLeadScoreBand)
+      ? requestedLeadScoreBand
+      : 'all';
+    setLeadScoreBand(normalizedLeadScoreBand);
+  }, [searchParams]);
+
+  useEffect(() => {
     const desiredFilter = String(conversationFilter || 'all').trim().toLowerCase();
     if (!['all', 'unread', 'read'].includes(desiredFilter)) return;
 
@@ -766,6 +809,22 @@ const TeamInbox = () => {
     }
     setSearchParams(nextParams, { replace: true });
   }, [conversationFilter, searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const desiredBand = String(leadScoreBand || 'all').trim().toLowerCase();
+    if (!LEAD_SCORE_BAND_OPTIONS.has(desiredBand)) return;
+
+    const currentBand = String(searchParams.get('leadScoreBand') || 'all').trim().toLowerCase();
+    if (currentBand === desiredBand) return;
+
+    const nextParams = new URLSearchParams(searchParams);
+    if (desiredBand === 'all') {
+      nextParams.delete('leadScoreBand');
+    } else {
+      nextParams.set('leadScoreBand', desiredBand);
+    }
+    setSearchParams(nextParams, { replace: true });
+  }, [leadScoreBand, searchParams, setSearchParams]);
 
   useEffect(() => {
     const normalizedUserId = String(currentUserId || '').trim();
@@ -1522,6 +1581,7 @@ const TeamInbox = () => {
         reason: String(options?.reason || 'unknown').trim() || 'unknown',
         search: normalizedConversationSearchTerm,
         filter: normalizedConversationFilter,
+        leadScoreBand,
         view: inboxView,
         status: inboxStatusView,
         ...(inboxAssignedTo ? { assignedTo: inboxAssignedTo } : {})
@@ -1530,6 +1590,7 @@ const TeamInbox = () => {
       loadConversationsStable,
       normalizedConversationSearchTerm,
       normalizedConversationFilter,
+      leadScoreBand,
       inboxView,
       inboxStatusView,
       inboxAssignedTo,
@@ -1628,7 +1689,7 @@ const TeamInbox = () => {
   }, [refreshInboxOverview, currentUserId]);
 
   useEffect(() => {
-    const querySignature = `${normalizedConversationSearchTerm.toLowerCase()}::${normalizedConversationFilter}::${String(inboxView || '').trim().toLowerCase()}::${inboxStatusView}::${inboxAssignedTo}`;
+    const querySignature = `${normalizedConversationSearchTerm.toLowerCase()}::${normalizedConversationFilter}::${String(leadScoreBand || 'all').trim().toLowerCase()}::${String(inboxView || '').trim().toLowerCase()}::${inboxStatusView}::${inboxAssignedTo}`;
     if (!conversationQueryInitializedRef.current) {
       conversationQueryInitializedRef.current = true;
       conversationPageMetaRef.current = {
@@ -1643,10 +1704,16 @@ const TeamInbox = () => {
     }
 
     setConversationLoadingMore(false);
-    void loadScopedConversations({ silent: true, append: false, reason: 'query_change' });
+    void loadScopedConversations({
+      silent: true,
+      append: false,
+      reason: 'query_change',
+      skipCache: true
+    });
   }, [
     normalizedConversationSearchTerm,
     normalizedConversationFilter,
+    leadScoreBand,
     inboxView,
     inboxStatusView,
     inboxAssignedTo,
@@ -1832,15 +1899,33 @@ const TeamInbox = () => {
   });
 
   const filteredConversations = useMemo(() => {
-    if (!isAgentRestricted) {
-      return conversations;
-    }
+    const safeConversations = Array.isArray(conversations) ? conversations : [];
+    const workspaceFiltered = !isAgentRestricted
+      ? safeConversations
+      : safeConversations.filter((conversation) => {
+          const assigneeId = String(getConversationAssignedLookupId(conversation) || '').trim();
+          return !currentWorkspaceAssigneeId || assigneeId === currentWorkspaceAssigneeId;
+        });
 
-    return (Array.isArray(conversations) ? conversations : []).filter((conversation) => {
-      const assigneeId = String(getConversationAssignedLookupId(conversation) || '').trim();
-      return !currentWorkspaceAssigneeId || assigneeId === currentWorkspaceAssigneeId;
-    });
-  }, [conversations, isAgentRestricted, currentWorkspaceAssigneeId]);
+    const unreadFiltered = (() => {
+      if (normalizedConversationFilter === 'unread') {
+        return workspaceFiltered.filter((conversation) => Number(getUnreadCount(conversation) || 0) > 0);
+      }
+      if (normalizedConversationFilter === 'read') {
+        return workspaceFiltered.filter((conversation) => Number(getUnreadCount(conversation) || 0) <= 0);
+      }
+      return workspaceFiltered;
+    })();
+
+    return unreadFiltered.filter((conversation) => matchesLeadScoreBand(conversation, leadScoreBand));
+  }, [
+    conversations,
+    isAgentRestricted,
+    currentWorkspaceAssigneeId,
+    leadScoreBand,
+    normalizedConversationFilter,
+    getUnreadCount
+  ]);
 
   const sidebarConversations = filteredConversations;
 
@@ -2145,6 +2230,21 @@ const TeamInbox = () => {
     [inboxFilterOptions, inboxOverview]
   );
 
+  const leadScoreFilterOptions = useMemo(
+    () => [
+      { value: 'all', label: 'All scores', countKeys: isAgentInbox ? ['myChats'] : ['allChats'] },
+      { value: 'hot', label: 'Hot 80+', countKeys: ['leadScoreHotChats'] },
+      { value: 'warm', label: 'Warm 40-79', countKeys: ['leadScoreWarmChats'] },
+      { value: 'cold', label: 'Cold 0-39', countKeys: ['leadScoreColdChats'] }
+    ],
+    [isAgentInbox]
+  );
+
+  const leadScoreFilterOptionsWithCounts = useMemo(
+    () => buildInboxFilterOptionsWithCounts(leadScoreFilterOptions, getInboxOverviewCount),
+    [leadScoreFilterOptions, inboxOverview]
+  );
+
   const inboxTopMetrics = [
     {
       label: 'Active queue',
@@ -2175,8 +2275,38 @@ const TeamInbox = () => {
       const nextParams = new URLSearchParams(searchParams);
       nextParams.set('view', normalizedView);
       setSearchParams(nextParams, { replace: true });
+      void loadScopedConversations({
+        silent: true,
+        append: false,
+        reason: 'inbox_view_change',
+        skipCache: true
+      });
+      void refreshInboxOverview({ skipCache: true });
     },
-    [isAgentInbox, searchParams, setSearchParams, setInboxView]
+    [isAgentInbox, searchParams, setSearchParams, loadScopedConversations, refreshInboxOverview]
+  );
+
+  const handleLeadScoreBandChange = useCallback(
+    (nextBand) => {
+      const normalizedBand = String(nextBand || '').trim().toLowerCase() || 'all';
+      if (!LEAD_SCORE_BAND_OPTIONS.has(normalizedBand)) return;
+      setLeadScoreBand(normalizedBand);
+      const nextParams = new URLSearchParams(searchParams);
+      if (normalizedBand === 'all') {
+        nextParams.delete('leadScoreBand');
+      } else {
+        nextParams.set('leadScoreBand', normalizedBand);
+      }
+      setSearchParams(nextParams, { replace: true });
+      void loadScopedConversations({
+        silent: true,
+        append: false,
+        reason: 'lead_score_change',
+        skipCache: true
+      });
+      void refreshInboxOverview({ skipCache: true });
+    },
+    [searchParams, setSearchParams, loadScopedConversations, refreshInboxOverview]
   );
 
   const toggleInboxNotificationsMenu = useCallback(() => {
@@ -2265,6 +2395,9 @@ const TeamInbox = () => {
               inboxView={inboxView}
               inboxFilterOptions={inboxFilterOptionsWithCounts}
               onInboxViewChange={handleInboxViewChange}
+              leadScoreBand={leadScoreBand}
+              leadScoreFilterOptions={leadScoreFilterOptionsWithCounts}
+              onLeadScoreBandChange={handleLeadScoreBandChange}
               inboxFilterTitle={inboxFilterTitle}
               inboxFilterDescription={inboxFilterDescription}
               inboxWorkspaceLabel={inboxWorkspaceLabel}

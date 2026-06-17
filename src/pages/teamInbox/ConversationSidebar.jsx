@@ -62,6 +62,9 @@ const ConversationSidebar = ({
   inboxView = 'all',
   inboxFilterOptions = [],
   onInboxViewChange,
+  leadScoreBand = 'all',
+  leadScoreFilterOptions = [],
+  onLeadScoreBandChange,
   inboxFilterTitle = 'Chat Filters',
   inboxFilterDescription = '',
   inboxWorkspaceLabel = '',
@@ -219,8 +222,8 @@ const ConversationSidebar = ({
             {showFilterMenu && (
               <div className="inbox-select-menu inbox-filter-menu">
                 <div className="inbox-filter-menu__header">
-                  <strong>{inboxFilterTitle || 'Chat Filters'}</strong>
-                  <span>{inboxFilterDescription || 'Role-aware queue and workload filters'}</span>
+                  <strong>{inboxFilterTitle || 'Filters'}</strong>
+                  <span>{inboxFilterDescription || 'Queue, workload, and lead score'}</span>
                 </div>
                 <div className="inbox-filter-menu__list">
                   {(Array.isArray(inboxFilterOptions) ? inboxFilterOptions : []).map((option) => {
@@ -241,10 +244,42 @@ const ConversationSidebar = ({
                         disabled={Boolean(option?.disabled)}
                       >
                         <span>{option?.label}</span>
-                        <span className="inbox-filter-menu__count">{Number(option?.count || 0)}</span>
+                        {Number.isFinite(Number(option?.count)) && Number(option?.count) > 0 ? (
+                          <span className="inbox-filter-menu__count">{Number(option?.count || 0)}</span>
+                        ) : null}
                       </button>
                     );
                   })}
+                </div>
+                <div className="inbox-filter-menu__section">
+                  <div className="inbox-filter-menu__section-header">
+                    <strong>Lead score</strong>
+                    <span>Filter by contact score band</span>
+                  </div>
+                  <div className="inbox-filter-menu__score-list">
+                    {(Array.isArray(leadScoreFilterOptions) ? leadScoreFilterOptions : []).map((option) => {
+                      const isActive =
+                        String(leadScoreBand || '').trim().toLowerCase() ===
+                        String(option?.value || '').trim().toLowerCase();
+                      return (
+                        <button
+                          key={`lead-score-filter-${option.value}`}
+                          className={`select-menu-item inbox-filter-menu__item inbox-filter-menu__item--score ${
+                            isActive ? 'is-active' : ''
+                          }`.trim()}
+                          onClick={() => {
+                            onLeadScoreBandChange?.(option.value);
+                            onToggleFilterMenu?.();
+                          }}
+                        >
+                          <span>{option?.label}</span>
+                          {Number.isFinite(Number(option?.count)) && Number(option?.count) > 0 ? (
+                            <span className="inbox-filter-menu__count">{Number(option?.count || 0)}</span>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
               </div>
             )}

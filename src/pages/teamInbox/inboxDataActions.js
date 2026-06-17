@@ -17,6 +17,7 @@ const DEFAULT_CONVERSATION_PAGE_LIMIT = 20;
 const DEFAULT_MESSAGES_PAGE_LIMIT = 20;
 const CONVERSATION_LIST_LOADING_TIMEOUT_MS = 8000;
 const VALID_CONVERSATION_FILTERS = new Set(['all', 'unread', 'read']);
+const VALID_LEAD_SCORE_BANDS = new Set(['all', 'hot', 'warm', 'cold']);
 const READ_REQUEST_DEDUPE_MS = 8000;
 const pendingReadConversationIds = new Set();
 const recentReadConversationAt = new Map();
@@ -89,9 +90,15 @@ const normalizeConversationListFilter = (value = 'all') => {
   return VALID_CONVERSATION_FILTERS.has(normalizedValue) ? normalizedValue : 'all';
 };
 
+const normalizeLeadScoreBand = (value = 'all') => {
+  const normalizedValue = String(value || '').trim().toLowerCase();
+  return VALID_LEAD_SCORE_BANDS.has(normalizedValue) ? normalizedValue : 'all';
+};
+
 const buildConversationListQuerySignature = ({
   search = '',
   filter = 'all',
+  leadScoreBand = 'all',
   view = 'all',
   status = '',
   assignedTo = '',
@@ -100,6 +107,7 @@ const buildConversationListQuerySignature = ({
   [
     String(search || '').trim().toLowerCase(),
     normalizeConversationListFilter(filter),
+    normalizeLeadScoreBand(leadScoreBand),
     String(view || '').trim().toLowerCase(),
     String(status || '').trim().toLowerCase(),
     String(assignedTo || '').trim().toLowerCase(),
@@ -357,6 +365,7 @@ export const createInboxDataActions = ({
     limit,
     search = '',
     filter = 'all',
+    leadScoreBand = 'all',
     view = 'all',
     status = '',
     assignedTo = '',
@@ -380,6 +389,7 @@ export const createInboxDataActions = ({
     try {
       const normalizedSearch = String(search || '').trim();
       const normalizedFilter = normalizeConversationListFilter(filter);
+      const normalizedLeadScoreBand = normalizeLeadScoreBand(leadScoreBand);
       const normalizedView = String(view || '').trim().toLowerCase() || 'all';
       const normalizedStatus = String(status || '').trim().toLowerCase();
       const queryLimit =
@@ -388,6 +398,7 @@ export const createInboxDataActions = ({
       const querySignature = buildConversationListQuerySignature({
         search: normalizedSearch,
         filter: normalizedFilter,
+        leadScoreBand: normalizedLeadScoreBand,
         view: normalizedView,
         status: normalizedStatus,
         assignedTo,
@@ -445,6 +456,7 @@ export const createInboxDataActions = ({
           cursor: cursor || pageMeta?.nextCursor || '',
           search: normalizedSearch,
           filter: normalizedFilter,
+          leadScoreBand: normalizedLeadScoreBand,
           view: normalizedView,
           status: normalizedStatus,
           assignedTo
@@ -463,6 +475,7 @@ export const createInboxDataActions = ({
               ...(append && currentCursor ? { cursor: currentCursor } : {}),
               ...(normalizedSearch ? { search: normalizedSearch } : {}),
               ...(normalizedFilter !== 'all' ? { filter: normalizedFilter } : {}),
+              ...(normalizedLeadScoreBand !== 'all' ? { leadScoreBand: normalizedLeadScoreBand } : {}),
               ...(normalizedView !== 'all' ? { view: normalizedView } : {}),
               ...(normalizedStatus ? { status: normalizedStatus } : {}),
               ...(String(assignedTo || '').trim() ? { assignedTo: String(assignedTo).trim() } : {})
@@ -505,7 +518,7 @@ export const createInboxDataActions = ({
           const shouldPreservePreviousList =
             !append &&
             previousList.length > 0 &&
-            (!response?.ok || incomingConversations.length === 0) &&
+            !response?.ok &&
             isSameQuery;
 
           if (shouldPreservePreviousList) {
