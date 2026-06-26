@@ -144,7 +144,7 @@ const resolveNodeSummary = (node = {}) => {
     if (adminRecipient) parts.push(`Admin ${adminRecipient}`);
     if (customerTemplate) parts.push(`Customer template ${customerTemplate}`);
     if (adminTemplate) parts.push(`Admin template ${adminTemplate}`);
-    if (customerTemplate || adminTemplate) parts.push('Template-first with text fallback');
+    if (customerTemplate || adminTemplate) parts.push('Template-only live send');
     return parts.join(' • ') || 'WhatsApp notification';
   }
 

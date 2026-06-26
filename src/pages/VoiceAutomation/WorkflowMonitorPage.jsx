@@ -511,11 +511,19 @@ const WorkflowMonitorPage = () => {
               notes: bookingData.notes || ''
             }
           : null,
-        whatsappState: whatsappData && (whatsappData.customer || whatsappData.admin || whatsappData.providerMessageId)
+        whatsappState: whatsappData && (
+          whatsappData.customer ||
+          whatsappData.admin ||
+          whatsappData.providerMessageId ||
+          whatsappData.customerProviderMessageId ||
+          whatsappData.adminProviderMessageId
+        )
           ? {
               customer: whatsappData.customer || whatsappData.customerStatus || 'not sent',
               admin: whatsappData.admin || whatsappData.adminStatus || 'not sent',
               providerMessageId: whatsappData.providerMessageId || '',
+              customerProviderMessageId: whatsappData.customerProviderMessageId || '',
+              adminProviderMessageId: whatsappData.adminProviderMessageId || '',
               templateName: whatsappData.templateName || whatsappData.requestedTemplateName || '',
               customerTemplateName: whatsappData.customerTemplateName || whatsappData.requestedTemplateName || '',
               adminTemplateName: whatsappData.adminTemplateName || whatsappData.requestedTemplateName || '',
@@ -529,6 +537,8 @@ const WorkflowMonitorPage = () => {
           : null,
         customerWhatsAppStatus: whatsappData.customer || whatsappData.customerStatus || 'not sent',
         adminWhatsAppStatus: whatsappData.admin || whatsappData.adminStatus || 'not sent',
+        customerProviderMessageId: whatsappData.customerProviderMessageId || '',
+        adminProviderMessageId: whatsappData.adminProviderMessageId || '',
         customerWhatsAppError: whatsappData.customerError || '',
         adminWhatsAppError: whatsappData.adminError || '',
         customerWhatsAppTemplateName: whatsappData.customerTemplateName || '',
@@ -780,6 +790,9 @@ const WorkflowMonitorPage = () => {
         row.customerPhone,
         row.customerWhatsAppStatus,
         row.adminWhatsAppStatus,
+        row.customerProviderMessageId,
+        row.adminProviderMessageId,
+        row.whatsappState?.providerMessageId,
         row.customerWhatsAppError,
         row.adminWhatsAppError,
         row.queueName,
@@ -847,7 +860,7 @@ const WorkflowMonitorPage = () => {
   const renderStatusPill = (value) => {
     const normalized = normalizeStatus(value);
     const tone =
-      normalized === 'running' || normalized === 'active' || normalized === 'sent' || normalized === 'confirmed' || normalized === 'reserved'
+      normalized === 'running' || normalized === 'active' || normalized === 'sent' || normalized === 'delivered' || normalized === 'read' || normalized === 'confirmed' || normalized === 'reserved'
         ? 'success'
         : normalized === 'failed' || normalized === 'cancelled' || normalized === 'rejected'
           ? 'danger'
@@ -964,6 +977,8 @@ const WorkflowMonitorPage = () => {
     const queue = row.queueState || {};
     const customerWhatsAppError = String(row.customerWhatsAppError || whatsapp.customerError || '').trim();
     const adminWhatsAppError = String(row.adminWhatsAppError || whatsapp.adminError || '').trim();
+    const customerProviderMessageId = String(row.customerProviderMessageId || whatsapp.customerProviderMessageId || '').trim();
+    const adminProviderMessageId = String(row.adminProviderMessageId || whatsapp.adminProviderMessageId || '').trim();
     const customerWhatsAppTemplateName = String(row.customerWhatsAppTemplateName || whatsapp.customerTemplateName || row.whatsappState?.templateName || '').trim();
     const adminWhatsAppTemplateName = String(row.adminWhatsAppTemplateName || whatsapp.adminTemplateName || row.whatsappState?.templateName || '').trim();
     const customerWhatsAppDeliveryMode = String(row.customerWhatsAppDeliveryMode || whatsapp.customerDeliveryMode || '').trim();
@@ -1131,6 +1146,7 @@ const WorkflowMonitorPage = () => {
                 <strong>{renderStatusPill(row.customerWhatsAppStatus || whatsapp.customer || 'not sent')}</strong>
                 {customerWhatsAppDeliveryMode ? <span>{`Mode: ${customerWhatsAppDeliveryMode}`}</span> : null}
                 {customerWhatsAppTemplateName ? <span>{`Template: ${customerWhatsAppTemplateName}`}</span> : null}
+                {customerProviderMessageId ? <span className="monitor-mono">{`Provider ID: ${customerProviderMessageId}`}</span> : null}
                 {customerWhatsAppError ? <span className="workflow-monitor-inline-error">{customerWhatsAppError}</span> : null}
                 {!customerWhatsAppError && customerWhatsAppFallbackReason ? (
                   <span>{`Fallback: ${customerWhatsAppFallbackReason}`}</span>
@@ -1141,6 +1157,7 @@ const WorkflowMonitorPage = () => {
                 <strong>{renderStatusPill(row.adminWhatsAppStatus || whatsapp.admin || 'not sent')}</strong>
                 {adminWhatsAppDeliveryMode ? <span>{`Mode: ${adminWhatsAppDeliveryMode}`}</span> : null}
                 {adminWhatsAppTemplateName ? <span>{`Template: ${adminWhatsAppTemplateName}`}</span> : null}
+                {adminProviderMessageId ? <span className="monitor-mono">{`Provider ID: ${adminProviderMessageId}`}</span> : null}
                 {adminWhatsAppError ? <span className="workflow-monitor-inline-error">{adminWhatsAppError}</span> : null}
                 {!adminWhatsAppError && adminWhatsAppFallbackReason ? (
                   <span>{`Fallback: ${adminWhatsAppFallbackReason}`}</span>
@@ -1151,8 +1168,8 @@ const WorkflowMonitorPage = () => {
                 <strong>{whatsapp.templateName || customerWhatsAppTemplateName || adminWhatsAppTemplateName || '-'}</strong>
               </div>
               <div className="workflow-monitor-detail-card workflow-monitor-detail-card--compact">
-                <label>Provider ID</label>
-                <strong className="monitor-mono">{whatsapp.providerMessageId || '-'}</strong>
+                <label>Any Provider ID</label>
+                <strong className="monitor-mono">{whatsapp.providerMessageId || customerProviderMessageId || adminProviderMessageId || '-'}</strong>
               </div>
             </div>
           </div>
@@ -1574,6 +1591,8 @@ const WorkflowMonitorPage = () => {
                       <select value={whatsappFilter} onChange={(event) => setWhatsappFilter(event.target.value)}>
                         <option value="all">All</option>
                         <option value="sent">Sent</option>
+                        <option value="delivered">Delivered</option>
+                        <option value="read">Read</option>
                         <option value="failed">Failed</option>
                         <option value="pending">Pending</option>
                         <option value="not sent">Not sent</option>
