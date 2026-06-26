@@ -136,7 +136,8 @@ export const resolveNodeSummary = (node = {}) => {
       data.customerRecipient || data.customer_recipient ? `Customer ${data.customerRecipient || data.customer_recipient}` : null,
       data.adminRecipient || data.admin_recipient ? `Admin ${data.adminRecipient || data.admin_recipient}` : null,
       data.customerTemplateName || data.customer_template_name ? `Customer template ${data.customerTemplateName || data.customer_template_name}` : null,
-      data.adminTemplateName || data.admin_template_name ? `Admin template ${data.adminTemplateName || data.admin_template_name}` : null
+      data.adminTemplateName || data.admin_template_name ? `Admin template ${data.adminTemplateName || data.admin_template_name}` : null,
+      'Template-first with text fallback'
     ].filter(Boolean).join(' • ') || 'WhatsApp notify';
   }
 

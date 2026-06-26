@@ -142,7 +142,9 @@ const resolveNodeSummary = (node = {}) => {
     const parts = [];
     if (customerRecipient) parts.push(`Customer ${customerRecipient}`);
     if (adminRecipient) parts.push(`Admin ${adminRecipient}`);
-    if (customerTemplate || adminTemplate) parts.push('Template mode');
+    if (customerTemplate) parts.push(`Customer template ${customerTemplate}`);
+    if (adminTemplate) parts.push(`Admin template ${adminTemplate}`);
+    if (customerTemplate || adminTemplate) parts.push('Template-first with text fallback');
     return parts.join(' • ') || 'WhatsApp notification';
   }
 
@@ -469,6 +471,7 @@ const WorkflowAwareMonitor = ({
   const testRunCall = useMemo(() => {
     if (!testRunActive) return null;
     const node = nodesById.get(testRunCurrentNodeId) || entryNode || null;
+    const snapshotTime = testRunStartedAt || now;
     return {
       id: 'test-run',
       callSid: 'test-run',
@@ -476,8 +479,8 @@ const WorkflowAwareMonitor = ({
       phoneNumber: 'Simulation',
       status: 'testing',
       source: 'simulation',
-      startTime: testRunStartedAt || Date.now(),
-      updatedAt: Date.now(),
+      startTime: snapshotTime,
+      updatedAt: snapshotTime,
       currentNodeId: testRunCurrentNodeId || node?.id || null,
       currentNodeType: normalizeType(node?.type),
       currentNodeLabel: resolveNodeLabel(node || {}),
@@ -486,7 +489,7 @@ const WorkflowAwareMonitor = ({
       lastInput: null,
       event: 'test_run'
     };
-  }, [entryNode, nodesById, testRunActive, testRunCurrentNodeId, testRunMessage, testRunStartedAt, testRunSteps.length, workflowId]);
+  }, [entryNode, nodesById, now, testRunActive, testRunCurrentNodeId, testRunMessage, testRunStartedAt, testRunSteps.length, workflowId]);
 
   const highlightedCall = currentCall || testRunCall || null;
   const currentNode = useMemo(() => {

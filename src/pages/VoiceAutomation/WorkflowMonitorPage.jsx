@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import {
   AlertTriangle,
   BookMarked,
@@ -153,7 +153,13 @@ const buildFallbackColumns = () => ([
   { key: 'slotDate', label: 'Slot Date', type: 'date', group: 'booking' },
   { key: 'tokenNumber', label: 'Token', type: 'text', group: 'booking' },
   { key: 'customerWhatsAppStatus', label: 'Customer WhatsApp', type: 'status', group: 'whatsapp' },
+  { key: 'customerWhatsAppTemplateName', label: 'Customer Template', type: 'text', group: 'whatsapp' },
+  { key: 'customerWhatsAppDeliveryMode', label: 'Customer Mode', type: 'text', group: 'whatsapp' },
+  { key: 'customerWhatsAppError', label: 'Customer Error', type: 'text', group: 'whatsapp' },
   { key: 'adminWhatsAppStatus', label: 'Admin WhatsApp', type: 'status', group: 'whatsapp' },
+  { key: 'adminWhatsAppTemplateName', label: 'Admin Template', type: 'text', group: 'whatsapp' },
+  { key: 'adminWhatsAppDeliveryMode', label: 'Admin Mode', type: 'text', group: 'whatsapp' },
+  { key: 'adminWhatsAppError', label: 'Admin Error', type: 'text', group: 'whatsapp' },
   { key: 'voicemailRecorded', label: 'Voicemail', type: 'boolean', group: 'voicemail' }
 ]);
 
@@ -190,7 +196,6 @@ const ICON_BY_CAPABILITY = {
 
 const WorkflowMonitorPage = () => {
   const { workflowId } = useParams();
-  const navigate = useNavigate();
   const { socket, connected } = useSocket();
 
   const [loading, setLoading] = useState(true);
@@ -511,9 +516,27 @@ const WorkflowMonitorPage = () => {
               customer: whatsappData.customer || whatsappData.customerStatus || 'not sent',
               admin: whatsappData.admin || whatsappData.adminStatus || 'not sent',
               providerMessageId: whatsappData.providerMessageId || '',
-              templateName: whatsappData.templateName || ''
+              templateName: whatsappData.templateName || whatsappData.requestedTemplateName || '',
+              customerTemplateName: whatsappData.customerTemplateName || whatsappData.requestedTemplateName || '',
+              adminTemplateName: whatsappData.adminTemplateName || whatsappData.requestedTemplateName || '',
+              customerError: whatsappData.customerError || '',
+              adminError: whatsappData.adminError || '',
+              customerDeliveryMode: whatsappData.customerDeliveryMode || '',
+              adminDeliveryMode: whatsappData.adminDeliveryMode || '',
+              customerFallbackReason: whatsappData.customerFallbackReason || '',
+              adminFallbackReason: whatsappData.adminFallbackReason || ''
             }
           : null,
+        customerWhatsAppStatus: whatsappData.customer || whatsappData.customerStatus || 'not sent',
+        adminWhatsAppStatus: whatsappData.admin || whatsappData.adminStatus || 'not sent',
+        customerWhatsAppError: whatsappData.customerError || '',
+        adminWhatsAppError: whatsappData.adminError || '',
+        customerWhatsAppTemplateName: whatsappData.customerTemplateName || '',
+        adminWhatsAppTemplateName: whatsappData.adminTemplateName || '',
+        customerWhatsAppDeliveryMode: whatsappData.customerDeliveryMode || '',
+        adminWhatsAppDeliveryMode: whatsappData.adminDeliveryMode || '',
+        customerWhatsAppFallbackReason: whatsappData.customerFallbackReason || '',
+        adminWhatsAppFallbackReason: whatsappData.adminFallbackReason || '',
         queueState: queueData && (queueData.queueName || queueData.name || queueData.queuePosition || queueData.position)
           ? {
               name: queueData.queueName || queueData.name || '',
@@ -757,6 +780,8 @@ const WorkflowMonitorPage = () => {
         row.customerPhone,
         row.customerWhatsAppStatus,
         row.adminWhatsAppStatus,
+        row.customerWhatsAppError,
+        row.adminWhatsAppError,
         row.queueName,
         row.queueResult,
         row.errorMessage,
@@ -915,7 +940,7 @@ const WorkflowMonitorPage = () => {
     };
   }, [isDrawerOpen, isWorkflowDrawerOpen]);
 
-  const renderCapabilityPanelBody = (capabilityKey) => {
+  const renderCapabilityPanelBody = useCallback((capabilityKey) => {
     const nodes = capabilityState.capabilityMap?.[capabilityKey]?.nodes || [];
     if (nodes.length === 0) {
       return <div className="workflow-monitor-empty-inline">No nodes of this type were detected.</div>;
@@ -931,12 +956,20 @@ const WorkflowMonitorPage = () => {
         ))}
       </div>
     );
-  };
+  }, [capabilityState]);
 
   const renderDetailSection = (row) => {
     const booking = row.bookingState || {};
     const whatsapp = row.whatsappState || {};
     const queue = row.queueState || {};
+    const customerWhatsAppError = String(row.customerWhatsAppError || whatsapp.customerError || '').trim();
+    const adminWhatsAppError = String(row.adminWhatsAppError || whatsapp.adminError || '').trim();
+    const customerWhatsAppTemplateName = String(row.customerWhatsAppTemplateName || whatsapp.customerTemplateName || row.whatsappState?.templateName || '').trim();
+    const adminWhatsAppTemplateName = String(row.adminWhatsAppTemplateName || whatsapp.adminTemplateName || row.whatsappState?.templateName || '').trim();
+    const customerWhatsAppDeliveryMode = String(row.customerWhatsAppDeliveryMode || whatsapp.customerDeliveryMode || '').trim();
+    const adminWhatsAppDeliveryMode = String(row.adminWhatsAppDeliveryMode || whatsapp.adminDeliveryMode || '').trim();
+    const customerWhatsAppFallbackReason = String(row.customerWhatsAppFallbackReason || whatsapp.customerFallbackReason || '').trim();
+    const adminWhatsAppFallbackReason = String(row.adminWhatsAppFallbackReason || whatsapp.adminFallbackReason || '').trim();
 
     return (
       <div className="workflow-monitor-row-detail">
@@ -1095,15 +1128,27 @@ const WorkflowMonitorPage = () => {
             <div className="workflow-monitor-detail-stack">
               <div className="workflow-monitor-detail-card workflow-monitor-detail-card--compact">
                 <label>Customer</label>
-                <strong>{renderStatusPill(whatsapp.customer || 'not sent')}</strong>
+                <strong>{renderStatusPill(row.customerWhatsAppStatus || whatsapp.customer || 'not sent')}</strong>
+                {customerWhatsAppDeliveryMode ? <span>{`Mode: ${customerWhatsAppDeliveryMode}`}</span> : null}
+                {customerWhatsAppTemplateName ? <span>{`Template: ${customerWhatsAppTemplateName}`}</span> : null}
+                {customerWhatsAppError ? <span className="workflow-monitor-inline-error">{customerWhatsAppError}</span> : null}
+                {!customerWhatsAppError && customerWhatsAppFallbackReason ? (
+                  <span>{`Fallback: ${customerWhatsAppFallbackReason}`}</span>
+                ) : null}
               </div>
               <div className="workflow-monitor-detail-card workflow-monitor-detail-card--compact">
                 <label>Admin</label>
-                <strong>{renderStatusPill(whatsapp.admin || 'not sent')}</strong>
+                <strong>{renderStatusPill(row.adminWhatsAppStatus || whatsapp.admin || 'not sent')}</strong>
+                {adminWhatsAppDeliveryMode ? <span>{`Mode: ${adminWhatsAppDeliveryMode}`}</span> : null}
+                {adminWhatsAppTemplateName ? <span>{`Template: ${adminWhatsAppTemplateName}`}</span> : null}
+                {adminWhatsAppError ? <span className="workflow-monitor-inline-error">{adminWhatsAppError}</span> : null}
+                {!adminWhatsAppError && adminWhatsAppFallbackReason ? (
+                  <span>{`Fallback: ${adminWhatsAppFallbackReason}`}</span>
+                ) : null}
               </div>
               <div className="workflow-monitor-detail-card workflow-monitor-detail-card--compact">
                 <label>Template</label>
-                <strong>{whatsapp.templateName || '-'}</strong>
+                <strong>{whatsapp.templateName || customerWhatsAppTemplateName || adminWhatsAppTemplateName || '-'}</strong>
               </div>
               <div className="workflow-monitor-detail-card workflow-monitor-detail-card--compact">
                 <label>Provider ID</label>
@@ -1330,7 +1375,7 @@ const WorkflowMonitorPage = () => {
     ];
 
     return panels.filter((panel) => !panel.capability || Boolean(capabilityState.capabilityMap?.[panel.capability]));
-  }, [capabilityState, connected, endDate, lastSyncedAt, workflow, startDate]);
+  }, [capabilityState, connected, endDate, lastSyncedAt, renderCapabilityPanelBody, workflow, startDate]);
 
   const visibleStats = workflowStats.filter((stat) => !stat.capability || Boolean(capabilityState.capabilityMap?.[stat.capability]));
 

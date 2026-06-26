@@ -805,6 +805,13 @@
   word-break: break-word;
 }
 
+.workflow-monitor-inline-error {
+  color: #b91c1c;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
 .workflow-monitor-detail-stack,
 .monitor-detail-stack {
   display: grid;

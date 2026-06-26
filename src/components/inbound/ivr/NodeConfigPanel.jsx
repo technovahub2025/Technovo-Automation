@@ -207,6 +207,37 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
       delete nextConfig.slotDefinitionsText;
     }
 
+    if (node?.type === 'whatsapp_notify') {
+      const normalizeTextValue = (value, fallback = '') => String(value ?? fallback).trim();
+      const normalizedCustomerRecipient = normalizeTextValue(nextConfig.customerRecipient, '{{callerNumber}}');
+      const normalizedAdminRecipient = normalizeTextValue(nextConfig.adminRecipient, '');
+      const normalizedCustomerTemplateName = normalizeTextValue(nextConfig.customerTemplateName, '');
+      const normalizedAdminTemplateName = normalizeTextValue(nextConfig.adminTemplateName, '');
+      const normalizedCustomerMessageText = normalizeTextValue(nextConfig.customerMessageText, '');
+      const normalizedAdminMessageText = normalizeTextValue(nextConfig.adminMessageText, '');
+      const normalizedCustomerLanguage = normalizeTextValue(nextConfig.customerTemplateLanguage, 'en_US') || 'en_US';
+      const normalizedAdminLanguage = normalizeTextValue(nextConfig.adminTemplateLanguage, 'en_US') || 'en_US';
+
+      Object.assign(nextConfig, {
+        customerRecipient: normalizedCustomerRecipient,
+        customer_recipient: normalizedCustomerRecipient,
+        adminRecipient: normalizedAdminRecipient,
+        admin_recipient: normalizedAdminRecipient,
+        customerTemplateName: normalizedCustomerTemplateName,
+        customer_template_name: normalizedCustomerTemplateName,
+        adminTemplateName: normalizedAdminTemplateName,
+        admin_template_name: normalizedAdminTemplateName,
+        customerMessageText: normalizedCustomerMessageText,
+        customer_message_text: normalizedCustomerMessageText,
+        adminMessageText: normalizedAdminMessageText,
+        admin_message_text: normalizedAdminMessageText,
+        customerTemplateLanguage: normalizedCustomerLanguage,
+        customer_template_language: normalizedCustomerLanguage,
+        adminTemplateLanguage: normalizedAdminLanguage,
+        admin_template_language: normalizedAdminLanguage
+      });
+    }
+
     if (node?.type === 'audio' && nextConfig.mode === 'tts') {
       const previousMessageText = (node?.data?.messageText || node?.data?.text || '').trim();
       const previousVoice = node?.data?.voice || 'en-GB-SoniaNeural';
@@ -264,6 +295,8 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
 
   useEffect(() => {
     setConfig(buildInitialConfig(node));
+  // Reset only when the node identity changes; preserving in-progress edits on data-only refreshes is intentional.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [node?.id]); // Only reset when node ID changes, not when node.data changes
 
   const fallbackVoiceOptions = useMemo(() => ([
