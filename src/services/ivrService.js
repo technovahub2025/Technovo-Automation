@@ -1,12 +1,47 @@
 import apiService from './api';
 
+const IVR_ENDPOINT_PREFIXES = ['/api/ivr', '/ivr'];
+
+const joinEndpoint = (prefix, path) => {
+  const cleanPrefix = String(prefix || '').replace(/\/+$/, '');
+  const cleanPath = String(path || '').replace(/^\/+/, '');
+  return `${cleanPrefix}/${cleanPath}`;
+};
+
+const requestWithIvrFallback = async ({ method = 'get', path, data, config = {} }) => {
+  let lastError = null;
+
+  for (let index = 0; index < IVR_ENDPOINT_PREFIXES.length; index += 1) {
+    const url = joinEndpoint(IVR_ENDPOINT_PREFIXES[index], path);
+
+    try {
+      return await apiService.request({
+        method,
+        url,
+        data,
+        ...config
+      });
+    } catch (error) {
+      lastError = error;
+      const isLastPrefix = index === IVR_ENDPOINT_PREFIXES.length - 1;
+      const is404 = error?.response?.status === 404;
+
+      if (!is404 || isLastPrefix) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError;
+};
+
 export const ivrService = {
   /**
    * Get all IVR prompts
    */
   async getPrompts() {
     try {
-      const response = await apiService.get('/ivr/prompts');
+      const response = await requestWithIvrFallback({ method: 'get', path: '/prompts' });
       return response.data;
     } catch (error) {
       console.error('Failed to get prompts:', error);
@@ -19,7 +54,7 @@ export const ivrService = {
    */
   async getPrompt(promptKey) {
     try {
-      const response = await apiService.get(`/ivr/prompts/${promptKey}`);
+      const response = await requestWithIvrFallback({ method: 'get', path: `/prompts/${promptKey}` });
       return response.data;
     } catch (error) {
       console.error('Failed to get prompt:', error);
@@ -32,11 +67,15 @@ export const ivrService = {
    */
   async generateAudio(promptKey, text, language, forceRegenerate = false) {
     try {
-      const response = await apiService.post('/ivr/generate-audio', {
-        promptKey,
-        text,
-        language,
-        forceRegenerate
+      const response = await requestWithIvrFallback({
+        method: 'post',
+        path: '/generate-audio',
+        data: {
+          promptKey,
+          text,
+          language,
+          forceRegenerate
+        }
       });
       return response.data;
     } catch (error) {
@@ -50,10 +89,14 @@ export const ivrService = {
    */
   async generateAllLanguages(promptKey, text, forceRegenerate = false) {
     try {
-      const response = await apiService.post('/ivr/generate-all-languages', {
-        promptKey,
-        text,
-        forceRegenerate
+      const response = await requestWithIvrFallback({
+        method: 'post',
+        path: '/generate-all-languages',
+        data: {
+          promptKey,
+          text,
+          forceRegenerate
+        }
       });
       return response.data;
     } catch (error) {
@@ -67,7 +110,10 @@ export const ivrService = {
    */
   async deleteAudio(promptKey, language) {
     try {
-      const response = await apiService.delete(`/ivr/audio/${promptKey}/${language}`);
+      const response = await requestWithIvrFallback({
+        method: 'delete',
+        path: `/audio/${promptKey}/${language}`
+      });
       return response.data;
     } catch (error) {
       console.error('Failed to delete audio:', error);
@@ -80,7 +126,7 @@ export const ivrService = {
    */
   async getLanguages() {
     try {
-      const response = await apiService.get('/ivr/languages');
+      const response = await requestWithIvrFallback({ method: 'get', path: '/languages' });
       return response.data;
     } catch (error) {
       console.error('Failed to get languages:', error);
@@ -93,7 +139,11 @@ export const ivrService = {
    */
   async createMenuPrompt(promptData) {
     try {
-      const response = await apiService.post('/ivr/create-menu-prompt', promptData);
+      const response = await requestWithIvrFallback({
+        method: 'post',
+        path: '/create-menu-prompt',
+        data: promptData
+      });
       return response.data;
     } catch (error) {
       console.error('Failed to create menu prompt:', error);
@@ -106,7 +156,11 @@ export const ivrService = {
    */
   async updatePrompt(promptKey, updateData) {
     try {
-      const response = await apiService.put(`/ivr/prompts/${promptKey}`, updateData);
+      const response = await requestWithIvrFallback({
+        method: 'put',
+        path: `/prompts/${promptKey}`,
+        data: updateData
+      });
       return response.data;
     } catch (error) {
       console.error('Failed to update prompt:', error);
@@ -119,7 +173,7 @@ export const ivrService = {
    */
   async getStats() {
     try {
-      const response = await apiService.get('/ivr/stats');
+      const response = await requestWithIvrFallback({ method: 'get', path: '/stats' });
       return response.data;
     } catch (error) {
       console.error('Failed to get stats:', error);
@@ -132,9 +186,13 @@ export const ivrService = {
    */
   async batchGenerate(prompts, forceRegenerate = false) {
     try {
-      const response = await apiService.post('/ivr/batch-generate', {
-        prompts,
-        forceRegenerate
+      const response = await requestWithIvrFallback({
+        method: 'post',
+        path: '/batch-generate',
+        data: {
+          prompts,
+          forceRegenerate
+        }
       });
       return response.data;
     } catch (error) {
@@ -148,7 +206,11 @@ export const ivrService = {
    */
   async testIVRFlow(promptKey, language = 'en-GB') {
     try {
-      const response = await apiService.post(`/ivr/menus/${promptKey}/test`, { language });
+      const response = await requestWithIvrFallback({
+        method: 'post',
+        path: `/menus/${promptKey}/test`,
+        data: { language }
+      });
       return response.data;
     } catch (error) {
       console.error('Failed to test IVR flow:', error);
@@ -214,8 +276,10 @@ export const ivrService = {
    */
   async getWorkflowEventLog(workflowId, filters = {}) {
     try {
-      const response = await apiService.get(`/ivr/analytics/workflow/${workflowId}/events`, {
-        params: filters
+      const response = await requestWithIvrFallback({
+        method: 'get',
+        path: `/analytics/workflow/${workflowId}/events`,
+        config: { params: filters }
       });
       return response.data;
     } catch (error) {

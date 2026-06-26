@@ -12,6 +12,8 @@ const inferIvrPromptFromAction = (action = '') => {
   return text.slice(4).trim();
 };
 
+const ROUTING_RULES_SOCKET_TIMEOUT_MS = 5000;
+
 const emitWithAck = (socket, eventName, payload = {}) =>
   new Promise((resolve, reject) => {
     if (!socket) {
@@ -19,7 +21,12 @@ const emitWithAck = (socket, eventName, payload = {}) =>
       return;
     }
 
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error(`${eventName} timed out`));
+    }, ROUTING_RULES_SOCKET_TIMEOUT_MS);
+
     socket.emit(eventName, payload, (response = {}) => {
+      window.clearTimeout(timeoutId);
       if (response?.success === false) {
         reject(new Error(response.error || `${eventName} failed`));
         return;

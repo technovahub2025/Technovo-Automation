@@ -204,7 +204,7 @@ const fetchInboundAnalyticsHttp = (period = 'today', params = {}) => {
 };
 apiService.getInboundAnalytics = async (period = 'today', params = {}) => {
   if (params?.skipSocket) {
-    const { skipSocket, ...httpParams } = params;
+    const { skipSocket: _skipSocket, ...httpParams } = params;
     return fetchInboundAnalyticsHttp(period, httpParams);
   }
 
@@ -282,20 +282,65 @@ apiService.getVoiceTodayStats = () =>
 
 
 // IVR Audio Management (using existing /ivr routes)
-apiService.getIVRPrompts = () => apiService.get('/ivr/prompts');
-apiService.getIVRPrompt = (promptKey) => apiService.get(`/ivr/prompts/${promptKey}`);
+const IVR_ENDPOINT_PREFIXES = ['/api/ivr', '/ivr'];
+
+const joinIvrEndpoint = (prefix, path) => {
+  const cleanPrefix = String(prefix || '').replace(/\/+$/, '');
+  const cleanPath = String(path || '').replace(/^\/+/, '');
+  return `${cleanPrefix}/${cleanPath}`;
+};
+
+const requestWithIvrFallback = async ({ method = 'get', path, data, config = {} }) => {
+  let lastError = null;
+
+  for (let index = 0; index < IVR_ENDPOINT_PREFIXES.length; index += 1) {
+    const url = joinIvrEndpoint(IVR_ENDPOINT_PREFIXES[index], path);
+
+    try {
+      return await apiService.request({
+        method,
+        url,
+        data,
+        ...config
+      });
+    } catch (error) {
+      lastError = error;
+      const is404 = error?.response?.status === 404;
+      const isLastPrefix = index === IVR_ENDPOINT_PREFIXES.length - 1;
+
+      if (!is404 || isLastPrefix) {
+        throw error;
+      }
+    }
+  }
+
+  throw lastError;
+};
+
+apiService.getIVRPrompts = () => requestWithIvrFallback({ method: 'get', path: '/prompts' });
+apiService.getIVRPrompt = (promptKey) =>
+  requestWithIvrFallback({ method: 'get', path: `/prompts/${promptKey}` });
 apiService.generateIVRAudio = (promptKey, text, language, forceRegenerate = false) =>
-  apiService.post('/ivr/generate-audio', { promptKey, text, language, forceRegenerate });
-apiService.deleteIVRAudio = (promptKey, language) => apiService.delete(`/ivr/audio/${promptKey}/${language}`);
-apiService.deleteCustomAudio = (publicId) => apiService.delete(`/ivr/audio/${encodeURIComponent(publicId)}`);
-apiService.deleteCustomAudioByPublicId = (publicId) => apiService.delete('/ivr/audio/delete', { data: { publicId } });
+  requestWithIvrFallback({
+    method: 'post',
+    path: '/generate-audio',
+    data: { promptKey, text, language, forceRegenerate }
+  });
+apiService.deleteIVRAudio = (promptKey, language) =>
+  requestWithIvrFallback({ method: 'delete', path: `/audio/${promptKey}/${language}` });
+apiService.deleteCustomAudio = (publicId) =>
+  requestWithIvrFallback({ method: 'delete', path: `/audio/${encodeURIComponent(publicId)}` });
+apiService.deleteCustomAudioByPublicId = (publicId) =>
+  requestWithIvrFallback({ method: 'delete', path: '/audio/delete', data: { publicId } });
 
 // IVR Menu Management
 apiService.createIVRConfig = (menuName, config) => apiService.post('/inbound/ivr/configs', { menuName, config });
 apiService.getIVRConfigs = () => apiService.get('/inbound/ivr/configs');
 apiService.deleteIVRConfig = (menuId) => apiService.delete(`/inbound/ivr/configs/${menuId}`);
-apiService.getIVRMenus = (params = {}) => apiService.get('/ivr/menus', { params });
-apiService.testIVRMenu = (menuId, phoneNumber) => apiService.post(`/ivr/menus/${menuId}/test`, { phoneNumber });
+apiService.getIVRMenus = (params = {}) =>
+  requestWithIvrFallback({ method: 'get', path: '/menus', config: { params } });
+apiService.testIVRMenu = (menuId, phoneNumber) =>
+  requestWithIvrFallback({ method: 'post', path: `/menus/${menuId}/test`, data: { phoneNumber } });
 
 
 // Queue and Routing

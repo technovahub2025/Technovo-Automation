@@ -3,6 +3,8 @@ import socketService from '../services/socketService';
 import apiService from '../services/api';
 import { normalizeIVRMenus } from '../utils/inboundNormalizers';
 
+const IVR_MENU_SOCKET_TIMEOUT_MS = 5000;
+
 const findMenuById = (menus, menuId) =>
   menus.find((menu) =>
     String(menu._id || '') === String(menuId) ||
@@ -42,7 +44,12 @@ const emitWithAck = (socket, eventName, payload) =>
       return;
     }
 
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error(`${eventName} timed out`));
+    }, IVR_MENU_SOCKET_TIMEOUT_MS);
+
     socket.emit(eventName, payload, (response = {}) => {
+      window.clearTimeout(timeoutId);
       if (response.success === false) {
         reject(new Error(response.error || 'IVR socket request failed'));
         return;

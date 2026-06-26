@@ -112,21 +112,22 @@ export const useInbound = (period = 'today') => {
     pendingSnapshotRef.current = true;
     setLoading(true);
 
-    const fallbackAfterFailure = async (message = '') => {
+    const applyFallbackSnapshot = async ({ message = '', preferSilentError = false } = {}) => {
       const fallback = await fetchInboundFallback(period);
       if (!mountedRef.current || requestSeq !== requestSeqRef.current) return;
       setAnalytics(fallback.analytics);
       setQueueStatus(fallback.queueStatus);
       setRoutingRules(fallback.routingRules);
       setLeadsSummary(fallback.leadsSummary);
-      setError(message || fallback.error || null);
+      const nextError = preferSilentError ? (fallback.error || null) : (message || fallback.error || null);
+      setError(nextError);
       setLoading(false);
     };
 
     const timeoutId = window.setTimeout(() => {
       if (!pendingSnapshotRef.current) return;
       pendingSnapshotRef.current = false;
-      fallbackAfterFailure('Inbound socket snapshot timed out');
+      applyFallbackSnapshot({ preferSilentError: true });
     }, 7000);
 
     socket.emit('inbound:subscribe', { period }, async (response = {}) => {
@@ -140,7 +141,7 @@ export const useInbound = (period = 'today') => {
         return;
       }
 
-      await fallbackAfterFailure(response?.error || 'Failed to load inbound snapshot');
+      await applyFallbackSnapshot({ message: response?.error || 'Failed to load inbound snapshot' });
     });
   }, [applySnapshot, period]);
 
