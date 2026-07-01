@@ -147,6 +147,14 @@ const normalizeAgentLookupId = (value) => toCleanString(value).toLowerCase();
 export const getConversationAssignedLookupId = (conversation = {}) =>
   (() => {
     const contactSnapshot = conversation?.contactId;
+    if (contactSnapshot && typeof contactSnapshot === 'object') {
+      const hasOwnerField = Object.prototype.hasOwnProperty.call(contactSnapshot, 'ownerId');
+      const contactOwnerId = toCleanString(contactSnapshot?.ownerId);
+      if (hasOwnerField && !contactOwnerId) {
+        return '';
+      }
+    }
+
     const conversationAssigneeId = pickFirstLabel(
       conversation?.assignedTo?._id,
       conversation?.assignedTo?.id,
@@ -193,6 +201,16 @@ export const resolveConversationAssigneeLabel = (conversation = {}, availableAge
   const directAssignee = conversation?.assignedTo;
   const owner = conversation?.owner;
   const contactSnapshot = conversation?.contactId;
+  const hasExplicitUnassignedContactOwner =
+    contactSnapshot && typeof contactSnapshot === 'object'
+      ? Object.prototype.hasOwnProperty.call(contactSnapshot, 'ownerId') &&
+        !toCleanString(contactSnapshot?.ownerId)
+      : false;
+
+  if (hasExplicitUnassignedContactOwner) {
+    return 'Unassigned';
+  }
+
   const lookupId = normalizeAgentLookupId(getConversationAssignedLookupId(conversation));
   if (lookupId) {
     const agentRecord = (Array.isArray(availableAgents) ? availableAgents : []).find((agent) => {

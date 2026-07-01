@@ -41,8 +41,24 @@ export const normalizeConversation = (conversation) => {
       ? Object.prototype.hasOwnProperty.call(contactSnapshot, 'ownerId')
       : false;
   const contactOwnerId = hasContactOwnerField ? String(contactSnapshot?.ownerId || '').trim() : '';
+  const hasExplicitUnassignedContactOwner = hasContactOwnerField && !contactOwnerId;
+  const clearedAssigneeFields = hasExplicitUnassignedContactOwner
+    ? {
+        assignedTo: null,
+        assignedToId: '',
+        assignedToName: '',
+        assignedAgent: null,
+        assignedAgentId: '',
+        assignedAgentName: '',
+        assigneeId: '',
+        assigneeName: '',
+        owner: null,
+        ownerId: null,
+        ownerName: ''
+      }
+    : {};
   const assignedLower = String(
-    hasContactOwnerField && !contactOwnerId
+    hasExplicitUnassignedContactOwner
       ? 'Unassigned'
       : contactSnapshot?.ownerName ||
         contactSnapshot?.assignedToName ||
@@ -64,6 +80,20 @@ export const normalizeConversation = (conversation) => {
     .trim()
     .toLowerCase();
   const assignedLookupId = String(getConversationAssignedLookupId(conversation) || '').trim();
+  const assignedSearchText = String(
+    hasExplicitUnassignedContactOwner
+      ? ''
+      : conversation?.assignedToName ||
+          conversation?.assignedAgentName ||
+          conversation?.assigneeName ||
+          conversation?.contactId?.assignedToName ||
+          conversation?.contactId?.assignedAgentName ||
+          conversation?.contactId?.assigneeName ||
+          conversation?.contactId?.ownerName ||
+          ''
+  )
+    .trim()
+    .toLowerCase();
   const searchParts = [
     summaryId,
     contactNameLower,
@@ -71,18 +101,7 @@ export const normalizeConversation = (conversation) => {
     contactPhoneDigits,
     previewTextLower,
     lastMessageLower,
-    String(
-      conversation?.assignedToName ||
-        conversation?.assignedAgentName ||
-        conversation?.assigneeName ||
-        conversation?.contactId?.assignedToName ||
-        conversation?.contactId?.assignedAgentName ||
-        conversation?.contactId?.assigneeName ||
-        conversation?.contactId?.ownerName ||
-        ''
-    )
-      .trim()
-      .toLowerCase(),
+    assignedSearchText,
     assignedLower,
     assignedLookupId,
     leadStatusLower,
@@ -101,6 +120,7 @@ export const normalizeConversation = (conversation) => {
   ).trim();
   return {
     ...conversation,
+    ...clearedAssigneeFields,
     ...(summaryId ? { summaryId } : {}),
     _id: canonicalConversationId || String(conversation?._id || '').trim(),
     id: canonicalConversationId || String(conversation?.id || '').trim() || String(conversation?._id || '').trim(),

@@ -121,6 +121,12 @@ const toNumberOrNull = (value) => {
     return Number.isFinite(parsed) ? parsed : null;
 };
 
+const toBudgetInputValue = (value) => {
+    if (value === '' || value === null || value === undefined) return '';
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : '';
+};
+
 const getCampaignContractField = (campaign, contractKey, fallbackKey, defaultValue = '') => {
     const contractValue = campaign?.[contractKey];
     if (contractValue !== undefined && contractValue !== null && contractValue !== '') return contractValue;
@@ -1306,6 +1312,7 @@ const CampaignModal = ({ campaign, onClose, onSave, mode, submitting = false }) 
         name: campaign?.name || (mode === 'create' ? 'Untitled Campaign' : ''),
         platform: campaign?.platform || 'both',
         objective: campaign?.objective || 'awareness',
+        budgetType: campaign?.lifetimeBudget ? 'lifetime' : 'daily',
         dailyBudget: campaign?.dailyBudget || 50,
         lifetimeBudget: campaign?.lifetimeBudget || '',
         startDate: campaign?.startDate || getTodayDateValue(),
@@ -1501,8 +1508,13 @@ const CampaignModal = ({ campaign, onClose, onSave, mode, submitting = false }) 
                                                 type="radio"
                                                 name="budgetType"
                                                 value="daily"
-                                                checked={!!formData.dailyBudget}
-                                                onChange={() => setFormData({...formData, dailyBudget: 50, lifetimeBudget: ''})}
+                                                checked={formData.budgetType === 'daily'}
+                                                onChange={() => setFormData((prev) => ({
+                                                    ...prev,
+                                                    budgetType: 'daily',
+                                                    dailyBudget: prev.dailyBudget === '' || prev.dailyBudget === null || prev.dailyBudget === undefined ? 50 : prev.dailyBudget,
+                                                    lifetimeBudget: ''
+                                                }))}
                                             />
                                             <span>Daily Budget</span>
                                         </label>
@@ -1511,34 +1523,45 @@ const CampaignModal = ({ campaign, onClose, onSave, mode, submitting = false }) 
                                                 type="radio"
                                                 name="budgetType"
                                                 value="lifetime"
-                                                checked={!!formData.lifetimeBudget}
-                                                onChange={() => setFormData({...formData, lifetimeBudget: 1000, dailyBudget: ''})}
+                                                checked={formData.budgetType === 'lifetime'}
+                                                onChange={() => setFormData((prev) => ({
+                                                    ...prev,
+                                                    budgetType: 'lifetime',
+                                                    lifetimeBudget: prev.lifetimeBudget === '' || prev.lifetimeBudget === null || prev.lifetimeBudget === undefined ? 1000 : prev.lifetimeBudget,
+                                                    dailyBudget: ''
+                                                }))}
                                             />
                                             <span>Lifetime Budget</span>
                                         </label>
                                     </div>
                                 </div>
 
-                                {formData.dailyBudget && (
+                                {formData.budgetType === 'daily' && (
                                     <div className="form-group">
                                         <label>Daily Budget ($)</label>
                                         <input
                                             type="number"
-                                            value={formData.dailyBudget}
-                                            onChange={(e) => setFormData({...formData, dailyBudget: parseInt(e.target.value)})}
+                                            value={toBudgetInputValue(formData.dailyBudget)}
+                                            onChange={(e) => setFormData((prev) => ({
+                                                ...prev,
+                                                dailyBudget: e.target.value === '' ? '' : (Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : '')
+                                            }))}
                                             min="1"
                                             required
                                         />
                                     </div>
                                 )}
 
-                                {formData.lifetimeBudget && (
+                                {formData.budgetType === 'lifetime' && (
                                     <div className="form-group">
                                         <label>Lifetime Budget ($)</label>
                                         <input
                                             type="number"
-                                            value={formData.lifetimeBudget}
-                                            onChange={(e) => setFormData({...formData, lifetimeBudget: parseInt(e.target.value)})}
+                                            value={toBudgetInputValue(formData.lifetimeBudget)}
+                                            onChange={(e) => setFormData((prev) => ({
+                                                ...prev,
+                                                lifetimeBudget: e.target.value === '' ? '' : (Number.isFinite(Number(e.target.value)) ? Number(e.target.value) : '')
+                                            }))}
                                             min="1"
                                             required
                                         />
