@@ -76,7 +76,7 @@ const QUICK_ACTIONS = [
   {
     title: "Follow up before deals stall",
     subtitle: "Check overdue tasks and send follow-ups.",
-    to: "/crm/tasks?bucket=overdue",
+    to: "/crm/follow-ups?bucket=overdue",
     icon: Clock,
     accent: "#EF9F27"
   },

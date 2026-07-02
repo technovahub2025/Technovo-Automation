@@ -56,6 +56,7 @@ const ROUTE_PREFETCHERS = {
     '/crm/home': () => import('../pages/CrmHome'),
     '/crm/pipeline': () => import('../pages/CrmPipeline'),
     '/crm/tasks': () => import('../pages/CrmTasks'),
+    '/crm/follow-ups': () => import('../pages/CrmFollowUps'),
     '/crm/tasks-calendar': () => import('../pages/CrmTaskCalendar'),
     '/crm/deals': () => import('../pages/CrmDeals'),
     '/crm/meetings': () => import('../pages/CrmMeetings'),

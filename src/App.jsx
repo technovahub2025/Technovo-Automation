@@ -30,6 +30,7 @@ const MetaConnect = lazy(() => import("./pages/MetaConnect"));
 const CrmPipeline = lazy(() => import("./pages/CrmPipeline"));
 const CrmHome = lazy(() => import("./pages/CrmHome"));
 const CrmTasks = lazy(() => import("./pages/CrmTasks"));
+const CrmFollowUps = lazy(() => import("./pages/CrmFollowUps"));
 const CrmTaskCalendar = lazy(() => import("./pages/CrmTaskCalendar"));
 const CrmDeals = lazy(() => import("./pages/CrmDeals"));
 const CrmMeetings = lazy(() => import("./pages/CrmMeetings"));
@@ -117,7 +118,7 @@ function App() {
           <Route path="campaigns/broadcasts" element={<Navigate to="/broadcast" replace />} />
           <Route path="campaigns/templates" element={<Navigate to="/templates" replace />} />
           <Route path="automation/workflows" element={<Navigate to="/whatsapp-workflow" replace />} />
-          <Route path="automation/follow-ups" element={<Navigate to="/crm/tasks" replace />} />
+          <Route path="automation/follow-ups" element={<Navigate to="/crm/follow-ups" replace />} />
           <Route path="automation/task-calendar" element={<Navigate to="/crm/tasks-calendar" replace />} />
           <Route path="ads-manager" element={renderLazyRoute(<CampaignManagement />, "Loading ads manager...")} />
           <Route path="meta-connect" element={renderLazyRoute(<MetaConnect />, "Loading Meta connect...")} />
@@ -145,6 +146,14 @@ function App() {
             element={
               <ProtectedRoute requiredFeature="crmTasks">
                 {renderLazyRoute(<CrmTasks />, "Loading CRM tasks...")}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="crm/follow-ups"
+            element={
+              <ProtectedRoute requiredFeature="crmTasks">
+                {renderLazyRoute(<CrmFollowUps />, "Loading follow-ups...")}
               </ProtectedRoute>
             }
           />
