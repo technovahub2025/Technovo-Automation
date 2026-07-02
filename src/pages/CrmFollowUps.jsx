@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   AlertCircle,
@@ -11,6 +11,7 @@ import {
 } from "lucide-react";
 import { crmService } from "../services/crmService";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
+import { readSidebarPageCache, resolveCacheUserId, writeSidebarPageCache } from "../utils/sidebarPageCache";
 import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
 import CrmPageHeader from "../components/crm/CrmPageHeader";
 import CrmRealtimeStatus from "../components/crm/CrmRealtimeStatus";
@@ -18,6 +19,8 @@ import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
 import "./CrmWorkspace.css";
 
 const CRM_FOLLOWUPS_LOADING_TIMEOUT_MS = 8000;
+const CRM_FOLLOWUPS_CACHE_TTL_MS = 10 * 60 * 1000;
+const CRM_FOLLOWUPS_CACHE_NAMESPACE = "crm-followups-page";
 const FOLLOWUP_CONTACT_PAGE_SIZE = 250;
 const FOLLOWUP_CONTACT_MAX_PAGES = 40;
 
@@ -116,12 +119,27 @@ const CrmFollowUps = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
+  const cacheUserId = resolveCacheUserId();
   const requestedBucketFilter = String(searchParams.get("bucket") || "all").trim().toLowerCase();
   const requestedSearchQuery = String(searchParams.get("q") || "").trim();
   const requestedOwnerFilter = String(searchParams.get("ownerId") || "all").trim();
+  const cachedSnapshot = useMemo(
+    () =>
+      readSidebarPageCache(CRM_FOLLOWUPS_CACHE_NAMESPACE, {
+        currentUserId: cacheUserId,
+        allowStale: true
+      }),
+    [cacheUserId]
+  );
+  const cachedContacts = useMemo(() => {
+    const rawContacts = Array.isArray(cachedSnapshot?.data?.contacts) ? cachedSnapshot.data.contacts : [];
+    return rawContacts.map(sanitizeFollowUpContact).filter((contact) =>
+      String(contact?.followupAt || contact?.nextFollowUpAt || contact?.followupDate || "").trim()
+    );
+  }, [cachedSnapshot]);
 
-  const [contacts, setContacts] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [contacts, setContacts] = useState(() => cachedContacts);
+  const [loading, setLoading] = useState(() => cachedContacts.length === 0);
   const [error, setError] = useState("");
   const [searchInput, setSearchInput] = useState(requestedSearchQuery);
   const [bucketFilter, setBucketFilter] = useState(
@@ -130,6 +148,11 @@ const CrmFollowUps = () => {
       : "all"
   );
   const [ownerFilter, setOwnerFilter] = useState(requestedOwnerFilter || "all");
+  const contactsRef = useRef(cachedContacts);
+
+  useEffect(() => {
+    contactsRef.current = contacts;
+  }, [contacts]);
 
   const loadContacts = useCallback(async ({ silent = false } = {}) => {
     const releaseLoadingGuard = startLoadingTimeoutGuard(
@@ -150,7 +173,8 @@ const CrmFollowUps = () => {
       while (shouldContinue && currentPage <= FOLLOWUP_CONTACT_MAX_PAGES) {
         const result = await crmService.getContacts({
           page: currentPage,
-          pageSize: FOLLOWUP_CONTACT_PAGE_SIZE
+          pageSize: FOLLOWUP_CONTACT_PAGE_SIZE,
+          hasFollowUp: "true"
         });
         if (result?.success === false) {
           throw new Error(result?.error || "Failed to load follow-up contacts");
@@ -158,9 +182,12 @@ const CrmFollowUps = () => {
 
         const responseData = result?.data || {};
         const pageContacts = normalizeTaskApiList(responseData).map(sanitizeFollowUpContact);
+        const pageFollowUps = pageContacts.filter((contact) =>
+          String(contact?.followupAt || contact?.nextFollowUpAt || contact?.followupDate || "").trim()
+        );
         const nextMeta = responseData?.meta || {};
 
-        collectedContacts.push(...pageContacts);
+        collectedContacts.push(...pageFollowUps);
 
         const explicitPageSize = Number(nextMeta.pageSize || nextMeta.limit || 0);
         const pageSize = Number.isFinite(explicitPageSize) && explicitPageSize > 0 ? explicitPageSize : null;
@@ -186,20 +213,33 @@ const CrmFollowUps = () => {
         }
       }
 
-      setContacts(
-        collectedContacts.filter((contact) =>
-          String(contact?.followupAt || contact?.nextFollowUpAt || contact?.followupDate || "").trim()
-        )
+      const nextContacts = collectedContacts.filter((contact) =>
+        String(contact?.followupAt || contact?.nextFollowUpAt || contact?.followupDate || "").trim()
+      );
+      setContacts(nextContacts);
+      writeSidebarPageCache(
+        CRM_FOLLOWUPS_CACHE_NAMESPACE,
+        { contacts: nextContacts },
+        { currentUserId: cacheUserId, ttlMs: CRM_FOLLOWUPS_CACHE_TTL_MS }
       );
     } catch (loadError) {
-      setError(loadError?.message || "Failed to load follow-up contacts");
+      if (!silent || contactsRef.current.length === 0) {
+        setError(loadError?.message || "Failed to load follow-up contacts");
+      }
     } finally {
       releaseLoadingGuard();
       setLoading(false);
     }
-  }, []);
+  }, [cacheUserId]);
 
   useEffect(() => {
+    if (cachedContacts.length > 0) {
+      setContacts(cachedContacts);
+      setLoading(false);
+      void loadContacts({ silent: true });
+      return;
+    }
+
     loadContacts();
   }, [loadContacts]);
 
@@ -227,6 +267,12 @@ const CrmFollowUps = () => {
     setOwnerFilter(requestedOwnerFilter || "all");
     setSearchInput(requestedSearchQuery);
   }, [requestedBucketFilter, requestedOwnerFilter, requestedSearchQuery]);
+
+  useEffect(() => {
+    if (cachedContacts.length > 0) {
+      setContacts(cachedContacts);
+    }
+  }, [cachedContacts]);
 
   const ownerOptions = useMemo(() => {
     const map = new Map();
