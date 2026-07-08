@@ -864,7 +864,7 @@ const WorkflowMonitorPage = () => {
         ? 'success'
         : normalized === 'failed' || normalized === 'cancelled' || normalized === 'rejected'
           ? 'danger'
-          : normalized === 'timeout' || normalized === 'pending'
+          : normalized === 'timeout' || normalized === 'pending' || normalized === 'accepted'
             ? 'warning'
             : 'neutral';
 
@@ -1590,6 +1590,7 @@ const WorkflowMonitorPage = () => {
                       <MessageCircle size={14} />
                       <select value={whatsappFilter} onChange={(event) => setWhatsappFilter(event.target.value)}>
                         <option value="all">All</option>
+                        <option value="accepted">Accepted</option>
                         <option value="sent">Sent</option>
                         <option value="delivered">Delivered</option>
                         <option value="read">Read</option>
