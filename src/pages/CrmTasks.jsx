@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { TableVirtuoso } from "react-virtuoso";
 import {
   CheckCircle2,
@@ -245,6 +245,8 @@ const getTaskFormFromTask = (task = {}, currentUserId = "") => ({
 });
 
 const CrmTasks = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedBucketFilter = String(searchParams.get("bucket") || "all").trim().toLowerCase();
   const requestedStatusFilter = String(searchParams.get("status") || "all").trim().toLowerCase();
@@ -1305,6 +1307,8 @@ const CrmTasks = () => {
   const allVisibleSelected =
     tasks.length > 0 &&
     tasks.every((task) => selectedTaskIdSet.has(getEntityId(task)));
+  const isTasksRoute = String(location.pathname || "").includes("/crm/tasks");
+  const isFollowUpsRoute = String(location.pathname || "").includes("/crm/follow-ups");
 
   return (
     <>
@@ -1315,6 +1319,26 @@ const CrmTasks = () => {
           subtitle="Track follow-ups with live updates, filters, task actions, reminders, and bulk operations."
           actions={
             <div className="crm-page-header__action-group">
+              <div className="crm-page-switcher" aria-label="CRM page switcher">
+                <button
+                  type="button"
+                  className={`crm-btn crm-btn--compact ${
+                    isTasksRoute ? "crm-btn-primary" : "crm-btn-secondary"
+                  }`}
+                  onClick={() => navigate("/crm/tasks")}
+                >
+                  Tasks
+                </button>
+                <button
+                  type="button"
+                  className={`crm-btn crm-btn--compact ${
+                    isFollowUpsRoute ? "crm-btn-primary" : "crm-btn-secondary"
+                  }`}
+                  onClick={() => navigate("/crm/follow-ups")}
+                >
+                  Follow Ups
+                </button>
+              </div>
               <CrmRealtimeStatus status={crmRealtime.connectionStatus} />
               <button
                 type="button"

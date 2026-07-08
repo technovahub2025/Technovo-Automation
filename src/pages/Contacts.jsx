@@ -313,6 +313,14 @@ const Contacts = () => {
     const [groupName, setGroupName] = useState('');
     const [groupDescription, setGroupDescription] = useState('');
     const [groupContacts, setGroupContacts] = useState([]);
+    const [groupContactsSelectMode, setGroupContactsSelectMode] = useState(false);
+    const [groupContactsSelection, setGroupContactsSelection] = useState(() => new Set());
+    const [groupEditorSearch, setGroupEditorSearch] = useState('');
+    const [showGroupAddPicker, setShowGroupAddPicker] = useState(false);
+    const [groupAddSelection, setGroupAddSelection] = useState(() => new Set());
+    const [groupAddPickerContacts, setGroupAddPickerContacts] = useState([]);
+    const [groupAddPickerLoading, setGroupAddPickerLoading] = useState(false);
+    const [groupAddPickerError, setGroupAddPickerError] = useState('');
     const [groupContactsLoading, setGroupContactsLoading] = useState(false);
     const [groupContactsError, setGroupContactsError] = useState('');
     const [groupSaving, setGroupSaving] = useState(false);
@@ -641,6 +649,14 @@ const Contacts = () => {
         setGroupName('');
         setGroupDescription('');
         setGroupContacts([]);
+        setGroupContactsSelectMode(false);
+        setGroupContactsSelection(new Set());
+        setGroupEditorSearch('');
+        setShowGroupAddPicker(false);
+        setGroupAddSelection(new Set());
+        setGroupAddPickerContacts([]);
+        setGroupAddPickerLoading(false);
+        setGroupAddPickerError('');
         setGroupContactsLoading(false);
         setGroupContactsError('');
         setGroupSaving(false);
@@ -656,6 +672,14 @@ const Contacts = () => {
         setGroupEditorId('');
         setGroupName('');
         setGroupDescription('');
+        setGroupContactsSelectMode(false);
+        setGroupContactsSelection(new Set());
+        setGroupEditorSearch('');
+        setShowGroupAddPicker(false);
+        setGroupAddSelection(new Set());
+        setGroupAddPickerContacts([]);
+        setGroupAddPickerLoading(false);
+        setGroupAddPickerError('');
         setGroupContactsError('');
         setGroupContactsLoading(true);
         setShowGroupEditorModal(true);
@@ -682,6 +706,14 @@ const Contacts = () => {
         setGroupEditorId(groupId);
         setGroupName(String(group?.name || '').trim());
         setGroupDescription(String(group?.description || '').trim());
+        setGroupContactsSelectMode(false);
+        setGroupContactsSelection(new Set());
+        setGroupEditorSearch('');
+        setShowGroupAddPicker(false);
+        setGroupAddSelection(new Set());
+        setGroupAddPickerContacts([]);
+        setGroupAddPickerLoading(false);
+        setGroupAddPickerError('');
         setGroupContactsError('');
         setGroupContactsLoading(true);
         setShowGroupEditorModal(true);
@@ -706,11 +738,107 @@ const Contacts = () => {
         }
     }, [normalizeGroupContactDraft]);
 
-    const handleRemoveGroupEditorContact = useCallback((contactId) => {
+    const toggleGroupContactsSelection = useCallback((contactId) => {
         const nextContactId = String(contactId || '').trim();
         if (!nextContactId) return;
-        setGroupContacts((current) => current.filter((contact) => String(contact?.contactId || '').trim() !== nextContactId));
+        setGroupContactsSelection((current) => {
+            const next = new Set(current);
+            if (next.has(nextContactId)) next.delete(nextContactId);
+            else next.add(nextContactId);
+            return next;
+        });
     }, []);
+
+    const clearGroupContactsSelection = useCallback(() => {
+        setGroupContactsSelection(new Set());
+    }, []);
+
+    const toggleGroupAddSelection = useCallback((contactId) => {
+        const nextContactId = String(contactId || '').trim();
+        if (!nextContactId) return;
+        setGroupAddSelection((current) => {
+            const next = new Set(current);
+            if (next.has(nextContactId)) next.delete(nextContactId);
+            else next.add(nextContactId);
+            return next;
+        });
+    }, []);
+
+    const closeGroupAddPicker = useCallback(() => {
+        setShowGroupAddPicker(false);
+        setGroupEditorSearch('');
+        setGroupAddSelection(new Set());
+        setGroupAddPickerError('');
+    }, []);
+
+    const openGroupAddPicker = useCallback(async () => {
+        setGroupEditorSearch('');
+        setGroupAddSelection(new Set());
+        setGroupAddPickerError('');
+        setGroupAddPickerContacts([]);
+        setGroupAddPickerLoading(true);
+        setShowGroupAddPicker(true);
+
+        try {
+            const batchSize = 100;
+            let page = 1;
+            let totalPages = 1;
+            const allContacts = [];
+
+            while (page <= totalPages) {
+                // Pull the full contacts list page-by-page for the add picker.
+                const response = await apiClient.getContacts({
+                    page,
+                    pageSize: batchSize,
+                    search: '',
+                    activeFilter: 'all',
+                    leadStatus: 'all',
+                    sort: 'name-asc'
+                });
+                const responseData = response?.data || {};
+                const batch = Array.isArray(responseData?.data) ? responseData.data : [];
+                const meta = responseData?.meta || {};
+                const nextTotalCount = Number(meta.totalCount ?? response?.headers?.['x-total-count'] ?? batch.length);
+                totalPages = Math.max(1, Number(meta.totalPages || Math.ceil((Number.isFinite(nextTotalCount) ? nextTotalCount : 0) / batchSize)) || 1);
+                allContacts.push(...batch);
+
+                if (!batch.length) break;
+                page += 1;
+            }
+
+            setGroupAddPickerContacts(
+                dedupeContactsByPhoneIdentity(allContacts)
+                    .map((contact) => normalizeGroupContactDraft(contact))
+                    .filter((contact) => contact.contactId)
+            );
+        } catch (error) {
+            setGroupAddPickerContacts([]);
+            setGroupAddPickerError(error?.response?.data?.error || error?.message || 'Failed to load contacts for adding.');
+        } finally {
+            setGroupAddPickerLoading(false);
+        }
+    }, [dedupeContactsByPhoneIdentity, normalizeGroupContactDraft]);
+
+    const removeContactsFromGroup = useCallback((contactIds = []) => {
+        const nextIds = new Set(
+            (Array.isArray(contactIds) ? contactIds : [contactIds])
+                .map((contactId) => String(contactId || '').trim())
+                .filter(Boolean)
+        );
+        if (!nextIds.size) return;
+
+        setGroupContacts((current) => current.filter((contact) => !nextIds.has(String(contact?.contactId || '').trim())));
+        setGroupContactsSelection((current) => {
+            const next = new Set(current);
+            nextIds.forEach((contactId) => next.delete(contactId));
+            return next;
+        });
+    }, []);
+
+    const handleDeleteSelectedGroupContacts = useCallback(() => {
+        if (!groupContactsSelection.size) return;
+        removeContactsFromGroup(Array.from(groupContactsSelection));
+    }, [groupContactsSelection, removeContactsFromGroup]);
 
     const closeGroupEditor = useCallback(() => {
         if (groupSaving) return;
@@ -1881,6 +2009,46 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
         };
     }), [contacts]);
 
+    const addSelectedContactsToGroup = useCallback(() => {
+        if (!groupAddSelection.size) return;
+        setGroupContacts((current) => {
+            const existingIds = new Set(current.map((contact) => String(contact?.contactId || '').trim()).filter(Boolean));
+            const additions = groupAddPickerContacts
+                .filter((contact) => groupAddSelection.has(String(contact?.contactId || '').trim()))
+                .filter((contact) => contact?.contactId && !existingIds.has(contact.contactId));
+            return [...current, ...additions];
+        });
+        closeGroupAddPicker();
+    }, [closeGroupAddPicker, groupAddPickerContacts, groupAddSelection]);
+
+    const groupEditorAvailableContacts = useMemo(() => {
+        const groupedContactIds = new Set(
+            (Array.isArray(groupContacts) ? groupContacts : [])
+                .map((contact) => String(contact?.contactId || '').trim())
+                .filter(Boolean)
+        );
+        const query = String(groupEditorSearch || '').trim().toLowerCase();
+
+        return groupAddPickerContacts
+            .filter((contact) => {
+                const contactId = String(contact?.contactId || '').trim();
+                if (!contactId || groupedContactIds.has(contactId)) return false;
+                if (!query) return true;
+                const searchText = [
+                    contact.name,
+                    contact.phone,
+                    contact.email,
+                    contact.leadStatus,
+                    contact.sourceType,
+                    contact.source
+                ]
+                    .map((value) => String(value || '').trim().toLowerCase())
+                    .filter(Boolean)
+                    .join(' ');
+                return searchText.includes(query);
+            })
+    }, [groupAddPickerContacts, groupContacts, groupEditorSearch]);
+
     const crmSummary = useMemo(() => {
         const now = Date.now();
         const notesCount = visibleContacts.filter((contact) => {
@@ -2956,60 +3124,12 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                             <button className="close-btn" type="button" aria-label="Close group editor dialog" onClick={closeGroupEditor}>{"\u00D7"}</button>
                         </div>
                         <div className="modal-body">
-                            <div className="group-editor-summary">
-                                <strong>
-                                    {groupEditorMode === 'edit'
-                                        ? 'Update the group name, description, or members.'
-                                        : 'Save the selected contacts as a reusable group.'}
-                                </strong>
-                                <span>
-                                    {groupEditorMode === 'edit'
-                                        ? 'Changes will update the existing saved group.'
-                                        : `${selectedContacts.size} selected contact(s) will be saved into a new group.`}
-                                </span>
-                            </div>
-
                             {groupContactsError ? (
                                 <div className="contacts-import-warning" role="status">
                                     <strong>Group members</strong>
                                     <p>{groupContactsError}</p>
                                 </div>
                             ) : null}
-
-                            <details className="group-editor-panel" open>
-                                <summary className="group-editor-panel__summary">
-                                    <span>Selected Contacts</span>
-                                    <span className="group-editor-panel__badge">
-                                        {groupContactsLoading ? '...' : groupContacts.length}
-                                    </span>
-                                </summary>
-                                <div className="group-editor-panel__content">
-                                    {groupContactsLoading ? (
-                                        <div className="segment-picker-empty">Loading contacts...</div>
-                                    ) : groupContacts.length > 0 ? (
-                                        <div className="group-editor-contact-list">
-                                            {groupContacts.map((contact, index) => (
-                                                <div key={contact.contactId || contact.phone || index} className="group-editor-contact-card">
-                                                    <strong>{contact.name || 'Unnamed contact'}</strong>
-                                                    <span>{contact.phone || 'No phone'}</span>
-                                                    <small>{contact.sourceType || 'manual'} | {contact.whatsappOptInStatus || 'unknown'}</small>
-                                                    <div style={{ marginTop: 8 }}>
-                                                        <button
-                                                            type="button"
-                                                            className="secondary-btn delete-selected"
-                                                            onClick={() => handleRemoveGroupEditorContact(contact.contactId)}
-                                                        >
-                                                            Remove
-                                                        </button>
-                                                    </div>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    ) : (
-                                        <div className="segment-picker-empty">No contacts loaded.</div>
-                                    )}
-                                </div>
-                            </details>
 
                             <div className="form-group">
                                 <label>Group Name *</label>
@@ -3021,15 +3141,101 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                                 />
                             </div>
 
-                            <div className="form-group">
-                                <label>Description</label>
-                                <textarea
-                                    rows="4"
-                                    value={groupDescription}
-                                    onChange={(e) => setGroupDescription(e.target.value)}
-                                    placeholder="Optional note about this group"
-                                />
-                            </div>
+                            <details className="group-editor-panel" open>
+                                <summary className="group-editor-panel__summary">
+                                    <span>Contacts</span>
+                                    <span className="group-editor-panel__summary-actions">
+                                        <span className="group-editor-panel__badge">
+                                            {groupContactsLoading ? '...' : groupContacts.length}
+                                        </span>
+                                        <button
+                                            type="button"
+                                            className="secondary-btn group-editor-panel__action-btn"
+                                            onClick={openGroupAddPicker}
+                                            disabled={groupContactsLoading}
+                                        >
+                                            Add
+                                        </button>
+                                        {groupContactsSelectMode ? (
+                                            <button
+                                                type="button"
+                                                className="secondary-btn group-editor-panel__action-btn"
+                                                onClick={() => {
+                                                    setGroupContactsSelectMode(false);
+                                                    clearGroupContactsSelection();
+                                                }}
+                                            >
+                                                Done
+                                            </button>
+                                        ) : (
+                                            <button
+                                                type="button"
+                                                className="secondary-btn group-editor-panel__action-btn"
+                                                onClick={() => setGroupContactsSelectMode(true)}
+                                                disabled={!groupContacts.length}
+                                            >
+                                                Select
+                                            </button>
+                                        )}
+                                        {groupContactsSelectMode && groupContactsSelection.size > 0 ? (
+                                            <button
+                                                type="button"
+                                                className="secondary-btn delete-selected group-editor-panel__action-btn"
+                                                onClick={handleDeleteSelectedGroupContacts}
+                                            >
+                                                Delete Selected
+                                            </button>
+                                        ) : null}
+                                    </span>
+                                </summary>
+                                <div className="group-editor-panel__content">
+                                    {groupContactsLoading ? (
+                                        <div className="segment-picker-empty">Loading contacts...</div>
+                                    ) : groupContacts.length > 0 ? (
+                                        <div className="group-editor-contact-list">
+                                            {groupContacts.map((contact, index) => {
+                                                const contactId = String(contact.contactId || '').trim();
+                                                const isSelected = groupContactsSelection.has(contactId);
+                                                return (
+                                                    <div
+                                                        key={contact.contactId || contact.phone || index}
+                                                        className={`group-editor-contact-row${groupContactsSelectMode ? ' group-editor-contact-row--selectable' : ''}${isSelected ? ' is-selected' : ''}`}
+                                                        role={groupContactsSelectMode ? 'button' : undefined}
+                                                        tabIndex={groupContactsSelectMode ? 0 : undefined}
+                                                        onClick={() => {
+                                                            if (groupContactsSelectMode) toggleGroupContactsSelection(contactId);
+                                                        }}
+                                                        onKeyDown={(event) => {
+                                                            if (!groupContactsSelectMode) return;
+                                                            if (event.key === 'Enter' || event.key === ' ') {
+                                                                event.preventDefault();
+                                                                toggleGroupContactsSelection(contactId);
+                                                            }
+                                                        }}
+                                                    >
+                                                        {groupContactsSelectMode ? (
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={isSelected}
+                                                                onChange={() => toggleGroupContactsSelection(contactId)}
+                                                                onClick={(event) => event.stopPropagation()}
+                                                                aria-label={`Select ${contact.name || 'Unnamed contact'}`}
+                                                            />
+                                                        ) : null}
+                                                        <div className="group-editor-contact-row__main">
+                                                            <strong>{contact.name || 'Unnamed contact'}</strong>
+                                                            <span>{contact.phone || 'No phone'}</span>
+                                                            <small>{contact.sourceType || 'manual'} | {contact.whatsappOptInStatus || 'unknown'}</small>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    ) : (
+                                        <div className="segment-picker-empty">No contacts loaded.</div>
+                                    )}
+                                </div>
+                            </details>
                         </div>
                         <div className="modal-footer group-editor-modal__footer">
                             <button type="button" className="secondary-btn" onClick={closeGroupEditor} disabled={groupSaving}>
@@ -3037,6 +3243,68 @@ Jane,Smith,+9876543210,jane@example.com,Opted-out,service,Secondary List,"Regula
                             </button>
                             <button type="button" className="primary-btn" onClick={handleSaveGroup} disabled={groupSaving}>
                                 {groupSaving ? 'Saving...' : (groupEditorMode === 'edit' ? 'Update Group' : 'Save Group')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {showGroupAddPicker && (
+                <div className="modal-overlay">
+                    <div className="modal group-add-picker-modal" role="dialog" aria-modal="true" aria-labelledby="group-add-picker-title">
+                        <div className="modal-header">
+                            <h3 id="group-add-picker-title">Add Contacts</h3>
+                            <button className="close-btn" type="button" aria-label="Close add contacts dialog" onClick={closeGroupAddPicker}>{"\u00D7"}</button>
+                        </div>
+                        <div className="modal-body group-add-picker-modal__body">
+                            <div className="form-group">
+                                <label>Search Contacts</label>
+                                <input
+                                    type="text"
+                                    value={groupEditorSearch}
+                                    onChange={(e) => setGroupEditorSearch(e.target.value)}
+                                    placeholder="Name, phone, email"
+                                />
+                            </div>
+                            {groupAddPickerLoading ? (
+                                <div className="segment-picker-empty">Loading contacts...</div>
+                            ) : groupAddPickerError ? (
+                                <div className="segment-picker-empty">{groupAddPickerError}</div>
+                            ) : groupEditorAvailableContacts.length > 0 ? (
+                                <div className="group-add-picker-list">
+                                    {groupEditorAvailableContacts.map((contact, index) => {
+                                        const contactId = String(contact?._id || '').trim();
+                                        const isChecked = groupAddSelection.has(contactId);
+                                        return (
+                                            <label key={contactId || contact.phone || index} className="group-add-picker-row">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={isChecked}
+                                                    onChange={() => toggleGroupAddSelection(contactId)}
+                                                />
+                                                <span className="group-add-picker-row__meta">
+                                                    <strong>{contact.name || 'Unnamed contact'}</strong>
+                                                    <small>{contact.phone || 'No phone'}</small>
+                                                </span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            ) : (
+                                <div className="segment-picker-empty">No contacts available to add.</div>
+                            )}
+                        </div>
+                        <div className="modal-footer group-editor-modal__footer">
+                            <button type="button" className="secondary-btn" onClick={closeGroupAddPicker}>
+                                Cancel
+                            </button>
+                            <button
+                                type="button"
+                                className="primary-btn"
+                                onClick={addSelectedContactsToGroup}
+                                disabled={groupAddSelection.size === 0}
+                            >
+                                Add Selected
                             </button>
                         </div>
                     </div>

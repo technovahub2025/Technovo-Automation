@@ -1444,6 +1444,14 @@
     background: linear-gradient(180deg, rgba(248, 250, 252, 0.98), rgba(255, 255, 255, 1));
 }
 
+.group-editor-panel__summary-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+}
+
 .group-editor-panel__summary::-webkit-details-marker {
     display: none;
 }
@@ -1468,6 +1476,70 @@
     text-align: center;
 }
 
+.group-editor-panel__action-btn {
+    padding: 7px 10px;
+    border-radius: 10px;
+    font-size: 12px;
+    line-height: 1;
+    min-height: 30px;
+}
+
+.group-add-picker-modal {
+    width: min(92vw, 620px);
+    max-width: 620px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.group-add-picker-modal .modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow-y: auto;
+}
+
+.group-add-picker-list {
+    display: grid;
+    gap: 10px;
+}
+
+.group-add-picker-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(248, 250, 252, 0.94), rgba(255, 255, 255, 1));
+    cursor: pointer;
+}
+
+.group-add-picker-row input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    accent-color: var(--color-primary);
+    flex-shrink: 0;
+}
+
+.group-add-picker-row__meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+}
+
+.group-add-picker-row__meta strong {
+    font-size: 14px;
+    color: var(--color-text-primary);
+    font-weight: 700;
+}
+
+.group-add-picker-row__meta small {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+}
+
 .group-editor-panel__content {
     padding: 16px;
     border-top: 1px solid var(--color-border);
@@ -1475,38 +1547,89 @@
 
 .group-editor-contact-list {
     display: grid;
-    gap: 10px;
+    gap: 8px;
     max-height: 260px;
     overflow: auto;
     padding-right: 2px;
 }
 
-.group-editor-contact-card {
+.group-editor-contact-row {
     display: flex;
-    flex-direction: column;
-    gap: 2px;
+    align-items: flex-start;
+    gap: 12px;
     padding: 12px 14px;
     border: 1px solid var(--color-border);
     border-radius: 14px;
     background: linear-gradient(180deg, rgba(248, 250, 252, 0.88), rgba(255, 255, 255, 1));
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-.group-editor-contact-card strong {
+.group-editor-contact-row--selectable {
+    cursor: pointer;
+}
+
+.group-editor-contact-row:hover {
+    border-color: color-mix(in srgb, var(--color-primary) 26%, var(--color-border));
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+    transform: translateY(-1px);
+}
+
+.group-editor-contact-row.is-selected {
+    border-color: color-mix(in srgb, var(--color-primary) 52%, var(--color-border));
+    background: linear-gradient(180deg, rgba(239, 246, 255, 0.96), rgba(255, 255, 255, 1));
+}
+
+.group-editor-contact-row input[type='checkbox'] {
+    width: 16px;
+    height: 16px;
+    margin-top: 2px;
+    accent-color: var(--color-primary);
+    flex-shrink: 0;
+}
+
+.group-editor-contact-row__main {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+    flex: 1;
+}
+
+.group-editor-contact-row__main strong {
     color: var(--color-text-primary);
     font-size: 14px;
     font-weight: 700;
 }
 
-.group-editor-contact-card span {
+.group-editor-contact-row__main span {
     color: var(--color-text-secondary);
     font-size: 13px;
 }
 
-.group-editor-contact-card small {
+.group-editor-contact-row__main small {
     color: var(--color-text-secondary);
     font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.03em;
+}
+
+.group-editor-modal .form-group {
+    margin-bottom: 0;
+}
+
+.group-editor-modal .form-group input,
+.group-editor-modal .form-group textarea,
+.group-editor-modal .form-group select,
+.group-add-picker-modal .form-group input {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.group-editor-modal .segment-picker-empty,
+.group-add-picker-modal .segment-picker-empty {
+    padding: 10px 2px 2px;
+    color: var(--color-text-secondary);
+    font-size: 13px;
 }
 
 .group-editor-modal__footer {
