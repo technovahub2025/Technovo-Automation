@@ -16,38 +16,6 @@ const AI_SERVICE_BASE_URL =
 const ADMIN_API_BASE_URL = import.meta.env.VITE_API_ADMIN_URL || API_BASE_URL;
 const USE_CREDENTIALS = String(import.meta.env.VITE_API_WITH_CREDENTIALS || "false").toLowerCase() === "true";
 
-const getStoredAuthToken = () => {
-  const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
-  const localToken =
-    localStorage.getItem(tokenKey) ||
-    localStorage.getItem("authToken") ||
-    localStorage.getItem("token");
-  const sessionToken =
-    sessionStorage.getItem(tokenKey) ||
-    sessionStorage.getItem("authToken") ||
-    sessionStorage.getItem("token");
-
-  if (localToken || sessionToken) return localToken || sessionToken;
-
-  try {
-    const storedUser = JSON.parse(localStorage.getItem("user") || "{}");
-    return String(storedUser?.token || storedUser?.accessToken || "").trim();
-  } catch {
-    return "";
-  }
-};
-
-const isOutboundVoiceRequest = (config = {}) => {
-  const url = String(config?.url || "");
-  return url.includes("/api/voice/outbound-local");
-};
-
-const shouldRedirectForUnauthorized = (error) => {
-  if (error?.config?.skipAuthRedirect) return false;
-  if (isOutboundVoiceRequest(error?.config)) return false;
-  return error?.response?.status === 401;
-};
-
 // Create Axios instance
 const apiService = axios.create({
   baseURL: API_BASE_URL,
@@ -63,7 +31,9 @@ const apiService = axios.create({
 // ------------------------
 apiService.interceptors.request.use(
   (config) => {
-    const token = getStoredAuthToken();
+    const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
+    // Check both potential keys to be safe
+    const token = localStorage.getItem(tokenKey) || localStorage.getItem("authToken");
 
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -81,7 +51,7 @@ apiService.interceptors.response.use(
   (error) => {
     console.error("API Error:", error.response?.data || error.message);
 
-    if (shouldRedirectForUnauthorized(error)) {
+    if (error.response?.status === 401 && !error.config?.skipAuthRedirect) {
       console.warn("401 Unauthorized - Logging out user");
       const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
       socketService.disconnect();
@@ -128,8 +98,7 @@ apiService.bulkOutboundCall = (data) =>
   });
 apiService.quickOutboundCall = (payload) =>
   apiService.post("/api/voice/outbound-local", payload, {
-    timeout: Number(import.meta.env.VITE_OUTBOUND_QUICKCALL_TIMEOUT_MS || 90000),
-    skipAuthRedirect: true
+    timeout: Number(import.meta.env.VITE_OUTBOUND_QUICKCALL_TIMEOUT_MS || 90000)
   });
 apiService.outboundLocalQuickCall = apiService.quickOutboundCall;
 apiService.outboundVoiceQuickCall = apiService.quickOutboundCall;
