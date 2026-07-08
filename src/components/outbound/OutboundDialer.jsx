@@ -55,7 +55,7 @@ const OutboundDialer = ({
   onMonitorUpdate = () => {}
 }) => {
   const [mode, setMode] = useState(initialMode === 'bulk' ? 'bulk' : 'single');
-  const [provider, setProvider] = useState('exotel');
+  const [provider, setProvider] = useState('twilio');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [fromNumber, setFromNumber] = useState('');
   const [selectedTemplateId, setSelectedTemplateId] = useState('');
@@ -154,7 +154,7 @@ const OutboundDialer = ({
   };
 
   const handleResetSingleForm = () => {
-    setProvider('exotel');
+    setProvider('twilio');
     setPhoneNumber('');
     setFromNumber('');
     setSelectedTemplateId('');
@@ -173,7 +173,7 @@ const OutboundDialer = ({
   };
 
   const handleResetBulkForm = () => {
-    setProvider('exotel');
+    setProvider('twilio');
     setFromNumber('');
     setCampaignName('');
     setBulkTemplateId('');
