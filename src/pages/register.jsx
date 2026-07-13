@@ -8,6 +8,7 @@ import { AuthContext } from "./authcontext";
 import { auth, googleProvider } from "../firebase/firebase";
 import { signInWithPopup } from "firebase/auth";
 import authPageLogo from "../assets/logo(new).png";
+import resolveAdminApiUrl from "../services/adminApiUrl";
 
 const Register = () => {
   const [username, setUsername] = useState("");
@@ -28,7 +29,7 @@ const Register = () => {
   const otpInputsRef = useRef([]);
 
   // ✅ ENV values
-  const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+  const API_URL = resolveAdminApiUrl();
   const TOKEN_KEY = import.meta.env.VITE_TOKEN_KEY || "authToken";
   const USER_KEY = import.meta.env.VITE_USER_KEY || "user";
 

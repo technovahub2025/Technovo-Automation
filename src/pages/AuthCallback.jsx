@@ -4,6 +4,7 @@ import { AuthContext } from "./authcontext";
 import axios from "axios";
 import { buildAgentAccessPayload } from "../utils/agentAccess";
 import { resolveAgentWorkspaceState } from "../utils/agentAccess";
+import resolveAdminApiUrl from "../services/adminApiUrl";
 
 const AuthCallback = () => {
   const [params] = useSearchParams();
@@ -18,7 +19,7 @@ const AuthCallback = () => {
     }
 
     try {
-      const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+      const API_URL = resolveAdminApiUrl();
       const TOKEN_KEY = import.meta.env.VITE_TOKEN_KEY || "authToken";
       localStorage.setItem(TOKEN_KEY, token);
       localStorage.setItem("authToken", token);

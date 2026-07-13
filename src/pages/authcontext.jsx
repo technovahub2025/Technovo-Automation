@@ -3,6 +3,7 @@ import axios from "axios";
 import { auth } from "../firebase/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import { buildAgentAccessPayload } from "../utils/agentAccess";
+import resolveAdminApiUrl from "../services/adminApiUrl";
 
 export const AuthContext = createContext();
 
@@ -55,7 +56,7 @@ export const AuthProvider = ({ children }) => {
       return { ok: false, message: "No Firebase user found" };
     }
 
-    const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+    const API_URL = resolveAdminApiUrl();
     const idToken = await firebaseUser.getIdToken(true);
     const res = await axios.post(`${API_URL}/api/auth/firebase`, { idToken });
     const token = res.data.token;
@@ -69,7 +70,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const refreshFromBackend = async () => {
-    const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+    const API_URL = resolveAdminApiUrl();
     const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
     const token =
       localStorage.getItem(tokenKey) ||
@@ -98,7 +99,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+    const API_URL = resolveAdminApiUrl();
     let refreshTimer = null;
 
     const clearRefresh = () => {

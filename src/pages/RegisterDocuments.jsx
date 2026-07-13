@@ -3,11 +3,12 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import { AuthContext } from "./authcontext";
 import "./RegisterDocuments.css";
+import resolveAdminApiUrl from "../services/adminApiUrl";
 
 const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = null }) => {
   const navigate = useNavigate();
   const { refreshFromBackend } = useContext(AuthContext);
-  const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+  const API_URL = resolveAdminApiUrl();
   const storedUser = useMemo(() => {
     try {
       return JSON.parse(localStorage.getItem("user") || "null");

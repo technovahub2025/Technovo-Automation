@@ -1,5 +1,6 @@
 import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
+import resolveAdminApiUrl from "./adminApiUrl";
 
 const toCleanString = (value) => String(value || "").trim().replace(/\/+$/, "");
 
@@ -7,7 +8,7 @@ const resolveEmailDashboardBaseUrl = () => {
   const explicit = toCleanString(import.meta.env.VITE_EMAIL_DASHBOARD_API_URL);
   if (explicit) return explicit;
 
-  const adminApiUrl = toCleanString(import.meta.env.VITE_API_ADMIN_URL);
+  const adminApiUrl = toCleanString(resolveAdminApiUrl());
   if (adminApiUrl) return adminApiUrl;
 
   return resolveApiBaseUrl();

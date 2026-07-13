@@ -7,13 +7,14 @@
  */
 import axios from "axios";
 import socketService from "./socketService";
+import resolveAdminApiUrl from "./adminApiUrl";
 
 // Base URL from environment variable
 const API_BASE_URL =
   String(import.meta.env.VITE_VOICE_API_URL || import.meta.env.VITE_API_URL || "").trim();
 const AI_SERVICE_BASE_URL =
   String(import.meta.env.VITE_AI_SERVICE_URL || import.meta.env.VITE_PYTHON_AI_URL || "").trim();
-const ADMIN_API_BASE_URL = import.meta.env.VITE_API_ADMIN_URL || API_BASE_URL;
+const ADMIN_API_BASE_URL = resolveAdminApiUrl() || API_BASE_URL;
 const USE_CREDENTIALS = String(import.meta.env.VITE_API_WITH_CREDENTIALS || "false").toLowerCase() === "true";
 
 // Create Axios instance

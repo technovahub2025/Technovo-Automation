@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import apiService from "../../services/api";
 import socketService from "../../services/socketService";
+import resolveAdminApiUrl from "../../services/adminApiUrl";
 import "../admin.css";
 import "../../styles/theme.css";
 
@@ -250,7 +251,7 @@ const UsersListPage = () => {
   }, [fetchUsers]);
 
   useEffect(() => {
-    const socket = socketService.connect(import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_SOCKET_URL);
+    const socket = socketService.connect(resolveAdminApiUrl() || import.meta.env.VITE_SOCKET_URL);
     if (!socket) return undefined;
 
     const handleRefresh = () => {

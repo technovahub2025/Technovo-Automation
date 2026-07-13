@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
 import "./EmailAutomation.css";
+import resolveAdminApiUrl from "../services/adminApiUrl";
 
 const MAX_PREVIEW_ROWS = 10;
 const TEMPLATE_STORAGE_KEY_BASE = "email_automation_templates_v1";
@@ -265,7 +266,7 @@ const EmailAutomation = () => {
 
       const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
       const token = localStorage.getItem(tokenKey) || localStorage.getItem("authToken");
-      const baseUrl = import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_API_URL || "";
+      const baseUrl = resolveAdminApiUrl() || import.meta.env.VITE_API_URL || "";
 
       const response = await axios.post(
         `${baseUrl}/api/email/bulk-send`,

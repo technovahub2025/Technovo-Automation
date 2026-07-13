@@ -3,6 +3,7 @@ import { ArrowLeft, Check, ChevronDown, ChevronRight, Search, SlidersHorizontal,
 import { useNavigate } from "react-router-dom";
 import apiService from "../../services/api";
 import socketService from "../../services/socketService";
+import resolveAdminApiUrl from "../../services/adminApiUrl";
 import "../admin.css";
 import "../../styles/theme.css";
 
@@ -162,7 +163,7 @@ const validatePricingRows = (rows = []) => {
 
 const PaymentsDetailsPage = () => {
   const navigate = useNavigate();
-  const backendUrl = import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_API_URL || "";
+  const backendUrl = resolveAdminApiUrl() || import.meta.env.VITE_API_URL || "";
   const refreshTimerRef = useRef(null);
 
   const [planPricing, setPlanPricing] = useState([]);
@@ -243,7 +244,7 @@ const PaymentsDetailsPage = () => {
   }, []);
 
   useEffect(() => {
-    const socket = socketService.connect(import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_SOCKET_URL);
+    const socket = socketService.connect(resolveAdminApiUrl() || import.meta.env.VITE_SOCKET_URL);
     setSocketConnected(Boolean(socket?.connected));
     const syncSocketStatus = () => setSocketConnected(Boolean(socketService.getSocket()?.connected));
     const handlePaymentUpdated = () => scheduleRefresh("payments");

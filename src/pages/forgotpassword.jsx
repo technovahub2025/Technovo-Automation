@@ -5,6 +5,7 @@ import "./login.css";
 import "../styles/theme.css";
 import { Mail, ArrowLeft } from "lucide-react";
 import authPageLogo from "../assets/logo(new).png";
+import resolveAdminApiUrl from "../services/adminApiUrl";
 
 const ForgotPassword = () => {
   const [email, setEmail] = useState("");
@@ -14,7 +15,7 @@ const ForgotPassword = () => {
   const [sentTo, setSentTo] = useState("");
   const navigate = useNavigate();
 
-  const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+  const API_URL = resolveAdminApiUrl();
 
   const validateForm = () => {
     const newErrors = {};

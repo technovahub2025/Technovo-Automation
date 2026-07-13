@@ -9,6 +9,7 @@ import { auth, googleProvider } from "../firebase/firebase";
 import { signInWithPopup } from "firebase/auth";
 import loginPageLogo from "../assets/logo(new).png";
 import { resolveAgentWorkspaceState } from "../utils/agentAccess";
+import resolveAdminApiUrl from "../services/adminApiUrl";
 
 const Login = () => {
   const [email, setEmail] = useState("");
@@ -30,7 +31,7 @@ const Login = () => {
   const { login: loginUser } = useContext(AuthContext);
   const [showPassword, setShowPassword] = useState(false);
 
-  const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+  const API_URL = resolveAdminApiUrl();
   const TOKEN_KEY = import.meta.env.VITE_TOKEN_KEY || "authToken";
 
   useEffect(() => {

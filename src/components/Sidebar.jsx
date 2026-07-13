@@ -8,6 +8,7 @@ import { googleCalendarService } from '../services/googleCalendarService';
 import { crmService } from '../services/crmService';
 import socketService from '../services/socketService';
 import { resolveApiBaseUrl } from '../services/apiBaseUrl';
+import resolveAdminApiUrl from '../services/adminApiUrl';
 import {
     buildGoogleOAuthTrustedOrigins,
     isGoogleOAuthEventOriginTrusted,
@@ -278,7 +279,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         };
     }, [refreshFromBackend, user?.id, user?.userId]);
 
-    const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+    const API_URL = resolveAdminApiUrl();
 
     const toSafeNonNegativeNumber = (value, fallback = 0) => {
         const parsed = Number(value);

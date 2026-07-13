@@ -5,6 +5,7 @@ import axios from "axios";
 import { whatsappService } from "../services/whatsappService";
 import { crmService } from "../services/crmService";
 import socketService from "../services/socketService";
+import resolveAdminApiUrl from "../services/adminApiUrl";
 import { AuthContext } from "../pages/authcontext";
 import {
   TEAM_INBOX_NOTIFICATION_MODES,
@@ -57,7 +58,7 @@ const Header = () => {
   const notificationRef = useRef(null);
   const closeTimerRef = useRef(null);
   const shownCrmNotificationIdsRef = useRef(new Set());
-  const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+  const API_URL = resolveAdminApiUrl();
   const token = localStorage.getItem("authToken") || localStorage.getItem("token");
   const storedUser = user || (() => {
     try {
@@ -121,7 +122,7 @@ const Header = () => {
   }, []);
 
   useEffect(() => {
-    socketService.connect(import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_SOCKET_URL);
+    socketService.connect(resolveAdminApiUrl() || import.meta.env.VITE_SOCKET_URL);
     const refreshNotifications = async () => {
       await refreshFromBackend();
     };

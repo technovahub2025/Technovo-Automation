@@ -2,6 +2,7 @@ import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } 
 import { useLocation, useNavigate } from "react-router-dom";
 import RegisterDocuments from "./RegisterDocuments";
 import socketService from "../services/socketService";
+import resolveAdminApiUrl from "../services/adminApiUrl";
 import { AuthContext } from "./authcontext";
 
 const FALLBACK_LANDING_URL =
@@ -156,7 +157,7 @@ const Dashboard = () => {
   }, [location.pathname, navigate, openPricing, shouldAutoOpenPricing]);
 
   useEffect(() => {
-    socketService.connect(import.meta.env.VITE_API_ADMIN_URL || import.meta.env.VITE_SOCKET_URL);
+    socketService.connect(resolveAdminApiUrl() || import.meta.env.VITE_SOCKET_URL);
     const refreshSession = async () => {
       await refreshFromBackend();
     };

@@ -3,6 +3,7 @@ import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import "./MetaVerification.css";
 import "../styles/theme.css";
+import resolveAdminApiUrl from "../services/adminApiUrl";
 
 const MetaVerification = () => {
   const navigate = useNavigate();
@@ -24,7 +25,7 @@ const MetaVerification = () => {
     }
   });
 
-  const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+  const API_URL = resolveAdminApiUrl();
   const token = localStorage.getItem("authToken") || localStorage.getItem("token");
   const storedUser = (() => {
     try {

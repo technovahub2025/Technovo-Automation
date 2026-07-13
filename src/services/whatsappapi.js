@@ -4,6 +4,7 @@
  */
 import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
+import resolveAdminApiUrl from "./adminApiUrl";
 import { registerUnauthorizedAxiosInterceptor } from "./serviceAuth";
 import { normalizeError } from "../utils/errorUtils";
 import {
@@ -13,7 +14,7 @@ import {
 } from "../utils/agentAccess";
 
 const API_BASE_URL = resolveApiBaseUrl();
-const ADMIN_API_BASE_URL = String(import.meta.env.VITE_API_ADMIN_URL || "")
+const ADMIN_API_BASE_URL = String(resolveAdminApiUrl() || "")
   .trim()
   .replace(/\/+$/, "");
 const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 30000);

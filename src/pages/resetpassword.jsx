@@ -5,6 +5,7 @@ import "./login.css";
 import "../styles/theme.css";
 import { ShieldCheck, Lock, ArrowLeft } from "lucide-react";
 import nexionLogo from "../assets/nexion.jpeg";
+import resolveAdminApiUrl from "../services/adminApiUrl";
 
 const ResetPassword = () => {
   const { token } = useParams();
@@ -17,7 +18,7 @@ const ResetPassword = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
 
-  const API_URL = import.meta.env.VITE_API_ADMIN_URL;
+  const API_URL = resolveAdminApiUrl();
 
   const validateForm = () => {
     const newErrors = {};
