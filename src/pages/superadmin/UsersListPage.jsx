@@ -82,7 +82,7 @@ const DOCUMENT_UPLOAD_OPTIONS = [
 const resolveDocumentOptionLabel = (option) => {
   const label = String(option?.label || option?.value || "").trim();
   if (!label) return "";
-  return option?.alert ? `⚠ ${label}` : label;
+  return label;
 };
 
 const getUserLifoTime = (user = {}) => {
@@ -864,10 +864,17 @@ const UsersListPage = () => {
             <section className="customize-feature-section">
               <h3>Documents Upload (Admin)</h3>
               <p>Upload user verification files from superadmin for faster approval workflow.</p>
+              <div className="customize-doc-upload__notice">
+                Important documents are shown in green in the dropdown.
+              </div>
               <div className="customize-doc-upload">
                 <select value={adminDocType} onChange={(e) => setAdminDocType(e.target.value)}>
                   {DOCUMENT_UPLOAD_OPTIONS.map((docType) => (
-                    <option key={docType.value} value={docType.value}>
+                    <option
+                      key={docType.value}
+                      value={docType.value}
+                      style={docType.alert ? { color: "#15803d", fontWeight: 600 } : undefined}
+                    >
                       {resolveDocumentOptionLabel(docType)}
                     </option>
                   ))}
