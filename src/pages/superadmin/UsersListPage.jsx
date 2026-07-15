@@ -57,23 +57,33 @@ const FEATURE_GROUPS = [
 ];
 
 const DOCUMENT_UPLOAD_OPTIONS = [
-  "GST Registration Certificate",
-  "PAN Card (Business)",
-  "Certificate of Incorporation (mandatory for Pvt Ltd / LLP)",
-  "Shop & Establishment License",
-  "Business Bank Statement (last 3 months)",
-  "Utility Bill (Electricity / Phone / Internet)",
-  "Udyam/MSME Certificate",
-  "Articles of Incorporation",
-  "Website Screenshot",
-  "Address Proof (if mismatch or extra verification needed)",
-  "Passport Photo",
-  "CAF Form (Customer Application Form)",
-  "Aadhaar Card",
-  "Voter ID",
-  "Driving License",
-  "Passport"
+  { value: "GST Registration Certificate", label: "GST Registration Certificate", alert: true },
+  { value: "PAN Card (Business)", label: "PAN Card (Business)", alert: true },
+  {
+    value: "Certificate of Incorporation (mandatory for Pvt Ltd / LLP)",
+    label: "Certificate of Incorporation (mandatory for Pvt Ltd / LLP)",
+    alert: false
+  },
+  { value: "Shop & Establishment License", label: "Shop & Establishment License", alert: false },
+  { value: "Business Bank Statement (last 3 months)", label: "Business Bank Statement (last 3 months)", alert: false },
+  { value: "Utility Bill (Electricity / Phone / Internet)", label: "Utility Bill (Electricity / Phone / Internet)", alert: true },
+  { value: "Udyam/MSME Certificate", label: "Udyam/MSME Certificate", alert: false },
+  { value: "Articles of Incorporation", label: "Articles of Incorporation", alert: false },
+  { value: "Website Screenshot", label: "Website Screenshot", alert: false },
+  { value: "Address Proof (if mismatch or extra verification needed)", label: "Address Proof (if mismatch or extra verification needed)", alert: false },
+  { value: "Passport Photo", label: "Passport Photo", alert: false },
+  { value: "CAF Form (Customer Application Form)", label: "CAF Form (Customer Application Form)", alert: false },
+  { value: "Aadhaar Card", label: "Aadhaar Card", alert: false },
+  { value: "Voter ID", label: "Voter ID", alert: false },
+  { value: "Driving License", label: "Driving License", alert: false },
+  { value: "Passport", label: "Passport", alert: true }
 ];
+
+const resolveDocumentOptionLabel = (option) => {
+  const label = String(option?.label || option?.value || "").trim();
+  if (!label) return "";
+  return option?.alert ? `⚠ ${label}` : label;
+};
 
 const getUserLifoTime = (user = {}) => {
   const explicitDate = user.createdAt || user.updatedAt || user.registeredAt || user.created_at || user.updated_at;
@@ -158,7 +168,7 @@ const UsersListPage = () => {
   const [customizeLoading, setCustomizeLoading] = useState(false);
   const [customizeMessage, setCustomizeMessage] = useState("");
   const [customizeError, setCustomizeError] = useState("");
-  const [adminDocType, setAdminDocType] = useState(DOCUMENT_UPLOAD_OPTIONS[0]);
+  const [adminDocType, setAdminDocType] = useState(DOCUMENT_UPLOAD_OPTIONS[0].value);
   const [adminDocFile, setAdminDocFile] = useState(null);
   const [adminDocUploading, setAdminDocUploading] = useState(false);
   const [expandedFeatureGroups, setExpandedFeatureGroups] = useState({
@@ -204,7 +214,7 @@ const UsersListPage = () => {
     setCustomPackageId("");
     setCustomizeMessage("");
     setCustomizeError("");
-    setAdminDocType(DOCUMENT_UPLOAD_OPTIONS[0]);
+    setAdminDocType(DOCUMENT_UPLOAD_OPTIONS[0].value);
     setAdminDocFile(null);
   };
 
@@ -229,7 +239,7 @@ const UsersListPage = () => {
     );
     setCustomizeMessage("");
     setCustomizeError("");
-    setAdminDocType(DOCUMENT_UPLOAD_OPTIONS[0]);
+    setAdminDocType(DOCUMENT_UPLOAD_OPTIONS[0].value);
     setAdminDocFile(null);
     setShowCustomizeModal(true);
   };
@@ -857,8 +867,8 @@ const UsersListPage = () => {
               <div className="customize-doc-upload">
                 <select value={adminDocType} onChange={(e) => setAdminDocType(e.target.value)}>
                   {DOCUMENT_UPLOAD_OPTIONS.map((docType) => (
-                    <option key={docType} value={docType}>
-                      {docType}
+                    <option key={docType.value} value={docType.value}>
+                      {resolveDocumentOptionLabel(docType)}
                     </option>
                   ))}
                 </select>
