@@ -51,23 +51,24 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
   const [successMessage, setSuccessMessage] = useState("");
 
   const documentFields = [
-    { key: "gst_certificate", label: "GST Registration Certificate", required: true },
-    { key: "pan_business", label: "PAN Card (Business)", required: true },
-    { key: "incorporation_cert", label: "Certificate of Incorporation (mandatory for Pvt Ltd / LLP)", required: true },
-    { key: "shop_license", label: "Shop & Establishment License", required: true },
-    { key: "bank_statement", label: "Business Bank Statement (last 3 months)", required: true },
-    { key: "utility_bill", label: "Utility Bill (Electricity / Phone / Internet)", required: true },
-    { key: "udyam_msme", label: "Udyam/MSME Certificate", required: true },
-    { key: "articles_incorp", label: "Articles of Incorporation", required: true },
-    { key: "website_screenshot", label: "Website Screenshot", required: true },
-    { key: "address_proof", label: "Address Proof (if mismatch or extra verification needed)", required: true },
-    { key: "passport_photo", label: "Passport Photo", required: true },
-    { key: "caf_form", label: "CAF Form (Customer Application Form)", required: true },
-    { key: "aadhar_card", label: "Aadhaar Card", required: true },
-    { key: "voter_id", label: "Voter ID", required: false },
-    { key: "driving_license", label: "Driving License", required: false },
+    { key: "pan_business", label: "PAN Card", required: true },
+    { key: "utility_bill", label: "Utility Bill", required: true },
+    { key: "gst_certificate", label: "GST Certificate", required: false },
     { key: "passport_doc", label: "Passport", required: false }
   ];
+
+  const documentValidationErrors = useMemo(() => {
+    const next = {};
+    if (!docs.pan_business) next.pan_business = "PAN is required";
+    if (!docs.utility_bill) next.utility_bill = "Utility bill is required";
+    if (!docs.gst_certificate && !docs.passport_doc) {
+      next.gst_certificate = "Upload either GST or Passport";
+      next.passport_doc = "Upload either GST or Passport";
+    }
+    return next;
+  }, [docs]);
+
+  const isDocumentSectionValid = Object.keys(documentValidationErrors).length === 0;
 
   const validate = () => {
     const next = {};
@@ -82,9 +83,12 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
     }
     if (!acceptedTerms) next.terms = "You must accept the terms";
     if (!formData.facebookUserId.trim()) next.facebookUserId = "Facebook user ID is required";
-    documentFields.forEach((doc) => {
-      if (doc.required && !docs[doc.key]) next[doc.key] = "Required document";
-    });
+
+    if (documentValidationErrors.pan_business) next.pan_business = documentValidationErrors.pan_business;
+    if (documentValidationErrors.utility_bill) next.utility_bill = documentValidationErrors.utility_bill;
+    if (documentValidationErrors.gst_certificate) next.gst_certificate = documentValidationErrors.gst_certificate;
+    if (documentValidationErrors.passport_doc) next.passport_doc = documentValidationErrors.passport_doc;
+
     setErrors(next);
     return Object.keys(next).length === 0;
   };
@@ -94,7 +98,8 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
     if (!validate()) return;
     setLoading(true);
     try {
-      const resolvedCompanyName = formData.companyName.trim() || storedUser?.companyName || storedUser?.company?.name || "Workspace";
+      const resolvedCompanyName =
+        formData.companyName.trim() || storedUser?.companyName || storedUser?.company?.name || "Workspace";
       let token = existingToken;
       let registeredUser = null;
       if (!isExistingWorkspaceUser) {
@@ -185,7 +190,8 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
         // ignore local storage issues
       }
 
-      const notice = "Your documents were submitted successfully. Verification usually completes within 24 to 48 hours.";
+      const notice =
+        "Your documents were submitted successfully. Verification usually completes within 24 to 48 hours.";
       setLoading(false);
       setSuccessMessage(notice);
       setFormData((prev) => ({
@@ -226,9 +232,15 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
         <div className="register-docs__header">
           <h1>{isExistingWorkspaceUser ? "Document Upload" : "Register New User"}</h1>
           {!isExistingWorkspaceUser ? (
-            <p>Fill in the details and upload required documents. Items 14-16 are optional.</p>
+            <p>
+              Fill in the details and upload required documents. PAN and Utility Bill are required,
+              and upload either GST or Passport.
+            </p>
           ) : (
-            <p>Upload the required documents below. Our team will review them and activate your workspace after verification.</p>
+            <p>
+              Upload the required documents below. PAN and Utility Bill are required, and upload
+              either GST or Passport.
+            </p>
           )}
         </div>
       ) : null}
@@ -311,10 +323,7 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
             </label>
             <label>
               Team Size
-              <select
-                value={teamSize}
-                onChange={(e) => setTeamSize(e.target.value)}
-              >
+              <select value={teamSize} onChange={(e) => setTeamSize(e.target.value)}>
                 <option value="">Select team size</option>
                 <option value="1-5">1-5</option>
                 <option value="6-20">6-20</option>
@@ -354,7 +363,9 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
         </div>
 
         <div className="register-docs__section-title">Document Uploads</div>
-        <div className="register-docs__note">Max file size: 10 MB per document.</div>
+        <div className="register-docs__note">
+          PAN and Utility Bill are required. Upload either GST or Passport.
+        </div>
         {errors.idProof && <div className="field-error">{errors.idProof}</div>}
         <div className="register-docs__docs">
           {documentFields.map((doc) => (
@@ -366,11 +377,23 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
               <input
                 type="file"
                 accept=".pdf,.jpg,.jpeg,.png"
-                onChange={(e) =>
-                  setDocs((prev) => ({ ...prev, [doc.key]: e.target.files?.[0] || null }))
-                }
+                onChange={(e) => {
+                  const nextFile = e.target.files?.[0] || null;
+                  setDocs((prev) => ({ ...prev, [doc.key]: nextFile }));
+                  setErrors((prev) => {
+                    const next = { ...prev };
+                    delete next[doc.key];
+                    if (doc.key === "gst_certificate" || doc.key === "passport_doc") {
+                      delete next.gst_certificate;
+                      delete next.passport_doc;
+                    }
+                    return next;
+                  });
+                }}
               />
-              {errors[doc.key] && <span className="field-error">{errors[doc.key]}</span>}
+              {errors[doc.key] || documentValidationErrors[doc.key] ? (
+                <span className="field-error">{errors[doc.key] || documentValidationErrors[doc.key]}</span>
+              ) : null}
             </label>
           ))}
         </div>
@@ -403,7 +426,11 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
           >
             {embedded ? "Back" : "Cancel"}
           </button>
-          <button type="submit" className="primary-btn" disabled={loading || isSubmitted}>
+          <button
+            type="submit"
+            className="primary-btn"
+            disabled={loading || isSubmitted || !isDocumentSectionValid}
+          >
             {loading
               ? "Submitting..."
               : isSubmitted
@@ -419,4 +446,3 @@ const RegisterDocuments = ({ embedded = false, onComplete = null, onCancel = nul
 };
 
 export default RegisterDocuments;
-
