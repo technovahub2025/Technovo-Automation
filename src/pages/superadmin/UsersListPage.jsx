@@ -1525,7 +1525,7 @@ const UsersListPage = () => {
                   <div className="users-list-cell users-list-cell--mono">
                     {listedUser._id?.slice(-8) || "N/A"}
                   </div>
-                  <div className="user-card-actions user-card-actions--list">
+                  <div className="users-list-cell users-list-cell--actions user-card-actions user-card-actions--list">
                     {!isAgentLikeUser(listedUser) && (
                       <button className="edit-btn" onClick={() => handleEdit(listedUser)}>
                         Edit
