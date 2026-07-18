@@ -417,6 +417,8 @@ apiService.saveCustomPackageDraft = (userId, payload) =>
   apiService.post(`${ADMIN_API_BASE_URL}/api/admin/users/${userId}/custom-package/draft`, payload);
 apiService.generateCustomPackagePaymentLink = (userId) =>
   apiService.post(`${ADMIN_API_BASE_URL}/api/admin/users/${userId}/custom-package/payment-link`);
+apiService.createCashPayment = (userId, payload) =>
+  apiService.post(`${ADMIN_API_BASE_URL}/api/admin/users/${userId}/cash-payment`, payload);
 apiService.verifyCustomPackagePayment = (payload) =>
   apiService.post(`${ADMIN_API_BASE_URL}/api/admin/custom-package/payments/verify`, payload);
 apiService.resetCustomPackage = (userId) =>

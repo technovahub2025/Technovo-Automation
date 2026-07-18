@@ -74,7 +74,7 @@ const FEATURE_GROUPS = [
 ];
 
 const DEFAULT_PLAN_FEATURES = {
-  basic: ["Broadcast Dashboard", "Team Inbox", "Broadcast", "Templates", "Contacts", ...CRM_FEATURES, "Voice Broadcast", "Missed Call"],
+  basic: ["Broadcast Dashboard", "Team Inbox", "Broadcast", "Templates", "Contacts", ...CRM_FEATURES, "Voice Broadcast"],
   growth: [
     "Ads Manager",
     "Insights",

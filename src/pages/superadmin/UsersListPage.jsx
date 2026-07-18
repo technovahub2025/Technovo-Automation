@@ -6,9 +6,13 @@ import {
   CheckCircle2,
   ChevronDown,
   Copy,
+  CreditCard,
+  Banknote,
+  BadgeDollarSign,
   Eye,
   EyeOff,
   Mail,
+  Loader2,
   Search,
   SlidersHorizontal,
   Trash2,
@@ -55,6 +59,105 @@ const FEATURE_GROUPS = [
     features: ["Missed Call", "Email Automation"]
   }
 ];
+
+const PLAN_OPTIONS = [
+  { value: "basic", label: "Basic" },
+  { value: "growth", label: "Growth" },
+  { value: "enterprise", label: "Enterprise" }
+];
+
+const BILLING_CYCLE_OPTIONS = [
+  { value: "monthly", label: "Monthly" },
+  { value: "yearly", label: "Yearly" }
+];
+
+const normalizePlanCode = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return PLAN_OPTIONS.some((option) => option.value === normalized) ? normalized : "basic";
+};
+
+const normalizeBillingCycle = (value) => {
+  const normalized = String(value || "").trim().toLowerCase();
+  return BILLING_CYCLE_OPTIONS.some((option) => option.value === normalized) ? normalized : "monthly";
+};
+
+const resolvePlanLabel = (value) => {
+  const normalized = normalizePlanCode(value);
+  return PLAN_OPTIONS.find((option) => option.value === normalized)?.label || "Basic";
+};
+
+const resolveBillingCycleLabel = (value) => {
+  const normalized = normalizeBillingCycle(value);
+  return BILLING_CYCLE_OPTIONS.find((option) => option.value === normalized)?.label || "Monthly";
+};
+
+const formatCurrencyAmount = (value) => {
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "";
+  return new Intl.NumberFormat("en-IN", {
+    maximumFractionDigits: 2
+  }).format(amount);
+};
+
+const resolvePaymentStatus = (user = {}) => {
+  const subscriptionStatus = String(user.subscriptionStatus || "").trim().toLowerCase();
+  const workspaceState = String(user.workspaceAccessState || "").trim().toLowerCase();
+  const paymentMethod = String(user.latestPaymentMethod || "").trim().toLowerCase();
+  const paymentStatus = String(user.latestPaymentStatus || "").trim().toLowerCase();
+  const active = subscriptionStatus === "active" || workspaceState === "active" || Boolean(user.canPerformActions);
+
+  if (active && paymentMethod === "cash") {
+    return { label: "Active via Cash", tone: "success" };
+  }
+
+  if (active) {
+    return { label: "Active", tone: "success" };
+  }
+
+  if (paymentStatus === "captured" || paymentStatus === "paid") {
+    return { label: "Payment Captured", tone: "warning" };
+  }
+
+  if (subscriptionStatus === "payment_pending") {
+    return { label: "Payment Pending", tone: "warning" };
+  }
+
+  if (subscriptionStatus === "trial" || subscriptionStatus === "trialing") {
+    return { label: "Trial", tone: "neutral" };
+  }
+
+  return { label: "No Active Access", tone: "warning" };
+};
+
+const resolvePaymentMethodLabel = (user = {}) => {
+  const method = String(user.latestPaymentMethod || "").trim().toLowerCase();
+  if (!method) return "No recent payment";
+  if (method === "cash") return "Cash";
+  return method.charAt(0).toUpperCase() + method.slice(1);
+};
+
+const resolvePaymentSnapshot = (user = {}) => {
+  const planCode = normalizePlanCode(user.latestPaymentPlanCode || user.planCode || "basic");
+  const billingCycle = normalizeBillingCycle(user.latestPaymentBillingCycle || "monthly");
+  const amount = Number(user.latestPaymentAmount || 0);
+  const paymentReference = String(user.latestPaymentReference || "").trim();
+  const paymentMethod = String(user.latestPaymentMethod || "").trim().toLowerCase();
+  const status = resolvePaymentStatus(user);
+
+  return {
+    planCode,
+    planLabel: resolvePlanLabel(planCode),
+    billingCycle,
+    billingCycleLabel: resolveBillingCycleLabel(billingCycle),
+    amount,
+    amountLabel: amount > 0 ? `INR ${formatCurrencyAmount(amount)}` : "Not recorded",
+    paymentReference: paymentReference || "Not recorded",
+    paymentMethod,
+    paymentMethodLabel: resolvePaymentMethodLabel(user),
+    statusLabel: status.label,
+    statusTone: status.tone
+  };
+};
 
 const DOCUMENT_UPLOAD_OPTIONS = [
   { value: "GST Registration Certificate", label: "GST Registration Certificate", alert: true },
@@ -168,6 +271,15 @@ const UsersListPage = () => {
   const [customizeLoading, setCustomizeLoading] = useState(false);
   const [customizeMessage, setCustomizeMessage] = useState("");
   const [customizeError, setCustomizeError] = useState("");
+  const [showCashPaymentModal, setShowCashPaymentModal] = useState(false);
+  const [cashPaymentUser, setCashPaymentUser] = useState(null);
+  const [cashPaymentPlanCode, setCashPaymentPlanCode] = useState("basic");
+  const [cashPaymentBillingCycle, setCashPaymentBillingCycle] = useState("monthly");
+  const [cashPaymentAmount, setCashPaymentAmount] = useState("");
+  const [cashPaymentReference, setCashPaymentReference] = useState("");
+  const [cashPaymentLoading, setCashPaymentLoading] = useState(false);
+  const [cashPaymentMessage, setCashPaymentMessage] = useState("");
+  const [cashPaymentError, setCashPaymentError] = useState("");
   const [adminDocType, setAdminDocType] = useState(DOCUMENT_UPLOAD_OPTIONS[0].value);
   const [adminDocFile, setAdminDocFile] = useState(null);
   const [adminDocUploading, setAdminDocUploading] = useState(false);
@@ -218,6 +330,18 @@ const UsersListPage = () => {
     setAdminDocFile(null);
   };
 
+  const resetCashPaymentForm = () => {
+    setShowCashPaymentModal(false);
+    setCashPaymentUser(null);
+    setCashPaymentPlanCode("basic");
+    setCashPaymentBillingCycle("monthly");
+    setCashPaymentAmount("");
+    setCashPaymentReference("");
+    setCashPaymentLoading(false);
+    setCashPaymentMessage("");
+    setCashPaymentError("");
+  };
+
   const applyCustomizeSnapshot = (user) => {
     const userCustomFeatures = Array.isArray(user?.customFeatureLabels) ? user.customFeatureLabels : [];
     const activePkg = user?.activeCustomPackage || null;
@@ -242,6 +366,21 @@ const UsersListPage = () => {
     setAdminDocType(DOCUMENT_UPLOAD_OPTIONS[0].value);
     setAdminDocFile(null);
     setShowCustomizeModal(true);
+  };
+
+  const applyCashPaymentSnapshot = (user) => {
+    const existingPlanCode = normalizePlanCode(user?.latestPaymentPlanCode || user?.planCode || "basic");
+    const existingBillingCycle = normalizeBillingCycle(user?.latestPaymentBillingCycle || "monthly");
+    const existingAmount = Number(user?.latestPaymentAmount || 0);
+
+    setCashPaymentUser(user);
+    setCashPaymentPlanCode(existingPlanCode);
+    setCashPaymentBillingCycle(existingBillingCycle);
+    setCashPaymentAmount(existingAmount > 0 ? String(existingAmount) : "");
+    setCashPaymentReference(String(user?.latestPaymentReference || "").trim());
+    setCashPaymentMessage("");
+    setCashPaymentError("");
+    setShowCashPaymentModal(true);
   };
 
   const fetchUsers = useCallback(async () => {
@@ -407,6 +546,81 @@ const UsersListPage = () => {
       return;
     }
     applyCustomizeSnapshot(selectedUser);
+  };
+
+  const handleOpenCashPayment = (selectedUser) => {
+    if (String(selectedUser?.role || "").toLowerCase() === "superadmin") {
+      window.alert("Superadmin account cannot receive manual cash payments.");
+      return;
+    }
+    applyCashPaymentSnapshot(selectedUser);
+  };
+
+  const updateUserFromCashPayment = (userId, paymentPayload, responseData = {}) => {
+    const planCode = normalizePlanCode(responseData.planCode || paymentPayload.planCode);
+    const billingCycle = normalizeBillingCycle(responseData.billingCycle || paymentPayload.billingCycle);
+    const amount = Number(responseData.amount || paymentPayload.amount || 0);
+    const paymentReference = String(responseData.paymentReference || paymentPayload.paymentReference || "").trim();
+
+    setUsers((previousUsers) =>
+      previousUsers.map((user) => {
+        if (String(user._id || "") !== String(userId || "")) return user;
+
+        return {
+          ...user,
+          planCode,
+          subscriptionStatus: responseData.subscriptionStatus || "active",
+          workspaceAccessState: responseData.context?.workspaceAccessState || "active",
+          canPerformActions: responseData.context?.canPerformActions ?? true,
+          canViewAnalytics: responseData.context?.canViewAnalytics ?? true,
+          latestPaymentMethod: "cash",
+          latestPaymentStatus: responseData.latestPaymentStatus || "captured",
+          latestPaymentAmount: Number.isFinite(amount) ? amount : Number(paymentPayload.amount || 0),
+          latestPaymentPlanCode: planCode,
+          latestPaymentBillingCycle: billingCycle,
+          latestPaymentReference: paymentReference || paymentPayload.paymentReference || "",
+          latestPaymentCurrency: responseData.latestPaymentCurrency || user.latestPaymentCurrency || "INR"
+        };
+      })
+    );
+  };
+
+  const handleSubmitCashPayment = async (event) => {
+    event.preventDefault();
+
+    if (!cashPaymentUser?._id || cashPaymentLoading) return;
+
+    const planCode = normalizePlanCode(cashPaymentPlanCode);
+    const billingCycle = normalizeBillingCycle(cashPaymentBillingCycle);
+    const amount = Number(cashPaymentAmount);
+
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setCashPaymentError("Enter a valid amount greater than zero.");
+      return;
+    }
+
+    setCashPaymentLoading(true);
+    setCashPaymentError("");
+    setCashPaymentMessage("");
+
+    const payload = {
+      planCode,
+      billingCycle,
+      amount,
+      paymentReference: String(cashPaymentReference || "").trim()
+    };
+
+    try {
+      const response = await apiService.createCashPayment(cashPaymentUser._id, payload);
+      const responseData = response?.data?.data || {};
+      updateUserFromCashPayment(cashPaymentUser._id, payload, responseData);
+      setCashPaymentMessage(response?.data?.message || "Cash payment recorded and access activated.");
+      await fetchUsers();
+    } catch (error) {
+      setCashPaymentError(error?.response?.data?.message || "Failed to record cash payment.");
+    } finally {
+      setCashPaymentLoading(false);
+    }
   };
 
   const handleSaveCustomDraft = async () => {
@@ -632,6 +846,8 @@ const UsersListPage = () => {
     }
   };
 
+  const cashPaymentPreview = cashPaymentUser ? resolvePaymentSnapshot(cashPaymentUser) : null;
+
   return (
     <div className="superadmin-shell">
       {showEditModal && (
@@ -781,7 +997,7 @@ const UsersListPage = () => {
               <div className="form-row form-row--customize">
                 <label>Amount</label>
                 <div className="customize-input-wrap">
-                  <span className="customize-input-prefix">₹</span>
+                  <span className="customize-input-prefix">INR</span>
                   <input
                     type="number"
                     min="0"
@@ -956,6 +1172,154 @@ const UsersListPage = () => {
         </div>
       )}
 
+      {showCashPaymentModal && cashPaymentUser && cashPaymentPreview && (
+        <div className="modal-overlay" onClick={resetCashPaymentForm}>
+          <div className="modal-content modal-content--wide cash-payment-modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h2>Cash Payment / Activate Plan</h2>
+                <p className="superadmin-subtitle" style={{ marginTop: 6 }}>
+                  Record a manual payment for this user and activate the selected plan immediately.
+                </p>
+              </div>
+              <button className="modal-close" onClick={resetCashPaymentForm}>
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="cash-payment-alert">
+              If the user already has an active subscription, this payment will replace the plan with the new one you assign below.
+            </div>
+
+            <div className="customize-modal-user-strip cash-payment-user-strip">
+              <div className="customize-modal-user-chip">
+                <strong>{cashPaymentUser.username || "User"}</strong>
+                <span>{cashPaymentUser.email || "No email"}</span>
+              </div>
+              <div className="customize-modal-user-chip">
+                <strong>Current Plan</strong>
+                <span>{resolvePlanLabel(cashPaymentUser.latestPaymentPlanCode || cashPaymentUser.planCode || "basic")}</span>
+              </div>
+              <div className="customize-modal-user-chip">
+                <strong>Current Access</strong>
+                <span>{resolvePaymentStatus(cashPaymentUser).label}</span>
+              </div>
+            </div>
+
+            <form className="cash-payment-form" onSubmit={handleSubmitCashPayment}>
+              <div className="cash-payment-grid">
+                <div className="form-row form-row--customize">
+                  <label>Plan</label>
+                  <select
+                    value={cashPaymentPlanCode}
+                    onChange={(e) => setCashPaymentPlanCode(e.target.value)}
+                    className="customize-select"
+                  >
+                    {PLAN_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row form-row--customize">
+                  <label>Billing Cycle</label>
+                  <select
+                    value={cashPaymentBillingCycle}
+                    onChange={(e) => setCashPaymentBillingCycle(e.target.value)}
+                    className="customize-select"
+                  >
+                    {BILLING_CYCLE_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="form-row form-row--customize">
+                  <label>Amount</label>
+                  <div className="customize-input-wrap">
+                    <span className="customize-input-prefix">INR</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={cashPaymentAmount}
+                      onChange={(e) => setCashPaymentAmount(e.target.value)}
+                      placeholder="Enter payment amount"
+                      className="customize-input"
+                    />
+                  </div>
+                </div>
+                <div className="form-row form-row--customize">
+                  <label>Payment Reference / Receipt No.</label>
+                  <div className="cash-payment-reference-wrap">
+                    <CreditCard size={14} />
+                    <input
+                      value={cashPaymentReference}
+                      onChange={(e) => setCashPaymentReference(e.target.value)}
+                      placeholder="Optional receipt or reference number"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <section className="cash-payment-summary">
+                <h3>Confirm Assignment</h3>
+                <div className="cash-payment-summary__grid">
+                  <div>
+                    <span>New Plan</span>
+                    <strong>{resolvePlanLabel(cashPaymentPlanCode)}</strong>
+                  </div>
+                  <div>
+                    <span>Billing Cycle</span>
+                    <strong>{resolveBillingCycleLabel(cashPaymentBillingCycle)}</strong>
+                  </div>
+                  <div>
+                    <span>Amount</span>
+                    <strong>{cashPaymentAmount ? `INR ${formatCurrencyAmount(cashPaymentAmount)}` : "Enter amount"}</strong>
+                  </div>
+                  <div>
+                    <span>Reference</span>
+                    <strong>{cashPaymentReference.trim() || "Auto-generated"}</strong>
+                  </div>
+                </div>
+                <div className="cash-payment-summary__note">
+                  This will mark the user as active via cash, update the latest payment details, and refresh access right away.
+                </div>
+              </section>
+
+              {cashPaymentError ? <div className="pricing-feedback pricing-feedback--error">{cashPaymentError}</div> : null}
+              {cashPaymentMessage ? (
+                <div className="pricing-feedback pricing-feedback--success">
+                  <CheckCircle2 size={16} />
+                  <span>{cashPaymentMessage}</span>
+                </div>
+              ) : null}
+
+              <div className="modal-actions">
+                <button type="button" className="btn-cancel" onClick={resetCashPaymentForm} disabled={cashPaymentLoading}>
+                  Close
+                </button>
+                <button type="submit" className="btn-submit" disabled={cashPaymentLoading}>
+                  {cashPaymentLoading ? (
+                    <>
+                      <Loader2 size={16} className="spin-icon" />
+                      <span>Recording...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Banknote size={16} />
+                      <span>Record Cash Payment</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       <header className="superadmin-header">
         <div className="superadmin-hero superadmin-hero--page">
           <div className="superadmin-hero__heading">
@@ -1075,6 +1439,7 @@ const UsersListPage = () => {
                 <span>User</span>
                 <span>Role</span>
                 <span>Company</span>
+                <span>Billing / Payment</span>
                 <span>User ID</span>
                 <span>Actions</span>
               </div>
@@ -1083,6 +1448,10 @@ const UsersListPage = () => {
                   key={listedUser._id}
                   className={`users-list-table users-list-table--row ${showFilters ? "users-list-table--selecting" : ""}`}
                 >
+                  {(() => {
+                    const paymentSnapshot = resolvePaymentSnapshot(listedUser);
+                    return (
+                      <>
                   {showFilters ? (
                     <div className="users-list-cell users-list-cell--select">
                     <button
@@ -1111,9 +1480,14 @@ const UsersListPage = () => {
                     </div>
                   </div>
                   <div className="users-list-cell">
-                    <span className="status-chip status-chip--neutral">
-                      {isAgentLikeUser(listedUser) ? "Agent" : String(listedUser.role || "user")}
-                    </span>
+                    <div className="user-payment-stack">
+                      <span className="status-chip status-chip--neutral">
+                        {isAgentLikeUser(listedUser) ? "Agent" : String(listedUser.role || "user")}
+                      </span>
+                      <span className={`status-chip ${paymentSnapshot.statusTone === "success" ? "status-chip--success" : paymentSnapshot.statusTone === "warning" ? "status-chip--warning" : "status-chip--neutral"}`}>
+                        {paymentSnapshot.statusLabel}
+                      </span>
+                    </div>
                   </div>
                   <div className="users-list-cell">
                     {listedUser.companyId ? (
@@ -1124,6 +1498,30 @@ const UsersListPage = () => {
                       <span className="missing-pill missing-pill--inline">Company pending</span>
                     )}
                   </div>
+                  <div className="users-list-cell">
+                    <div className="user-payment-details">
+                      <div className="user-payment-details__line">
+                        <BadgeDollarSign size={13} />
+                        <span>{paymentSnapshot.planLabel}</span>
+                      </div>
+                      <div className="user-payment-details__line">
+                        <span className="user-payment-details__label">Amount</span>
+                        <strong>{paymentSnapshot.amountLabel}</strong>
+                      </div>
+                      <div className="user-payment-details__line">
+                        <span className="user-payment-details__label">Cycle</span>
+                        <strong>{paymentSnapshot.billingCycleLabel}</strong>
+                      </div>
+                      <div className="user-payment-details__line">
+                        <span className="user-payment-details__label">Method</span>
+                        <strong>{paymentSnapshot.paymentMethodLabel}</strong>
+                      </div>
+                      <div className="user-payment-details__line user-payment-details__line--subtle">
+                        <span className="user-payment-details__label">Ref</span>
+                        <strong>{paymentSnapshot.paymentReference}</strong>
+                      </div>
+                    </div>
+                  </div>
                   <div className="users-list-cell users-list-cell--mono">
                     {listedUser._id?.slice(-8) || "N/A"}
                   </div>
@@ -1133,7 +1531,14 @@ const UsersListPage = () => {
                         Edit
                       </button>
                     )}
+                    <button type="button" className="cash-payment-btn" onClick={() => handleOpenCashPayment(listedUser)}>
+                      <Banknote size={14} />
+                      <span>Cash Payment / Activate Plan</span>
+                    </button>
                   </div>
+                      </>
+                    );
+                  })()}
                 </div>
               ))}
             </>
