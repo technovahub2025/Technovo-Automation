@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRightCircle,
   CheckCircle2,
+  ExternalLink,
   Facebook,
   Lock,
   RefreshCw,
