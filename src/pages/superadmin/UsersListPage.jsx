@@ -837,11 +837,12 @@ const UsersListPage = () => {
 
     setLoading(true);
     try {
+      const paymentFundUrl = String(metaPaymentFundUrl || "").trim();
       await apiService.updateAdmin(editingUserId, {
         username,
         email,
         role: selectedRole,
-        metaPaymentFundUrl: String(metaPaymentFundUrl || "").trim()
+        ...(paymentFundUrl ? { metaPaymentFundUrl: paymentFundUrl } : {})
       });
       await apiService.saveAdminCredentials({
         userId: editingUserId,
@@ -856,7 +857,7 @@ const UsersListPage = () => {
         metaRedirectUri: String(metaRedirectUri || "").trim(),
         metaUserAccessToken: String(metaUserAccessToken || "").trim(),
         metaAdAccountId: String(metaAdAccountId || "").trim(),
-        metaPaymentFundUrl: String(metaPaymentFundUrl || "").trim(),
+        ...(paymentFundUrl ? { metaPaymentFundUrl: paymentFundUrl } : {}),
         phoneNumber: String(phoneNumber || "").trim()
       });
       closeModal();
