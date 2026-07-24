@@ -832,6 +832,32 @@
   cursor: pointer;
 }
 
+.campaign-management .cm-fund-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-width: 118px;
+}
+
+.campaign-management .cm-fund-btn--ready {
+  background: linear-gradient(to right, #0f766e, #0f9b8e);
+  box-shadow: 0 10px 20px -10px rgba(15, 118, 110, 0.55);
+}
+
+.campaign-management .cm-fund-btn--ready:hover {
+  background: linear-gradient(to right, #0e6f68, #0d8f83);
+}
+
+.campaign-management .cm-fund-btn--missing {
+  background: linear-gradient(to right, #c2410c, #ea580c);
+  box-shadow: 0 10px 20px -10px rgba(194, 65, 12, 0.45);
+}
+
+.campaign-management .cm-fund-btn--missing:hover {
+  background: linear-gradient(to right, #9a3412, #c2410c);
+}
+
 .campaign-management .cm-create-btn:active {
   transform: scale(0.95);
 }
@@ -1517,6 +1543,10 @@
   .campaign-management .cm-create-btn {
     flex: 1;
     min-height: 44px;
+  }
+
+  .campaign-management .cm-fund-btn {
+    flex: 1;
   }
 
   .campaign-management .cm-list-metrics {

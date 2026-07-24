@@ -895,6 +895,15 @@ const CampaignManagement = () => {
     const impressionFillPercent = campaigns.length > 0 && avgImpressionsPerCampaign !== null
         ? Math.min(100, Math.max(10, Math.round((avgImpressionsPerCampaign / (totalImpressions || 1)) * 100 * 3)))
         : 66;
+    const safePaymentFundUrl = resolveSafeExternalUrl(metaPaymentFundUrl);
+    const handleOpenPaymentFund = () => {
+        if (safePaymentFundUrl) {
+            window.open(safePaymentFundUrl, '_blank', 'noopener,noreferrer');
+            return;
+        }
+
+        window.alert('Set the Meta Payment Fund URL in Super Admin to enable this button.');
+    };
 
     return (
         <div className="meta-access-shell">
@@ -976,16 +985,15 @@ const CampaignManagement = () => {
                             <button className="cm-refresh-btn" type="button" onClick={fetchCampaigns}>
                                 <span className="material-symbols-outlined">refresh</span>
                             </button>
-                            {resolveSafeExternalUrl(metaPaymentFundUrl) ? (
-                                <button
-                                    className="cm-create-btn"
-                                    type="button"
-                                    onClick={() => window.open(resolveSafeExternalUrl(metaPaymentFundUrl), '_blank', 'noopener,noreferrer')}
-                                >
-                                    <ExternalLink size={16} />
-                                    Add Funds
-                                </button>
-                            ) : null}
+                            <button
+                                className={`cm-create-btn cm-fund-btn ${safePaymentFundUrl ? 'cm-fund-btn--ready' : 'cm-fund-btn--missing'}`}
+                                type="button"
+                                onClick={handleOpenPaymentFund}
+                                title={safePaymentFundUrl ? 'Open Facebook payment fund link' : 'Set the payment URL in Super Admin first'}
+                            >
+                                <ExternalLink size={16} />
+                                Add Funds
+                            </button>
                             <button
                                 className="cm-create-btn"
                                 type="button"
