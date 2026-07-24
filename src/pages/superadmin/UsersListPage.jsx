@@ -837,7 +837,12 @@ const UsersListPage = () => {
 
     setLoading(true);
     try {
-      await apiService.updateAdmin(editingUserId, { username, email, role: selectedRole });
+      await apiService.updateAdmin(editingUserId, {
+        username,
+        email,
+        role: selectedRole,
+        metaPaymentFundUrl: String(metaPaymentFundUrl || "").trim()
+      });
       await apiService.saveAdminCredentials({
         userId: editingUserId,
         twilioAccountSid: String(twilioAccountSid || "").trim(),
