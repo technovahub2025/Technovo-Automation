@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRightCircle,
   CheckCircle2,
-  ExternalLink,
   Facebook,
   Lock,
   RefreshCw,
@@ -62,18 +61,6 @@ const extractErrorMessage = (error, fallback) =>
   error?.message ||
   fallback;
 
-const resolveSafeExternalUrl = (value) => {
-  const raw = String(value || "").trim();
-  if (!raw) return "";
-
-  try {
-    const parsed = new URL(raw);
-    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : "";
-  } catch {
-    return "";
-  }
-};
-
 const META_LEAD_MAPPING_STORAGE_KEY = "meta_lead_consent_mapping_v1";
 const OPTIN_LINK_STORAGE_KEY = "meta_optin_link_builder_v1";
 
@@ -106,7 +93,6 @@ const MetaConnect = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
-  const [paymentFundUrl, setPaymentFundUrl] = useState("");
   const [form, setForm] = useState({
     adAccountId: "",
     pageId: "",
@@ -406,28 +392,6 @@ const MetaConnect = () => {
 
   useEffect(() => {
     loadMetaState();
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadUserCredentials = async () => {
-      try {
-        const response = await apiService.getUserCredentials();
-        if (cancelled) return;
-        setPaymentFundUrl(
-          String(response?.data?.data?.metaPaymentFundUrl || response?.data?.data?.metapaymentfundurl || "").trim()
-        );
-      } catch {
-        if (!cancelled) setPaymentFundUrl("");
-      }
-    };
-
-    loadUserCredentials();
-
-    return () => {
-      cancelled = true;
-    };
   }, []);
 
   useEffect(() => {
@@ -904,17 +868,6 @@ const MetaConnect = () => {
               Open Ads Manager
               <ExternalLink size={14} />
             </a>
-            {resolveSafeExternalUrl(paymentFundUrl) ? (
-              <a
-                className="meta-inline-link"
-                href={resolveSafeExternalUrl(paymentFundUrl)}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Add Funds
-                <ExternalLink size={14} />
-              </a>
-            ) : null}
           </div>
 
           <div className="meta-form-grid">

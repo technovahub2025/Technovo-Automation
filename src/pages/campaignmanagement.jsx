@@ -18,6 +18,7 @@ import {
     Instagram,
     ChevronDown,
     Download,
+    ExternalLink,
     RefreshCw,
     AlertCircle,
     CheckCircle,
@@ -168,6 +169,18 @@ const getCampaignCreativeImageUrl = (campaign = {}) => {
     return '';
 };
 
+const resolveSafeExternalUrl = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+
+    try {
+        const parsed = new URL(raw);
+        return parsed.protocol === 'http:' || parsed.protocol === 'https:' ? parsed.toString() : '';
+    } catch {
+        return '';
+    }
+};
+
 const CampaignManagement = () => {
     const navigate = useNavigate();
     const [campaigns, setCampaigns] = useState([]);
@@ -186,6 +199,8 @@ const CampaignManagement = () => {
     const [metaSetupLoading, setMetaSetupLoading] = useState(true);
     const [metaSetupMessage, setMetaSetupMessage] = useState('');
     const [metaWalletBalance, setMetaWalletBalance] = useState(0);
+    const [metaSetup, setMetaSetup] = useState(null);
+    const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState('');
     const [campaignFlash, setCampaignFlash] = useState('');
     const dateRangeLabels = {
         today: 'Today',
@@ -289,6 +304,7 @@ const CampaignManagement = () => {
             platform: String(data?.platform || 'both'),
             objective: normalizeCampaignObjective(data?.objective || 'awareness'),
             status: String(data?.status || 'draft'),
+            adAccountId: String(data?.adAccountId || '').trim(),
             mediaType: normalizedMediaType,
             primaryText: String(data?.primaryText || '').trim(),
             headline: String(data?.headline || '').trim(),
@@ -440,13 +456,15 @@ const CampaignManagement = () => {
             });
             const walletBalance = Number(response?.data?.wallet?.balance || 0);
             const setup = response?.data?.setup || {};
-            const isReady = Boolean(setup.connected && setup.adAccountId && setup.pageId);
+            setMetaSetup(setup);
+            const isReady = Boolean(setup.connected && setup.pageId);
             setMetaSetupReady(isReady);
             setMetaWalletBalance(walletBalance);
             setMetaSetupMessage(
-                setup.setupError || 'Connect Meta, select an ad account and Facebook page to continue.'
+                setup.setupError || 'Connect Meta and select a Facebook page to continue.'
             );
         } catch (loadError) {
+            setMetaSetup(null);
             setMetaSetupReady(false);
             setMetaWalletBalance(0);
             setMetaSetupMessage(
@@ -466,6 +484,30 @@ const CampaignManagement = () => {
     useEffect(() => {
         fetchMetaSetupState();
     }, [fetchMetaSetupState]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const loadPaymentFundUrl = async () => {
+            try {
+                const response = await api.get('/api/user/credentials', {
+                    headers: getAuthHeaders()
+                });
+                if (cancelled) return;
+                setMetaPaymentFundUrl(
+                    String(response?.data?.data?.metaPaymentFundUrl || response?.data?.data?.metapaymentfundurl || '').trim()
+                );
+            } catch {
+                if (!cancelled) setMetaPaymentFundUrl('');
+            }
+        };
+
+        loadPaymentFundUrl();
+
+        return () => {
+            cancelled = true;
+        };
+    }, [getAuthHeaders]);
 
     const filteredCampaigns = campaigns.filter(campaign => {
         const matchesPlatform = selectedPlatform === 'all' || campaign.platform === selectedPlatform;
@@ -493,7 +535,10 @@ const CampaignManagement = () => {
 
         try {
             setLoading(true);
-            const payload = buildCampaignPayload(campaignData);
+            const payload = buildCampaignPayload({
+                ...campaignData,
+                adAccountId: campaignData?.adAccountId || metaSetup?.selectedAdAccountId || metaSetup?.adAccountId || ''
+            });
             let response;
             if (payload instanceof FormData) {
                 response = await axios.post(`${API_BASE_URL}/api/campaigns`, payload, {
@@ -932,6 +977,16 @@ const CampaignManagement = () => {
                             <button className="cm-refresh-btn" type="button" onClick={fetchCampaigns}>
                                 <span className="material-symbols-outlined">refresh</span>
                             </button>
+                            {resolveSafeExternalUrl(metaPaymentFundUrl) ? (
+                                <button
+                                    className="cm-create-btn"
+                                    type="button"
+                                    onClick={() => window.open(resolveSafeExternalUrl(metaPaymentFundUrl), '_blank', 'noopener,noreferrer')}
+                                >
+                                    <ExternalLink size={16} />
+                                    Add Funds
+                                </button>
+                            ) : null}
                             <button
                                 className="cm-create-btn"
                                 type="button"
@@ -1270,6 +1325,8 @@ const CampaignManagement = () => {
                     onSave={handleCreateCampaign}
                     submitting={loading}
                     mode="create"
+                    adAccounts={metaSetup?.adAccounts || []}
+                    selectedAdAccountId={metaSetup?.selectedAdAccountId || metaSetup?.adAccountId || ''}
                 />
             )}
 
@@ -1307,11 +1364,20 @@ const CampaignManagement = () => {
 };
 
 // Campaign Modal Component
-const CampaignModal = ({ campaign, onClose, onSave, mode, submitting = false }) => {
+const CampaignModal = ({
+    campaign,
+    onClose,
+    onSave,
+    mode,
+    submitting = false,
+    adAccounts = [],
+    selectedAdAccountId = ''
+}) => {
     const [formData, setFormData] = useState({
         name: campaign?.name || (mode === 'create' ? 'Untitled Campaign' : ''),
         platform: campaign?.platform || 'both',
         objective: campaign?.objective || 'awareness',
+        adAccountId: campaign?.adAccountId || selectedAdAccountId || '',
         budgetType: campaign?.lifetimeBudget ? 'lifetime' : 'daily',
         dailyBudget: campaign?.dailyBudget || 50,
         lifetimeBudget: campaign?.lifetimeBudget || '',
@@ -1461,6 +1527,26 @@ const CampaignModal = ({ campaign, onClose, onSave, mode, submitting = false }) 
                                 </section>
 
                                 <section className="basic-panel-section compact-fields">
+                                    <div className="form-group">
+                                        <label>Meta Ad Account</label>
+                                        <select
+                                            value={formData.adAccountId}
+                                            onChange={(e) => setFormData({...formData, adAccountId: e.target.value})}
+                                            required
+                                        >
+                                            <option value="">Select ad account</option>
+                                            {adAccounts.map((account) => (
+                                                <option key={account.id} value={account.id}>
+                                                    {account.name || account.id}
+                                                    {account.currency ? ` (${account.currency})` : ''}
+                                                    {Number.isFinite(Number(account.amountSpent))
+                                                        ? ` - spent ${Number(account.amountSpent).toLocaleString('en-US')}`
+                                                        : ''}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    </div>
+
                                     <div className="form-group">
                                         <label>Campaign Objective</label>
                                         <select
