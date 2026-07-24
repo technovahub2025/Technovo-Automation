@@ -9,6 +9,7 @@ import {
   CreditCard,
   Banknote,
   BadgeDollarSign,
+  ExternalLink,
   Eye,
   EyeOff,
   Mail,
@@ -89,6 +90,18 @@ const resolvePlanLabel = (value) => {
 const resolveBillingCycleLabel = (value) => {
   const normalized = normalizeBillingCycle(value);
   return BILLING_CYCLE_OPTIONS.find((option) => option.value === normalized)?.label || "Monthly";
+};
+
+const resolveSafeExternalUrl = (value) => {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  try {
+    const parsed = new URL(raw);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" ? parsed.toString() : "";
+  } catch {
+    return "";
+  }
 };
 
 const formatCurrencyAmount = (value) => {
@@ -254,6 +267,7 @@ const UsersListPage = () => {
   const [metaRedirectUri, setMetaRedirectUri] = useState("");
   const [metaUserAccessToken, setMetaUserAccessToken] = useState("");
   const [metaAdAccountId, setMetaAdAccountId] = useState("");
+  const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [showTwilioToken, setShowTwilioToken] = useState(false);
@@ -306,6 +320,7 @@ const UsersListPage = () => {
     setMetaRedirectUri("");
     setMetaUserAccessToken("");
     setMetaAdAccountId("");
+    setMetaPaymentFundUrl("");
     setPhoneNumber("");
     setShowToken(false);
     setShowTwilioToken(false);
@@ -510,6 +525,7 @@ const UsersListPage = () => {
     setMetaRedirectUri(selectedUser.metaRedirectUri ?? selectedUser.metaredirecturi ?? "");
     setMetaUserAccessToken(selectedUser.metaUserAccessToken ?? selectedUser.metauseraccesstoken ?? "");
     setMetaAdAccountId(selectedUser.metaAdAccountId ?? selectedUser.metaadaccountid ?? "");
+    setMetaPaymentFundUrl(selectedUser.metaPaymentFundUrl ?? selectedUser.metapaymentfundurl ?? "");
     setPhoneNumber(selectedUser.phoneNumber ?? selectedUser.phonenumber ?? "");
     setErrors({});
     setShowEditModal(true);
@@ -835,6 +851,7 @@ const UsersListPage = () => {
         metaRedirectUri: String(metaRedirectUri || "").trim(),
         metaUserAccessToken: String(metaUserAccessToken || "").trim(),
         metaAdAccountId: String(metaAdAccountId || "").trim(),
+        metaPaymentFundUrl: String(metaPaymentFundUrl || "").trim(),
         phoneNumber: String(phoneNumber || "").trim()
       });
       closeModal();
@@ -948,6 +965,15 @@ const UsersListPage = () => {
               <div className="form-row">
                 <label>Meta Ad Account ID</label>
                 <input value={metaAdAccountId} onChange={(e) => setMetaAdAccountId(e.target.value)} />
+              </div>
+              <div className="form-row">
+                <label>Meta Payment Fund URL</label>
+                <input
+                  type="url"
+                  value={metaPaymentFundUrl}
+                  onChange={(e) => setMetaPaymentFundUrl(e.target.value)}
+                  placeholder="https://business.facebook.com/..."
+                />
               </div>
               <div className="form-row">
                 <label>Phone Number</label>
@@ -1526,6 +1552,16 @@ const UsersListPage = () => {
                     {listedUser._id?.slice(-8) || "N/A"}
                   </div>
                   <div className="users-list-cell users-list-cell--actions user-card-actions user-card-actions--list">
+                    {resolveSafeExternalUrl(listedUser.metaPaymentFundUrl || listedUser.metapaymentfundurl) ? (
+                      <button
+                        type="button"
+                        className="edit-btn"
+                        onClick={() => window.open(resolveSafeExternalUrl(listedUser.metaPaymentFundUrl || listedUser.metapaymentfundurl), "_blank", "noopener,noreferrer")}
+                      >
+                        <ExternalLink size={14} />
+                        <span>Add Funds</span>
+                      </button>
+                    ) : null}
                     {!isAgentLikeUser(listedUser) && (
                       <button className="edit-btn" onClick={() => handleEdit(listedUser)}>
                         Edit

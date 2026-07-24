@@ -31,6 +31,7 @@ const AdminSetupPage = () => {
   const [metaRedirectUri, setMetaRedirectUri] = useState("");
   const [metaUserAccessToken, setMetaUserAccessToken] = useState("");
   const [metaAdAccountId, setMetaAdAccountId] = useState("");
+  const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [missedCallWebhook, setMissedCallWebhook] = useState("");
   const [showTwilioToken, setShowTwilioToken] = useState(false);
@@ -80,6 +81,7 @@ const AdminSetupPage = () => {
     setMetaRedirectUri("");
     setMetaUserAccessToken("");
     setMetaAdAccountId("");
+    setMetaPaymentFundUrl("");
     setPhoneNumber("");
     setMissedCallWebhook("");
     setShowTwilioToken(false);
@@ -154,6 +156,7 @@ const AdminSetupPage = () => {
         metaRedirectUri: String(metaRedirectUri || "").trim(),
         metaUserAccessToken: String(metaUserAccessToken || "").trim(),
         metaAdAccountId: String(metaAdAccountId || "").trim(),
+        metaPaymentFundUrl: String(metaPaymentFundUrl || "").trim(),
         phoneNumber: String(phoneNumber || "").trim(),
         missedCallWebhook: String(missedCallWebhook || "").trim()
       });
@@ -376,6 +379,12 @@ const AdminSetupPage = () => {
                     </span>
                   </div>
                   <input value={metaAdAccountId} onChange={(e) => setMetaAdAccountId(e.target.value)} placeholder="Meta Ad Account ID" />
+                  <input
+                    type="url"
+                    value={metaPaymentFundUrl}
+                    onChange={(e) => setMetaPaymentFundUrl(e.target.value)}
+                    placeholder="Meta Payment Fund URL"
+                  />
                   <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} placeholder="Phone Number" />
                   <input value={missedCallWebhook} onChange={(e) => setMissedCallWebhook(e.target.value)} placeholder="Missed Call Webhook URL" />
 
