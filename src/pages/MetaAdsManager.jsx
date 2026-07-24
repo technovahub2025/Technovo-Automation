@@ -192,9 +192,9 @@ const MetaAdsManager = () => {
     liveMetaBalance !== null &&
     liveMetaBalance !== undefined &&
     Number.isFinite(Number(liveMetaBalance));
-  const adAccounts = setup.availableAdAccounts || [];
-  const pages = setup.availablePages || [];
-  const whatsappNumbers = setup.availableWhatsappNumbers || [];
+  const adAccounts = setup.availableAdAccounts || setup.adAccounts || [];
+  const pages = setup.availablePages || setup.pages || [];
+  const whatsappNumbers = setup.availableWhatsappNumbers || setup.whatsappNumbers || [];
   const effectiveConfiguredPageId = String(
     form.configuredPageId || setup.selectedPageId || pages?.[0]?.id || ""
   ).trim();
@@ -215,7 +215,7 @@ const MetaAdsManager = () => {
     !String(form.creative.primaryText || "").trim() ? "Primary Text" : "",
     !String(form.creative.destinationUrl || form.whatsappNumber || "").trim() ? "Destination URL or WhatsApp Number" : "",
   ].filter(Boolean);
-  const publishBlockedReason = !setup.connected ? "Meta connection is not ready." : !adAccounts.length ? "Select a Meta ad account." : !hasPageAccess ? "Select or configure a Facebook page before publishing." : "";
+  const publishBlockedReason = !setup.connected ? "Meta connection is not ready." : !String(form.adAccountId || "").trim() ? "Select a Meta ad account." : !hasPageAccess ? "Select or configure a Facebook page before publishing." : "";
   const progressPercent = useMemo(() => (wizardStep / wizardSteps.length) * 100, [wizardStep]);
   const wizardPrimaryButtonRef = useRef(null);
 
@@ -245,9 +245,9 @@ const MetaAdsManager = () => {
       setMetaBilling(data?.metaBilling || null);
       setForm((current) => ({
         ...current,
-        adAccountId: current.adAccountId || data?.setup?.selectedAdAccountId || data?.setup?.availableAdAccounts?.[0]?.id || "",
-        configuredPageId: pickAvailablePageId(current.configuredPageId || data?.setup?.selectedPageId || "", data?.setup?.availablePages || []),
-        whatsappNumber: current.whatsappNumber || data?.setup?.linkedWhatsappNumber || data?.setup?.availableWhatsappNumbers?.[0]?.display_phone_number || "",
+        adAccountId: current.adAccountId || data?.setup?.selectedAdAccountId || data?.setup?.adAccountId || "",
+        configuredPageId: pickAvailablePageId(current.configuredPageId || data?.setup?.selectedPageId || data?.setup?.pageId || "", data?.setup?.availablePages || data?.setup?.pages || []),
+        whatsappNumber: current.whatsappNumber || data?.setup?.linkedWhatsappNumber || data?.setup?.selectedWhatsappNumber || data?.setup?.whatsappNumbers?.[0]?.display_phone_number || "",
       }));
     } catch (requestError) {
       setError(requestError?.response?.data?.error || requestError.message || "Failed to load Meta Ads workspace.");
@@ -382,10 +382,10 @@ const MetaAdsManager = () => {
     setCreativeFile(null);
     setForm({
       ...defaultForm,
-      adAccountId: setup.selectedAdAccountId || adAccounts[0]?.id || "",
+      adAccountId: setup.selectedAdAccountId || setup.adAccountId || "",
       adSet: { ...defaultForm.adSet, name: `${form.campaignName || "Campaign"} - Ad Set` },
-      configuredPageId: pickAvailablePageId(setup.selectedPageId || "", pages),
-      whatsappNumber: setup.linkedWhatsappNumber || whatsappNumbers[0]?.display_phone_number || "",
+      configuredPageId: pickAvailablePageId(setup.selectedPageId || setup.pageId || "", pages),
+      whatsappNumber: setup.linkedWhatsappNumber || setup.selectedWhatsappNumber || whatsappNumbers[0]?.display_phone_number || "",
     });
   };
 

@@ -35,6 +35,7 @@ import {
     X
 } from 'lucide-react';
 import './campaignmanagement.css';
+import apiService from '../services/api';
 import { resolveApiBaseUrl } from '../services/apiBaseUrl';
 
 
@@ -490,9 +491,7 @@ const CampaignManagement = () => {
 
         const loadPaymentFundUrl = async () => {
             try {
-                const response = await api.get('/api/user/credentials', {
-                    headers: getAuthHeaders()
-                });
+                const response = await apiService.getUserCredentials();
                 if (cancelled) return;
                 setMetaPaymentFundUrl(
                     String(response?.data?.data?.metaPaymentFundUrl || response?.data?.data?.metapaymentfundurl || '').trim()
