@@ -210,6 +210,19 @@
   border-color: #d9e6e0;
 }
 
+.meta-button-danger {
+  background: #fff5f3;
+  color: #b42318;
+  border-color: #f3c6c0;
+}
+
+.meta-button-danger:hover:not(:disabled),
+.meta-button-danger:focus-visible:not(:disabled) {
+  background: linear-gradient(135deg, #fff0ee 0%, #ffe4df 100%);
+  border-color: #f0a99d;
+  color: #991b12;
+}
+
 .meta-button-facebook {
   background: #1877f2;
   color: #fff;
@@ -811,6 +824,7 @@
 .meta-inline-actions {
   display: flex;
   gap: 0.5rem;
+  flex-wrap: wrap;
 }
 
 .meta-wizard-inline-error,

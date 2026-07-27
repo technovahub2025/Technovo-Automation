@@ -10,6 +10,7 @@ import {
   RefreshCw,
   Settings as SettingsIcon,
   Upload,
+  Trash2,
   Wallet,
 } from "lucide-react";
 import metaAdsService from "../services/metaAdsService";
@@ -90,6 +91,15 @@ const buildListKey = (...parts) =>
     .filter(Boolean)
     .join(":");
 
+const getCampaignId = (campaign = {}) =>
+  String(
+    campaign?._id ||
+      campaign?.localCampaignId ||
+      campaign?.id ||
+      campaign?.metaCampaignId ||
+      "",
+  ).trim();
+
 const pickAvailablePageId = (preferredPageId, availablePages = []) => {
   const preferred = String(preferredPageId || "").trim();
   if (preferred && availablePages.some((page) => String(page?.id || "") === preferred)) return preferred;
@@ -167,6 +177,7 @@ const MetaAdsManager = () => {
   const [draftId, setDraftId] = useState("");
   const [wizardSaving, setWizardSaving] = useState(false);
   const [publishing, setPublishing] = useState(false);
+  const [deletingCampaignId, setDeletingCampaignId] = useState("");
   const [creativeFile, setCreativeFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [form, setForm] = useState(defaultForm);
@@ -613,6 +624,29 @@ const MetaAdsManager = () => {
     }
   };
 
+  const handleDeleteCampaign = async (campaign) => {
+    const campaignName = String(campaign?.campaignName || campaign?.name || "this campaign").trim();
+    if (!window.confirm(`Delete ${campaignName}? This cannot be undone.`)) return;
+
+    const campaignId = getCampaignId(campaign);
+    if (!campaignId) {
+      setError("Unable to delete this campaign because its ID is missing.");
+      return;
+    }
+
+    try {
+      setDeletingCampaignId(campaignId);
+      setError("");
+      await metaAdsService.deleteCampaign(campaign);
+      await refreshAll();
+      setSuccess("Campaign deleted successfully.");
+    } catch (requestError) {
+      setError(requestError?.response?.data?.error || requestError?.response?.data?.message || requestError.message || "Failed to delete campaign.");
+    } finally {
+      setDeletingCampaignId("");
+    }
+  };
+
   const handleWalletTopUp = async () => {
     try {
       setWalletSubmitting(true);
@@ -671,8 +705,118 @@ const MetaAdsManager = () => {
             </article>
 
             <div className="meta-grid meta-grid-settings">
-              <article className="meta-card"><div className="meta-card-head"><div><h3>Drafts</h3><p>Wizard-based creation flow.</p></div></div><div className="meta-analytics-list">{draftCampaigns.length === 0 ? <div className="meta-empty-inline">No drafts yet.</div> : draftCampaigns.map((campaign, index) => <div key={buildListKey("draft", campaign._id, campaign.campaignName, index)} className="meta-analytics-item"><div><strong>{campaign.campaignName}</strong><span>Step {campaign?.wizard?.currentStep || 1}</span></div><button type="button" className="meta-button meta-button-secondary small" onClick={() => openDraftWizard(campaign)}>Continue</button></div>)}</div></article>
-              <article className="meta-card"><div className="meta-card-head"><div><h3>Published Campaigns</h3><p>Sync and control existing campaigns.</p></div><button type="button" className="meta-button meta-button-secondary" disabled={syncingAll} onClick={handleSyncAll}>{syncingAll ? <RefreshCw className="spin" size={16} /> : "Sync All"}</button></div><div className="meta-analytics-list">{liveCampaigns.length === 0 ? <div className="meta-empty-inline">No published campaigns yet.</div> : liveCampaigns.map((campaign, index) => { const isActive = String(campaign.status).toUpperCase() === "ACTIVE"; const isBusy = syncingId === campaign._id || statusUpdatingId === campaign._id; return <div key={buildListKey("live", campaign._id, campaign.campaignName, index)} className="meta-analytics-item"><div><strong>{campaign.campaignName}</strong><span>{formatDate(campaign.createdAt)}</span></div><div className="meta-inline-actions"><button type="button" className="meta-button meta-button-secondary small" disabled={isBusy} onClick={() => handleSyncCampaign(campaign._id)}>{syncingId === campaign._id ? <RefreshCw className="spin" size={14} /> : "Sync"}</button><button type="button" className="meta-button meta-button-secondary small" disabled={isBusy} onClick={() => handleStatusUpdate(campaign._id, isActive ? "PAUSED" : "ACTIVE")}>{statusUpdatingId === campaign._id ? <RefreshCw className="spin" size={14} /> : isActive ? "Pause" : "Activate"}</button></div></div>; })}</div></article>
+              <article className="meta-card">
+                <div className="meta-card-head">
+                  <div>
+                    <h3>Drafts</h3>
+                    <p>Wizard-based creation flow.</p>
+                  </div>
+                </div>
+                <div className="meta-analytics-list">
+                  {draftCampaigns.length === 0 ? (
+                    <div className="meta-empty-inline">No drafts yet.</div>
+                  ) : (
+                    draftCampaigns.map((campaign, index) => {
+                      const campaignId = getCampaignId(campaign);
+                      const isDeleting = deletingCampaignId === campaignId;
+
+                      return (
+                        <div
+                          key={buildListKey("draft", campaignId, campaign.campaignName, index)}
+                          className="meta-analytics-item"
+                        >
+                          <div>
+                            <strong>{campaign.campaignName}</strong>
+                            <span>Step {campaign?.wizard?.currentStep || 1}</span>
+                          </div>
+                          <div className="meta-inline-actions">
+                            <button
+                              type="button"
+                              className="meta-button meta-button-secondary small"
+                              onClick={() => openDraftWizard(campaign)}
+                            >
+                              Continue
+                            </button>
+                            <button
+                              type="button"
+                              className="meta-button meta-button-secondary meta-button-danger small"
+                              disabled={!campaignId || isDeleting}
+                              onClick={() => handleDeleteCampaign(campaign)}
+                            >
+                              {isDeleting ? <RefreshCw className="spin" size={14} /> : <><Trash2 size={14} /><span>Delete</span></>}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </article>
+              <article className="meta-card">
+                <div className="meta-card-head">
+                  <div>
+                    <h3>Published Campaigns</h3>
+                    <p>Sync and control existing campaigns.</p>
+                  </div>
+                  <button type="button" className="meta-button meta-button-secondary" disabled={syncingAll} onClick={handleSyncAll}>
+                    {syncingAll ? <RefreshCw className="spin" size={16} /> : "Sync All"}
+                  </button>
+                </div>
+                <div className="meta-analytics-list">
+                  {liveCampaigns.length === 0 ? (
+                    <div className="meta-empty-inline">No published campaigns yet.</div>
+                  ) : (
+                    liveCampaigns.map((campaign, index) => {
+                      const campaignId = getCampaignId(campaign);
+                      const isActive = String(campaign.status).toUpperCase() === "ACTIVE";
+                      const isBusy =
+                        syncingId === campaignId ||
+                        statusUpdatingId === campaignId ||
+                        deletingCampaignId === campaignId;
+
+                      return (
+                        <div
+                          key={buildListKey("live", campaignId, campaign.campaignName, index)}
+                          className="meta-analytics-item"
+                        >
+                          <div>
+                            <strong>{campaign.campaignName}</strong>
+                            <span>{formatDate(campaign.createdAt)}</span>
+                          </div>
+                          <div className="meta-inline-actions">
+                            <button
+                              type="button"
+                              className="meta-button meta-button-secondary small"
+                              disabled={isBusy || !campaignId}
+                              onClick={() => handleSyncCampaign(campaignId)}
+                            >
+                              {syncingId === campaignId ? <RefreshCw className="spin" size={14} /> : "Sync"}
+                            </button>
+                            <button
+                              type="button"
+                              className="meta-button meta-button-secondary small"
+                              disabled={isBusy || !campaignId}
+                              onClick={() => handleStatusUpdate(campaignId, isActive ? "PAUSED" : "ACTIVE")}
+                            >
+                              {statusUpdatingId === campaignId ? (
+                                <RefreshCw className="spin" size={14} />
+                              ) : isActive ? "Pause" : "Activate"}
+                            </button>
+                            <button
+                              type="button"
+                              className="meta-button meta-button-secondary meta-button-danger small"
+                              disabled={isBusy || !campaignId}
+                              onClick={() => handleDeleteCampaign(campaign)}
+                            >
+                              {deletingCampaignId === campaignId ? <RefreshCw className="spin" size={14} /> : <><Trash2 size={14} /><span>Delete</span></>}
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </article>
             </div>
           </div> : null}
 
