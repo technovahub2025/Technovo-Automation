@@ -907,7 +907,6 @@ const MetaAdsManager = () => {
                 </div>
               </article>
             </div>
-            </div>
           ) : null}
 
           {!loading && activeSection === "connect" ? (
