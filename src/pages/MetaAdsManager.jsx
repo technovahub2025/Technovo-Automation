@@ -214,7 +214,7 @@ const MetaAdsManager = () => {
   const [ads, setAds] = useState([]);
   const [selectedCampaignRef, setSelectedCampaignRef] = useState("");
   const [selectedAdSetId, setSelectedAdSetId] = useState("");
-  const [selectedLeadPageId, setSelectedLeadPageId] = useState("");
+  const [selectedLeadFormId, setSelectedLeadFormId] = useState("");
   const [pageLeads, setPageLeads] = useState([]);
   const [pageLeadsLoading, setPageLeadsLoading] = useState(false);
   const [pageLeadsError, setPageLeadsError] = useState("");
@@ -323,17 +323,13 @@ const MetaAdsManager = () => {
     }
   };
 
-  const loadPageLeads = async (pageId) => {
-    const resolvedPageId = String(pageId || selectedLeadPageId || "").trim();
-    if (!resolvedPageId) {
-      setPageLeads([]);
-      return;
-    }
+  const loadPageLeads = async (formIdValue) => {
+    const resolvedFormId = String(formIdValue || selectedLeadFormId || leadFormId || "").trim();
 
     try {
       setPageLeadsLoading(true);
       setPageLeadsError("");
-      const response = await metaAdsService.getPageLeads(resolvedPageId, leadFormId ? { formId: leadFormId } : {});
+      const response = await metaAdsService.getPageLeads("", resolvedFormId ? { formId: resolvedFormId } : {});
       setPageLeads(Array.isArray(response?.leads) ? response.leads : []);
     } catch (requestError) {
       setPageLeadsError(requestError?.response?.data?.error || requestError.message || "Failed to load leads.");
@@ -344,27 +340,32 @@ const MetaAdsManager = () => {
   };
 
   useEffect(() => {
+    if (activeSection === "leads") {
+      setOverview(null);
+      setMetaCampaigns([]);
+      return;
+    }
+
     loadOverview();
     loadCampaigns();
-  }, []);
+  }, [activeSection]);
 
   useEffect(() => {
-    if (selectedLeadPageId) return;
-    const initialPageId = setup.selectedPageId || pages[0]?.id || "";
-    if (initialPageId) {
-      setSelectedLeadPageId(initialPageId);
+    if (selectedLeadFormId) return;
+    if (leadFormId) {
+      setSelectedLeadFormId(leadFormId);
     }
-  }, [pages, selectedLeadPageId, setup.selectedPageId]);
+  }, [leadFormId, selectedLeadFormId]);
 
   useEffect(() => {
     if (activeSection !== "leads") return;
-    if (selectedLeadPageId) {
-      loadPageLeads(selectedLeadPageId);
+    if (selectedLeadFormId || leadFormId) {
+      loadPageLeads(selectedLeadFormId || leadFormId);
     } else {
       setPageLeads([]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeSection, selectedLeadPageId]);
+  }, [activeSection, selectedLeadFormId, leadFormId]);
 
   useEffect(() => {
     if (!selectedCampaignRef) {
