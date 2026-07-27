@@ -766,7 +766,8 @@ const MetaAdsManager = () => {
           {error ? <div className="meta-alert meta-alert-error"><AlertCircle size={16} /><span>{error}</span></div> : null}
           {success ? <div className="meta-alert meta-alert-success"><CheckCircle2 size={16} /><span>{success}</span></div> : null}
 
-          {!loading && activeSection === "reports" ? <div className="meta-section-stack">
+          {!loading && activeSection === "reports" ? (
+            <div className="meta-section-stack">
             <div className="meta-grid meta-grid-stats">
               <article className="meta-card meta-stat-card"><span>Total Campaigns</span><strong>{overview?.summary?.totalCampaigns || 0}</strong></article>
               <article className="meta-card meta-stat-card"><span>Live Campaigns</span><strong>{overview?.summary?.activeCampaigns || 0}</strong></article>
@@ -779,9 +780,11 @@ const MetaAdsManager = () => {
               <article className="meta-card meta-stat-card"><span>Average CTR</span><strong>{overview?.summary?.averageCtr || 0}%</strong></article>
               <article className="meta-card meta-stat-card"><span>Average CPL</span><strong>{formatCurrency(overview?.summary?.averageCpl || 0)}</strong></article>
             </div>
-          </div> : null}
+            </div>
+          ) : null}
 
-          {!loading && activeSection === "campaigns" ? <div className="meta-section-stack">
+          {!loading && activeSection === "campaigns" ? (
+            <div className="meta-section-stack">
             <article className="meta-card">
               <div className="meta-card-head"><div><h3>Campaign Hierarchy</h3><p>Campaign -&gt; Ad Set -&gt; Ad</p></div><button type="button" className="meta-button meta-button-secondary" disabled={hierarchyLoading} onClick={loadCampaigns}>{hierarchyLoading ? <RefreshCw className="spin" size={16} /> : "Refresh"}</button></div>
               <div className="meta-hierarchy-grid">
@@ -904,14 +907,18 @@ const MetaAdsManager = () => {
                 </div>
               </article>
             </div>
-          </div> : null}
+            </div>
+          ) : null}
 
-          {!loading && activeSection === "connect" ? <div className="meta-grid meta-grid-settings">
+          {!loading && activeSection === "connect" ? (
+            <div className="meta-grid meta-grid-settings">
             <article className="meta-card"><div className="meta-card-head"><div><h3>Connection</h3><p>Use env token now and keep the API ready for Facebook Login later.</p></div><button type="button" className="meta-button meta-button-facebook" disabled={connectingFacebook} onClick={handleConnect}><Facebook size={16} /><span>{connectingFacebook ? "Connecting..." : "Connect Facebook"}</span></button></div><div className="meta-settings-grid"><label><span>Ad Account</span><select value={form.adAccountId} onChange={(event) => updateField("adAccountId", event.target.value)}><option value="">Choose ad account</option>{adAccounts.map((account, index) => <option key={buildListKey("account", account.id, account.name, index)} value={account.id}>{account.name || account.id}</option>)}</select></label><label><span>Facebook Page</span><select value={form.configuredPageId || effectiveConfiguredPageId} onChange={(event) => updateField("configuredPageId", event.target.value)}><option value="">Choose page</option>{resolvedPages.map((page, index) => <option key={buildListKey("page", page.id, page.name, index)} value={page.id}>{page.name}</option>)}</select></label><label><span>WhatsApp Number</span><input type="text" value={form.whatsappNumber} onChange={(event) => updateField("whatsappNumber", event.target.value)} placeholder="+91 98765 43210" /></label><div className="meta-settings-actions"><button type="button" className="meta-button meta-button-primary" disabled={savingSetup} onClick={handleSaveSettings}>{savingSetup ? <RefreshCw className="spin" size={16} /> : "Save Settings"}</button></div></div></article>
             <article className="meta-card"><div className="meta-card-head"><div><h3>Wallet & Diagnostics</h3><p>Live Meta billing balance plus internal reserve credits.</p></div><div className="meta-inline-actions"><button type="button" className="meta-button meta-button-secondary" disabled={billingLoading} onClick={handleFetchMetaBilling}>{billingLoading ? <RefreshCw className="spin" size={16} /> : "Refresh Meta Balance"}</button><button type="button" className="meta-button meta-button-secondary" disabled={diagnosticsLoading} onClick={handleRunDiagnostics}>{diagnosticsLoading ? <RefreshCw className="spin" size={16} /> : "Run Diagnostics"}</button></div></div><div className="meta-wallet-row"><div><span>Meta wallet balance</span><strong>{hasLiveMetaBalance ? formatCurrencyByCode(liveMetaBalance, liveMetaCurrency) : "Unavailable"}</strong></div><div className="meta-wallet-input"><input type="number" min="100" step="100" value={topUpAmount} onChange={(event) => setTopUpAmount(Number(event.target.value || 0))} /><button type="button" className="meta-button meta-button-secondary" disabled={walletSubmitting} onClick={handleWalletTopUp}>{walletSubmitting ? <RefreshCw className="spin" size={16} /> : "Add Credit"}</button></div></div><div className="meta-diagnostics-grid"><div><span>Internal credits</span><strong>{formatCurrency(wallet.balance || 0)}</strong></div><div><span>Amount spent</span><strong>{formatCurrencyByCode(metaBilling?.billing?.amountSpent, metaBilling?.adAccount?.currency)}</strong></div><div><span>Spend cap</span><strong>{formatCurrencyByCode(metaBilling?.billing?.spendCap, metaBilling?.adAccount?.currency)}</strong></div><div><span>Meta account</span><strong>{metaBilling?.adAccount?.name || metaBilling?.adAccount?.id || "--"}</strong></div></div><div className="meta-diagnostics-grid"><div><span>Access token</span><strong>{diagnostics?.env?.hasAccessToken ? "Present" : "Unknown"}</strong></div><div><span>Ad account ID</span><strong>{diagnostics?.env?.hasAdAccountId ? "Present" : "Unknown"}</strong></div><div><span>Page ID</span><strong>{diagnostics?.env?.hasPageId ? "Present" : "Unknown"}</strong></div><div><span>Auth source</span><strong>{diagnostics?.env?.authSource || setup.authSource || "env"}</strong></div></div></article>
-          </div> : null}
+            </div>
+          ) : null}
 
-          {!loading && activeSection === "leads" ? <div className="meta-section-stack">
+          {!loading && activeSection === "leads" ? (
+            <div className="meta-section-stack">
             <article className="meta-card">
               <div className="meta-card-head">
                 <div>
@@ -958,7 +965,8 @@ const MetaAdsManager = () => {
                 )}
               </div>
             </article>
-          </div> : null}
+            </div>
+          ) : null}
         </main>
       </section>
 
