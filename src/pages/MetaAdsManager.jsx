@@ -756,13 +756,15 @@ const MetaAdsManager = () => {
         </aside>
 
         <main className="meta-ads-main">
-          <header className="meta-ads-topbar">
-            <div><h1>Meta Ads Manager</h1><p>Backend-owned Meta token now, Facebook Login later with the same API structure.</p></div>
-            <div className="meta-ads-topbar-actions">
-              <div className="meta-ads-credit-pill"><Wallet size={16} /><span>{hasLiveMetaBalance ? formatCurrencyByCode(liveMetaBalance, liveMetaCurrency) : "Meta balance unavailable"}</span></div>
-              <button type="button" className="meta-button meta-button-primary" onClick={openNewWizard}><Plus size={16} /><span>Create Campaign</span></button>
-            </div>
-          </header>
+          {activeSection !== "leads" ? (
+            <header className="meta-ads-topbar">
+              <div><h1>Meta Ads Manager</h1><p>Backend-owned Meta token now, Facebook Login later with the same API structure.</p></div>
+              <div className="meta-ads-topbar-actions">
+                <div className="meta-ads-credit-pill"><Wallet size={16} /><span>{hasLiveMetaBalance ? formatCurrencyByCode(liveMetaBalance, liveMetaCurrency) : "Meta balance unavailable"}</span></div>
+                <button type="button" className="meta-button meta-button-primary" onClick={openNewWizard}><Plus size={16} /><span>Create Campaign</span></button>
+              </div>
+            </header>
+          ) : null}
 
           {error ? <div className="meta-alert meta-alert-error"><AlertCircle size={16} /><span>{error}</span></div> : null}
           {success ? <div className="meta-alert meta-alert-success"><CheckCircle2 size={16} /><span>{success}</span></div> : null}
@@ -919,52 +921,53 @@ const MetaAdsManager = () => {
 
           {!loading && activeSection === "leads" ? (
             <div className="meta-section-stack">
-            <article className="meta-card">
-              <div className="meta-card-head">
-                <div>
-                  <h3>Lead Data</h3>
-                  <p>Latest lead submissions from the selected Facebook page.</p>
-                </div>
-                <button type="button" className="meta-button meta-button-secondary" disabled={pageLeadsLoading} onClick={() => loadPageLeads(selectedLeadPageId)}>
-                  {pageLeadsLoading ? <RefreshCw className="spin" size={16} /> : "Refresh Leads"}
-                </button>
-              </div>
-
-              <div className="meta-settings-grid">
-                <label className="full">
-                  <span>Facebook Page</span>
-                  <select value={selectedLeadPageId} onChange={(event) => setSelectedLeadPageId(event.target.value)}>
-                    <option value="">Choose page</option>
-                    {resolvedPages.map((page, index) => (
-                      <option key={buildListKey("lead-page", page.id, page.name, index)} value={page.id}>
-                        {page.name || page.id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-
-              {pageLeadsError ? <div className="meta-alert meta-alert-error"><AlertCircle size={16} /><span>{pageLeadsError}</span></div> : null}
-
-              <div className="meta-lead-list">
-                {pageLeadsLoading ? (
-                  <div className="meta-empty-inline">Loading leads...</div>
-                ) : pageLeads.length === 0 ? (
-                  <div className="meta-empty-inline">
-                    {selectedLeadPageId ? "No leads found." : "Choose a page to view leads."}
+              <article className="meta-card">
+                <div className="meta-card-head">
+                  <div>
+                    <h3>Lead Data</h3>
+                    <p>Form-based Meta leads only.</p>
                   </div>
-                ) : (
-                  pageLeads.map((lead, index) => (
-                    <div key={buildListKey("lead", lead.id, index)} className="meta-lead-item">
-                      <div>{getLeadFieldValue(lead, ["full_name", "full name", "name"]) || "--"}</div>
-                      <div>{getLeadFieldValue(lead, ["phone_number", "phone number", "phone"]) || "--"}</div>
-                      <div>{getLeadFieldValue(lead, ["email", "email address"]) || "--"}</div>
-                      <div>{formatLeadCreatedTime(lead.created_time)}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </article>
+                  <button
+                    type="button"
+                    className="meta-button meta-button-secondary"
+                    disabled={pageLeadsLoading}
+                    onClick={() => loadPageLeads(selectedLeadFormId || leadFormId)}
+                  >
+                    {pageLeadsLoading ? <RefreshCw className="spin" size={16} /> : "Refresh Leads"}
+                  </button>
+                </div>
+
+                <div className="meta-settings-grid">
+                  <label className="full">
+                    <span>Form ID</span>
+                    <input
+                      type="text"
+                      value={selectedLeadFormId}
+                      onChange={(event) => setSelectedLeadFormId(event.target.value)}
+                      placeholder="Enter lead form id"
+                    />
+                  </label>
+                </div>
+
+                {pageLeadsError ? <div className="meta-alert meta-alert-error"><AlertCircle size={16} /><span>{pageLeadsError}</span></div> : null}
+
+                <div className="meta-lead-list">
+                  {pageLeadsLoading ? (
+                    <div className="meta-empty-inline">Loading leads...</div>
+                  ) : pageLeads.length === 0 ? (
+                    <div className="meta-empty-inline">No leads found.</div>
+                  ) : (
+                    pageLeads.map((lead, index) => (
+                      <div key={buildListKey("lead", lead.id, index)} className="meta-lead-item">
+                        <div>{getLeadFieldValue(lead, ["full_name", "full name", "name"]) || "--"}</div>
+                        <div>{getLeadFieldValue(lead, ["phone_number", "phone number", "phone"]) || "--"}</div>
+                        <div>{getLeadFieldValue(lead, ["email", "email address"]) || "--"}</div>
+                        <div>{formatLeadCreatedTime(lead.created_time)}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </article>
             </div>
           ) : null}
         </main>
