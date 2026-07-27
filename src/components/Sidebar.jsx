@@ -1602,6 +1602,16 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Connect Meta</span>
                                     </NavLink>
                                 )}
+                                {(isSuperAdmin || isAgentRestricted || featureFlags.adsManager) && (
+                                    <NavLink
+                                        to="/ads-manager?section=leads"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <Users size={20} />
+                                        <span>Leads</span>
+                                    </NavLink>
+                                )}
                             </nav>
                         </>
                     )}

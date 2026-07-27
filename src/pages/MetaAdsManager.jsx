@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import {
   AlertCircle,
   BarChart3,
@@ -183,6 +184,7 @@ const hydrateFormFromCampaign = (campaign, setup = {}) => ({
 });
 
 const MetaAdsManager = () => {
+  const location = useLocation();
   const [activeSection, setActiveSection] = useState("campaigns");
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState(null);
@@ -262,6 +264,13 @@ const MetaAdsManager = () => {
   const publishBlockedReason = !setup.connected ? "Meta connection is not ready." : !String(form.adAccountId || "").trim() ? "Select a Meta ad account." : !hasPageAccess ? "Select or configure a Facebook page before publishing." : "";
   const progressPercent = useMemo(() => (wizardStep / wizardSteps.length) * 100, [wizardStep]);
   const wizardPrimaryButtonRef = useRef(null);
+
+  useEffect(() => {
+    const section = new URLSearchParams(location.search || "").get("section");
+    if (section && sections.some((item) => item.key === section)) {
+      setActiveSection(section);
+    }
+  }, [location.search]);
 
   const lockWizardPrimaryButton = (node) => {
     if (!node) return;
