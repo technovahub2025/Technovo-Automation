@@ -2,10 +2,10 @@
   min-height: 100%;
   padding: 24px;
   background:
-    radial-gradient(circle at top left, rgba(20, 148, 112, 0.08), transparent 28%),
-    radial-gradient(circle at top right, rgba(24, 119, 242, 0.06), transparent 28%),
+    radial-gradient(circle at top left, rgba(14, 126, 100, 0.08), transparent 24%),
+    radial-gradient(circle at top right, rgba(24, 119, 242, 0.06), transparent 26%),
     linear-gradient(180deg, #f4f7f6 0%, #eef2f1 100%);
-  color: #163830;
+  color: #15372f;
 }
 
 .meta-leads-shell {
@@ -18,10 +18,10 @@
 .meta-leads-topbar,
 .meta-leads-card {
   border: 1px solid rgba(16, 78, 64, 0.08);
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.9);
-  box-shadow: 0 18px 42px rgba(16, 62, 53, 0.08);
-  backdrop-filter: blur(14px);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 14px 30px rgba(16, 62, 53, 0.06);
+  backdrop-filter: blur(16px);
 }
 
 .meta-leads-topbar {
@@ -57,7 +57,7 @@
   gap: 8px;
   padding: 7px 11px;
   border-radius: 999px;
-  background: #e7f4ef;
+  background: #e6f3ee;
   color: #0d6b58;
   font-size: 0.88rem;
   font-weight: 700;
