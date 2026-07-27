@@ -1,6 +1,7 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { AlertCircle, RefreshCw, Users, ChevronLeft } from "lucide-react";
+import { AuthContext } from "./authcontext";
 import metaAdsService from "../services/metaAdsService";
 import "./MetaLeadsPage.css";
 
@@ -20,6 +21,7 @@ const formatLeadCreatedTime = (value) => {
 const formatBooleanLabel = (value) => (value ? "Yes" : "No");
 
 const MetaLeadsPage = () => {
+  const { user } = useContext(AuthContext);
   const location = useLocation();
   const navigate = useNavigate();
   const [leads, setLeads] = useState([]);
@@ -29,20 +31,55 @@ const MetaLeadsPage = () => {
 
   const requestParams = useMemo(() => {
     const search = new URLSearchParams(location.search || "");
+    const storedUser = (() => {
+      try {
+        return JSON.parse(localStorage.getItem("user") || "null");
+      } catch {
+        return null;
+      }
+    })();
+
+    const resolvedUserId = String(
+      search.get("userId") ||
+      search.get("adminId") ||
+      user?.id ||
+      user?._id ||
+      user?.userId ||
+      storedUser?.id ||
+      storedUser?._id ||
+      localStorage.getItem("userId") ||
+      ""
+    ).trim();
+
+    const resolvedFormId = String(
+      search.get("formId") ||
+      search.get("form_id") ||
+      user?.metaLeadFormId ||
+      user?.metaleadformid ||
+      storedUser?.metaLeadFormId ||
+      storedUser?.metaleadformid ||
+      ""
+    ).trim();
+
     const params = {
-      adminId: String(search.get("adminId") || "").trim(),
-      formId: String(search.get("formId") || search.get("form_id") || "").trim(),
-      pageAccessToken: String(search.get("pageAccessToken") || search.get("access_token") || "").trim()
+      userId: resolvedUserId,
+      formId: resolvedFormId
     };
 
     return Object.fromEntries(Object.entries(params).filter(([, value]) => Boolean(value)));
-  }, [location.search]);
+  }, [location.search, user]);
 
   const loadLeads = async ({ silent = false } = {}) => {
     try {
       setError("");
       if (silent) setRefreshing(true);
       else setLoading(true);
+
+      if (!requestParams.userId) {
+        setLeads([]);
+        setError("Unable to resolve the current user for Meta leads.");
+        return;
+      }
 
       const response = await metaAdsService.getMetaLeads(requestParams);
       setLeads(Array.isArray(response?.leads) ? response.leads : []);
@@ -63,7 +100,7 @@ const MetaLeadsPage = () => {
   useEffect(() => {
     loadLeads();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.search]);
+  }, [requestParams.userId, requestParams.formId]);
 
   const leadCount = leads.length;
 
