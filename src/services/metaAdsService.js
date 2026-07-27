@@ -222,6 +222,29 @@ export const metaAdsService = {
     return response.data;
   },
 
+  async deleteCampaign(campaign) {
+    const campaignId =
+      String(
+        campaign?._id ||
+          campaign?.localCampaignId ||
+          campaign?.id ||
+          (campaign?.metaCampaignId ? `meta_${campaign.metaCampaignId}` : ""),
+      ).trim();
+
+    if (!campaignId) {
+      throw new Error("Campaign ID is required to delete a campaign.");
+    }
+
+    const response = await metaApi.delete(`/campaigns/${campaignId}`, {
+      data: {
+        metaCampaignId: campaign?.metaCampaignId || "",
+        metaAdSetId: campaign?.metaAdSetId || "",
+        metaAdId: campaign?.metaAdId || "",
+      },
+    });
+    return response.data;
+  },
+
   async getDiagnostics() {
     const response = await metaApi.get("/meta-ads/diagnostics");
     return response.data;
