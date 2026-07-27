@@ -267,12 +267,15 @@ const UsersListPage = () => {
   const [metaRedirectUri, setMetaRedirectUri] = useState("");
   const [metaUserAccessToken, setMetaUserAccessToken] = useState("");
   const [metaAdAccountId, setMetaAdAccountId] = useState("");
+  const [metaLeadFormId, setMetaLeadFormId] = useState("");
+  const [metaPageAccessToken, setMetaPageAccessToken] = useState("");
   const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [showToken, setShowToken] = useState(false);
   const [showTwilioToken, setShowTwilioToken] = useState(false);
   const [showMetaSecret, setShowMetaSecret] = useState(false);
   const [showMetaUserToken, setShowMetaUserToken] = useState(false);
+  const [showMetaPageToken, setShowMetaPageToken] = useState(false);
   const [showCustomizeModal, setShowCustomizeModal] = useState(false);
   const [customizingUser, setCustomizingUser] = useState(null);
   const [customFeatureLabels, setCustomFeatureLabels] = useState([]);
@@ -320,12 +323,15 @@ const UsersListPage = () => {
     setMetaRedirectUri("");
     setMetaUserAccessToken("");
     setMetaAdAccountId("");
+    setMetaLeadFormId("");
+    setMetaPageAccessToken("");
     setMetaPaymentFundUrl("");
     setPhoneNumber("");
     setShowToken(false);
     setShowTwilioToken(false);
     setShowMetaSecret(false);
     setShowMetaUserToken(false);
+    setShowMetaPageToken(false);
     setErrors({});
   };
 
@@ -525,8 +531,15 @@ const UsersListPage = () => {
     setMetaRedirectUri(selectedUser.metaRedirectUri ?? selectedUser.metaredirecturi ?? "");
     setMetaUserAccessToken(selectedUser.metaUserAccessToken ?? selectedUser.metauseraccesstoken ?? "");
     setMetaAdAccountId(selectedUser.metaAdAccountId ?? selectedUser.metaadaccountid ?? "");
+    setMetaLeadFormId(selectedUser.metaLeadFormId ?? selectedUser.metaleadformid ?? "");
+    setMetaPageAccessToken(selectedUser.metaPageAccessToken ?? selectedUser.metapageaccesstoken ?? "");
     setMetaPaymentFundUrl(selectedUser.metaPaymentFundUrl ?? selectedUser.metapaymentfundurl ?? "");
     setPhoneNumber(selectedUser.phoneNumber ?? selectedUser.phonenumber ?? "");
+    setShowToken(false);
+    setShowTwilioToken(false);
+    setShowMetaSecret(false);
+    setShowMetaUserToken(false);
+    setShowMetaPageToken(false);
     setErrors({});
     setShowEditModal(true);
   };
@@ -857,6 +870,8 @@ const UsersListPage = () => {
         metaRedirectUri: String(metaRedirectUri || "").trim(),
         metaUserAccessToken: String(metaUserAccessToken || "").trim(),
         metaAdAccountId: String(metaAdAccountId || "").trim(),
+        metaLeadFormId: String(metaLeadFormId || "").trim(),
+        metaPageAccessToken: String(metaPageAccessToken || "").trim(),
         ...(paymentFundUrl ? { metaPaymentFundUrl: paymentFundUrl } : {}),
         phoneNumber: String(phoneNumber || "").trim()
       });
@@ -971,6 +986,23 @@ const UsersListPage = () => {
               <div className="form-row">
                 <label>Meta Ad Account ID</label>
                 <input value={metaAdAccountId} onChange={(e) => setMetaAdAccountId(e.target.value)} />
+              </div>
+              <div className="form-row">
+                <label>Meta Lead Form ID</label>
+                <input value={metaLeadFormId} onChange={(e) => setMetaLeadFormId(e.target.value)} />
+              </div>
+              <div className="form-row">
+                <label>Meta Page Access Token</label>
+                <div className="password-field password-field--compact">
+                  <input
+                    type={showMetaPageToken ? "text" : "password"}
+                    value={metaPageAccessToken}
+                    onChange={(e) => setMetaPageAccessToken(e.target.value)}
+                  />
+                  <span className="eye-icon" onClick={() => setShowMetaPageToken((prev) => !prev)}>
+                    {showMetaPageToken ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </span>
+                </div>
               </div>
               <div className="form-row">
                 <label>Meta Payment Fund URL</label>

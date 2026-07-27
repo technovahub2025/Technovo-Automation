@@ -91,6 +91,32 @@ const buildListKey = (...parts) =>
     .filter(Boolean)
     .join(":");
 
+const getLeadFieldValue = (lead = {}, fieldNames = []) => {
+  const fields = Array.isArray(lead?.field_data) ? lead.field_data : [];
+  const normalized = fieldNames.map((name) => String(name || "").trim().toLowerCase());
+  for (const field of fields) {
+    const fieldName = String(field?.name || "").trim().toLowerCase();
+    if (!fieldName || !normalized.includes(fieldName)) continue;
+    const value = Array.isArray(field?.values) ? field.values[0] : "";
+    if (value) return String(value).trim();
+  }
+  return "";
+};
+
+const formatLeadCreatedTime = (value) => {
+  if (!value) return "--";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? String(value)
+    : new Intl.DateTimeFormat("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(date);
+};
+
 const getCampaignId = (campaign = {}) =>
   String(
     campaign?._id ||
@@ -184,6 +210,9 @@ const MetaAdsManager = () => {
   const [metaCampaigns, setMetaCampaigns] = useState([]);
   const [adSets, setAdSets] = useState([]);
   const [ads, setAds] = useState([]);
+  const [selectedLeadPageId, setSelectedLeadPageId] = useState("");
+  const [pageLeads, setPageLeads] = useState([]);
+  const [pageLeadsLoading, setPageLeadsLoading] = useState(false);
   const [selectedCampaignRef, setSelectedCampaignRef] = useState("");
   const [selectedAdSetId, setSelectedAdSetId] = useState("");
   const [hierarchyLoading, setHierarchyLoading] = useState(false);
@@ -281,10 +310,46 @@ const MetaAdsManager = () => {
     }
   };
 
+  const loadPageLeads = async (pageId) => {
+    const resolvedPageId = String(pageId || selectedLeadPageId || "").trim();
+    if (!resolvedPageId) {
+      setPageLeads([]);
+      return;
+    }
+
+    try {
+      setPageLeadsLoading(true);
+      const response = await metaAdsService.getPageLeads(resolvedPageId);
+      setPageLeads(Array.isArray(response?.leads) ? response.leads : []);
+    } catch (requestError) {
+      setError(requestError?.response?.data?.error || requestError.message || "Failed to load leads.");
+      setPageLeads([]);
+    } finally {
+      setPageLeadsLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadOverview();
     loadCampaigns();
   }, []);
+
+  useEffect(() => {
+    if (selectedLeadPageId) return;
+    const initialPageId = setup.selectedPageId || pages[0]?.id || "";
+    if (initialPageId) {
+      setSelectedLeadPageId(initialPageId);
+    }
+  }, [pages, selectedLeadPageId, setup.selectedPageId]);
+
+  useEffect(() => {
+    if (selectedLeadPageId) {
+      loadPageLeads(selectedLeadPageId);
+    } else {
+      setPageLeads([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedLeadPageId]);
 
   useEffect(() => {
     if (!selectedCampaignRef) {
@@ -705,6 +770,49 @@ const MetaAdsManager = () => {
             </article>
 
             <div className="meta-grid meta-grid-settings">
+              <article className="meta-card">
+                <div className="meta-card-head">
+                  <div>
+                    <h3>Leads</h3>
+                  </div>
+                </div>
+                <div className="meta-page-list">
+                  {resolvedPages.length === 0 ? (
+                    <div className="meta-empty-inline">No pages available.</div>
+                  ) : (
+                    resolvedPages.map((page, index) => {
+                      const pageId = String(page?.id || "").trim();
+                      const isActive = selectedLeadPageId === pageId;
+                      return (
+                        <button
+                          key={buildListKey("lead-page", pageId, page?.name, index)}
+                          type="button"
+                          className={`meta-page-pill ${isActive ? "active" : ""}`}
+                          onClick={() => setSelectedLeadPageId(pageId)}
+                        >
+                          {page?.name || pageId || "Page"}
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+                <div className="meta-lead-list">
+                  {pageLeadsLoading ? (
+                    <div className="meta-empty-inline">Loading leads...</div>
+                  ) : pageLeads.length === 0 ? (
+                    <div className="meta-empty-inline">No leads found.</div>
+                  ) : (
+                    pageLeads.map((lead, index) => (
+                      <div key={buildListKey("lead", lead.id, index)} className="meta-lead-item">
+                        <div>{getLeadFieldValue(lead, ["full_name", "full name", "name"]) || "--"}</div>
+                        <div>{getLeadFieldValue(lead, ["phone_number", "phone number", "phone"]) || "--"}</div>
+                        <div>{getLeadFieldValue(lead, ["email", "email address"]) || "--"}</div>
+                        <div>{formatLeadCreatedTime(lead.created_time)}</div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </article>
               <article className="meta-card">
                 <div className="meta-card-head">
                   <div>
