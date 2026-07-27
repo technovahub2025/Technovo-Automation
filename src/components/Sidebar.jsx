@@ -65,6 +65,7 @@ const ROUTE_PREFETCHERS = {
     '/crm/reports': () => import('../pages/CrmReports'),
     '/ads-manager': () => import('../pages/campaignmanagement'),
     '/meta-ads-manager': () => import('../pages/MetaAdsManager'),
+    '/meta-leads': () => import('../pages/MetaLeadsPage'),
     '/insights': () => import('../pages/Insights'),
     '/meta-connect': () => import('../pages/MetaConnect'),
     '/whatsapp-workflow': () => import('../pages/WhatsAppWorkflow'),
@@ -924,7 +925,8 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         isRouteActive('/ads-manager') ||
         isRouteActive('/insights') ||
         isRouteActive('/meta-connect') ||
-        isRouteActive('/meta-ads-manager');
+        isRouteActive('/meta-ads-manager') ||
+        isRouteActive('/meta-leads');
 
     return (
         <div className={`sidebar-container ${isCompactMobile ? 'compact-mobile' : ''}`}>
@@ -1097,6 +1099,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     prefetchRoute('/ads-manager');
                                     prefetchRoute('/insights');
                                     prefetchRoute('/meta-connect');
+                                    prefetchRoute('/meta-leads');
                                 }
                             }}
                             onClick={(e) => {
@@ -1590,6 +1593,16 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     >
                                         <Facebook size={20} />
                                         <span>Connect Meta</span>
+                                    </NavLink>
+                                )}
+                                {(isSuperAdmin || isAgentRestricted || featureFlags.analytics || featureFlags.metaConnect) && (
+                                    <NavLink
+                                        to="/meta-leads"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <Users size={20} />
+                                        <span>Leads</span>
                                     </NavLink>
                                 )}
                             </nav>

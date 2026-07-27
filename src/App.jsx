@@ -27,6 +27,7 @@ const BroadcastDashboard = lazy(() => import("./pages/BroadcastDashboard"));
 const CampaignManagement = lazy(() => import("./pages/campaignmanagement"));
 const Insights = lazy(() => import("./pages/Insights"));
 const MetaAdsManager = lazy(() => import("./pages/MetaAdsManager"));
+const MetaLeadsPage = lazy(() => import("./pages/MetaLeadsPage"));
 const MetaConnect = lazy(() => import("./pages/MetaConnect"));
 const CrmPipeline = lazy(() => import("./pages/CrmPipeline"));
 const CrmHome = lazy(() => import("./pages/CrmHome"));
@@ -123,6 +124,7 @@ function App() {
           <Route path="automation/task-calendar" element={<Navigate to="/crm/tasks-calendar" replace />} />
           <Route path="ads-manager" element={renderLazyRoute(<CampaignManagement />, "Loading ads manager...")} />
           <Route path="meta-ads-manager" element={renderLazyRoute(<MetaAdsManager />, "Loading meta ads manager...")} />
+          <Route path="meta-leads" element={renderLazyRoute(<MetaLeadsPage />, "Loading Meta leads...")} />
           <Route path="meta-connect" element={renderLazyRoute(<MetaConnect />, "Loading Meta connect...")} />
           <Route path="insights" element={renderLazyRoute(<Insights />, "Loading insights...")} />
           <Route path="inbox" element={renderLazyRoute(<TeamInbox />, "Loading inbox...")} />
