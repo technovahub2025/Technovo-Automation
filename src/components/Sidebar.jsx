@@ -64,6 +64,7 @@ const ROUTE_PREFETCHERS = {
     '/crm/ops': () => import('../pages/CrmOps'),
     '/crm/reports': () => import('../pages/CrmReports'),
     '/ads-manager': () => import('../pages/campaignmanagement'),
+    '/meta-ads-manager': () => import('../pages/MetaAdsManager'),
     '/insights': () => import('../pages/Insights'),
     '/meta-connect': () => import('../pages/MetaConnect'),
     '/whatsapp-workflow': () => import('../pages/WhatsAppWorkflow'),
@@ -922,7 +923,8 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
     const isMetaAdsRouteActive =
         isRouteActive('/ads-manager') ||
         isRouteActive('/insights') ||
-        isRouteActive('/meta-connect');
+        isRouteActive('/meta-connect') ||
+        isRouteActive('/meta-ads-manager');
 
     return (
         <div className={`sidebar-container ${isCompactMobile ? 'compact-mobile' : ''}`}>
@@ -1604,7 +1606,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 )}
                                 {(isSuperAdmin || isAgentRestricted || featureFlags.adsManager) && (
                                     <NavLink
-                                        to="/ads-manager?section=leads"
+                                        to="/meta-ads-manager?section=leads"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                         onClick={closeMobileMenusAfterNavigate}
                                     >
