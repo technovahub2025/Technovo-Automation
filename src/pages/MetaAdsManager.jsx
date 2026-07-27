@@ -5,22 +5,22 @@ import {
   CheckCircle2,
   Facebook,
   FolderKanban,
-  LayoutDashboard,
   Plus,
   RefreshCw,
   Settings as SettingsIcon,
   Upload,
   Trash2,
+  Users,
   Wallet,
 } from "lucide-react";
 import metaAdsService from "../services/metaAdsService";
 import "./MetaAdsManager.css";
 
 const sections = [
-  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
   { key: "campaigns", label: "Campaigns", icon: FolderKanban },
-  { key: "analytics", label: "Analytics", icon: BarChart3 },
-  { key: "settings", label: "Settings", icon: SettingsIcon },
+  { key: "reports", label: "Reports", icon: BarChart3 },
+  { key: "connect", label: "Connect Meta", icon: SettingsIcon },
+  { key: "leads", label: "Leads", icon: Users },
 ];
 
 const wizardSteps = [
@@ -91,6 +91,32 @@ const buildListKey = (...parts) =>
     .filter(Boolean)
     .join(":");
 
+const getLeadFieldValue = (lead = {}, fieldNames = []) => {
+  const fields = Array.isArray(lead?.field_data) ? lead.field_data : [];
+  const normalized = fieldNames.map((name) => String(name || "").trim().toLowerCase());
+  for (const field of fields) {
+    const fieldName = String(field?.name || "").trim().toLowerCase();
+    if (!fieldName || !normalized.includes(fieldName)) continue;
+    const value = Array.isArray(field?.values) ? field.values[0] : "";
+    if (value) return String(value).trim();
+  }
+  return "";
+};
+
+const formatLeadCreatedTime = (value) => {
+  if (!value) return "--";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? String(value)
+    : new Intl.DateTimeFormat("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(date);
+};
+
 const getCampaignId = (campaign = {}) =>
   String(
     campaign?._id ||
@@ -157,7 +183,7 @@ const hydrateFormFromCampaign = (campaign, setup = {}) => ({
 });
 
 const MetaAdsManager = () => {
-  const [activeSection, setActiveSection] = useState("dashboard");
+  const [activeSection, setActiveSection] = useState("campaigns");
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState(null);
   const [diagnostics, setDiagnostics] = useState(null);
@@ -186,6 +212,10 @@ const MetaAdsManager = () => {
   const [ads, setAds] = useState([]);
   const [selectedCampaignRef, setSelectedCampaignRef] = useState("");
   const [selectedAdSetId, setSelectedAdSetId] = useState("");
+  const [selectedLeadPageId, setSelectedLeadPageId] = useState("");
+  const [pageLeads, setPageLeads] = useState([]);
+  const [pageLeadsLoading, setPageLeadsLoading] = useState(false);
+  const [pageLeadsError, setPageLeadsError] = useState("");
   const [hierarchyLoading, setHierarchyLoading] = useState(false);
   const [adSetsLoading, setAdSetsLoading] = useState(false);
   const [adsLoading, setAdsLoading] = useState(false);
@@ -206,6 +236,9 @@ const MetaAdsManager = () => {
   const adAccounts = setup.availableAdAccounts || setup.adAccounts || [];
   const pages = setup.availablePages || setup.pages || [];
   const whatsappNumbers = setup.availableWhatsappNumbers || setup.whatsappNumbers || [];
+  const leadFormId = String(
+    setup.leadFormId || setup.metaLeadFormId || setup.adminMetaConfig?.leadFormId || ""
+  ).trim();
   const effectiveConfiguredPageId = String(
     form.configuredPageId || setup.selectedPageId || pages?.[0]?.id || ""
   ).trim();
@@ -281,10 +314,48 @@ const MetaAdsManager = () => {
     }
   };
 
+  const loadPageLeads = async (pageId) => {
+    const resolvedPageId = String(pageId || selectedLeadPageId || "").trim();
+    if (!resolvedPageId) {
+      setPageLeads([]);
+      return;
+    }
+
+    try {
+      setPageLeadsLoading(true);
+      setPageLeadsError("");
+      const response = await metaAdsService.getPageLeads(resolvedPageId, leadFormId ? { formId: leadFormId } : {});
+      setPageLeads(Array.isArray(response?.leads) ? response.leads : []);
+    } catch (requestError) {
+      setPageLeadsError(requestError?.response?.data?.error || requestError.message || "Failed to load leads.");
+      setPageLeads([]);
+    } finally {
+      setPageLeadsLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadOverview();
     loadCampaigns();
   }, []);
+
+  useEffect(() => {
+    if (selectedLeadPageId) return;
+    const initialPageId = setup.selectedPageId || pages[0]?.id || "";
+    if (initialPageId) {
+      setSelectedLeadPageId(initialPageId);
+    }
+  }, [pages, selectedLeadPageId, setup.selectedPageId]);
+
+  useEffect(() => {
+    if (activeSection !== "leads") return;
+    if (selectedLeadPageId) {
+      loadPageLeads(selectedLeadPageId);
+    } else {
+      setPageLeads([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSection, selectedLeadPageId]);
 
   useEffect(() => {
     if (!selectedCampaignRef) {
@@ -686,12 +757,19 @@ const MetaAdsManager = () => {
           {error ? <div className="meta-alert meta-alert-error"><AlertCircle size={16} /><span>{error}</span></div> : null}
           {success ? <div className="meta-alert meta-alert-success"><CheckCircle2 size={16} /><span>{success}</span></div> : null}
 
-          {!loading && activeSection === "dashboard" ? <div className="meta-grid meta-grid-stats">
-            <article className="meta-card meta-stat-card"><span>Total Campaigns</span><strong>{overview?.summary?.totalCampaigns || 0}</strong></article>
-            <article className="meta-card meta-stat-card"><span>Live Campaigns</span><strong>{overview?.summary?.activeCampaigns || 0}</strong></article>
-            <article className="meta-card meta-stat-card"><span>Available Balance</span><strong>{formatCurrency(wallet.balance || 0)}</strong></article>
-            <article className="meta-card meta-stat-card"><span>Total Spend</span><strong>{formatCurrency(overview?.summary?.totalSpend || 0)}</strong></article>
-            <article className="meta-card meta-stat-card"><span>Total Leads</span><strong>{overview?.summary?.totalLeads || 0}</strong></article>
+          {!loading && activeSection === "reports" ? <div className="meta-section-stack">
+            <div className="meta-grid meta-grid-stats">
+              <article className="meta-card meta-stat-card"><span>Total Campaigns</span><strong>{overview?.summary?.totalCampaigns || 0}</strong></article>
+              <article className="meta-card meta-stat-card"><span>Live Campaigns</span><strong>{overview?.summary?.activeCampaigns || 0}</strong></article>
+              <article className="meta-card meta-stat-card"><span>Available Balance</span><strong>{formatCurrency(wallet.balance || 0)}</strong></article>
+              <article className="meta-card meta-stat-card"><span>Total Spend</span><strong>{formatCurrency(overview?.summary?.totalSpend || 0)}</strong></article>
+              <article className="meta-card meta-stat-card"><span>Total Leads</span><strong>{overview?.summary?.totalLeads || 0}</strong></article>
+            </div>
+            <div className="meta-grid meta-grid-stats">
+              <article className="meta-card meta-stat-card"><span>Total impressions</span><strong>{overview?.summary?.totalImpressions || 0}</strong></article>
+              <article className="meta-card meta-stat-card"><span>Average CTR</span><strong>{overview?.summary?.averageCtr || 0}%</strong></article>
+              <article className="meta-card meta-stat-card"><span>Average CPL</span><strong>{formatCurrency(overview?.summary?.averageCpl || 0)}</strong></article>
+            </div>
           </div> : null}
 
           {!loading && activeSection === "campaigns" ? <div className="meta-section-stack">
@@ -819,16 +897,58 @@ const MetaAdsManager = () => {
             </div>
           </div> : null}
 
-          {!loading && activeSection === "analytics" ? <div className="meta-grid meta-grid-stats">
-            <article className="meta-card meta-stat-card"><span>Total impressions</span><strong>{overview?.summary?.totalImpressions || 0}</strong></article>
-            <article className="meta-card meta-stat-card"><span>Average CTR</span><strong>{overview?.summary?.averageCtr || 0}%</strong></article>
-            <article className="meta-card meta-stat-card"><span>Total leads</span><strong>{overview?.summary?.totalLeads || 0}</strong></article>
-            <article className="meta-card meta-stat-card"><span>Average CPL</span><strong>{formatCurrency(overview?.summary?.averageCpl || 0)}</strong></article>
-          </div> : null}
-
-          {!loading && activeSection === "settings" ? <div className="meta-grid meta-grid-settings">
+          {!loading && activeSection === "connect" ? <div className="meta-grid meta-grid-settings">
             <article className="meta-card"><div className="meta-card-head"><div><h3>Connection</h3><p>Use env token now and keep the API ready for Facebook Login later.</p></div><button type="button" className="meta-button meta-button-facebook" disabled={connectingFacebook} onClick={handleConnect}><Facebook size={16} /><span>{connectingFacebook ? "Connecting..." : "Connect Facebook"}</span></button></div><div className="meta-settings-grid"><label><span>Ad Account</span><select value={form.adAccountId} onChange={(event) => updateField("adAccountId", event.target.value)}><option value="">Choose ad account</option>{adAccounts.map((account, index) => <option key={buildListKey("account", account.id, account.name, index)} value={account.id}>{account.name || account.id}</option>)}</select></label><label><span>Facebook Page</span><select value={form.configuredPageId || effectiveConfiguredPageId} onChange={(event) => updateField("configuredPageId", event.target.value)}><option value="">Choose page</option>{resolvedPages.map((page, index) => <option key={buildListKey("page", page.id, page.name, index)} value={page.id}>{page.name}</option>)}</select></label><label><span>WhatsApp Number</span><input type="text" value={form.whatsappNumber} onChange={(event) => updateField("whatsappNumber", event.target.value)} placeholder="+91 98765 43210" /></label><div className="meta-settings-actions"><button type="button" className="meta-button meta-button-primary" disabled={savingSetup} onClick={handleSaveSettings}>{savingSetup ? <RefreshCw className="spin" size={16} /> : "Save Settings"}</button></div></div></article>
             <article className="meta-card"><div className="meta-card-head"><div><h3>Wallet & Diagnostics</h3><p>Live Meta billing balance plus internal reserve credits.</p></div><div className="meta-inline-actions"><button type="button" className="meta-button meta-button-secondary" disabled={billingLoading} onClick={handleFetchMetaBilling}>{billingLoading ? <RefreshCw className="spin" size={16} /> : "Refresh Meta Balance"}</button><button type="button" className="meta-button meta-button-secondary" disabled={diagnosticsLoading} onClick={handleRunDiagnostics}>{diagnosticsLoading ? <RefreshCw className="spin" size={16} /> : "Run Diagnostics"}</button></div></div><div className="meta-wallet-row"><div><span>Meta wallet balance</span><strong>{hasLiveMetaBalance ? formatCurrencyByCode(liveMetaBalance, liveMetaCurrency) : "Unavailable"}</strong></div><div className="meta-wallet-input"><input type="number" min="100" step="100" value={topUpAmount} onChange={(event) => setTopUpAmount(Number(event.target.value || 0))} /><button type="button" className="meta-button meta-button-secondary" disabled={walletSubmitting} onClick={handleWalletTopUp}>{walletSubmitting ? <RefreshCw className="spin" size={16} /> : "Add Credit"}</button></div></div><div className="meta-diagnostics-grid"><div><span>Internal credits</span><strong>{formatCurrency(wallet.balance || 0)}</strong></div><div><span>Amount spent</span><strong>{formatCurrencyByCode(metaBilling?.billing?.amountSpent, metaBilling?.adAccount?.currency)}</strong></div><div><span>Spend cap</span><strong>{formatCurrencyByCode(metaBilling?.billing?.spendCap, metaBilling?.adAccount?.currency)}</strong></div><div><span>Meta account</span><strong>{metaBilling?.adAccount?.name || metaBilling?.adAccount?.id || "--"}</strong></div></div><div className="meta-diagnostics-grid"><div><span>Access token</span><strong>{diagnostics?.env?.hasAccessToken ? "Present" : "Unknown"}</strong></div><div><span>Ad account ID</span><strong>{diagnostics?.env?.hasAdAccountId ? "Present" : "Unknown"}</strong></div><div><span>Page ID</span><strong>{diagnostics?.env?.hasPageId ? "Present" : "Unknown"}</strong></div><div><span>Auth source</span><strong>{diagnostics?.env?.authSource || setup.authSource || "env"}</strong></div></div></article>
+          </div> : null}
+
+          {!loading && activeSection === "leads" ? <div className="meta-section-stack">
+            <article className="meta-card">
+              <div className="meta-card-head">
+                <div>
+                  <h3>Lead Data</h3>
+                  <p>Latest lead submissions from the selected Facebook page.</p>
+                </div>
+                <button type="button" className="meta-button meta-button-secondary" disabled={pageLeadsLoading} onClick={() => loadPageLeads(selectedLeadPageId)}>
+                  {pageLeadsLoading ? <RefreshCw className="spin" size={16} /> : "Refresh Leads"}
+                </button>
+              </div>
+
+              <div className="meta-settings-grid">
+                <label className="full">
+                  <span>Facebook Page</span>
+                  <select value={selectedLeadPageId} onChange={(event) => setSelectedLeadPageId(event.target.value)}>
+                    <option value="">Choose page</option>
+                    {resolvedPages.map((page, index) => (
+                      <option key={buildListKey("lead-page", page.id, page.name, index)} value={page.id}>
+                        {page.name || page.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+
+              {pageLeadsError ? <div className="meta-alert meta-alert-error"><AlertCircle size={16} /><span>{pageLeadsError}</span></div> : null}
+
+              <div className="meta-lead-list">
+                {pageLeadsLoading ? (
+                  <div className="meta-empty-inline">Loading leads...</div>
+                ) : pageLeads.length === 0 ? (
+                  <div className="meta-empty-inline">
+                    {selectedLeadPageId ? "No leads found." : "Choose a page to view leads."}
+                  </div>
+                ) : (
+                  pageLeads.map((lead, index) => (
+                    <div key={buildListKey("lead", lead.id, index)} className="meta-lead-item">
+                      <div>{getLeadFieldValue(lead, ["full_name", "full name", "name"]) || "--"}</div>
+                      <div>{getLeadFieldValue(lead, ["phone_number", "phone number", "phone"]) || "--"}</div>
+                      <div>{getLeadFieldValue(lead, ["email", "email address"]) || "--"}</div>
+                      <div>{formatLeadCreatedTime(lead.created_time)}</div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </article>
           </div> : null}
         </main>
       </section>
