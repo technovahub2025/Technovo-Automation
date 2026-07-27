@@ -62,6 +62,32 @@ const extractErrorMessage = (error, fallback) =>
   error?.message ||
   fallback;
 
+const getLeadFieldValue = (lead = {}, fieldNames = []) => {
+  const fields = Array.isArray(lead?.field_data) ? lead.field_data : [];
+  const normalized = fieldNames.map((name) => String(name || "").trim().toLowerCase());
+  for (const field of fields) {
+    const fieldName = String(field?.name || "").trim().toLowerCase();
+    if (!fieldName || !normalized.includes(fieldName)) continue;
+    const value = Array.isArray(field?.values) ? field.values[0] : "";
+    if (value) return String(value).trim();
+  }
+  return "";
+};
+
+const formatLeadCreatedTime = (value) => {
+  if (!value) return "--";
+  const date = new Date(value);
+  return Number.isNaN(date.getTime())
+    ? String(value)
+    : new Intl.DateTimeFormat("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(date);
+};
+
 const META_LEAD_MAPPING_STORAGE_KEY = "meta_lead_consent_mapping_v1";
 const OPTIN_LINK_STORAGE_KEY = "meta_optin_link_builder_v1";
 
@@ -107,6 +133,10 @@ const MetaConnect = () => {
   const [leadSyncLoading, setLeadSyncLoading] = useState(false);
   const [leadPreview, setLeadPreview] = useState(null);
   const [leadSyncMessage, setLeadSyncMessage] = useState("");
+  const [leadBrowserPageId, setLeadBrowserPageId] = useState("");
+  const [leadBrowserRows, setLeadBrowserRows] = useState([]);
+  const [leadBrowserLoading, setLeadBrowserLoading] = useState(false);
+  const [leadBrowserError, setLeadBrowserError] = useState("");
   const [batchLeadIdsText, setBatchLeadIdsText] = useState("");
   const [batchSyncLoading, setBatchSyncLoading] = useState(false);
   const [batchSyncResult, setBatchSyncResult] = useState(null);
@@ -369,6 +399,26 @@ const MetaConnect = () => {
     });
   };
 
+  const loadLeadBrowserRows = async (pageId) => {
+    const resolvedPageId = String(pageId || leadBrowserPageId || "").trim();
+    if (!resolvedPageId) {
+      setLeadBrowserRows([]);
+      return;
+    }
+
+    try {
+      setLeadBrowserLoading(true);
+      setLeadBrowserError("");
+      const response = await metaAdsApi.getMetaPageLeads(resolvedPageId);
+      setLeadBrowserRows(Array.isArray(response?.leads) ? response.leads : []);
+    } catch (loadError) {
+      setLeadBrowserError(extractErrorMessage(loadError, "Unable to load page leads."));
+      setLeadBrowserRows([]);
+    } finally {
+      setLeadBrowserLoading(false);
+    }
+  };
+
   async function loadMetaState({ silent = false } = {}) {
     try {
       setError("");
@@ -394,6 +444,23 @@ const MetaConnect = () => {
   useEffect(() => {
     loadMetaState();
   }, []);
+
+  useEffect(() => {
+    if (leadBrowserPageId) return;
+    const initialPageId = form.pageId || setup.pageId || setup.pages?.[0]?.id || "";
+    if (initialPageId) {
+      setLeadBrowserPageId(initialPageId);
+    }
+  }, [form.pageId, leadBrowserPageId, setup.pageId, setup.pages]);
+
+  useEffect(() => {
+    if (leadBrowserPageId) {
+      loadLeadBrowserRows(leadBrowserPageId);
+    } else {
+      setLeadBrowserRows([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leadBrowserPageId]);
 
   useEffect(() => {
     try {
@@ -957,6 +1024,16 @@ const MetaConnect = () => {
                 </button>
                 <button
                   type="button"
+                  className={`meta-advanced-tab-button ${advancedTab === "leads" ? "meta-advanced-tab-button-active" : ""}`}
+                  onClick={() => setAdvancedTab("leads")}
+                  role="tab"
+                  aria-selected={advancedTab === "leads"}
+                >
+                  <span>Lead data</span>
+                  <small>Browse leads from a selected Facebook page</small>
+                </button>
+                <button
+                  type="button"
                   className={`meta-advanced-tab-button ${advancedTab === "optin" ? "meta-advanced-tab-button-active" : ""}`}
                   onClick={() => setAdvancedTab("optin")}
                   role="tab"
@@ -1244,6 +1321,55 @@ const MetaConnect = () => {
                         </div>
                       </div>
                     ) : null}
+                  </section>
+                ) : advancedTab === "leads" ? (
+                  <section className="meta-card meta-compact-card">
+                    <div className="meta-card-header meta-compact-header">
+                      <div>
+                        <h3>Lead Data</h3>
+                        <p className="meta-card-subtitle">Select a page and review the latest leads from Meta.</p>
+                      </div>
+                      <span className="meta-pill meta-pill-muted">Lead browser</span>
+                    </div>
+
+                    {leadBrowserError ? <div className="meta-banner meta-banner-warning">{leadBrowserError}</div> : null}
+
+                    <div className="meta-form-grid">
+                      <label className="meta-field meta-field-full">
+                        <span>Facebook page</span>
+                        <select value={leadBrowserPageId} onChange={(e) => setLeadBrowserPageId(e.target.value)}>
+                          <option value="">Select page</option>
+                          {(setup.pages || []).map((page) => (
+                            <option key={page.id} value={page.id}>
+                              {page.name || page.id} ({page.id})
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+
+                    <div className="meta-lead-browser">
+                      {leadBrowserLoading ? (
+                        <div className="meta-empty-inline">Loading leads...</div>
+                      ) : leadBrowserRows.length === 0 ? (
+                        <div className="meta-empty-inline">
+                          {leadBrowserPageId ? "No leads found for this page." : "Choose a page to view leads."}
+                        </div>
+                      ) : (
+                        leadBrowserRows.map((lead, index) => (
+                          <div key={`${lead?.id || "lead"}-${index}`} className="meta-lead-browser-row">
+                            <div>
+                              <strong>{getLeadFieldValue(lead, ["full_name", "full name", "name"]) || "--"}</strong>
+                              <span>{getLeadFieldValue(lead, ["email", "email address"]) || "--"}</span>
+                            </div>
+                            <div>
+                              <strong>{getLeadFieldValue(lead, ["phone_number", "phone number", "phone"]) || "--"}</strong>
+                              <span>{formatLeadCreatedTime(lead.created_time)}</span>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
                   </section>
                 ) : (
                   <section className="meta-card meta-compact-card">

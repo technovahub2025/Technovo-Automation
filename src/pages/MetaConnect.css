@@ -871,6 +871,38 @@
   word-break: break-word;
 }
 
+.meta-lead-browser {
+  margin-top: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.meta-lead-browser-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.3fr) minmax(220px, 0.9fr);
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid #e2ebfb;
+  border-radius: 16px;
+  background: #fbfdff;
+}
+
+.meta-lead-browser-row strong {
+  display: block;
+  color: #172b57;
+  font-size: 0.98rem;
+  line-height: 1.35;
+}
+
+.meta-lead-browser-row span {
+  display: block;
+  color: #607291;
+  font-size: 0.9rem;
+  margin-top: 3px;
+  word-break: break-word;
+}
+
 .spin {
   animation: meta-spin 1s linear infinite;
 }

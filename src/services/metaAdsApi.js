@@ -117,6 +117,18 @@ export const previewMetaLeadConsent = async (leadId, params = {}) => {
   return response.data;
 };
 
+export const getMetaPageLeads = async (pageId, params = {}) => {
+  metaApi.defaults.baseURL = resolveMetaApiBaseUrl();
+  const response = await metaApi.get("/api/meta-ads/leads", {
+    params: {
+      pageId,
+      formId: params.formId || "",
+      limit: params.limit || 25
+    }
+  });
+  return response.data;
+};
+
 export const syncMetaLeadConsent = async (payload) => {
   metaApi.defaults.baseURL = resolveMetaApiBaseUrl();
   const response = await metaApi.post("/api/meta-ads/leads/sync-consent", payload);
@@ -135,6 +147,7 @@ export default {
   getMetaAuthUrl,
   saveMetaSelections,
   previewMetaLeadConsent,
+  getMetaPageLeads,
   syncMetaLeadConsent,
   syncMetaLeadConsentBatch,
   setMetaApiRuntimeBaseUrl,
