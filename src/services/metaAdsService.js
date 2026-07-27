@@ -222,6 +222,11 @@ export const metaAdsService = {
     return response.data;
   },
 
+  async getMetaLeads() {
+    const response = await metaApi.get("/meta-leads");
+    return response.data;
+  },
+
   async getPageLeads(pageId, params = {}) {
     const response = await metaApi.get("/meta-ads/leads", {
       params: {
