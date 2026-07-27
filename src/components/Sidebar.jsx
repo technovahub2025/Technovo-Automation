@@ -1448,18 +1448,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>CRM Home</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || isAgentRestricted || featureFlags.crmPipeline) && (
-                                    <NavLink
-                                        to="/crm/pipeline"
-                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                        onMouseEnter={() => prefetchRoute('/crm/pipeline')}
-                                        onFocus={() => prefetchRoute('/crm/pipeline')}
-                                        onClick={closeMobileMenusAfterNavigate}
-                                    >
-                                        <Users size={20} />
-                                        <span>Leads</span>
-                                    </NavLink>
-                                )}
                                 {(isSuperAdmin || isAgentRestricted || featureFlags.crmTasks) && (
                                     <NavLink
                                         to="/crm/tasks"
