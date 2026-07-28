@@ -93,7 +93,7 @@ const getOptimizationGoalOptions = (objective) => {
             ];
         case 'leads':
             return [
-                { value: 'LEADS', label: 'Leads' },
+                { value: 'LEAD_GENERATION', label: 'Lead generation' },
                 { value: 'QUALITY_LEAD', label: 'Quality leads' },
                 { value: 'CONVERSATIONS', label: 'Conversations' }
             ];
@@ -115,6 +115,18 @@ const getOptimizationGoalOptions = (objective) => {
 const getDefaultOptimizationGoal = (objective) => {
     const options = getOptimizationGoalOptions(objective);
     return options[0]?.value || 'REACH';
+};
+
+const normalizeOptimizationGoal = (objective, optimizationGoal) => {
+    const normalizedObjective = String(objective || '').trim().toLowerCase();
+    const normalizedGoal = String(optimizationGoal || '').trim().toUpperCase();
+    const aliasMap = {
+        LEADS: 'LEAD_GENERATION'
+    };
+    const resolvedGoal = aliasMap[normalizedGoal] || normalizedGoal;
+    const allowedGoals = getOptimizationGoalOptions(normalizedObjective).map((option) => option.value);
+
+    return allowedGoals.includes(resolvedGoal) ? resolvedGoal : getDefaultOptimizationGoal(normalizedObjective);
 };
 
 const toNumberOrNull = (value) => {
@@ -268,7 +280,7 @@ const CampaignManagement = () => {
             videoUrl: campaign.videoUrl || '',
             mediaType: campaign.mediaType || (campaign.videoUrl ? 'video' : 'image'),
             callToAction: campaign.callToAction || 'LEARN_MORE',
-            optimizationGoal: campaign.optimizationGoal || getDefaultOptimizationGoal(objective),
+            optimizationGoal: normalizeOptimizationGoal(objective, campaign.optimizationGoal),
             bidStrategy: campaign.bidStrategy || 'LOWEST_COST_WITHOUT_CAP',
             metaCampaignId: campaign.metaCampaignId || '',
             metaAdSetId: campaign.metaAdSetId || '',
@@ -312,7 +324,7 @@ const CampaignManagement = () => {
             description: String(data?.description || '').trim(),
             destinationUrl: String(data?.destinationUrl || '').trim(),
             callToAction: String(data?.callToAction || 'LEARN_MORE'),
-            optimizationGoal: String(data?.optimizationGoal || getDefaultOptimizationGoal(data?.objective || 'awareness')),
+            optimizationGoal: normalizeOptimizationGoal(data?.objective || 'awareness', data?.optimizationGoal),
             bidStrategy: String(data?.bidStrategy || 'LOWEST_COST_WITHOUT_CAP'),
             audience: {
                 ...(data?.audience && typeof data.audience === 'object' ? data.audience : {}),
@@ -1407,7 +1419,7 @@ const CampaignModal = ({
         creativeImage: null,
         creativeVideo: null,
         callToAction: campaign?.callToAction || 'LEARN_MORE',
-        optimizationGoal: campaign?.optimizationGoal || getDefaultOptimizationGoal(campaign?.objective || 'awareness'),
+        optimizationGoal: normalizeOptimizationGoal(campaign?.objective || 'awareness', campaign?.optimizationGoal),
         bidStrategy: campaign?.bidStrategy || 'LOWEST_COST_WITHOUT_CAP'
     });
 
