@@ -17,6 +17,11 @@ import "./ScheduleForm.css";
 import { downloadCsv } from "../../utils/csvExport";
 
 const BROADCAST_SCHEDULE_DRAFT_KEY = "broadcast:schedule-form:draft:v1";
+const DEFAULT_COUNTRY_CODE = String(
+  import.meta.env.VITE_WHATSAPP_DEFAULT_COUNTRY_CODE || "91",
+)
+  .replace(/\D/g, "")
+  .trim();
 const parseSuppressionListEntries = (input = "") =>
   String(input || "")
     .split(/[\n,]+/)
@@ -26,6 +31,17 @@ const isValidSuppressionPhone = (value = "") =>
   /^\+?[1-9]\d{7,14}$/.test(String(value || "").trim());
 const canUseSessionStorage = () =>
   typeof window !== "undefined" && typeof window.sessionStorage !== "undefined";
+const normalizePhoneForDisplay = (value = "") => {
+  const rawValue = String(value || "").trim();
+  const digits = rawValue.replace(/\D/g, "");
+
+  if (!digits) return "";
+  if (rawValue.startsWith("+")) return `+${digits}`;
+  if (digits.length === 10 && DEFAULT_COUNTRY_CODE) {
+    return `+${DEFAULT_COUNTRY_CODE}${digits}`;
+  }
+  return `+${digits}`;
+};
 
 const ScheduleForm = ({
   messageType,
@@ -687,8 +703,12 @@ const ScheduleForm = ({
           fullData.number ||
           "",
       ).trim();
-      if (!phone || phone === "-") return;
-      phoneCountMap.set(phone, (phoneCountMap.get(phone) || 0) + 1);
+      const normalizedPhone = normalizePhoneForDisplay(phone);
+      if (!normalizedPhone || normalizedPhone === "-") return;
+      phoneCountMap.set(
+        normalizedPhone,
+        (phoneCountMap.get(normalizedPhone) || 0) + 1,
+      );
     });
 
     const rows = (recipients || []).map((recipient, index) => {
@@ -702,7 +722,7 @@ const ScheduleForm = ({
           fullData.number ||
           "",
       ).trim();
-      const phone = normalizedPhone || "-";
+      const phone = normalizePhoneForDisplay(normalizedPhone) || "-";
       const name = raw.name || fullData.name || `Contact ${index + 1}`;
       const customFieldCount = Object.keys(fullData).filter(
         (key) =>
@@ -710,9 +730,9 @@ const ScheduleForm = ({
             String(key).toLowerCase(),
           ),
       ).length;
-      const isMissingPhone = !normalizedPhone || normalizedPhone === "-";
+      const isMissingPhone = !phone || phone === "-";
       const isDuplicatePhone =
-        !isMissingPhone && (phoneCountMap.get(normalizedPhone) || 0) > 1;
+        !isMissingPhone && (phoneCountMap.get(phone) || 0) > 1;
       const optInStatus = String(
         recipient?.whatsappOptInStatus ||
           raw.whatsappOptInStatus ||

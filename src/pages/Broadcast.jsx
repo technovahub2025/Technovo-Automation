@@ -47,6 +47,24 @@ import "./Broadcast.css";
 
 const normalizeText = (value = "") => String(value || "").trim();
 
+const DEFAULT_COUNTRY_CODE = String(
+  import.meta.env.VITE_WHATSAPP_DEFAULT_COUNTRY_CODE || "91",
+)
+  .replace(/\D/g, "")
+  .trim();
+
+const normalizePhoneForDelivery = (value = "") => {
+  const rawValue = String(value || "").trim();
+  const digits = rawValue.replace(/\D/g, "");
+
+  if (!digits) return "";
+  if (rawValue.startsWith("+")) return `+${digits}`;
+  if (digits.length === 10 && DEFAULT_COUNTRY_CODE) {
+    return `+${DEFAULT_COUNTRY_CODE}${digits}`;
+  }
+  return `+${digits}`;
+};
+
 const getCreatorDisplayLabel = (broadcast = {}) => {
   const createdBy = normalizeText(broadcast?.createdBy);
   if (createdBy) return createdBy;
@@ -1611,7 +1629,7 @@ const Broadcast = ({
     let duplicatePhoneCount = 0;
 
     const eligibleRecipients = processedRecipients.filter((recipient) => {
-      const phone = String(recipient?.phone || "").trim();
+      const phone = normalizePhoneForDelivery(recipient?.phone || "");
       if (!phone || phone === "-") {
         missingPhoneCount += 1;
         return false;
@@ -1816,6 +1834,7 @@ const Broadcast = ({
         raw?.whatsappNumber ||
         "",
     ).trim();
+    const normalizedPhone = normalizePhoneForDelivery(phone);
     const name = String(
       contact?.name ||
         raw?.name ||
@@ -1826,7 +1845,7 @@ const Broadcast = ({
     ).trim();
 
     return {
-      phone,
+      phone: normalizedPhone || phone,
       name,
       contactId: contactId || undefined,
       sourceType:
