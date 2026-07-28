@@ -58,11 +58,13 @@ const normalizePhoneForDelivery = (value = "") => {
   const digits = rawValue.replace(/\D/g, "");
 
   if (!digits) return "";
-  if (rawValue.startsWith("+")) return `+${digits}`;
-  if (digits.length === 10 && DEFAULT_COUNTRY_CODE) {
-    return `+${DEFAULT_COUNTRY_CODE}${digits}`;
+  if (digits.startsWith(DEFAULT_COUNTRY_CODE) && digits.length > 10) {
+    return digits;
   }
-  return `+${digits}`;
+  if (digits.length === 10 && DEFAULT_COUNTRY_CODE) {
+    return `${DEFAULT_COUNTRY_CODE}${digits}`;
+  }
+  return digits;
 };
 
 const getCreatorDisplayLabel = (broadcast = {}) => {
@@ -1010,7 +1012,8 @@ const Broadcast = ({
               normalizedRow.mobile ||
               normalizedRow.whatsappNumber,
           );
-          if (!phone) return null;
+          const normalizedPhone = normalizePhoneForDelivery(phone);
+          if (!normalizedPhone) return null;
 
           const fields = detectedFields.length
             ? detectedFields
@@ -1020,7 +1023,7 @@ const Broadcast = ({
             .map((field) => normalizeText(normalizedRow?.[field] || ""));
 
           return {
-            phone,
+            phone: normalizedPhone,
             variables,
             fullData: {
               ...normalizedRow,

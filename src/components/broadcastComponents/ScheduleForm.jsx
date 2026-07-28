@@ -36,11 +36,13 @@ const normalizePhoneForDisplay = (value = "") => {
   const digits = rawValue.replace(/\D/g, "");
 
   if (!digits) return "";
-  if (rawValue.startsWith("+")) return `+${digits}`;
-  if (digits.length === 10 && DEFAULT_COUNTRY_CODE) {
-    return `+${DEFAULT_COUNTRY_CODE}${digits}`;
+  if (digits.startsWith(DEFAULT_COUNTRY_CODE) && digits.length > 10) {
+    return digits;
   }
-  return `+${digits}`;
+  if (digits.length === 10 && DEFAULT_COUNTRY_CODE) {
+    return `${DEFAULT_COUNTRY_CODE}${digits}`;
+  }
+  return digits;
 };
 
 const ScheduleForm = ({
