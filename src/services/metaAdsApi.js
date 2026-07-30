@@ -2,7 +2,7 @@ import axios from "axios";
 import { normalizeApiBaseUrl, resolveApiBaseUrl } from "./apiBaseUrl";
 
 const APP_API_BASE_URL = resolveApiBaseUrl();
-const META_API_BASE_URL = "https://nexion-broadcast-backend-t4u8.onrender.com/";
+const META_API_BASE_URL = "https://nexion-broadcast-backend-1-hekx.onrender.com/";
 const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
 const normalizedMetaBaseUrl = normalizeApiBaseUrl(META_API_BASE_URL);
 const META_API_RUNTIME_BASE_KEY = "meta_api_runtime_base_url";
