@@ -1,17 +1,7 @@
-const toCleanString = (value) => String(value || "").trim();
-
-const normalizeAdminApiUrl = (value) => toCleanString(value).replace(/\/+$/, "");
+const HARD_CODED_ADMIN_API_URL = "https://nexion-admin-node-backend-cc5a.onrender.com";
 
 export const resolveAdminApiUrl = () => {
-  const envUrl = normalizeAdminApiUrl(
-    import.meta.env.VITE_ADMIN_API_URL ||
-      import.meta.env.VITE_ADMIN_BACKEND_URL ||
-      import.meta.env.VITE_ADMIN_BASE_URL ||
-      import.meta.env.VITE_API_URL ||
-      ""
-  );
-
-  return envUrl;
+  return HARD_CODED_ADMIN_API_URL;
 };
 
 export default resolveAdminApiUrl;
