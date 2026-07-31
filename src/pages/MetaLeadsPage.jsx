@@ -19,6 +19,7 @@ const formatLeadCreatedTime = (value) => {
 };
 
 const formatBooleanLabel = (value) => (value ? "Yes" : "No");
+const normalizeCampaignLabel = (value) => String(value || "").trim();
 
 const MetaLeadsPage = () => {
   const { user } = useContext(AuthContext);
@@ -28,6 +29,7 @@ const MetaLeadsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [selectedCampaignName, setSelectedCampaignName] = useState("");
 
   const requestParams = useMemo(() => {
     const search = new URLSearchParams(location.search || "");
@@ -102,7 +104,28 @@ const MetaLeadsPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestParams.userId, requestParams.formId]);
 
-  const leadCount = leads.length;
+  const campaignOptions = useMemo(() => {
+    const campaigns = new Map();
+    leads.forEach((lead) => {
+      const campaignName = normalizeCampaignLabel(lead?.campaign_name || lead?.campaignName);
+      if (!campaignName) return;
+      const key = campaignName.toLowerCase();
+      if (!campaigns.has(key)) {
+        campaigns.set(key, campaignName);
+      }
+    });
+    return Array.from(campaigns.values()).sort((left, right) => left.localeCompare(right));
+  }, [leads]);
+
+  const visibleLeads = useMemo(() => {
+    if (!selectedCampaignName) return leads;
+    return leads.filter((lead) => {
+      const campaignName = normalizeCampaignLabel(lead?.campaign_name || lead?.campaignName);
+      return campaignName === selectedCampaignName;
+    });
+  }, [leads, selectedCampaignName]);
+
+  const leadCount = visibleLeads.length;
 
   return (
     <div className="meta-leads-page">
@@ -125,9 +148,24 @@ const MetaLeadsPage = () => {
 
           <div className="meta-leads-topbar__right">
             <div className="meta-leads-count">
-              <span>Total leads</span>
+              <span>Visible leads</span>
               <strong>{leadCount}</strong>
+              <small>{leads.length ? `${leads.length} total` : "No results"}</small>
             </div>
+            <label className="meta-leads-filter">
+              <span>Campaign</span>
+              <select
+                value={selectedCampaignName}
+                onChange={(event) => setSelectedCampaignName(event.target.value)}
+              >
+                <option value="">All campaigns</option>
+                {campaignOptions.map((campaignName) => (
+                  <option key={campaignName} value={campaignName}>
+                    {campaignName}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               type="button"
               className="meta-leads-refresh-btn"
@@ -161,7 +199,7 @@ const MetaLeadsPage = () => {
 
           {loading ? (
             <div className="meta-leads-empty">Loading leads...</div>
-          ) : leadCount === 0 ? (
+          ) : visibleLeads.length === 0 ? (
             <div className="meta-leads-empty">No leads found.</div>
           ) : (
             <div className="meta-leads-table-wrap">
@@ -169,6 +207,7 @@ const MetaLeadsPage = () => {
                 <thead>
                   <tr>
                     <th>Name</th>
+                    <th>Campaign</th>
                     <th>Phone Number</th>
                     <th>Email</th>
                     <th>Phone Verified</th>
@@ -176,11 +215,12 @@ const MetaLeadsPage = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {leads.map((lead, index) => {
+                  {visibleLeads.map((lead, index) => {
                     const key = String(lead?.leadId || lead?.id || `${index}`).trim() || `${index}`;
                     return (
                       <tr key={key}>
                         <td>{lead?.fullName || "--"}</td>
+                        <td>{lead?.campaign_name || lead?.campaignName || "--"}</td>
                         <td>{lead?.phoneNumber || "--"}</td>
                         <td>{lead?.email || "--"}</td>
                         <td>{formatBooleanLabel(lead?.phoneVerified)}</td>
