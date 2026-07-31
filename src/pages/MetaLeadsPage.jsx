@@ -152,20 +152,7 @@ const MetaLeadsPage = () => {
               <strong>{leadCount}</strong>
               <small>{leads.length ? `${leads.length} total` : "No results"}</small>
             </div>
-            <label className="meta-leads-filter">
-              <span>Campaign</span>
-              <select
-                value={selectedCampaignName}
-                onChange={(event) => setSelectedCampaignName(event.target.value)}
-              >
-                <option value="">All campaigns</option>
-                {campaignOptions.map((campaignName) => (
-                  <option key={campaignName} value={campaignName}>
-                    {campaignName}
-                  </option>
-                ))}
-              </select>
-            </label>
+           
             <button
               type="button"
               className="meta-leads-refresh-btn"
@@ -207,7 +194,7 @@ const MetaLeadsPage = () => {
                 <thead>
                   <tr>
                     <th>Name</th>
-                    <th>Campaign</th>
+                   
                     <th>Phone Number</th>
                     <th>Email</th>
                     <th>Phone Verified</th>
