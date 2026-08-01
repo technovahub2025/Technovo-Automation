@@ -1563,120 +1563,107 @@ const CampaignModal = ({
                                 <div className="campaign-preview-panel__header">
                                     <div>
                                         <p className="campaign-preview-eyebrow">Preview</p>
-                                        <h3>Review before creating</h3>
-                                        <p>This is the campaign that will be created after confirmation.</p>
+                                        <h3>Live campaign run view</h3>
+                                        <p>This shows how the campaign will look once it starts running.</p>
                                     </div>
                                     <div className="campaign-preview-status">
                                         <span>Mode</span>
-                                        <strong>Preview</strong>
+                                        <strong>Running Preview</strong>
                                     </div>
                                 </div>
 
-                                <div className="campaign-preview-grid">
-                                    <div className="campaign-preview-item">
-                                        <span>Name</span>
-                                        <strong>{previewSnapshot?.name || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Platform</span>
-                                        <strong>{previewSnapshot?.platform || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Objective</span>
-                                        <strong>{previewSnapshot?.objective || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Ad Account</span>
-                                        <strong>{previewSnapshot?.adAccountLabel || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Status</span>
-                                        <strong>{previewSnapshot?.status || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Budget Type</span>
-                                        <strong>{previewSnapshot?.budgetType || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Daily Budget</span>
-                                        <strong>{previewSnapshot?.dailyBudget || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Lifetime Budget</span>
-                                        <strong>{previewSnapshot?.lifetimeBudget || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Start Date</span>
-                                        <strong>{previewSnapshot?.startDate || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>End Date</span>
-                                        <strong>{previewSnapshot?.endDate || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Targeting</span>
-                                        <strong>{previewSnapshot?.targeting || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Age Range</span>
-                                        <strong>{previewSnapshot ? `${previewSnapshot.ageMin} to ${previewSnapshot.ageMax}` : '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Gender</span>
-                                        <strong>{previewSnapshot?.gender || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Interests</span>
-                                        <strong>{previewSnapshot?.interests || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Behaviors</span>
-                                        <strong>{previewSnapshot?.behaviors || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>CTA</span>
-                                        <strong>{previewSnapshot?.callToAction || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Optimization Goal</span>
-                                        <strong>{previewSnapshot?.optimizationGoal || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Bid Strategy</span>
-                                        <strong>{previewSnapshot?.bidStrategy || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Media Type</span>
-                                        <strong>{previewSnapshot?.mediaType || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Image URL</span>
-                                        <strong>{previewSnapshot?.imageUrl || '--'}</strong>
-                                    </div>
-                                    <div className="campaign-preview-item">
-                                        <span>Video URL</span>
-                                        <strong>{previewSnapshot?.videoUrl || '--'}</strong>
-                                    </div>
-                                </div>
+                                <div className="campaign-run-layout">
+                                    <div className="campaign-run-view">
+                                        <div className="campaign-run-view__top">
+                                            <div>
+                                                <span className="campaign-run-badge">Live ad preview</span>
+                                                <h4>{previewSnapshot?.headline || previewSnapshot?.name || 'Campaign headline'}</h4>
+                                                <p>{previewSnapshot?.primaryText || 'Your primary campaign text will appear here.'}</p>
+                                            </div>
+                                            <div className="campaign-run-platforms">
+                                                <span>{previewSnapshot?.platform || 'both'}</span>
+                                                <span>{previewSnapshot?.status || 'draft'}</span>
+                                            </div>
+                                        </div>
 
-                                <div className="campaign-preview-message">
-                                    <span>Primary Text</span>
-                                    <p>{previewSnapshot?.primaryText || '--'}</p>
-                                </div>
+                                        <div className="campaign-run-media">
+                                            <div className="campaign-run-media__overlay">
+                                                <span>{previewSnapshot?.mediaType === 'video' ? 'Video creative' : 'Image creative'}</span>
+                                                <strong>{previewSnapshot?.name || 'Untitled Campaign'}</strong>
+                                                <p>{previewSnapshot?.destinationUrl || 'Destination URL will be shown here.'}</p>
+                                            </div>
+                                            <div className="campaign-run-media__foot">
+                                                <span>{previewSnapshot?.imageUrl ? 'Image attached' : 'No image selected'}</span>
+                                                <span>{previewSnapshot?.videoUrl ? 'Video attached' : 'No video selected'}</span>
+                                            </div>
+                                        </div>
 
-                                <div className="campaign-preview-message">
-                                    <span>Headline</span>
-                                    <p>{previewSnapshot?.headline || '--'}</p>
-                                </div>
+                                        <div className="campaign-run-copy">
+                                            <div>
+                                                <span>Primary text</span>
+                                                <p>{previewSnapshot?.primaryText || '--'}</p>
+                                            </div>
+                                            <div>
+                                                <span>Description</span>
+                                                <p>{previewSnapshot?.description || 'No description'}</p>
+                                            </div>
+                                        </div>
 
-                                <div className="campaign-preview-message">
-                                    <span>Description</span>
-                                    <p>{previewSnapshot?.description || 'No description'}</p>
-                                </div>
+                                        <div className="campaign-run-cta">
+                                            <button type="button">{previewSnapshot?.callToAction || 'LEARN_MORE'}</button>
+                                        </div>
+                                    </div>
 
-                                <div className="campaign-preview-message">
-                                    <span>Destination URL</span>
-                                    <p>{previewSnapshot?.destinationUrl || '--'}</p>
+                                    <div className="campaign-run-sidebar">
+                                        <div className="campaign-preview-item">
+                                            <span>Name</span>
+                                            <strong>{previewSnapshot?.name || '--'}</strong>
+                                        </div>
+                                        <div className="campaign-preview-item">
+                                            <span>Objective</span>
+                                            <strong>{previewSnapshot?.objective || '--'}</strong>
+                                        </div>
+                                        <div className="campaign-preview-item">
+                                            <span>Ad Account</span>
+                                            <strong>{previewSnapshot?.adAccountLabel || '--'}</strong>
+                                        </div>
+                                        <div className="campaign-preview-item">
+                                            <span>Budget Type</span>
+                                            <strong>{previewSnapshot?.budgetType || '--'}</strong>
+                                        </div>
+                                        <div className="campaign-preview-item">
+                                            <span>Daily Budget</span>
+                                            <strong>{previewSnapshot?.dailyBudget || '--'}</strong>
+                                        </div>
+                                        <div className="campaign-preview-item">
+                                            <span>Lifetime Budget</span>
+                                            <strong>{previewSnapshot?.lifetimeBudget || '--'}</strong>
+                                        </div>
+                                        <div className="campaign-preview-item">
+                                            <span>Schedule</span>
+                                            <strong>{previewSnapshot?.startDate || '--'}{previewSnapshot?.endDate ? ` to ${previewSnapshot.endDate}` : ''}</strong>
+                                        </div>
+                                        <div className="campaign-preview-item">
+                                            <span>Audience</span>
+                                            <strong>{previewSnapshot ? `${previewSnapshot.ageMin}-${previewSnapshot.ageMax}, ${previewSnapshot.gender}` : '--'}</strong>
+                                        </div>
+                                        <div className="campaign-preview-item">
+                                            <span>Targeting</span>
+                                            <strong>{previewSnapshot?.targeting || '--'}</strong>
+                                        </div>
+                                        <div className="campaign-preview-item">
+                                            <span>Optimization Goal</span>
+                                            <strong>{previewSnapshot?.optimizationGoal || '--'}</strong>
+                                        </div>
+                                        <div className="campaign-preview-item">
+                                            <span>Bid Strategy</span>
+                                            <strong>{previewSnapshot?.bidStrategy || '--'}</strong>
+                                        </div>
+                                        <div className="campaign-preview-item">
+                                            <span>CTA</span>
+                                            <strong>{previewSnapshot?.callToAction || '--'}</strong>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
                         ) : activeTab === 'basic' && (
