@@ -863,6 +863,26 @@
   .meta-wizard-backdrop {
     padding: 16px;
   }
+
+  .meta-preview-backdrop {
+    padding: 16px;
+  }
+
+  .meta-preview-panel {
+    padding: 18px;
+  }
+
+  .meta-preview-head {
+    flex-direction: column;
+  }
+
+  .meta-preview-frame-shell {
+    min-height: 520px;
+  }
+
+  .meta-preview-meta {
+    grid-template-columns: 1fr;
+  }
 }
 
 .meta-alert {
