@@ -408,6 +408,12 @@ const areEqual = (prevProps, nextProps) => {
     prev.startedAt === next.startedAt &&
     prev.createdAt === next.createdAt &&
     prev.recipientCount === next.recipientCount &&
+    Number(prev?.successfulPercentage || 0) ===
+      Number(next?.successfulPercentage || 0) &&
+    Number(prev?.readPercentage || 0) === Number(next?.readPercentage || 0) &&
+    Number(prev?.repliedPercentage || 0) ===
+      Number(next?.repliedPercentage || 0) &&
+    Number(prev?.successful || 0) === Number(next?.successful || 0) &&
     prevStats.sent === nextStats.sent &&
     prevStats.delivered === nextStats.delivered &&
     prevStats.read === nextStats.read &&
