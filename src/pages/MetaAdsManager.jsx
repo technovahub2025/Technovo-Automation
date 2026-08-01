@@ -43,6 +43,12 @@ const ctaOptions = [
   { value: "APPLY_NOW", label: "Apply Now" },
 ];
 
+const adPreviewPlacements = [
+  { key: "facebook_feed", label: "Facebook Feed" },
+  { key: "instagram_feed", label: "Instagram Feed" },
+  { key: "story", label: "Story" },
+];
+
 const defaultForm = {
   campaignName: "",
   objective: "OUTCOME_LEADS",
@@ -208,6 +214,11 @@ const MetaAdsManager = () => {
   const [deletingCampaignId, setDeletingCampaignId] = useState("");
   const [creativeFile, setCreativeFile] = useState(null);
   const [previewUrl, setPreviewUrl] = useState("");
+  const [adPreview, setAdPreview] = useState(null);
+  const [adPreviewLoading, setAdPreviewLoading] = useState(false);
+  const [adPreviewError, setAdPreviewError] = useState("");
+  const [selectedAdPreviewPlacement, setSelectedAdPreviewPlacement] = useState("facebook_feed");
+  const [previewAdId, setPreviewAdId] = useState("");
   const [form, setForm] = useState(defaultForm);
   const [metaCampaigns, setMetaCampaigns] = useState([]);
   const [adSets, setAdSets] = useState([]);
@@ -415,6 +426,46 @@ const MetaAdsManager = () => {
     setPreviewUrl(nextPreview);
     return () => URL.revokeObjectURL(nextPreview);
   }, [creativeFile, form.creative.mediaUrl]);
+
+  const closeAdPreview = () => {
+    setAdPreview(null);
+    setAdPreviewError("");
+    setSelectedAdPreviewPlacement("facebook_feed");
+    setPreviewAdId("");
+  };
+
+  const openAdPreview = async (ad) => {
+    const adId = String(ad?.id || ad?.ad_id || ad?.metaAdId || "").trim();
+    if (!adId) {
+      setAdPreviewError("This ad does not have a Meta Ad ID yet.");
+      return;
+    }
+
+    try {
+      setAdPreviewLoading(true);
+      setAdPreviewError("");
+      setPreviewAdId(adId);
+      const response = await metaAdsService.getAdPreviews(adId);
+      const previews = Array.isArray(response?.previews) ? response.previews : [];
+
+      if (!previews.length) {
+        throw new Error("Meta did not return any ad previews for this ad.");
+      }
+
+      setAdPreview({
+        adId,
+        adName: ad?.name || ad?.campaignName || "Ad",
+        previews,
+      });
+      setSelectedAdPreviewPlacement(previews[0]?.key || "facebook_feed");
+    } catch (requestError) {
+      setAdPreview(null);
+      setAdPreviewError(requestError?.response?.data?.error || requestError.message || "Failed to load ad preview.");
+    } finally {
+      setAdPreviewLoading(false);
+      setPreviewAdId("");
+    }
+  };
 
   const refreshAll = async () => Promise.all([loadOverview(), loadCampaigns()]);
   const updateField = (key, value) => setForm((current) => ({ ...current, [key]: value }));
@@ -793,7 +844,10 @@ const MetaAdsManager = () => {
               <div className="meta-hierarchy-grid">
                 <div className="meta-hierarchy-column"><div className="meta-hierarchy-head"><strong>Campaigns</strong><span>{metaCampaigns.length}</span></div><div className="meta-hierarchy-list">{hierarchyLoading ? <div className="meta-empty-inline">Loading campaigns...</div> : metaCampaigns.map((campaign, index) => { const ref = campaign.localCampaignId || campaign.id; return <button key={buildListKey("campaign", ref, campaign.name || campaign.campaignName, index)} type="button" className={`meta-hierarchy-item ${selectedCampaignRef === ref ? "active" : ""}`} onClick={() => setSelectedCampaignRef(ref)}><strong>{campaign.name || campaign.campaignName}</strong><span>{campaign.objective || "--"}</span><small>{campaign.status || campaign.effective_status || "--"}</small></button>; })}</div></div>
                 <div className="meta-hierarchy-column"><div className="meta-hierarchy-head"><strong>Ad Sets</strong><span>{adSets.length}</span></div><div className="meta-hierarchy-list">{adSetsLoading ? <div className="meta-empty-inline">Loading ad sets...</div> : adSets.map((adSet, index) => <button key={buildListKey("adset", adSet.id, adSet.name, index)} type="button" className={`meta-hierarchy-item ${selectedAdSetId === adSet.id ? "active" : ""}`} onClick={() => setSelectedAdSetId(adSet.id)}><strong>{adSet.name || "Ad Set"}</strong><span>{adSet.optimization_goal || "--"}</span><small>{adSet.status || adSet.effective_status || "--"}</small></button>)}</div></div>
-                <div className="meta-hierarchy-column"><div className="meta-hierarchy-head"><strong>Ads</strong><span>{ads.length}</span></div><div className="meta-hierarchy-list">{adsLoading ? <div className="meta-empty-inline">Loading ads...</div> : ads.map((ad, index) => <div key={buildListKey("ad", ad.id, ad.name, index)} className="meta-hierarchy-item static"><strong>{ad.name || "Ad"}</strong><span>{ad.creative?.name || ad.creativeId || "Creative linked"}</span><small>{ad.status || ad.effective_status || "--"}</small></div>)}</div></div>
+                <div className="meta-hierarchy-column"><div className="meta-hierarchy-head"><strong>Ads</strong><span>{ads.length}</span></div><div className="meta-hierarchy-list">{adsLoading ? <div className="meta-empty-inline">Loading ads...</div> : ads.map((ad, index) => {
+                  const adId = String(ad.id || ad.ad_id || ad.metaAdId || "").trim();
+                  return <div key={buildListKey("ad", adId, ad.name, index)} className="meta-hierarchy-item static"><div><strong>{ad.name || "Ad"}</strong><span>{ad.creative?.name || ad.creativeId || "Creative linked"}</span><small>{ad.status || ad.effective_status || "--"}</small></div><div className="meta-inline-actions"><button type="button" className="meta-button meta-button-secondary small" disabled={!adId || adPreviewLoading} onClick={() => openAdPreview(ad)}>{adPreviewLoading && previewAdId === adId ? <RefreshCw className="spin" size={14} /> : "Preview"}</button></div></div>;
+                })}</div></div>
               </div>
             </article>
 

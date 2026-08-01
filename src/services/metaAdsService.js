@@ -217,6 +217,13 @@ export const metaAdsService = {
     return response.data;
   },
 
+  async getAdPreviews(adId, placements = []) {
+    const response = await metaApi.get(`/meta-ads/ads/${encodeURIComponent(adId)}/previews`, {
+      params: placements.length ? { placements: placements.join(",") } : {},
+    });
+    return response.data;
+  },
+
   async syncAllCampaigns() {
     const response = await metaApi.post("/meta-ads/campaigns/sync-all");
     return response.data;
