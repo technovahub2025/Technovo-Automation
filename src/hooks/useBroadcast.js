@@ -226,6 +226,22 @@ const sanitizeBroadcastForCache = (broadcast = {}) => ({
           failed: Number(broadcast.stats.failed || 0) || 0,
         }
       : {},
+  successful: Number(broadcast?.successful || 0) || 0,
+  successfulPercentage:
+    Number.isFinite(Number(broadcast?.successfulPercentage)) &&
+    Number(broadcast.successfulPercentage) >= 0
+      ? Number(broadcast.successfulPercentage)
+      : 0,
+  readPercentage:
+    Number.isFinite(Number(broadcast?.readPercentage)) &&
+    Number(broadcast.readPercentage) >= 0
+      ? Number(broadcast.readPercentage)
+      : 0,
+  repliedPercentage:
+    Number.isFinite(Number(broadcast?.repliedPercentage)) &&
+    Number(broadcast.repliedPercentage) >= 0
+      ? Number(broadcast.repliedPercentage)
+      : 0,
   ...sanitizeBroadcastPolicySummary(broadcast),
   recipients: Array.isArray(broadcast?.recipients)
     ? broadcast.recipients
@@ -924,6 +940,10 @@ export const useBroadcast = () => {
   };
 
   const getSuccessPercentage = (broadcast) => {
+    const precomputed = Number(broadcast?.successfulPercentage);
+    if (Number.isFinite(precomputed) && precomputed >= 0) {
+      return Math.round(precomputed);
+    }
     const totalRecipients =
       broadcast.recipientCount || broadcast.recipients?.length || 0;
     const deliveredRaw = toNonNegative(broadcast.stats?.delivered);
@@ -942,6 +962,10 @@ export const useBroadcast = () => {
   };
 
   const getReadPercentage = (broadcast) => {
+    const precomputed = Number(broadcast?.readPercentage);
+    if (Number.isFinite(precomputed) && precomputed >= 0) {
+      return Math.round(precomputed);
+    }
     const read = toNonNegative(broadcast.stats?.read);
     const totalRecipients =
       broadcast.recipientCount || broadcast.recipients?.length || 0;
@@ -960,6 +984,10 @@ export const useBroadcast = () => {
   };
 
   const getRepliedPercentage = (broadcast) => {
+    const precomputed = Number(broadcast?.repliedPercentage);
+    if (Number.isFinite(precomputed) && precomputed >= 0) {
+      return Math.round(precomputed);
+    }
     const replied = toNonNegative(broadcast.stats?.replied);
     const totalRecipients =
       broadcast.recipientCount || broadcast.recipients?.length || 0;
