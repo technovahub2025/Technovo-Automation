@@ -20,6 +20,8 @@ const CampaignCreationForm = ({ onSuccess, onCancel }) => {
   const [contactFile, setContactFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [validationErrors, setValidationErrors] = useState({});
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewSnapshot, setPreviewSnapshot] = useState(null);
 
   /**
    * Handle form field changes
@@ -109,19 +111,39 @@ const CampaignCreationForm = ({ onSuccess, onCancel }) => {
   }, [formData, contactFile]);
 
   /**
-   * Handle form submission
+   * Get all voice options
    */
-  const handleSubmit = useCallback(async (e) => {
-    e.preventDefault();
+  const allVoiceOptions = [
+    ...VOICE_OPTIONS.TAMIL.map(v => ({ ...v, category: 'Tamil' })),
+    ...VOICE_OPTIONS.BRITISH_ENGLISH.map(v => ({ ...v, category: 'British English' })),
+  ];
 
-    if (!validateForm()) {
-      return;
-    }
+  const selectedVoice = allVoiceOptions.find((voice) => voice.value === formData.voiceId);
 
+  const formatScheduledAt = (value) => {
+    if (!value) return 'Not scheduled';
+    const date = value instanceof Date ? value : new Date(value);
+    if (Number.isNaN(date.getTime())) return 'Not scheduled';
+    return date.toLocaleString();
+  };
+
+  const buildPreviewSnapshot = useCallback(() => ({
+    name: formData.name.trim(),
+    description: formData.description.trim(),
+    voiceLabel: selectedVoice ? `${selectedVoice.category} - ${selectedVoice.label}` : formData.voiceId,
+    message: formData.message.trim(),
+    maxConcurrentCalls: formData.maxConcurrentCalls,
+    retryAttempts: formData.retryAttempts,
+    retryDelay: formData.retryDelay,
+    scheduledAt: formData.scheduledAt,
+    contactFileName: contactFile?.name || '',
+    contactCountEstimate: null,
+  }), [formData, selectedVoice, contactFile]);
+
+  const runCreateCampaign = useCallback(async () => {
     try {
       setUploadProgress({ stage: 'creating', progress: 0 });
 
-      // Create campaign
       const campaign = await createCampaign({
         ...formData,
         status: 'draft',
@@ -129,10 +151,11 @@ const CampaignCreationForm = ({ onSuccess, onCancel }) => {
 
       setUploadProgress({ stage: 'uploading', progress: 30 });
 
-      // Upload contacts
       const uploadResult = await uploadContacts(campaign._id, contactFile, Papa);
 
       setUploadProgress({ stage: 'complete', progress: 100 });
+      setShowPreview(false);
+      setPreviewSnapshot(null);
 
       if (onSuccess) {
         onSuccess({
@@ -144,15 +167,30 @@ const CampaignCreationForm = ({ onSuccess, onCancel }) => {
       setUploadProgress(null);
       console.error('Campaign creation error:', err);
     }
-  }, [formData, contactFile, validateForm, createCampaign, uploadContacts, onSuccess]);
+  }, [formData, contactFile, createCampaign, uploadContacts, onSuccess]);
 
   /**
-   * Get all voice options
+   * Handle form submission
    */
-  const allVoiceOptions = [
-    ...VOICE_OPTIONS.TAMIL.map(v => ({ ...v, category: 'Tamil' })),
-    ...VOICE_OPTIONS.BRITISH_ENGLISH.map(v => ({ ...v, category: 'British English' })),
-  ];
+  const handleSubmit = useCallback(async (e) => {
+    e.preventDefault();
+
+    if (uploadProgress !== null) {
+      return;
+    }
+
+    if (showPreview) {
+      await runCreateCampaign();
+      return;
+    }
+
+    if (!validateForm()) {
+      return;
+    }
+
+    setPreviewSnapshot(buildPreviewSnapshot());
+    setShowPreview(true);
+  }, [uploadProgress, showPreview, validateForm, buildPreviewSnapshot, runCreateCampaign]);
 
   return (
     <div className="campaign-creation-form">
@@ -404,10 +442,90 @@ const CampaignCreationForm = ({ onSuccess, onCancel }) => {
             className="btn btn-primary"
             disabled={loading || uploadProgress !== null}
           >
-            {loading ? 'Creating...' : 'Create Campaign'}
+            {loading
+              ? 'Creating...'
+              : showPreview
+                ? 'Confirm & Create'
+                : 'Preview Campaign'}
           </button>
         </div>
       </form>
+
+      {showPreview && previewSnapshot && (
+        <div className="campaign-preview-modal" role="dialog" aria-modal="true" aria-label="Campaign preview">
+          <div className="campaign-preview-card">
+            <div className="campaign-preview-header">
+              <div>
+                <p className="campaign-preview-eyebrow">Preview</p>
+                <h3>Review before creating</h3>
+                <p className="helper-text">This is the campaign that will be created after confirmation.</p>
+              </div>
+            </div>
+
+            <div className="campaign-preview-grid">
+              <div className="campaign-preview-item">
+                <span>Name</span>
+                <strong>{previewSnapshot.name || '--'}</strong>
+              </div>
+              <div className="campaign-preview-item">
+                <span>Description</span>
+                <strong>{previewSnapshot.description || 'No description'}</strong>
+              </div>
+              <div className="campaign-preview-item">
+                <span>Voice</span>
+                <strong>{previewSnapshot.voiceLabel}</strong>
+              </div>
+              <div className="campaign-preview-item">
+                <span>Concurrent calls</span>
+                <strong>{previewSnapshot.maxConcurrentCalls}</strong>
+              </div>
+              <div className="campaign-preview-item">
+                <span>Retry attempts</span>
+                <strong>{previewSnapshot.retryAttempts}</strong>
+              </div>
+              <div className="campaign-preview-item">
+                <span>Retry delay</span>
+                <strong>{previewSnapshot.retryDelay} seconds</strong>
+              </div>
+              <div className="campaign-preview-item">
+                <span>Schedule</span>
+                <strong>{formatScheduledAt(previewSnapshot.scheduledAt)}</strong>
+              </div>
+              <div className="campaign-preview-item">
+                <span>CSV file</span>
+                <strong>{previewSnapshot.contactFileName || '--'}</strong>
+              </div>
+            </div>
+
+            <div className="campaign-preview-message">
+              <span>Message</span>
+              <p>{previewSnapshot.message || '--'}</p>
+            </div>
+
+            <div className="form-actions">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => {
+                  setShowPreview(false);
+                  setPreviewSnapshot(null);
+                }}
+                disabled={loading || uploadProgress !== null}
+              >
+                Back to Edit
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={runCreateCampaign}
+                disabled={loading || uploadProgress !== null}
+              >
+                {uploadProgress ? 'Creating...' : 'Confirm & Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
