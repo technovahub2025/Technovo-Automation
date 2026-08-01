@@ -1424,6 +1424,8 @@ const CampaignModal = ({
     });
 
     const [activeTab, setActiveTab] = useState('basic');
+    const [showPreview, setShowPreview] = useState(false);
+    const [previewSnapshot, setPreviewSnapshot] = useState(null);
     const tabSteps = [
         { key: 'basic', label: 'Basic Info', step: 1 },
         { key: 'budget', label: 'Budget & Schedule', step: 2 },
@@ -1434,8 +1436,62 @@ const CampaignModal = ({
     const isFirstTab = activeTabIndex <= 0;
     const isLastTab = activeTabIndex === tabSteps.length - 1;
 
+    const buildPreviewSnapshot = useCallback(() => ({
+        name: String(formData.name || '').trim() || (mode === 'create' ? 'Untitled Campaign' : ''),
+        platform: formData.platform || 'both',
+        objective: formData.objective || 'awareness',
+        adAccountLabel:
+            adAccounts.find((account) => String(account.id) === String(formData.adAccountId))?.name ||
+            formData.adAccountId ||
+            'Not selected',
+        status: formData.status || 'draft',
+        budgetType: formData.budgetType || 'daily',
+        dailyBudget: formData.dailyBudget || '',
+        lifetimeBudget: formData.lifetimeBudget || '',
+        startDate: formData.startDate || getTodayDateValue(),
+        endDate: formData.endDate || '',
+        targeting: formData.targeting || '',
+        ageMin: formData.ageMin || 18,
+        ageMax: formData.ageMax || 65,
+        gender: formData.gender || 'all',
+        interests: formData.interests || '',
+        behaviors: formData.behaviors || '',
+        primaryText: formData.primaryText || '',
+        headline: formData.headline || '',
+        description: formData.description || '',
+        destinationUrl: formData.destinationUrl || '',
+        imageUrl: formData.imageUrl || '',
+        videoUrl: formData.videoUrl || '',
+        mediaType: formData.mediaType || (formData.videoUrl ? 'video' : 'image'),
+        callToAction: formData.callToAction || 'LEARN_MORE',
+        optimizationGoal: formData.optimizationGoal || getDefaultOptimizationGoal(formData.objective || 'awareness'),
+        bidStrategy: formData.bidStrategy || 'LOWEST_COST_WITHOUT_CAP',
+    }), [adAccounts, formData, mode]);
+
+    const handleClosePreview = useCallback(() => {
+        setShowPreview(false);
+        setPreviewSnapshot(null);
+    }, []);
+
+    const handleConfirmCreate = useCallback(() => {
+        onSave({
+            ...formData,
+            name: String(formData.name || '').trim() || (mode === 'create' ? 'Untitled Campaign' : ''),
+            startDate: formData.startDate || getTodayDateValue(),
+            platform: formData.platform || 'both',
+            objective: formData.objective || 'awareness',
+            status: formData.status || 'draft'
+        });
+    }, [formData, mode, onSave]);
+
     const handleSubmit = (e) => {
         e.preventDefault();
+
+        if (mode === 'create' && showPreview) {
+            handleConfirmCreate();
+            return;
+        }
+
         if (!isLastTab) {
             const nextTab = tabSteps[activeTabIndex + 1];
             if (nextTab) {
@@ -1443,6 +1499,13 @@ const CampaignModal = ({
             }
             return;
         }
+
+        if (mode === 'create') {
+            setPreviewSnapshot(buildPreviewSnapshot());
+            setShowPreview(true);
+            return;
+        }
+
         onSave({
             ...formData,
             name: String(formData.name || '').trim() || (mode === 'create' ? 'Untitled Campaign' : ''),
@@ -1495,7 +1558,128 @@ const CampaignModal = ({
 
                 <form onSubmit={handleSubmit}>
                     <div className="campaign-create-content">
-                        {activeTab === 'basic' && (
+                        {showPreview && mode === 'create' ? (
+                            <div className="campaign-preview-panel">
+                                <div className="campaign-preview-panel__header">
+                                    <div>
+                                        <p className="campaign-preview-eyebrow">Preview</p>
+                                        <h3>Review before creating</h3>
+                                        <p>This is the campaign that will be created after confirmation.</p>
+                                    </div>
+                                    <div className="campaign-preview-status">
+                                        <span>Mode</span>
+                                        <strong>Preview</strong>
+                                    </div>
+                                </div>
+
+                                <div className="campaign-preview-grid">
+                                    <div className="campaign-preview-item">
+                                        <span>Name</span>
+                                        <strong>{previewSnapshot?.name || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Platform</span>
+                                        <strong>{previewSnapshot?.platform || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Objective</span>
+                                        <strong>{previewSnapshot?.objective || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Ad Account</span>
+                                        <strong>{previewSnapshot?.adAccountLabel || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Status</span>
+                                        <strong>{previewSnapshot?.status || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Budget Type</span>
+                                        <strong>{previewSnapshot?.budgetType || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Daily Budget</span>
+                                        <strong>{previewSnapshot?.dailyBudget || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Lifetime Budget</span>
+                                        <strong>{previewSnapshot?.lifetimeBudget || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Start Date</span>
+                                        <strong>{previewSnapshot?.startDate || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>End Date</span>
+                                        <strong>{previewSnapshot?.endDate || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Targeting</span>
+                                        <strong>{previewSnapshot?.targeting || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Age Range</span>
+                                        <strong>{previewSnapshot ? `${previewSnapshot.ageMin} to ${previewSnapshot.ageMax}` : '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Gender</span>
+                                        <strong>{previewSnapshot?.gender || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Interests</span>
+                                        <strong>{previewSnapshot?.interests || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Behaviors</span>
+                                        <strong>{previewSnapshot?.behaviors || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>CTA</span>
+                                        <strong>{previewSnapshot?.callToAction || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Optimization Goal</span>
+                                        <strong>{previewSnapshot?.optimizationGoal || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Bid Strategy</span>
+                                        <strong>{previewSnapshot?.bidStrategy || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Media Type</span>
+                                        <strong>{previewSnapshot?.mediaType || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Image URL</span>
+                                        <strong>{previewSnapshot?.imageUrl || '--'}</strong>
+                                    </div>
+                                    <div className="campaign-preview-item">
+                                        <span>Video URL</span>
+                                        <strong>{previewSnapshot?.videoUrl || '--'}</strong>
+                                    </div>
+                                </div>
+
+                                <div className="campaign-preview-message">
+                                    <span>Primary Text</span>
+                                    <p>{previewSnapshot?.primaryText || '--'}</p>
+                                </div>
+
+                                <div className="campaign-preview-message">
+                                    <span>Headline</span>
+                                    <p>{previewSnapshot?.headline || '--'}</p>
+                                </div>
+
+                                <div className="campaign-preview-message">
+                                    <span>Description</span>
+                                    <p>{previewSnapshot?.description || 'No description'}</p>
+                                </div>
+
+                                <div className="campaign-preview-message">
+                                    <span>Destination URL</span>
+                                    <p>{previewSnapshot?.destinationUrl || '--'}</p>
+                                </div>
+                            </div>
+                        ) : activeTab === 'basic' && (
                             <div className="tab-panel basic-tab-panel">
                                 <section className="basic-panel-section">
                                     <div className="form-group">
@@ -1926,17 +2110,26 @@ const CampaignModal = ({
                         <button type="button" className="btn btn-secondary campaign-create-cancel" onClick={onClose}>
                             Cancel
                         </button>
-                        {!isFirstTab ? (
+                        {showPreview && mode === 'create' ? (
+                            <button type="button" className="btn btn-secondary campaign-create-cancel" onClick={handleClosePreview}>
+                                Back to Edit
+                            </button>
+                        ) : !isFirstTab ? (
                             <button type="button" className="btn btn-secondary campaign-create-cancel" onClick={handlePreviousTab}>
                                 Back
                             </button>
                         ) : null}
-                        {isLastTab ? (
+                        {showPreview && mode === 'create' ? (
+                            <button type="button" className="btn btn-primary campaign-create-submit" onClick={handleConfirmCreate} disabled={submitting}>
+                                <Save size={16} />
+                                {submitting ? 'Creating...' : 'Confirm & Create'}
+                            </button>
+                        ) : isLastTab ? (
                             <button type="submit" className="btn btn-primary campaign-create-submit" disabled={submitting}>
                                 <Save size={16} />
                                 {submitting
                                     ? (mode === 'create' ? 'Creating...' : 'Saving...')
-                                    : (mode === 'create' ? 'Create Campaign' : 'Save Changes')}
+                                    : (mode === 'create' ? 'Preview Campaign' : 'Save Changes')}
                             </button>
                         ) : (
                             <button type="button" className="btn btn-primary campaign-create-submit" onClick={handleNextTab}>
