@@ -5,6 +5,49 @@ import { AuthContext } from "./authcontext";
 import metaAdsService from "../services/metaAdsService";
 import "./MetaLeadsPage.css";
 
+const SAMPLE_LEADS = [
+  {
+    leadId: "sample-1",
+    fullName: "Aarav Sharma",
+    phoneNumber: "+91 98765 43210",
+    email: "aarav.sharma@example.com",
+    phoneVerified: true,
+    createdTime: "2026-07-31T09:15:00.000Z",
+  },
+  {
+    leadId: "sample-2",
+    fullName: "Priya Mehta",
+    phoneNumber: "+91 91234 56789",
+    email: "priya.mehta@example.com",
+    phoneVerified: false,
+    createdTime: "2026-07-31T10:40:00.000Z",
+  },
+  {
+    leadId: "sample-3",
+    fullName: "Rahul Verma",
+    phoneNumber: "+91 99887 76655",
+    email: "rahul.verma@example.com",
+    phoneVerified: true,
+    createdTime: "2026-07-31T12:05:00.000Z",
+  },
+  {
+    leadId: "sample-4",
+    fullName: "Sneha Iyer",
+    phoneNumber: "+91 90123 45098",
+    email: "sneha.iyer@example.com",
+    phoneVerified: true,
+    createdTime: "2026-07-31T13:30:00.000Z",
+  },
+  {
+    leadId: "sample-5",
+    fullName: "Karan Patel",
+    phoneNumber: "+91 90909 80808",
+    email: "karan.patel@example.com",
+    phoneVerified: false,
+    createdTime: "2026-07-31T15:00:00.000Z",
+  },
+];
+
 const formatLeadCreatedTime = (value) => {
   if (!value) return "--";
   const date = new Date(value);
@@ -25,6 +68,7 @@ const MetaLeadsPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [leads, setLeads] = useState([]);
+  const [isSampleData, setIsSampleData] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -76,13 +120,21 @@ const MetaLeadsPage = () => {
       else setLoading(true);
 
       if (!requestParams.userId) {
-        setLeads([]);
+        setLeads(SAMPLE_LEADS);
+        setIsSampleData(true);
         setError("Unable to resolve the current user for Meta leads.");
         return;
       }
 
       const response = await metaAdsService.getMetaLeads(requestParams);
-      setLeads(Array.isArray(response?.leads) ? response.leads : []);
+      const receivedLeads = Array.isArray(response?.leads) ? response.leads : [];
+      if (receivedLeads.length > 0) {
+        setLeads(receivedLeads);
+        setIsSampleData(false);
+      } else {
+        setLeads(SAMPLE_LEADS);
+        setIsSampleData(true);
+      }
     } catch (requestError) {
       setError(
         requestError?.response?.data?.error ||
@@ -90,7 +142,8 @@ const MetaLeadsPage = () => {
           requestError.message ||
           "Failed to load leads."
       );
-      setLeads([]);
+      setLeads(SAMPLE_LEADS);
+      setIsSampleData(true);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -149,9 +202,15 @@ const MetaLeadsPage = () => {
             </div>
             <div className="meta-leads-card__meta">
               <span>Source</span>
-              <strong>Backend API</strong>
+              <strong>{isSampleData ? "Sample data" : "Backend API"}</strong>
             </div>
           </div>
+
+          {isSampleData ? (
+            <div className="meta-leads-sample-note">
+              Showing 5 dummy leads because no live Meta lead data is currently available.
+            </div>
+          ) : null}
 
           {error ? (
             <div className="meta-leads-alert">
