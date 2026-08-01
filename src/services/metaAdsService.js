@@ -229,10 +229,9 @@ export const metaAdsService = {
     return response.data;
   },
 
-  async getPageLeads(pageId, params = {}) {
+  async getPageLeads(_pageId, params = {}) {
     const response = await metaApi.get("/meta-ads/leads", {
       params: {
-        pageId,
         formId: params.formId || "",
         limit: params.limit || 25,
       },

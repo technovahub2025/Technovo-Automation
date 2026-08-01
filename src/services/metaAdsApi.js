@@ -122,11 +122,10 @@ export const previewMetaLeadConsent = async (leadId, params = {}) => {
   return response.data;
 };
 
-export const getMetaPageLeads = async (pageId, params = {}) => {
+export const getMetaPageLeads = async (_pageId, params = {}) => {
   metaApi.defaults.baseURL = resolveMetaApiBaseUrl();
   const response = await metaApi.get("/api/meta-ads/leads", {
     params: {
-      pageId,
       formId: params.formId || "",
       limit: params.limit || 25
     }
