@@ -61,9 +61,24 @@ const MetaLeadsPage = () => {
       ""
     ).trim();
 
+    const resolvedPageId = String(
+      search.get("pageId") ||
+      search.get("page_id") ||
+      user?.metaPageId ||
+      user?.metapageid ||
+      user?.selectedPageId ||
+      user?.pageId ||
+      storedUser?.metaPageId ||
+      storedUser?.metapageid ||
+      storedUser?.selectedPageId ||
+      storedUser?.pageId ||
+      ""
+    ).trim();
+
     const params = {
       userId: resolvedUserId,
-      formId: resolvedFormId
+      formId: resolvedFormId,
+      pageId: resolvedPageId
     };
 
     return Object.fromEntries(Object.entries(params).filter(([, value]) => Boolean(value)));
@@ -81,7 +96,7 @@ const MetaLeadsPage = () => {
         return;
       }
 
-      const response = await metaAdsService.getMetaLeads(requestParams);
+      const response = await metaAdsService.getPageLeads(requestParams.pageId || "", requestParams.formId ? { formId: requestParams.formId } : {});
       setLeads(Array.isArray(response?.leads) ? response.leads : []);
     } catch (requestError) {
       setError(
@@ -100,7 +115,7 @@ const MetaLeadsPage = () => {
   useEffect(() => {
     loadLeads();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [requestParams.userId, requestParams.formId]);
+  }, [requestParams.userId, requestParams.formId, requestParams.pageId]);
 
   const leadCount = leads.length;
 
