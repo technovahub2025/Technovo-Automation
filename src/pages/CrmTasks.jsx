@@ -33,7 +33,6 @@ import {
 import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
 import useCrmUserRoster from "../hooks/useCrmUserRoster";
 import { getStoredWorkspaceUser, resolveWorkspaceManagementAccessState } from "../utils/agentAccess";
-import apiService from "../services/api";
 import CrmContactDrawer from "../components/crm/CrmContactDrawer";
 import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
 import CrmToast from "../components/crm/CrmToast";
@@ -333,36 +332,22 @@ const CrmTasks = () => {
       return undefined;
     }
 
-    let active = true;
-    setTaskAdminAgentsLoading(true);
+    setTaskAdminAgentsLoading(Boolean(usersLoading));
     setTaskAdminAgentsError("");
 
-    apiService
-      .getMyAgents()
-      .then((result) => {
-        if (!active) return;
-        const nextAgents = Array.isArray(result?.data?.agents)
-          ? result.data.agents.filter((agent) => {
-              const role = String(agent?.companyRole || agent?.role || "").trim().toLowerCase();
-              return role !== "admin" && agent?.isEnabled !== false;
-            })
-          : [];
-        setTaskAdminAgents(nextAgents);
-      })
-      .catch((error) => {
-        if (!active) return;
-        setTaskAdminAgents([]);
-        setTaskAdminAgentsError(error?.message || "Failed to load workspace agents");
-      })
-      .finally(() => {
-        if (!active) return;
-        setTaskAdminAgentsLoading(false);
-      });
+    const nextAgents = Array.isArray(users)
+      ? users.filter((agent) => {
+          const role = String(agent?.companyRole || agent?.role || "").trim().toLowerCase();
+          return role !== "admin" && agent?.isEnabled !== false;
+        })
+      : [];
 
-    return () => {
-      active = false;
-    };
-  }, [isAdminWorkspace]);
+    setTaskAdminAgents(nextAgents);
+
+    if (!usersLoading && nextAgents.length === 0) {
+      setTaskAdminAgentsError("No active agents available.");
+    }
+  }, [isAdminWorkspace, users, usersLoading]);
 
   const [form, setForm] = useState(() => getInitialTaskForm(currentUserId));
   const isDefaultView =
