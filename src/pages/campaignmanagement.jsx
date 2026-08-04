@@ -446,7 +446,7 @@ const CampaignManagement = () => {
                 headers: getAuthHeaders(),
                 params: {
                     page: 1,
-                    limit: 1000,
+                    limit: 100,
                     platform: selectedPlatform !== 'all' ? selectedPlatform : undefined,
                     status: selectedStatus !== 'all' ? selectedStatus : undefined,
                     search: searchQuery || undefined,
