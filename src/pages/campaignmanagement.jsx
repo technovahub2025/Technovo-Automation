@@ -215,6 +215,7 @@ const CampaignManagement = () => {
     const [metaSetup, setMetaSetup] = useState(null);
     const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState('');
     const [campaignFlash, setCampaignFlash] = useState('');
+    const [campaignTotal, setCampaignTotal] = useState(0);
     const dateRangeLabels = {
         today: 'Today',
         yesterday: 'Yesterday',
@@ -433,6 +434,7 @@ const CampaignManagement = () => {
     const fetchCampaigns = useCallback(async () => {
         if (USE_MOCK) {
             setCampaigns(mockCampaigns);
+            setCampaignTotal(mockCampaigns.length);
             setLoading(false);
             return;
         }
@@ -443,6 +445,8 @@ const CampaignManagement = () => {
             const response = await api.get('/api/campaigns', {
                 headers: getAuthHeaders(),
                 params: {
+                    page: 1,
+                    limit: 1000,
                     platform: selectedPlatform !== 'all' ? selectedPlatform : undefined,
                     status: selectedStatus !== 'all' ? selectedStatus : undefined,
                     search: searchQuery || undefined,
@@ -452,10 +456,12 @@ const CampaignManagement = () => {
             });
             const data = response.data?.data || [];
             setCampaigns(data.map(normalizeCampaign));
+            setCampaignTotal(Number(response.data?.pagination?.total ?? response.data?.total ?? data.length) || 0);
         } catch (err) {
             console.error('Failed to load campaigns', err?.response?.data || err.message);
             setError(err?.response?.data?.message || 'Unable to load campaigns from server.');
             setCampaigns([]);
+            setCampaignTotal(0);
         } finally {
             setLoading(false);
         }
@@ -1302,7 +1308,7 @@ const CampaignManagement = () => {
                     {filteredCampaigns.length > 0 ? (
                         <div className="cm-pagination">
                             <div className="cm-pagination-text">
-                                Showing <span className="cm-pagination-strong">{showingStart}-{showingEnd}</span> of <span className="cm-pagination-strong">{filteredCampaigns.length}</span> campaigns
+                                Showing <span className="cm-pagination-strong">{showingStart}-{showingEnd}</span> of <span className="cm-pagination-strong">{campaignTotal || filteredCampaigns.length}</span> campaigns
                             </div>
                             <div className="cm-pagination-controls">
                                 <button
