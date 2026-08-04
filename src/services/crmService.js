@@ -279,28 +279,17 @@ const ensureCrmUserRosterSocketBinding = () => {
 };
 
 const fetchCrmUserRosterFallback = async () => {
-  const response = await axios.get(`${API_BASE_URL}/api/crm/ops/owner-dashboard`, {
+  const response = await axios.get(`${API_BASE_URL}/api/users`, {
     ...buildRequestConfig(false)
   });
 
-  const owners = Array.isArray(response?.data?.data?.owners)
-    ? response.data.data.owners
-    : Array.isArray(response?.data?.owners)
-      ? response.data.owners
+  const users = Array.isArray(response?.data?.data)
+    ? response.data.data
+    : Array.isArray(response?.data)
+      ? response.data
       : [];
 
-  return owners
-    .map((owner) =>
-      normalizeCrmUserRecord({
-        _id: owner?.ownerId,
-        id: owner?.ownerId,
-        userId: owner?.ownerId,
-        name: owner?.ownerName,
-        displayName: owner?.ownerName,
-        source: "owner-dashboard"
-      })
-    )
-    .filter(Boolean);
+  return normalizeCrmUserRosterList(users);
 };
 
 const enrichCrmUserRosterUsers = async (users = []) => {
@@ -1074,11 +1063,25 @@ export const crmService = {
 
   async getOwnerDashboard() {
     try {
-      const response = await axios.get(`${API_BASE_URL}/api/crm/ops/owner-dashboard`, {
+      const response = await axios.get(`${API_BASE_URL}/api/crm/reports/owner-performance`, {
         ...buildRequestConfig(false)
       });
       return response.data;
     } catch (error) {
+      if (error?.response?.status === 404) {
+        return {
+          success: true,
+          data: {
+            generatedAt: new Date().toISOString(),
+            summary: {
+              responseSlaBreaches: 0
+            },
+            owners: [],
+            fallback: true
+          },
+          fallback: true
+        };
+      }
       return withServiceError(error, "Failed to fetch CRM owner dashboard");
     }
   },
