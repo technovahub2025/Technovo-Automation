@@ -266,6 +266,7 @@ const CampaignManagement = () => {
             ctr: Number(getCampaignContractField(analytics, 'ctr', 'ctr', campaign?.ctr || 0) || 0),
             cpc: Number(getCampaignContractField(analytics, 'cpc', 'cpc', campaign?.cpc || 0) || 0),
             revenue: Number(getCampaignContractField(analytics, 'revenue', 'revenue', campaign?.revenue || 0) || 0),
+            roi: Number(getCampaignContractField(analytics, 'roi', 'roi', campaign?.roi || 0) || 0),
             conversions: campaign.conversions ?? campaign.leads ?? 0,
             ageMin: Number(getCampaignContractField(audience, 'ageMin', 'ageMin', campaign?.ageMin || 18) || 18),
             ageMax: Number(getCampaignContractField(audience, 'ageMax', 'ageMax', campaign?.ageMax || 65) || 65),
@@ -493,6 +494,27 @@ const CampaignManagement = () => {
 
     useEffect(() => {
         fetchCampaigns();
+    }, [fetchCampaigns]);
+
+    useEffect(() => {
+        const intervalId = window.setInterval(() => {
+            fetchCampaigns();
+        }, 30000);
+
+        const handleVisibilityRefresh = () => {
+            if (document.visibilityState === 'visible') {
+                fetchCampaigns();
+            }
+        };
+
+        window.addEventListener('focus', fetchCampaigns);
+        document.addEventListener('visibilitychange', handleVisibilityRefresh);
+
+        return () => {
+            window.clearInterval(intervalId);
+            window.removeEventListener('focus', fetchCampaigns);
+            document.removeEventListener('visibilitychange', handleVisibilityRefresh);
+        };
     }, [fetchCampaigns]);
 
     useEffect(() => {
@@ -1166,10 +1188,10 @@ const CampaignManagement = () => {
                                             <div className={`cm-list-metrics ${statusMeta.metricsClass}`}>
                                                 <div className="cm-metric"><span>Budget</span><strong>{getCampaignBudgetLabel(campaign)}</strong></div>
                                                 <div className="cm-metric"><span>Spend</span><strong>{formatCurrency(campaign.spent || 0)}</strong></div>
-                                                <div className="cm-metric"><span>ROAS</span><strong className={roas > 0 ? 'cm-metric-primary' : ''}>{formatRatio(roas, 1)}</strong></div>
-                                                <div className="cm-metric"><span>CTR</span><strong>{formatPercent(campaign.ctr || 0)}</strong></div>
-                                                <div className="cm-metric"><span>CPC</span><strong>{formatCurrency(campaign.cpc || 0, 2)}</strong></div>
-                                                <div className="cm-metric"><span>Conversions</span><strong>{Number(campaign.conversions ?? campaign.clicks ?? 0).toLocaleString()}</strong></div>
+                                <div className="cm-metric"><span>ROAS</span><strong className={roas > 0 ? 'cm-metric-primary' : ''}>{formatRatio(roas, 1)}</strong></div>
+                                <div className="cm-metric"><span>CTR</span><strong>{formatPercent(campaign.ctr || 0)}</strong></div>
+                                <div className="cm-metric"><span>CPC</span><strong>{formatCurrency(campaign.cpc || 0, 2)}</strong></div>
+                                <div className="cm-metric"><span>Conversions</span><strong>{Number(campaign.conversions ?? campaign.clicks ?? 0).toLocaleString()}</strong></div>
                                             </div>
                                         </div>
                                         <div className="cm-list-actions">
@@ -1284,7 +1306,7 @@ const CampaignManagement = () => {
                                                 </div>
                                                 <div>
                                                     <p className="cm-budget-label">Target ROI</p>
-                                                    <p className="cm-budget-value">{formatRatio(roas, 1)}</p>
+                                                    <p className="cm-budget-value">{formatPercent(campaign.roi || 0)}</p>
                                                 </div>
                                             </div>
                                             <div className={`cm-metrics-grid ${statusMeta.metricsClass}`}>
