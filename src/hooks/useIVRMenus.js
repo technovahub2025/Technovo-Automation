@@ -91,7 +91,7 @@ const useIVRMenus = () => {
     if (!socket) {
       if (!silent) setLoading(true);
       setError(null);
-      return apiService.getIVRMenus({ limit: 1000 })
+      return apiService.getIVRMenus({ limit: 100 })
         .then((response) => {
           if (requestSeq !== requestSeqRef.current) return [];
           const menus = normalizeIVRMenus(response.data);
@@ -122,7 +122,7 @@ const useIVRMenus = () => {
     return new Promise((resolve, reject) => {
       pendingListRequestRef.current = { resolve, reject };
       requestTimeoutRef.current = setTimeout(() => {
-        apiService.getIVRMenus({ limit: 1000 })
+        apiService.getIVRMenus({ limit: 100 })
           .then((response) => {
             const menus = normalizeIVRMenus(response.data);
             menusCountRef.current = menus.length;
