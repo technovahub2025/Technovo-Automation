@@ -1,5 +1,6 @@
 import axios from "axios";
 import { resolveApiBaseUrl } from "./apiBaseUrl";
+import resolveAdminApiUrl from "./adminApiUrl";
 import { handleUnauthorizedServiceError } from "./serviceAuth";
 import webSocketService from "./websocketService";
 import {
@@ -10,6 +11,7 @@ import {
 } from "../utils/agentAccess";
 
 const API_BASE_URL = resolveApiBaseUrl();
+const ADMIN_API_BASE_URL = String(resolveAdminApiUrl() || "").trim() || API_BASE_URL;
 const CRM_REQUEST_TIMEOUT_MS = Number(import.meta.env.VITE_CRM_REQUEST_TIMEOUT_MS || 15000);
 const CRM_USER_ROSTER_WAIT_MS = Number(import.meta.env.VITE_CRM_USER_ROSTER_WAIT_MS || 900);
 const PIPELINE_STAGES_AVAILABILITY_KEY = "crmPipelineStagesApiAvailable";
@@ -279,15 +281,19 @@ const ensureCrmUserRosterSocketBinding = () => {
 };
 
 const fetchCrmUserRosterFallback = async () => {
-  const response = await axios.get(`${API_BASE_URL}/api/users`, {
+  const response = await axios.get(`${ADMIN_API_BASE_URL}/api/admin/users`, {
     ...buildRequestConfig(false)
   });
 
-  const users = Array.isArray(response?.data?.data)
-    ? response.data.data
-    : Array.isArray(response?.data)
-      ? response.data
-      : [];
+  const users = Array.isArray(response?.data?.data?.users)
+    ? response.data.data.users
+    : Array.isArray(response?.data?.data)
+      ? response.data.data
+      : Array.isArray(response?.data?.users)
+        ? response.data.users
+        : Array.isArray(response?.data)
+          ? response.data
+          : [];
 
   return normalizeCrmUserRosterList(users);
 };
@@ -320,7 +326,7 @@ const enrichCrmUserRosterUsers = async (users = []) => {
       }
 
       try {
-        const profileResponse = await axios.get(`${API_BASE_URL}/api/users/${id}`, {
+        const profileResponse = await axios.get(`${ADMIN_API_BASE_URL}/api/admin/users/${id}`, {
           ...buildRequestConfig(false)
         });
         const profile = profileResponse?.data?.data || profileResponse?.data || {};
