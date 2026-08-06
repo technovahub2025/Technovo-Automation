@@ -216,6 +216,7 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
 
   const normalizeTemplateName = (value) =>
     String(value || '')
+      .trim()
       .toLowerCase()
       .replace(/\s+/g, '_')
       .replace(/[^a-z0-9_]/g, '')
@@ -223,7 +224,7 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
       .replace(/^_+|_+$/g, '');
 
   const handleInputChange = (field, value) => {
-    const normalizedValue = field === 'name' ? normalizeTemplateName(value) : value;
+    const normalizedValue = value;
     if (field.includes('.')) {
       const [parent, child] = field.split('.');
       setTemplateData(prev => ({
@@ -520,10 +521,12 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
     const vars = detectedVariables;
     const missingNumbers = getSequentialMissingNumbers(vars);
 
-    if (!templateData.name.trim()) {
+    const normalizedTemplateName = normalizeTemplateName(templateData.name);
+
+    if (!normalizedTemplateName) {
       errors.name = 'Template name is required.';
-    } else if (!/^[a-z0-9](?:[a-z0-9_]*[a-z0-9])?$/.test(templateData.name)) {
-      errors.name = 'Use lowercase letters, numbers, and underscores only, and do not start or end with underscore.';
+    } else if (!/^[a-z0-9](?:[a-z0-9_]*[a-z0-9])?$/.test(normalizedTemplateName)) {
+      errors.name = 'Template name can include spaces or underscores, but it will be normalized to lowercase and underscores for Meta.';
     }
     if (!templateData.category) {
       errors.category = 'Category is required.';
@@ -604,8 +607,9 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
       const sanitizedBody = preparedBody.text;
       const sanitizedHeaderText = prepareMetaTemplateText(templateData.content.header.text).text;
       const sanitizedFooter = prepareMetaTemplateText(templateData.content.footer).text;
+      const preparedTemplateName = normalizeTemplateName(templateData.name);
       const editorPayload = {
-        name: templateData.name,
+        name: preparedTemplateName,
         category: templateData.category,
         language: templateData.language,
         content: {
@@ -624,7 +628,7 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
 
       // Convert to Meta API format for consistency
       const metaFormatData = {
-        name: templateData.name,
+        name: preparedTemplateName,
         category: templateData.category.toUpperCase(),
         language: templateData.language,
         components: []
