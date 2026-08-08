@@ -198,6 +198,7 @@ const CampaignManagement = () => {
     const navigate = useNavigate();
     const [campaigns, setCampaigns] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [savingCampaign, setSavingCampaign] = useState(false);
     const [error, setError] = useState('');
     const [selectedPlatform, setSelectedPlatform] = useState('all');
     const [selectedStatus, setSelectedStatus] = useState('all');
@@ -564,11 +565,12 @@ const CampaignManagement = () => {
         if (USE_MOCK) {
             setCampaigns(prev => [...prev, { ...normalizeCampaign(campaignData), id: Date.now() }]);
             setShowCreateModal(false);
+            window.alert('Campaign successfully created.');
             return;
         }
 
         try {
-            setLoading(true);
+            setSavingCampaign(true);
             const payload = buildCampaignPayload({
                 ...campaignData,
                 adAccountId: campaignData?.adAccountId || metaSetup?.selectedAdAccountId || metaSetup?.adAccountId || ''
@@ -603,6 +605,7 @@ const CampaignManagement = () => {
             setCurrentPage(1);
             setCampaignFlash(response?.data?.message || 'Your ad has been created successfully.');
             setShowCreateModal(false);
+            window.alert('Campaign successfully created.');
             window.clearTimeout(window.__campaignFlashTimer);
             window.__campaignFlashTimer = window.setTimeout(() => {
                 setCampaignFlash('');
@@ -625,7 +628,7 @@ const CampaignManagement = () => {
                 (detailMessage ? `${stageMessage}${detailMessage}` : 'Create campaign failed.')
             );
         } finally {
-            setLoading(false);
+            setSavingCampaign(false);
         }
     };
 
@@ -644,7 +647,7 @@ const CampaignManagement = () => {
         }
 
         try {
-            setLoading(true);
+            setSavingCampaign(true);
             const publishSafeData = selectedCampaign?.metaCampaignId
                 ? {
                     name: campaignData?.name || selectedCampaign?.name || '',
@@ -671,7 +674,7 @@ const CampaignManagement = () => {
         } finally {
             setShowEditModal(false);
             setSelectedCampaign(null);
-            setLoading(false);
+            setSavingCampaign(false);
         }
     };
 
@@ -688,7 +691,7 @@ const CampaignManagement = () => {
         }
 
         try {
-            setLoading(true);
+            setSavingCampaign(true);
             await api.delete(`/api/campaigns/${campaignId}`, {
                 headers: getAuthHeaders(),
                 data: typeof campaign === 'object' ? {
@@ -702,7 +705,7 @@ const CampaignManagement = () => {
             console.error('Delete failed', err?.response?.data || err.message);
             setError(err?.response?.data?.message || 'Delete campaign failed.');
         } finally {
-            setLoading(false);
+            setSavingCampaign(false);
         }
     };
 
@@ -714,11 +717,14 @@ const CampaignManagement = () => {
             return;
         }
         try {
+            setSavingCampaign(true);
             await api.put(`/api/campaigns/${campaignId}/pause`, {}, { headers: getAuthHeaders() });
             await fetchCampaigns();
         } catch (err) {
             console.error('Pause failed', err?.response?.data || err.message);
             setError(err?.response?.data?.message || 'Pause campaign failed.');
+        } finally {
+            setSavingCampaign(false);
         }
     };
 
@@ -730,11 +736,14 @@ const CampaignManagement = () => {
             return;
         }
         try {
+            setSavingCampaign(true);
             await api.put(`/api/campaigns/${campaignId}/resume`, {}, { headers: getAuthHeaders() });
             await fetchCampaigns();
         } catch (err) {
             console.error('Resume failed', err?.response?.data || err.message);
             setError(err?.response?.data?.message || 'Resume campaign failed.');
+        } finally {
+            setSavingCampaign(false);
         }
     };
 
@@ -1365,7 +1374,7 @@ const CampaignManagement = () => {
                 <CampaignModal
                     onClose={() => setShowCreateModal(false)}
                     onSave={handleCreateCampaign}
-                    submitting={loading}
+                    submitting={savingCampaign}
                     mode="create"
                     adAccounts={metaSetup?.adAccounts || []}
                     selectedAdAccountId={metaSetup?.selectedAdAccountId || metaSetup?.adAccountId || ''}
@@ -1381,7 +1390,7 @@ const CampaignManagement = () => {
                         setSelectedCampaign(null);
                     }}
                     onSave={handleEditCampaign}
-                    submitting={loading}
+                    submitting={savingCampaign}
                     mode="edit"
                 />
             )}
