@@ -7,7 +7,35 @@ import {
   normalizeRoutingRules
 } from '../utils/inboundNormalizers';
 
-const normalizeAnalytics = (payload) => payload?.data || payload || null;
+const unwrapAnalyticsPayload = (payload) => {
+  let current = payload;
+  for (let depth = 0; depth < 5; depth += 1) {
+    if (!current || typeof current !== 'object' || Array.isArray(current)) {
+      break;
+    }
+
+    if (current.analytics && typeof current.analytics === 'object') {
+      current = current.analytics;
+      continue;
+    }
+
+    if (current.overview && typeof current.overview === 'object') {
+      current = current.overview;
+      continue;
+    }
+
+    if (current.data && typeof current.data === 'object' && !Array.isArray(current.data)) {
+      current = current.data;
+      continue;
+    }
+
+    break;
+  }
+
+  return current || null;
+};
+
+const normalizeAnalytics = (payload) => unwrapAnalyticsPayload(payload);
 
 const mergeQueueStatus = (previous, incoming) => {
   const normalized = normalizeQueueStatus(incoming);
@@ -32,7 +60,7 @@ const mergeQueueStatus = (previous, incoming) => {
 };
 
 const normalizeInboundSnapshot = (payload = {}) => ({
-  analytics: normalizeAnalytics(payload.overview || payload.analytics || null),
+  analytics: normalizeAnalytics(payload.overview || payload.analytics || payload.data || null),
   queueStatus: normalizeQueueStatus(payload.queues || payload.queueStatus || {}),
   routingRules: normalizeRoutingRules(payload.routingRules || []),
   leadsSummary: payload.leadsSummary || { contactsUsed: 0, total: 0 },
@@ -135,7 +163,7 @@ export const useInbound = (period = 'today') => {
       pendingSnapshotRef.current = false;
       if (!mountedRef.current || requestSeq !== requestSeqRef.current) return;
 
-      if (response?.success !== false && (response?.overview || response?.queues || response?.queueStatus)) {
+      if (response?.success !== false && (response?.overview || response?.analytics || response?.queues || response?.queueStatus)) {
         applySnapshot(response);
         setLoading(false);
         return;
@@ -159,8 +187,8 @@ export const useInbound = (period = 'today') => {
     };
 
     const handleCallUpdate = (payload = {}) => {
-      if (payload.overview) {
-        setAnalytics(normalizeAnalytics(payload.overview));
+      if (payload.overview || payload.analytics) {
+        setAnalytics(normalizeAnalytics(payload.overview || payload.analytics));
       } else if (payload.summary || payload.recentCalls) {
         setAnalytics((prev) => ({
           ...(prev || {}),

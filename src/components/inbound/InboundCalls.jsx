@@ -51,11 +51,11 @@ const formatDuration = (seconds) => {
 };
 
 const formatQueueName = (queueName) =>
-  queueName
+  String(queueName || 'General')
     .replace(/[_-]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .replace(/\b\w/g, (char) => char.toUpperCase()) || 'General';
 
 const formatRelativeTime = (dateValue) => {
   const timestamp = toTimestamp(dateValue);
