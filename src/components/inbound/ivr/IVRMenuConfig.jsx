@@ -1,7 +1,8 @@
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useMemo, useEffect, useRef, useContext } from 'react';
 import { ChevronDown, ChevronLeft, ChevronRight, Filter, Plus, Search } from 'lucide-react';
 import useIVRMenus from '../../../hooks/useIVRMenus';
 import apiService from '../../../services/api';
+import { AuthContext } from '../../../pages/authcontext';
 import IVRMenuCard from './IVRMenuCard';
 import './IVRMenuConfig.css';
 
@@ -27,6 +28,8 @@ const getMenuName = (menu) =>
 
 
 const IVRMenuConfig = () => {
+  const { user } = useContext(AuthContext);
+  const currentUserId = user?.id || user?._id || user?.userId || '';
   const {
     ivrMenus,
     createMenu,
@@ -34,7 +37,7 @@ const IVRMenuConfig = () => {
     deleteMenu,
     loading,
     setError,
-  } = useIVRMenus();
+  } = useIVRMenus({ currentUserId });
 
   const [newIvrName, setNewIvrName] = useState('');
   const [createModalOpen, setCreateModalOpen] = useState(false);

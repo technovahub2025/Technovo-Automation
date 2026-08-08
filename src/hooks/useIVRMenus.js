@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import socketService from '../services/socketService';
 import apiService from '../services/api';
-import { normalizeIVRMenus } from '../utils/inboundNormalizers';
+import { filterIVRMenusForUser } from '../utils/inboundNormalizers';
+import { resolveCacheUserId } from '../utils/sidebarPageCache';
 
 const IVR_MENU_SOCKET_TIMEOUT_MS = 5000;
 
@@ -58,7 +59,8 @@ const emitWithAck = (socket, eventName, payload) =>
     });
   });
 
-const useIVRMenus = () => {
+const useIVRMenus = ({ currentUserId } = {}) => {
+  const resolvedCurrentUserId = String(currentUserId || resolveCacheUserId()).trim();
   const [ivrMenus, setIvrMenus] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -67,6 +69,13 @@ const useIVRMenus = () => {
   const pendingListRequestRef = useRef(null);
   const menusCountRef = useRef(0);
   const requestSeqRef = useRef(0);
+  const currentUserIdRef = useRef(resolvedCurrentUserId);
+
+  useEffect(() => {
+    currentUserIdRef.current = resolvedCurrentUserId;
+    menusCountRef.current = 0;
+    setIvrMenus([]);
+  }, [resolvedCurrentUserId]);
 
   const clearRequestTimeout = useCallback(() => {
     if (requestTimeoutRef.current) {
@@ -83,18 +92,24 @@ const useIVRMenus = () => {
     pending[type](value);
   }, [clearRequestTimeout]);
 
+  const normalizeScopedMenus = useCallback((data, userId = currentUserIdRef.current) => {
+    return filterIVRMenusForUser(data, userId);
+  }, []);
+
   const requestMenus = useCallback((options = {}) => {
     const { silent = false } = options;
     const requestSeq = requestSeqRef.current + 1;
     requestSeqRef.current = requestSeq;
+    const requestUserId = currentUserIdRef.current;
     const socket = socketService.connect();
     if (!socket) {
       if (!silent) setLoading(true);
       setError(null);
-      return apiService.getIVRMenus({ limit: 100 })
+      return apiService.getIVRMenus({ limit: 100, userId: requestUserId, scope: 'user' })
         .then((response) => {
           if (requestSeq !== requestSeqRef.current) return [];
-          const menus = normalizeIVRMenus(response.data);
+          if (requestUserId !== currentUserIdRef.current) return [];
+          const menus = normalizeScopedMenus(response.data, requestUserId);
           menusCountRef.current = menus.length;
           setIvrMenus(menus);
           setLoading(false);
@@ -120,11 +135,15 @@ const useIVRMenus = () => {
     setError(null);
 
     return new Promise((resolve, reject) => {
-      pendingListRequestRef.current = { resolve, reject };
+      pendingListRequestRef.current = { resolve, reject, requestUserId };
       requestTimeoutRef.current = setTimeout(() => {
-        apiService.getIVRMenus({ limit: 100 })
+        apiService.getIVRMenus({ limit: 100, userId: requestUserId, scope: 'user' })
           .then((response) => {
-            const menus = normalizeIVRMenus(response.data);
+            if (requestUserId !== currentUserIdRef.current) {
+              settlePendingListRequest('resolve', []);
+              return;
+            }
+            const menus = normalizeScopedMenus(response.data, requestUserId);
             menusCountRef.current = menus.length;
             setIvrMenus(menus);
             setLoading(false);
@@ -139,14 +158,14 @@ const useIVRMenus = () => {
           });
       }, 8000);
 
-      const emitListRequest = () => socket.emit('ivr_menu:list');
+      const emitListRequest = () => socket.emit('ivr_menu:list', { userId: requestUserId, scope: 'user' });
       if (socket.connected || socketService.isConnected()) {
         emitListRequest();
       } else if (typeof socket.connect === 'function') {
         socket.connect();
       }
     });
-  }, [clearRequestTimeout, settlePendingListRequest]);
+  }, [clearRequestTimeout, normalizeScopedMenus, settlePendingListRequest]);
 
   useEffect(() => {
     const socket = socketService.connect();
@@ -154,7 +173,10 @@ const useIVRMenus = () => {
 
     const applyListPayload = (payload = {}) => {
       if (!isMounted) return;
-      const menus = normalizeIVRMenus(payload);
+      const responseUserId = String(payload?.userId || payload?.requestUserId || '').trim();
+      const activeUserId = currentUserIdRef.current;
+      if (responseUserId && activeUserId && responseUserId !== activeUserId) return;
+      const menus = normalizeScopedMenus(payload, activeUserId);
       clearRequestTimeout();
       menusCountRef.current = menus.length;
       setIvrMenus(menus);
@@ -176,7 +198,10 @@ const useIVRMenus = () => {
       if (!isMounted) return;
       setSocketConnected(true);
       if (pendingListRequestRef.current) {
-        socket.emit('ivr_menu:list');
+        socket.emit('ivr_menu:list', {
+          userId: pendingListRequestRef.current.requestUserId || currentUserIdRef.current,
+          scope: 'user'
+        });
       } else {
         requestMenus({ silent: menusCountRef.current > 0 }).catch(() => {});
       }
@@ -238,7 +263,7 @@ const useIVRMenus = () => {
       }
 
       if (response.snapshot) {
-        const menus = normalizeIVRMenus(response.snapshot);
+        const menus = normalizeScopedMenus(response.snapshot);
         menusCountRef.current = menus.length;
         setIvrMenus(menus);
       } else {
@@ -274,7 +299,7 @@ const useIVRMenus = () => {
       }
 
       if (response.snapshot) {
-        const menus = normalizeIVRMenus(response.snapshot);
+        const menus = normalizeScopedMenus(response.snapshot);
         menusCountRef.current = menus.length;
         setIvrMenus(menus);
       } else {
@@ -304,7 +329,7 @@ const useIVRMenus = () => {
         response = await apiService.deleteIVRConfig(menuId);
       }
       if (response.snapshot) {
-        const menus = normalizeIVRMenus(response.snapshot);
+        const menus = normalizeScopedMenus(response.snapshot);
         menusCountRef.current = menus.length;
         setIvrMenus(menus);
       } else {
@@ -322,7 +347,7 @@ const useIVRMenus = () => {
     } finally {
       setLoading(false);
     }
-  }, [ivrMenus.length]);
+  }, [ivrMenus.length, normalizeScopedMenus]);
 
   return {
     ivrMenus,

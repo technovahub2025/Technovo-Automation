@@ -7,6 +7,7 @@ import {
   resolveCacheUserId,
   writeSidebarPageCache,
 } from "../utils/sidebarPageCache";
+import { filterIVRMenusForUser } from "../utils/inboundNormalizers";
 import { downloadCsvAsync } from "../utils/csvExport";
 import {
   BROADCAST_CAMPAIGN_EXPORT_HEADERS,
@@ -1713,9 +1714,10 @@ export const useExotelOutbound = () => {
     setError("");
     try {
       const response = await apiService.getIVRMenus({ limit: 100 });
-      const list = Array.isArray(response?.data?.ivrMenus)
-        ? response.data.ivrMenus
-        : [];
+      const list = filterIVRMenusForUser(
+        response?.data?.ivrMenus || response?.data?.menus || response?.data || [],
+        currentUserId
+      );
       setWorkflows(list);
       return list;
     } catch (err) {

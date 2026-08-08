@@ -3,6 +3,16 @@ const toFiniteNumber = (value, fallback = 0) => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 
+const toCleanString = (value) => String(value || '').trim();
+
+const resolveUserRefId = (value) => {
+  if (!value) return '';
+  if (typeof value === 'object') {
+    return toCleanString(value._id || value.id || value.userId || value.createdBy || value.ownerId || value.parentUserId);
+  }
+  return toCleanString(value);
+};
+
 export const getStableId = (entity, fallback = '') =>
   String(
     entity?._id ||
@@ -120,6 +130,19 @@ export const normalizeIVRMenu = (menu = {}) => {
   };
 };
 
+export const resolveIVRMenuOwnerId = (menu = {}) =>
+  resolveUserRefId(
+    menu?.createdById ||
+    menu?.createdBy ||
+    menu?.ownerId ||
+    menu?.parentUserId ||
+    menu?.userId ||
+    menu?.workspaceUserId ||
+    menu?.metadata?.userId ||
+    menu?.metadata?.createdBy ||
+    menu?.metadata?.ownerId
+  );
+
 export const normalizeIVRMenus = (data) => {
   const raw = Array.isArray(data)
     ? data
@@ -134,6 +157,16 @@ export const normalizeIVRMenus = (data) => {
             : [];
 
   return raw.map(normalizeIVRMenu).filter((menu) => getStableId(menu));
+};
+
+export const filterIVRMenusForUser = (data, currentUserId = '') => {
+  const normalizedUserId = toCleanString(currentUserId);
+  if (!normalizedUserId) return [];
+
+  return normalizeIVRMenus(data).filter((menu) => {
+    const ownerId = resolveIVRMenuOwnerId(menu);
+    return Boolean(ownerId) && ownerId === normalizedUserId;
+  });
 };
 
 export const normalizeLead = (lead = {}) => ({

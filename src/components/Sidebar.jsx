@@ -235,12 +235,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         featureFlags.crmLeadScoringSettings ||
         featureFlags.crmTaskCalendar
     );
-    const canUseVoiceAutomation = isAdminWorkspaceUser || (!isAgentRestricted && Boolean(
-        featureFlags.voiceCampaign ||
-        featureFlags.inboundAutomation ||
-        featureFlags.outboundVoice ||
-        featureFlags.callAnalytics
-    ));
+    const canUseVoiceAutomation = isLoggedIn;
     const canUseMissedCalls = isAdminWorkspaceUser || (!isAgentRestricted && Boolean(featureFlags.missedCall));
     const canUseEmailAutomation = isAdminWorkspaceUser || (!isAgentRestricted && Boolean(featureFlags.workflowAutomation || featureFlags.analytics));
     const canUseCrmAutomation = isAdminWorkspaceUser || isAgentRestricted || Boolean(
@@ -1173,7 +1168,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         </div>
                     )} */}
 
-                    {!isAgentRestricted && canUseVoiceAutomation && (
+                    {canUseVoiceAutomation && (
                         <div
                             className={`icon-item ${isVoiceRouteActive ? 'active' : ''} ${openMenu === 'voice' ? 'expanded' : ''}`}
                             onMouseEnter={(e) => {
@@ -1644,16 +1639,14 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Inbound / IVR</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || featureFlags.outboundVoice) && (
-                                    <NavLink
-                                        to="/voice-automation/outbound"
-                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                        onClick={closeMobileMenusAfterNavigate}
-                                    >
-                                        <PhoneOutgoing size={20} />
-                                        <span>Outbound</span>
-                                    </NavLink>
-                                )}
+                                <NavLink
+                                    to="/voice-automation/outbound"
+                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                    onClick={closeMobileMenusAfterNavigate}
+                                >
+                                    <PhoneOutgoing size={20} />
+                                    <span>Outbound</span>
+                                </NavLink>
                                 {(isSuperAdmin || featureFlags.callAnalytics) && (
                                     <NavLink
                                         to="/voice-automation/history"
