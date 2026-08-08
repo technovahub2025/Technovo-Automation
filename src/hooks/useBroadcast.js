@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useContext } from "react";
 import { apiClient } from "../services/whatsappapi";
 import webSocketService from "../services/websocketService";
 import apiService from "../services/api";
+import { AuthContext } from "../pages/authcontext";
 import {
   readSidebarPageCache,
   resolveCacheUserId,
@@ -1517,6 +1518,9 @@ export const useBroadcast = () => {
 };
 
 export const useExotelOutbound = () => {
+  const { user } = useContext(AuthContext);
+  const currentUserId =
+    String(user?.id || user?._id || user?.userId || resolveCacheUserId() || "").trim();
   const [quickCallLoading, setQuickCallLoading] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [overviewLoading, setOverviewLoading] = useState(false);
@@ -1713,7 +1717,11 @@ export const useExotelOutbound = () => {
   const fetchWorkflows = useCallback(async () => {
     setError("");
     try {
-      const response = await apiService.getIVRMenus({ limit: 100, userId: currentUserId, scope: "user" });
+      const response = await apiService.getIVRMenus({
+        limit: 100,
+        userId: currentUserId,
+        scope: "user"
+      });
       const list = normalizeIVRMenus(response?.data?.ivrMenus || response?.data?.menus || response?.data || []);
       setWorkflows(list);
       return list;
