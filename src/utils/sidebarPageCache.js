@@ -55,7 +55,7 @@ export const resolveCacheUserId = () => {
   try {
     const storedUser = JSON.parse(window.localStorage.getItem('user') || 'null');
     const explicitUserId = toTrimmedString(
-      storedUser?.userId || storedUser?.id || storedUser?._id || window.localStorage.getItem('userId')
+      storedUser?.id || storedUser?._id || window.localStorage.getItem('userId')
     );
     return explicitUserId || 'anonymous';
   } catch {

@@ -1,16 +1,10 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import socketService from '../services/socketService';
 import apiService from '../services/api';
-import { filterIVRMenusForUser, normalizeIVRMenus } from '../utils/inboundNormalizers';
+import { normalizeIVRMenus } from '../utils/inboundNormalizers';
 import { resolveCacheUserId } from '../utils/sidebarPageCache';
 
 const IVR_MENU_SOCKET_TIMEOUT_MS = 5000;
-const DEBUG_IVR = String(import.meta.env.VITE_DEBUG_IVR || localStorage.getItem('debugIvr') || '').toLowerCase() === 'true' || localStorage.getItem('debugIvr') === '1';
-
-const debugLog = (...args) => {
-  if (!DEBUG_IVR) return;
-  console.debug('[IVR]', ...args);
-};
 
 const findMenuById = (menus, menuId) =>
   menus.find((menu) =>
@@ -81,9 +75,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
     currentUserIdRef.current = resolvedCurrentUserId;
     menusCountRef.current = 0;
     setIvrMenus([]);
-    debugLog('Resolved current user changed', {
-      resolvedCurrentUserId
-    });
   }, [resolvedCurrentUserId]);
 
   const clearRequestTimeout = useCallback(() => {
@@ -102,37 +93,7 @@ const useIVRMenus = ({ currentUserId } = {}) => {
   }, [clearRequestTimeout]);
 
   const normalizeScopedMenus = useCallback(
-    (data) => {
-      const userScopedMenus = filterIVRMenusForUser(data, currentUserIdRef.current);
-      if (userScopedMenus.length > 0) {
-        debugLog('Filtered IVR menus using owner fields', {
-          currentUserId: currentUserIdRef.current,
-          total: normalizeIVRMenus(data).length,
-          matched: userScopedMenus.length
-        });
-        return userScopedMenus;
-      }
-
-      const normalizedMenus = normalizeIVRMenus(data);
-      if (!currentUserIdRef.current) {
-        debugLog('No current user id available while normalizing IVR menus', {
-          total: normalizedMenus.length
-        });
-        return normalizedMenus;
-      }
-
-      const fallbackFilteredMenus = normalizedMenus.filter((menu) => {
-        const ownerId =
-          String(menu?.userId || menu?.createdById || menu?.metadata?.userId || '').trim();
-        return ownerId ? ownerId === currentUserIdRef.current : false;
-      });
-      debugLog('Fallback IVR filter applied', {
-        currentUserId: currentUserIdRef.current,
-        total: normalizedMenus.length,
-        matched: fallbackFilteredMenus.length
-      });
-      return fallbackFilteredMenus;
-    },
+    (data) => normalizeIVRMenus(data),
     []
   );
 
@@ -141,11 +102,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
     const requestSeq = requestSeqRef.current + 1;
     requestSeqRef.current = requestSeq;
     const requestUserId = currentUserIdRef.current;
-    debugLog('Requesting IVR menus', {
-      requestSeq,
-      requestUserId,
-      silent
-    });
     const socket = socketService.connect();
     if (!socket) {
       if (!silent) setLoading(true);
@@ -154,18 +110,9 @@ const useIVRMenus = ({ currentUserId } = {}) => {
         .then((response) => {
           if (requestSeq !== requestSeqRef.current) return [];
           if (requestUserId !== currentUserIdRef.current) return [];
-          debugLog('REST IVR menus response received', {
-            requestUserId,
-            keys: Object.keys(response?.data || {}),
-            totalRaw: normalizeIVRMenus(response.data).length
-          });
           const menus = normalizeScopedMenus(response.data);
           menusCountRef.current = menus.length;
           setIvrMenus(menus);
-          debugLog('REST IVR menus applied', {
-            requestUserId,
-            appliedCount: menus.length
-          });
           setLoading(false);
           return menus;
         })
@@ -197,18 +144,9 @@ const useIVRMenus = ({ currentUserId } = {}) => {
               settlePendingListRequest('resolve', []);
               return;
             }
-            debugLog('Socket fallback REST IVR menus response received', {
-              requestUserId,
-              keys: Object.keys(response?.data || {}),
-              totalRaw: normalizeIVRMenus(response.data).length
-            });
             const menus = normalizeScopedMenus(response.data);
             menusCountRef.current = menus.length;
             setIvrMenus(menus);
-            debugLog('Socket fallback IVR menus applied', {
-              requestUserId,
-              appliedCount: menus.length
-            });
             setLoading(false);
             setError(null);
             settlePendingListRequest('resolve', menus);
@@ -223,10 +161,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
 
       const emitListRequest = () => socket.emit('ivr_menu:list', { userId: requestUserId, scope: 'user' });
       if (socket.connected || socketService.isConnected()) {
-        debugLog('Emitting ivr_menu:list over socket', {
-          requestUserId,
-          connected: socket.connected || socketService.isConnected()
-        });
         emitListRequest();
       } else if (typeof socket.connect === 'function') {
         socket.connect();
@@ -243,19 +177,10 @@ const useIVRMenus = ({ currentUserId } = {}) => {
       const responseUserId = String(payload?.userId || payload?.requestUserId || '').trim();
       const activeUserId = currentUserIdRef.current;
       if (responseUserId && activeUserId && responseUserId !== activeUserId) return;
-      debugLog('Socket IVR list payload received', {
-        responseUserId,
-        activeUserId,
-        rawCount: normalizeIVRMenus(payload).length
-      });
       const menus = normalizeScopedMenus(payload);
       clearRequestTimeout();
       menusCountRef.current = menus.length;
       setIvrMenus(menus);
-      debugLog('Socket IVR menus applied', {
-        activeUserId,
-        appliedCount: menus.length
-      });
       setLoading(false);
       setError(null);
       settlePendingListRequest('resolve', menus);
@@ -273,10 +198,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
     const handleConnect = () => {
       if (!isMounted) return;
       setSocketConnected(true);
-      debugLog('Socket connected', {
-        currentUserId: currentUserIdRef.current,
-        hasPendingRequest: Boolean(pendingListRequestRef.current)
-      });
       if (pendingListRequestRef.current) {
         socket.emit('ivr_menu:list', {
           userId: pendingListRequestRef.current.requestUserId || currentUserIdRef.current,
@@ -290,9 +211,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
     const handleDisconnect = () => {
       if (!isMounted) return;
       setSocketConnected(false);
-      debugLog('Socket disconnected', {
-        currentUserId: currentUserIdRef.current
-      });
     };
 
     const handleMenuChanged = () => {
@@ -333,10 +251,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
     try {
       if (!hasExistingMenus) setLoading(true);
       setError(null);
-      debugLog('Creating IVR menu', {
-        currentUserId: currentUserIdRef.current,
-        menuName: menuData.promptKey || menuData.displayName || menuData.name
-      });
 
       const menuName = menuData.promptKey || menuData.displayName || menuData.name;
       if (!menuName) throw new Error('Menu name is required');
@@ -353,10 +267,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
         const menus = normalizeScopedMenus(response.snapshot);
         menusCountRef.current = menus.length;
         setIvrMenus(menus);
-        debugLog('Create snapshot applied', {
-          currentUserId: currentUserIdRef.current,
-          appliedCount: menus.length
-        });
       } else {
         await requestMenus({ silent: true }).catch(() => {});
       }
@@ -376,10 +286,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
     try {
       if (!hasExistingMenus) setLoading(true);
       setError(null);
-      debugLog('Updating IVR menu', {
-        currentUserId: currentUserIdRef.current,
-        menuId
-      });
 
       const existingMenu = findMenuById(ivrMenus, menuId);
       const menuName = existingMenu?._id || existingMenu?.promptKey || menuData?.promptKey || menuId;
@@ -397,10 +303,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
         const menus = normalizeScopedMenus(response.snapshot);
         menusCountRef.current = menus.length;
         setIvrMenus(menus);
-        debugLog('Update snapshot applied', {
-          currentUserId: currentUserIdRef.current,
-          appliedCount: menus.length
-        });
       } else {
         await requestMenus({ silent: true }).catch(() => {});
       }
@@ -420,10 +322,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
     try {
       if (!hasExistingMenus) setLoading(true);
       setError(null);
-      debugLog('Deleting IVR menu', {
-        currentUserId: currentUserIdRef.current,
-        menuId
-      });
 
       let response;
       try {
@@ -435,18 +333,10 @@ const useIVRMenus = ({ currentUserId } = {}) => {
         const menus = normalizeScopedMenus(response.snapshot);
         menusCountRef.current = menus.length;
         setIvrMenus(menus);
-        debugLog('Delete snapshot applied', {
-          currentUserId: currentUserIdRef.current,
-          appliedCount: menus.length
-        });
       } else {
         setIvrMenus((prev) => {
           const menus = prev.filter((menu) => String(menu._id) !== String(menuId) && String(menu.id) !== String(menuId));
           menusCountRef.current = menus.length;
-          debugLog('Delete fallback applied', {
-            currentUserId: currentUserIdRef.current,
-            appliedCount: menus.length
-          });
           return menus;
         });
       }

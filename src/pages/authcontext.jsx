@@ -6,12 +6,6 @@ import { buildAgentAccessPayload } from "../utils/agentAccess";
 import resolveAdminApiUrl from "../services/adminApiUrl";
 
 export const AuthContext = createContext();
-const DEBUG_AUTH = String(import.meta.env.VITE_DEBUG_IVR || localStorage.getItem('debugIvr') || '').toLowerCase() === 'true' || localStorage.getItem('debugIvr') === '1';
-
-const debugAuthLog = (...args) => {
-  if (!DEBUG_AUTH) return;
-  console.debug('[AUTH]', ...args);
-};
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(() => {
@@ -36,14 +30,6 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem("token", token); // Legacy key used in some modules
     localStorage.setItem("user", JSON.stringify(nextUser));
     if (provider) localStorage.setItem("authProvider", provider);
-    debugAuthLog('login()', {
-      provider,
-      id: nextUser.id,
-      userId: nextUser.userId,
-      username: nextUser.username,
-      role: nextUser.role,
-      companyRole: nextUser.companyRole
-    });
     setUser(nextUser);
   };
 
@@ -97,28 +83,12 @@ export const AuthProvider = ({ children }) => {
       });
       const data = res?.data?.data;
       if (data) {
-        const resolvedUserId =
-          data?.userId ||
-          data?.id ||
-          user?.userId ||
-          user?.id ||
-          user?._id ||
-          user?.userId ||
-          "";
         const nextUser = {
           ...(user || {}),
           ...data,
           ...buildAgentAccessPayload(data),
-          id: resolvedUserId,
-          userId: data?.userId || data?.id || user?.userId || resolvedUserId
+          id: data.userId || user?.id
         };
-        debugAuthLog('refreshFromBackend()', {
-          resolvedUserId,
-          payloadUserId: data?.userId,
-          payloadId: data?.id,
-          currentUserId: user?.id,
-          currentUserUserId: user?.userId
-        });
         login(nextUser, token, localStorage.getItem("authProvider") || "local");
         return { ok: true, message: "Session refreshed" };
       }

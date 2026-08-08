@@ -335,9 +335,16 @@ apiService.deleteCustomAudioByPublicId = (publicId) =>
   requestWithIvrFallback({ method: 'delete', path: '/audio/delete', data: { publicId } });
 
 // IVR Menu Management
-apiService.createIVRConfig = (menuName, config) => apiService.post('/inbound/ivr/configs', { menuName, config });
-apiService.getIVRConfigs = () => apiService.get('/inbound/ivr/configs');
-apiService.deleteIVRConfig = (menuId) => apiService.delete(`/inbound/ivr/configs/${menuId}`);
+apiService.createIVRConfig = (menuName, config) =>
+  requestWithIvrFallback({
+    method: 'post',
+    path: '/menus',
+    data: { menuName, config }
+  });
+apiService.getIVRConfigs = () =>
+  requestWithIvrFallback({ method: 'get', path: '/menus' });
+apiService.deleteIVRConfig = (menuId) =>
+  requestWithIvrFallback({ method: 'delete', path: `/menus/${menuId}` });
 apiService.getIVRMenus = (params = {}) =>
   requestWithIvrFallback({ method: 'get', path: '/menus', config: { params } });
 apiService.testIVRMenu = (menuId, phoneNumber) =>
