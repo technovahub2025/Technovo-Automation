@@ -18,6 +18,12 @@ import {
 const BROADCAST_PAGE_CACHE_NAMESPACE = "broadcast-page";
 const BROADCAST_PAGE_CACHE_TTL_MS = 10 * 60 * 1000;
 const BROADCAST_PAGE_LIMIT = 10;
+const DEBUG_IVR = String(import.meta.env.VITE_DEBUG_IVR || localStorage.getItem('debugIvr') || '').toLowerCase() === 'true' || localStorage.getItem('debugIvr') === '1';
+
+const debugIvrLog = (...args) => {
+  if (!DEBUG_IVR) return;
+  console.debug('[OUTBOUND-IVR]', ...args);
+};
 
 const normalizeBroadcastStatus = (broadcast = {}) => {
   const status = String(broadcast?.status || "").trim().toLowerCase();
@@ -1717,12 +1723,20 @@ export const useExotelOutbound = () => {
   const fetchWorkflows = useCallback(async () => {
     setError("");
     try {
+      debugIvrLog('fetchWorkflows()', {
+        currentUserId
+      });
       const response = await apiService.getIVRMenus({
         limit: 100,
         userId: currentUserId,
         scope: "user"
       });
       const raw = response?.data?.ivrMenus || response?.data?.menus || response?.data || [];
+      debugIvrLog('fetchWorkflows() response', {
+        currentUserId,
+        rawCount: normalizeIVRMenus(raw).length,
+        keys: Object.keys(response?.data || {})
+      });
       const scopedMenus = filterIVRMenusForUser(raw, currentUserId);
       const list = scopedMenus.length
         ? scopedMenus
@@ -1736,6 +1750,10 @@ export const useExotelOutbound = () => {
             return ownerId ? ownerId === currentUserId : false;
           });
       setWorkflows(list);
+      debugIvrLog('fetchWorkflows() applied', {
+        currentUserId,
+        appliedCount: list.length
+      });
       return list;
     } catch (err) {
       const message =
