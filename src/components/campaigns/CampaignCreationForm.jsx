@@ -20,8 +20,6 @@ const CampaignCreationForm = ({ onSuccess, onCancel }) => {
   const [contactFile, setContactFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(null);
   const [validationErrors, setValidationErrors] = useState({});
-  const [showPreview, setShowPreview] = useState(false);
-  const [previewSnapshot, setPreviewSnapshot] = useState(null);
 
   /**
    * Handle form field changes
@@ -127,19 +125,6 @@ const CampaignCreationForm = ({ onSuccess, onCancel }) => {
     return date.toLocaleString();
   };
 
-  const buildPreviewSnapshot = useCallback(() => ({
-    name: formData.name.trim(),
-    description: formData.description.trim(),
-    voiceLabel: selectedVoice ? `${selectedVoice.category} - ${selectedVoice.label}` : formData.voiceId,
-    message: formData.message.trim(),
-    maxConcurrentCalls: formData.maxConcurrentCalls,
-    retryAttempts: formData.retryAttempts,
-    retryDelay: formData.retryDelay,
-    scheduledAt: formData.scheduledAt,
-    contactFileName: contactFile?.name || '',
-    contactCountEstimate: null,
-  }), [formData, selectedVoice, contactFile]);
-
   const runCreateCampaign = useCallback(async () => {
     try {
       setUploadProgress({ stage: 'creating', progress: 0 });
@@ -154,8 +139,6 @@ const CampaignCreationForm = ({ onSuccess, onCancel }) => {
       const uploadResult = await uploadContacts(campaign._id, contactFile, Papa);
 
       setUploadProgress({ stage: 'complete', progress: 100 });
-      setShowPreview(false);
-      setPreviewSnapshot(null);
 
       if (onSuccess) {
         onSuccess({
@@ -179,18 +162,12 @@ const CampaignCreationForm = ({ onSuccess, onCancel }) => {
       return;
     }
 
-    if (showPreview) {
-      await runCreateCampaign();
-      return;
-    }
-
     if (!validateForm()) {
       return;
     }
 
-    setPreviewSnapshot(buildPreviewSnapshot());
-    setShowPreview(true);
-  }, [uploadProgress, showPreview, validateForm, buildPreviewSnapshot, runCreateCampaign]);
+    await runCreateCampaign();
+  }, [uploadProgress, validateForm, runCreateCampaign]);
 
   return (
     <div className="campaign-creation-form">
@@ -444,88 +421,10 @@ const CampaignCreationForm = ({ onSuccess, onCancel }) => {
           >
             {loading
               ? 'Creating...'
-              : showPreview
-                ? 'Confirm & Create'
-                : 'Preview Campaign'}
+              : 'Confirm & Create'}
           </button>
         </div>
       </form>
-
-      {showPreview && previewSnapshot && (
-        <div className="campaign-preview-modal" role="dialog" aria-modal="true" aria-label="Campaign preview">
-          <div className="campaign-preview-card">
-            <div className="campaign-preview-header">
-              <div>
-                <p className="campaign-preview-eyebrow">Preview</p>
-                <h3>Review before creating</h3>
-                <p className="helper-text">This is the campaign that will be created after confirmation.</p>
-              </div>
-            </div>
-
-            <div className="campaign-preview-grid">
-              <div className="campaign-preview-item">
-                <span>Name</span>
-                <strong>{previewSnapshot.name || '--'}</strong>
-              </div>
-              <div className="campaign-preview-item">
-                <span>Description</span>
-                <strong>{previewSnapshot.description || 'No description'}</strong>
-              </div>
-              <div className="campaign-preview-item">
-                <span>Voice</span>
-                <strong>{previewSnapshot.voiceLabel}</strong>
-              </div>
-              <div className="campaign-preview-item">
-                <span>Concurrent calls</span>
-                <strong>{previewSnapshot.maxConcurrentCalls}</strong>
-              </div>
-              <div className="campaign-preview-item">
-                <span>Retry attempts</span>
-                <strong>{previewSnapshot.retryAttempts}</strong>
-              </div>
-              <div className="campaign-preview-item">
-                <span>Retry delay</span>
-                <strong>{previewSnapshot.retryDelay} seconds</strong>
-              </div>
-              <div className="campaign-preview-item">
-                <span>Schedule</span>
-                <strong>{formatScheduledAt(previewSnapshot.scheduledAt)}</strong>
-              </div>
-              <div className="campaign-preview-item">
-                <span>CSV file</span>
-                <strong>{previewSnapshot.contactFileName || '--'}</strong>
-              </div>
-            </div>
-
-            <div className="campaign-preview-message">
-              <span>Message</span>
-              <p>{previewSnapshot.message || '--'}</p>
-            </div>
-
-            <div className="form-actions">
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => {
-                  setShowPreview(false);
-                  setPreviewSnapshot(null);
-                }}
-                disabled={loading || uploadProgress !== null}
-              >
-                Back to Edit
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={runCreateCampaign}
-                disabled={loading || uploadProgress !== null}
-              >
-                {uploadProgress ? 'Creating...' : 'Confirm & Create'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
