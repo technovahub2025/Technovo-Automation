@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import socketService from '../services/socketService';
 import apiService from '../services/api';
-import { filterIVRMenusForUser } from '../utils/inboundNormalizers';
+import { normalizeIVRMenus } from '../utils/inboundNormalizers';
 import { resolveCacheUserId } from '../utils/sidebarPageCache';
 
 const IVR_MENU_SOCKET_TIMEOUT_MS = 5000;
@@ -92,9 +92,7 @@ const useIVRMenus = ({ currentUserId } = {}) => {
     pending[type](value);
   }, [clearRequestTimeout]);
 
-  const normalizeScopedMenus = useCallback((data, userId = currentUserIdRef.current) => {
-    return filterIVRMenusForUser(data, userId);
-  }, []);
+  const normalizeScopedMenus = useCallback((data) => normalizeIVRMenus(data), []);
 
   const requestMenus = useCallback((options = {}) => {
     const { silent = false } = options;
@@ -109,7 +107,7 @@ const useIVRMenus = ({ currentUserId } = {}) => {
         .then((response) => {
           if (requestSeq !== requestSeqRef.current) return [];
           if (requestUserId !== currentUserIdRef.current) return [];
-          const menus = normalizeScopedMenus(response.data, requestUserId);
+          const menus = normalizeScopedMenus(response.data);
           menusCountRef.current = menus.length;
           setIvrMenus(menus);
           setLoading(false);
@@ -143,7 +141,7 @@ const useIVRMenus = ({ currentUserId } = {}) => {
               settlePendingListRequest('resolve', []);
               return;
             }
-            const menus = normalizeScopedMenus(response.data, requestUserId);
+            const menus = normalizeScopedMenus(response.data);
             menusCountRef.current = menus.length;
             setIvrMenus(menus);
             setLoading(false);
@@ -176,7 +174,7 @@ const useIVRMenus = ({ currentUserId } = {}) => {
       const responseUserId = String(payload?.userId || payload?.requestUserId || '').trim();
       const activeUserId = currentUserIdRef.current;
       if (responseUserId && activeUserId && responseUserId !== activeUserId) return;
-      const menus = normalizeScopedMenus(payload, activeUserId);
+      const menus = normalizeScopedMenus(payload);
       clearRequestTimeout();
       menusCountRef.current = menus.length;
       setIvrMenus(menus);
