@@ -1,12 +1,13 @@
-import React, { useState, useMemo } from 'react';
+import React, { Suspense, lazy, useState, useMemo } from 'react';
 import { Phone, Users, Clock, Headphones } from 'lucide-react';
 import './InboundCalls.css';
-import QueueMonitor from '../QueueMonitor';
-import IVRConfig from './ivr/IVRMenuConfig';
-import RoutingRules from '../RoutingRules';
-import LeadsPage from '../../pages/LeadsPage';
 import useSocket from '../../hooks/useSocket';
 import { useInbound } from '../../hooks/useInbound';
+
+const QueueMonitor = lazy(() => import('../QueueMonitor'));
+const IVRConfig = lazy(() => import('./ivr/IVRMenuConfig'));
+const RoutingRules = lazy(() => import('../RoutingRules'));
+const LeadsPage = lazy(() => import('../../pages/LeadsPage'));
 
 const ACTIVE_CALL_STATUSES = new Set(['initiated', 'ringing', 'in-progress']);
 const RECENT_CALLS_LIMIT = 100;
@@ -135,6 +136,19 @@ const InboundCalls = () => {
       .slice(0, RECENT_CALLS_LIMIT);
   }, [analytics]);
 
+  const renderLazyTab = (content) => (
+    <Suspense
+      fallback={
+        <div className="inbound-tab-loading">
+          <div className="loading-spinner"></div>
+          <p>Loading tab content...</p>
+        </div>
+      }
+    >
+      {content}
+    </Suspense>
+  );
+
   const renderOverview = () => (
     <div className="inbound-overview">
       <div className="stats-grid-inbound">
@@ -249,13 +263,15 @@ const InboundCalls = () => {
       case 'overview':
         return renderOverview();
       case 'queues':
-        return <QueueMonitor queues={queueStatus} analyticsQueueStats={analytics?.queue} loading={loading} />;
+        return renderLazyTab(
+          <QueueMonitor queues={queueStatus} analyticsQueueStats={analytics?.queue} loading={loading} />
+        );
       case 'ivr':
-        return <IVRConfig />;
+        return renderLazyTab(<IVRConfig />);
       case 'routing':
-        return <RoutingRules initialRules={routingRules} />;
+        return renderLazyTab(<RoutingRules initialRules={routingRules} />);
       case 'leads':
-        return <LeadsPage />;
+        return renderLazyTab(<LeadsPage />);
       default:
         return renderOverview();
     }
