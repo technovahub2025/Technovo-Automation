@@ -8,7 +8,17 @@ const toCleanString = (value) => String(value || '').trim();
 const resolveUserRefId = (value) => {
   if (!value) return '';
   if (typeof value === 'object') {
-    return toCleanString(value._id || value.id || value.userId || value.createdBy || value.ownerId || value.parentUserId);
+    const directValue =
+      value._id ||
+      value.id ||
+      value.userId ||
+      value.createdBy ||
+      value.ownerId ||
+      value.parentUserId;
+    const directString = toCleanString(directValue);
+    if (directString) return directString;
+    const stringified = toCleanString(typeof value.toString === 'function' ? value.toString() : '');
+    return stringified && stringified !== '[object Object]' ? stringified : '';
   }
   return toCleanString(value);
 };
@@ -134,11 +144,21 @@ export const resolveIVRMenuOwnerId = (menu = {}) =>
   resolveUserRefId(
     menu?.createdById ||
     menu?.createdBy ||
+    menu?.createdByUserId ||
+    menu?.creatorId ||
     menu?.ownerId ||
     menu?.parentUserId ||
     menu?.userId ||
     menu?.workspaceUserId ||
+    menu?.user?.id ||
+    menu?.user?._id ||
+    menu?.createdByUser?.id ||
+    menu?.createdByUser?._id ||
+    menu?.owner?.id ||
+    menu?.owner?._id ||
     menu?.metadata?.userId ||
+    menu?.metadata?.user?._id ||
+    menu?.metadata?.user?.id ||
     menu?.metadata?.createdBy ||
     menu?.metadata?.ownerId
   );

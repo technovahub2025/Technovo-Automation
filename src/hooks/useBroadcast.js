@@ -1713,7 +1713,7 @@ export const useExotelOutbound = () => {
   const fetchWorkflows = useCallback(async () => {
     setError("");
     try {
-      const response = await apiService.getIVRMenus({ limit: 100 });
+      const response = await apiService.getIVRMenus({ limit: 100, userId: currentUserId, scope: "user" });
       const list = filterIVRMenusForUser(
         response?.data?.ivrMenus || response?.data?.menus || response?.data || [],
         currentUserId

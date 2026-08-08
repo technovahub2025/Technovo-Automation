@@ -242,7 +242,7 @@ const useIVRMenus = ({ currentUserId } = {}) => {
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);
     };
-  }, [clearRequestTimeout, requestMenus, settlePendingListRequest]);
+  }, [clearRequestTimeout, requestMenus, resolvedCurrentUserId, settlePendingListRequest]);
 
   const createMenu = useCallback(async (menuData) => {
     const socket = socketService.connect();
