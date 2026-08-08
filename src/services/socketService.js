@@ -3,6 +3,8 @@ import { io } from 'socket.io-client';
 class SocketService {
   constructor() {
     this.socket = null;
+    this.activeToken = null;
+    this.activeUrl = null;
     this.isDev = import.meta.env.DEV;
     this.useCredentials = String(import.meta.env.VITE_SOCKET_WITH_CREDENTIALS || import.meta.env.VITE_API_WITH_CREDENTIALS || 'false').toLowerCase() === 'true';
     this.loggedConnectError = false;
@@ -24,6 +26,7 @@ class SocketService {
     const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
     const loginPath = `${normalizedBase}/login`;
     const registerPath = `${normalizedBase}/register`;
+    this.disconnect();
     localStorage.removeItem(tokenKey);
     localStorage.removeItem('authToken');
     localStorage.removeItem('token');
@@ -68,14 +71,40 @@ class SocketService {
   connect(url) {
     const token = this.getToken();
     const resolvedUrl = this.resolveUrl(url);
+    const nextToken = token || null;
 
     if (this.socket) {
-      const currentToken = this.socket.auth?.token || null;
-      const nextToken = token || null;
+      const currentToken = this.activeToken || this.socket.auth?.token || this.socket.io?.opts?.auth?.token || null;
       const tokenChanged = currentToken !== nextToken;
+      const urlChanged = this.activeUrl !== resolvedUrl;
 
-      if (tokenChanged) {
+      if (urlChanged) {
+        if (this.isDev) {
+          console.log('Socket URL changed. Rebuilding shared socket instance.');
+        }
+        this.disconnect();
+        return this.connect(resolvedUrl);
+      } else if (tokenChanged) {
+        if (this.isDev) {
+          console.log('Socket auth token changed. Reconnecting shared socket instance.');
+        }
         this.socket.auth = nextToken ? { token: nextToken } : {};
+        if (this.socket.io?.opts) {
+          this.socket.io.opts.auth = this.socket.auth;
+        }
+        if (this.socket.connected) {
+          this.socket.disconnect();
+        }
+
+        this.activeToken = nextToken;
+        if (!nextToken) {
+          this.socket = null;
+          this.activeUrl = null;
+          return null;
+        }
+
+        this.socket.connect();
+        return this.socket;
       }
 
       if (!this.socket.connected) {
@@ -86,7 +115,7 @@ class SocketService {
     }
 
     this.socket = io(resolvedUrl, {
-      auth: token ? { token } : undefined,
+      auth: nextToken ? { token: nextToken } : undefined,
       transports: ['websocket'],
       withCredentials: this.useCredentials,
       reconnection: true,
@@ -99,6 +128,8 @@ class SocketService {
     this.socket.on('connect', () => {
       this.loggedConnectError = false;
       this.loggedReconnectFailure = false;
+      this.activeToken = nextToken;
+      this.activeUrl = resolvedUrl;
       if (this.isDev) {
         console.log('Shared socket connected:', this.socket.id);
       }
@@ -153,6 +184,8 @@ class SocketService {
         }
       }
       this.socket = null;
+      this.activeToken = null;
+      this.activeUrl = null;
     });
 
     return this.socket;
@@ -175,8 +208,11 @@ class SocketService {
 
   disconnect() {
     if (!this.socket) return;
+    this.socket.removeAllListeners();
     this.socket.disconnect();
     this.socket = null;
+    this.activeToken = null;
+    this.activeUrl = null;
   }
 
   isConnected() {
