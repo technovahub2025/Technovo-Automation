@@ -588,7 +588,6 @@ const CampaignManagement = () => {
                     }
                 });
             }
-            await fetchCampaigns();
             const createdCampaign = response?.data?.data || null;
             const normalizedCreated = normalizeCampaign(createdCampaign || {
                 ...campaignData,
@@ -606,6 +605,7 @@ const CampaignManagement = () => {
             setCampaignFlash(response?.data?.message || 'Your ad has been created successfully.');
             setShowCreateModal(false);
             window.alert('Campaign successfully created.');
+            void fetchCampaigns();
             window.clearTimeout(window.__campaignFlashTimer);
             window.__campaignFlashTimer = window.setTimeout(() => {
                 setCampaignFlash('');
