@@ -8,7 +8,7 @@ import {
   resolveCacheUserId,
   writeSidebarPageCache,
 } from "../utils/sidebarPageCache";
-import { normalizeIVRMenus } from "../utils/inboundNormalizers";
+import { filterIVRMenusForUser, normalizeIVRMenus } from "../utils/inboundNormalizers";
 import { downloadCsvAsync } from "../utils/csvExport";
 import {
   BROADCAST_CAMPAIGN_EXPORT_HEADERS,
@@ -1722,7 +1722,19 @@ export const useExotelOutbound = () => {
         userId: currentUserId,
         scope: "user"
       });
-      const list = normalizeIVRMenus(response?.data?.ivrMenus || response?.data?.menus || response?.data || []);
+      const raw = response?.data?.ivrMenus || response?.data?.menus || response?.data || [];
+      const scopedMenus = filterIVRMenusForUser(raw, currentUserId);
+      const list = scopedMenus.length
+        ? scopedMenus
+        : normalizeIVRMenus(raw).filter((menu) => {
+            const ownerId = String(
+              menu?.userId ||
+              menu?.createdById ||
+              menu?.metadata?.userId ||
+              ""
+            ).trim();
+            return ownerId ? ownerId === currentUserId : false;
+          });
       setWorkflows(list);
       return list;
     } catch (err) {
@@ -1733,7 +1745,7 @@ export const useExotelOutbound = () => {
       setError(message);
       throw err;
     }
-  }, []);
+  }, [currentUserId]);
 
   const createTemplate = useCallback(async ({ name, script }) => {
     setTemplateSaving(true);

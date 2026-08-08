@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import socketService from '../services/socketService';
 import apiService from '../services/api';
-import { normalizeIVRMenus } from '../utils/inboundNormalizers';
+import { filterIVRMenusForUser, normalizeIVRMenus } from '../utils/inboundNormalizers';
 import { resolveCacheUserId } from '../utils/sidebarPageCache';
 
 const IVR_MENU_SOCKET_TIMEOUT_MS = 5000;
@@ -92,7 +92,26 @@ const useIVRMenus = ({ currentUserId } = {}) => {
     pending[type](value);
   }, [clearRequestTimeout]);
 
-  const normalizeScopedMenus = useCallback((data) => normalizeIVRMenus(data), []);
+  const normalizeScopedMenus = useCallback(
+    (data) => {
+      const userScopedMenus = filterIVRMenusForUser(data, currentUserIdRef.current);
+      if (userScopedMenus.length > 0) {
+        return userScopedMenus;
+      }
+
+      const normalizedMenus = normalizeIVRMenus(data);
+      if (!currentUserIdRef.current) {
+        return normalizedMenus;
+      }
+
+      return normalizedMenus.filter((menu) => {
+        const ownerId =
+          String(menu?.userId || menu?.createdById || menu?.metadata?.userId || '').trim();
+        return ownerId ? ownerId === currentUserIdRef.current : false;
+      });
+    },
+    []
+  );
 
   const requestMenus = useCallback((options = {}) => {
     const { silent = false } = options;
