@@ -449,8 +449,7 @@ const CampaignManagement = () => {
                     platform: selectedPlatform !== 'all' ? selectedPlatform : undefined,
                     status: selectedStatus !== 'all' ? selectedStatus : undefined,
                     search: searchQuery || undefined,
-                    dateRange: dateRange || undefined,
-                    includeLiveMetrics: 'true'
+                    dateRange: dateRange || undefined
                 }
             });
             const data = response.data?.data || [];
