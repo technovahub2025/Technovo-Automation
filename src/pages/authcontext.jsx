@@ -84,10 +84,11 @@ export const AuthProvider = ({ children }) => {
       const data = res?.data?.data;
       if (data) {
         const resolvedUserId =
+          data?.userId ||
+          data?.id ||
+          user?.userId ||
           user?.id ||
           user?._id ||
-          data?.id ||
-          data?.userId ||
           user?.userId ||
           "";
         const nextUser = {
@@ -95,7 +96,7 @@ export const AuthProvider = ({ children }) => {
           ...data,
           ...buildAgentAccessPayload(data),
           id: resolvedUserId,
-          userId: data?.userId || user?.userId || resolvedUserId
+          userId: data?.userId || data?.id || user?.userId || resolvedUserId
         };
         login(nextUser, token, localStorage.getItem("authProvider") || "local");
         return { ok: true, message: "Session refreshed" };

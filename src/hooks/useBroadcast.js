@@ -1520,7 +1520,7 @@ export const useBroadcast = () => {
 export const useExotelOutbound = () => {
   const { user } = useContext(AuthContext);
   const currentUserId =
-    String(user?.id || user?._id || user?.userId || resolveCacheUserId() || "").trim();
+    String(user?.userId || user?.id || user?._id || resolveCacheUserId() || "").trim();
   const [quickCallLoading, setQuickCallLoading] = useState(false);
   const [bulkLoading, setBulkLoading] = useState(false);
   const [overviewLoading, setOverviewLoading] = useState(false);

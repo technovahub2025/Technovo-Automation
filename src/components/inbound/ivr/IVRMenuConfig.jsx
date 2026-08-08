@@ -29,7 +29,7 @@ const getMenuName = (menu) =>
 
 const IVRMenuConfig = () => {
   const { user } = useContext(AuthContext);
-  const currentUserId = user?.id || user?._id || user?.userId || '';
+  const currentUserId = user?.userId || user?.id || user?._id || '';
   const {
     ivrMenus,
     createMenu,
