@@ -83,11 +83,19 @@ export const AuthProvider = ({ children }) => {
       });
       const data = res?.data?.data;
       if (data) {
+        const resolvedUserId =
+          user?.id ||
+          user?._id ||
+          data?.id ||
+          data?.userId ||
+          user?.userId ||
+          "";
         const nextUser = {
           ...(user || {}),
           ...data,
           ...buildAgentAccessPayload(data),
-          id: data.userId || user?.id
+          id: resolvedUserId,
+          userId: data?.userId || user?.userId || resolvedUserId
         };
         login(nextUser, token, localStorage.getItem("authProvider") || "local");
         return { ok: true, message: "Session refreshed" };
