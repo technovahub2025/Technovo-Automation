@@ -128,6 +128,7 @@ const InboundCalls = () => {
   const queueAvgWait = Number.isFinite(Number(analytics?.queue?.avgWaitTime)) && Number(analytics?.queue?.avgWaitTime) > 0
     ? Number(analytics.queue.avgWaitTime)
     : queueOverview.avgWaitTime;
+  const isInitialLoading = loading && !analytics;
 
   const recentCalls = useMemo(() => {
     const rows = Array.isArray(analytics?.recentCalls) ? analytics.recentCalls : [];
@@ -151,13 +152,20 @@ const InboundCalls = () => {
 
   const renderOverview = () => (
     <div className="inbound-overview">
+      {isInitialLoading && (
+        <div className="inbound-inline-loading">
+          <div className="loading-spinner"></div>
+          <p>Loading inbound call snapshot...</p>
+        </div>
+      )}
+
       <div className="stats-grid-inbound">
         <div className="stat-card">
           <div className="stat-icon-inbound">
             <Phone className="icon" />
           </div>
           <div className="stat-content">
-            <h3>{totalCalls}</h3>
+            <h3>{isInitialLoading ? '...' : totalCalls}</h3>
             <p>Total Calls Today</p>
           </div>
         </div>
@@ -167,7 +175,7 @@ const InboundCalls = () => {
             <Users className="icon" />
           </div>
           <div className="stat-content">
-            <h3>{activeCalls}</h3>
+            <h3>{isInitialLoading ? '...' : activeCalls}</h3>
             <p>Active Calls</p>
           </div>
         </div>
@@ -177,7 +185,7 @@ const InboundCalls = () => {
             <Clock className="icon" />
           </div>
           <div className="stat-content">
-            <h3>{formatDuration(averageDuration)}</h3>
+            <h3>{isInitialLoading ? '...' : formatDuration(averageDuration)}</h3>
             <p>Average Duration</p>
           </div>
         </div>
@@ -187,7 +195,7 @@ const InboundCalls = () => {
             <Headphones className="icon" />
           </div>
           <div className="stat-content">
-            <h3>{successRate}%</h3>
+            <h3>{isInitialLoading ? '...' : `${successRate}%`}</h3>
             <p>Answer Rate</p>
           </div>
         </div>
@@ -197,7 +205,16 @@ const InboundCalls = () => {
         <div className="queue-overview">
           <h3>Queue Status</h3>
           <div className="queue-list">
-            {queueOverview.items.length === 0 && (
+            {isInitialLoading && (
+              <div className="queue-item">
+                <div className="queue-info">
+                  <h4>Loading queue status</h4>
+                  <span className="queue-count">Fetching live queue snapshot</span>
+                </div>
+              </div>
+            )}
+
+            {!isInitialLoading && queueOverview.items.length === 0 && (
               <div className="queue-item">
                 <div className="queue-info">
                   <h4>No active queues</h4>
@@ -206,7 +223,7 @@ const InboundCalls = () => {
               </div>
             )}
 
-            {queueOverview.items.map(({ queueName, count }) => (
+            {!isInitialLoading && queueOverview.items.map(({ queueName, count }) => (
               <div key={queueName} className="queue-item">
                 <div className="queue-info">
                   <h4>{formatQueueName(queueName)}</h4>
@@ -232,7 +249,15 @@ const InboundCalls = () => {
         <div className="recent-calls">
           <h3>Recent Calls</h3>
           <div className="call-list">
-            {recentCalls.length === 0 && (
+            {isInitialLoading && (
+              <div className="call-item">
+                <div className="call-info">
+                  <span className="phone-number">Loading recent calls...</span>
+                </div>
+              </div>
+            )}
+
+            {!isInitialLoading && recentCalls.length === 0 && (
               <div className="call-item">
                 <div className="call-info">
                   <span className="phone-number">No recent inbound calls</span>
@@ -240,7 +265,7 @@ const InboundCalls = () => {
               </div>
             )}
 
-            {recentCalls.map((call, index) => (
+            {!isInitialLoading && recentCalls.map((call, index) => (
               <div key={call.callSid || `recent-call-${index}`} className="call-item">
                 <div className="call-info">
                   <span className="phone-number">{call.phoneNumber || call.from || '-'}</span>
@@ -277,21 +302,15 @@ const InboundCalls = () => {
     }
   };
 
-  if (loading && !analytics) {
-    return (
-      <div className="inbound-calls loading">
-        <div className="loading-spinner"></div>
-        <p>Loading inbound call data...</p>
-      </div>
-    );
-  }
-
   return (
     <div className="inbound-calls">
       <div className="inbound-header-new">
         <div className="header-info">
           <h1>Inbound Call Management</h1>
           <p className="header-subtitle">Manage IVR menus, queues, and call routing</p>
+          {isInitialLoading && (
+            <p className="header-subtitle">Loading live snapshot in the background...</p>
+          )}
           <div className={`connected-badge ${connected ? 'connected' : 'disconnected'}`}>
             <span className="pulse-dot"></span>
             {connected ? 'Connected' : 'Disconnected'}

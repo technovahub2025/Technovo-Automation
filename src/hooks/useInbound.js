@@ -6,6 +6,14 @@ import {
   normalizeQueueStatus,
   normalizeRoutingRules
 } from '../utils/inboundNormalizers';
+import {
+  readSidebarPageCache,
+  resolveCacheUserId,
+  writeSidebarPageCache
+} from '../utils/sidebarPageCache';
+
+const INBOUND_PAGE_CACHE_NAMESPACE = 'inbound-page';
+const INBOUND_PAGE_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const unwrapAnalyticsPayload = (payload) => {
   let current = payload;
@@ -36,6 +44,17 @@ const unwrapAnalyticsPayload = (payload) => {
 };
 
 const normalizeAnalytics = (payload) => unwrapAnalyticsPayload(payload);
+
+const buildInboundCachePayload = (period, snapshot) => ({
+  period,
+  analytics: snapshot.analytics,
+  queueStatus: snapshot.queueStatus,
+  routingRules: snapshot.routingRules,
+  leadsSummary: snapshot.leadsSummary,
+  timestamp: snapshot.timestamp
+});
+
+const hydrateInboundSnapshot = (payload = {}) => normalizeInboundSnapshot(payload);
 
 const mergeQueueStatus = (previous, incoming) => {
   const normalized = normalizeQueueStatus(incoming);
@@ -68,9 +87,10 @@ const normalizeInboundSnapshot = (payload = {}) => ({
 });
 
 const fetchInboundFallback = async (period) => {
-  const [analyticsRes, queueRes] = await Promise.allSettled([
+  const [analyticsRes, queueRes, routingRes] = await Promise.allSettled([
     apiService.getInboundAnalytics(period, { skipSocket: true }),
-    apiService.getQueueStatus()
+    apiService.getQueueStatus(),
+    apiService.getRoutingRules()
   ]);
 
   const analytics = analyticsRes.status === 'fulfilled'
@@ -79,6 +99,14 @@ const fetchInboundFallback = async (period) => {
   const queueStatus = queueRes.status === 'fulfilled'
     ? normalizeQueueStatus(queueRes.value.data)
     : {};
+  const routingRules = routingRes.status === 'fulfilled'
+    ? normalizeRoutingRules(
+        routingRes.value?.data?.routingRules ||
+        routingRes.value?.data?.rules ||
+        routingRes.value?.data ||
+        []
+      )
+    : [];
 
   const error = [
     analyticsRes.status === 'rejected'
@@ -86,13 +114,16 @@ const fetchInboundFallback = async (period) => {
       : '',
     queueRes.status === 'rejected'
       ? queueRes.reason?.response?.data?.error || queueRes.reason?.message || 'Failed to load queue status'
+      : '',
+    routingRes.status === 'rejected'
+      ? routingRes.reason?.response?.data?.error || routingRes.reason?.message || 'Failed to load routing rules'
       : ''
   ].filter(Boolean).join('; ');
 
   return {
     analytics,
     queueStatus,
-    routingRules: [],
+    routingRules,
     leadsSummary: { contactsUsed: 0, total: 0 },
     error
   };
@@ -109,68 +140,79 @@ export const useInbound = (period = 'today') => {
   const pendingSnapshotRef = useRef(false);
   const mountedRef = useRef(false);
   const requestSeqRef = useRef(0);
+  const hasHydratedSnapshotRef = useRef(false);
 
-  const applySnapshot = useCallback((payload = {}) => {
+  const applySnapshot = useCallback((payload = {}, { persist = true } = {}) => {
     const snapshot = normalizeInboundSnapshot(payload);
     setAnalytics(snapshot.analytics);
     setQueueStatus(snapshot.queueStatus);
     setRoutingRules(snapshot.routingRules);
     setLeadsSummary(snapshot.leadsSummary);
     setError(null);
-  }, []);
+    hasHydratedSnapshotRef.current = true;
 
-  const refreshInbound = useCallback(async () => {
-    const socket = socketService.connect();
-    if (pendingSnapshotRef.current) return;
-    const requestSeq = requestSeqRef.current + 1;
-    requestSeqRef.current = requestSeq;
-    if (!socket) {
-      setLoading(true);
-      const fallback = await fetchInboundFallback(period);
-      if (!mountedRef.current || requestSeq !== requestSeqRef.current) return;
-      setAnalytics(fallback.analytics);
-      setQueueStatus(fallback.queueStatus);
-      setRoutingRules(fallback.routingRules);
-      setLeadsSummary(fallback.leadsSummary);
-      setError(fallback.error || null);
-      setLoading(false);
+    if (persist) {
+      writeSidebarPageCache(
+        INBOUND_PAGE_CACHE_NAMESPACE,
+        buildInboundCachePayload(period, snapshot),
+        {
+          currentUserId: resolveCacheUserId(),
+          ttlMs: INBOUND_PAGE_CACHE_TTL_MS
+        }
+      );
+    }
+  }, [period]);
+
+  useEffect(() => {
+    const cachedInboundPage = readSidebarPageCache(
+      INBOUND_PAGE_CACHE_NAMESPACE,
+      {
+        currentUserId: resolveCacheUserId(),
+        allowStale: true
+      }
+    );
+
+    if (!cachedInboundPage?.data || cachedInboundPage.data.period !== period) {
+      hasHydratedSnapshotRef.current = false;
       return;
     }
 
-    pendingSnapshotRef.current = true;
-    setLoading(true);
+    const snapshot = hydrateInboundSnapshot(cachedInboundPage.data);
+    setAnalytics(snapshot.analytics);
+    setQueueStatus(snapshot.queueStatus);
+    setRoutingRules(snapshot.routingRules);
+    setLeadsSummary(snapshot.leadsSummary);
+    setError(null);
+    setLoading(false);
+    hasHydratedSnapshotRef.current = true;
+  }, [period]);
 
-    const applyFallbackSnapshot = async ({ message = '', preferSilentError = false } = {}) => {
-      const fallback = await fetchInboundFallback(period);
-      if (!mountedRef.current || requestSeq !== requestSeqRef.current) return;
-      setAnalytics(fallback.analytics);
-      setQueueStatus(fallback.queueStatus);
-      setRoutingRules(fallback.routingRules);
-      setLeadsSummary(fallback.leadsSummary);
-      const nextError = preferSilentError ? (fallback.error || null) : (message || fallback.error || null);
-      setError(nextError);
-      setLoading(false);
-    };
+  const refreshInbound = useCallback(async () => {
+    const requestSeq = requestSeqRef.current + 1;
+    requestSeqRef.current = requestSeq;
+    const shouldShowLoading = !hasHydratedSnapshotRef.current;
+    if (shouldShowLoading) {
+      setLoading(true);
+    }
 
-    const timeoutId = window.setTimeout(() => {
-      if (!pendingSnapshotRef.current) return;
-      pendingSnapshotRef.current = false;
-      applyFallbackSnapshot({ preferSilentError: true });
-    }, 7000);
-
-    socket.emit('inbound:subscribe', { period }, async (response = {}) => {
-      window.clearTimeout(timeoutId);
-      pendingSnapshotRef.current = false;
-      if (!mountedRef.current || requestSeq !== requestSeqRef.current) return;
-
-      if (response?.success !== false && (response?.overview || response?.analytics || response?.queues || response?.queueStatus)) {
-        applySnapshot(response);
+    const fallbackPromise = fetchInboundFallback(period)
+      .then((fallback) => {
+        if (!mountedRef.current || requestSeq !== requestSeqRef.current) return;
+        if (fallback.analytics || Object.keys(fallback.queueStatus || {}).length || (fallback.routingRules || []).length) {
+          applySnapshot(fallback);
+        } else {
+          hasHydratedSnapshotRef.current = true;
+        }
+        setError(fallback.error || null);
         setLoading(false);
-        return;
-      }
+      })
+      .catch((fallbackError) => {
+        if (!mountedRef.current || requestSeq !== requestSeqRef.current) return;
+        setError(fallbackError?.message || 'Failed to load inbound snapshot');
+        setLoading(false);
+      });
 
-      await applyFallbackSnapshot({ message: response?.error || 'Failed to load inbound snapshot' });
-    });
+    await fallbackPromise;
   }, [applySnapshot, period]);
 
   useEffect(() => {
@@ -222,7 +264,13 @@ export const useInbound = (period = 'today') => {
 
     const handleConnect = () => {
       updateSocketConnectionStatus();
-      refreshInbound();
+      socket.emit('inbound:subscribe', { period }, (response = {}) => {
+        if (!mountedRef.current) return;
+        if (response?.success !== false && (response?.overview || response?.analytics || response?.queues || response?.queueStatus)) {
+          applySnapshot(response);
+          setLoading(false);
+        }
+      });
     };
 
     updateSocketConnectionStatus();
@@ -240,13 +288,21 @@ export const useInbound = (period = 'today') => {
       if (socket.connected || socketService.isConnected()) {
         window.setTimeout(() => {
           if (mountedRef.current) {
-            refreshInbound();
+            socket.emit('inbound:subscribe', { period }, (response = {}) => {
+              if (!mountedRef.current) return;
+              if (response?.success !== false && (response?.overview || response?.analytics || response?.queues || response?.queueStatus)) {
+                applySnapshot(response);
+                setLoading(false);
+              }
+            });
           }
         }, 0);
       } else if (typeof socket.connect === 'function') {
         socket.connect();
       }
     }
+
+    refreshInbound().catch(() => {});
 
     return () => {
       mountedRef.current = false;
@@ -262,7 +318,7 @@ export const useInbound = (period = 'today') => {
       socket.off('routing_rules:changed', handleRoutingRulesUpdate);
       socket.off('inbound_lead_update', handleLeadUpdate);
     };
-  }, [applySnapshot, refreshInbound]);
+  }, [applySnapshot, period, refreshInbound]);
 
   return {
     analytics,
