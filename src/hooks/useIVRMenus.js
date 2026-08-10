@@ -3,10 +3,7 @@ import socketService from '../services/socketService';
 import apiService from '../services/api';
 import { normalizeIVRMenus } from '../utils/inboundNormalizers';
 import { resolveCacheUserId } from '../utils/sidebarPageCache';
-import {
-  readSidebarPageCache,
-  writeSidebarPageCache
-} from '../utils/sidebarPageCache';
+import { writeSidebarPageCache } from '../utils/sidebarPageCache';
 
 const IVR_MENU_SOCKET_TIMEOUT_MS = 5000;
 const IVR_MENU_CACHE_NAMESPACE = 'inbound-ivr-menus';
@@ -82,24 +79,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
     setIvrMenus([]);
     setLoading(false);
     hasHydratedMenusRef.current = false;
-
-    const cachedMenus = readSidebarPageCache(
-      IVR_MENU_CACHE_NAMESPACE,
-      {
-        currentUserId: resolvedCurrentUserId,
-        allowStale: true
-      }
-    );
-
-    const cachedMenuList = Array.isArray(cachedMenus?.data?.menus)
-      ? normalizeScopedMenus(cachedMenus.data.menus)
-      : [];
-
-    if (cachedMenuList.length > 0) {
-      menusCountRef.current = cachedMenuList.length;
-      hasHydratedMenusRef.current = true;
-      setIvrMenus(cachedMenuList);
-    }
   }, [resolvedCurrentUserId]);
 
   const clearRequestTimeout = useCallback(() => {
@@ -220,7 +199,7 @@ const useIVRMenus = ({ currentUserId } = {}) => {
       setSocketConnected(socket.connected);
     }
 
-    requestMenus({ silent: hasHydratedMenusRef.current }).catch(() => {});
+    requestMenus({ silent: false }).catch(() => {});
 
     return () => {
       isMounted = false;
