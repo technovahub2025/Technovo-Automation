@@ -112,17 +112,18 @@ export const normalizeRoutingRules = (responseData) => {
 };
 
 export const normalizeIVRMenu = (menu = {}) => {
-  const nodes = Array.isArray(menu.workflowConfig?.nodes)
-    ? menu.workflowConfig.nodes
+  const workflowConfig = menu.workflowConfig || menu.workflow_config || menu.workflow || {};
+  const nodes = Array.isArray(workflowConfig?.nodes)
+    ? workflowConfig.nodes
     : Array.isArray(menu.nodes)
       ? menu.nodes
       : [];
-  const edges = Array.isArray(menu.workflowConfig?.edges)
-    ? menu.workflowConfig.edges
+  const edges = Array.isArray(workflowConfig?.edges)
+    ? workflowConfig.edges
     : Array.isArray(menu.edges)
       ? menu.edges
       : [];
-  const settings = menu.workflowConfig?.settings || menu.settings || menu.config || {};
+  const settings = workflowConfig?.settings || menu.settings || menu.config || {};
 
   return {
     ...menu,

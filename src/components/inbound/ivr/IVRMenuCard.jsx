@@ -151,6 +151,60 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
   }, [effectiveWorkflow]);
   // Migration is applied in-memory; persisted only on explicit Save.
 
+  const ENTRY_NODE_TYPES = useMemo(() => new Set([
+    'start',
+    'audio',
+    'greeting',
+    'availability_check',
+    'slot_offer',
+    'booking_confirm'
+  ]), []);
+  const END_NODE_TYPES = useMemo(() => new Set([
+    'end',
+    'hangup',
+    'terminate',
+    'termination'
+  ]), []);
+
+  const getNodeType = (node) => String(node?.type || '').toLowerCase();
+  const buildNodeDegreeMaps = (nodes = [], edges = []) => {
+    const incoming = new Map(nodes.map((node) => [node.id, 0]));
+    const outgoing = new Map(nodes.map((node) => [node.id, 0]));
+
+    edges.forEach((edge) => {
+      if (incoming.has(edge.target)) incoming.set(edge.target, (incoming.get(edge.target) || 0) + 1);
+      if (outgoing.has(edge.source)) outgoing.set(edge.source, (outgoing.get(edge.source) || 0) + 1);
+    });
+
+    return { incoming, outgoing };
+  };
+
+  const findEntryNode = (nodes = [], edges = []) => {
+    if (!nodes.length) return null;
+    const { incoming } = buildNodeDegreeMaps(nodes, edges);
+
+    const explicitEntry = nodes.find((node) => ENTRY_NODE_TYPES.has(getNodeType(node)));
+    if (explicitEntry) return explicitEntry;
+
+    const graphEntry = nodes.find((node) => (incoming.get(node.id) || 0) === 0);
+    if (graphEntry) return graphEntry;
+
+    return nodes[0] || null;
+  };
+
+  const findExitNode = (nodes = [], edges = []) => {
+    if (!nodes.length) return null;
+    const { outgoing } = buildNodeDegreeMaps(nodes, edges);
+
+    const explicitExit = nodes.find((node) => END_NODE_TYPES.has(getNodeType(node)));
+    if (explicitExit) return explicitExit;
+
+    const graphExit = nodes.find((node) => (outgoing.get(node.id) || 0) === 0);
+    if (graphExit) return graphExit;
+
+    return null;
+  };
+
   // Add socket listener for backend workflow updates
   useEffect(() => {
     const socket = socketService.connect();
@@ -368,11 +422,8 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
       }
     });
 
-    const hasStartNode = nodes.some((node) => {
-      const nodeType = (node.type || '').toLowerCase();
-      return nodeType === 'start' || nodeType === 'audio' || nodeType === 'greeting' || nodeType === 'availability_check' || nodeType === 'slot_offer' || nodeType === 'booking_confirm';
-    });
-    const hasEndNode = nodes.some((node) => (node.type || '').toLowerCase() === 'end');
+    const hasStartNode = Boolean(findEntryNode(nodes, edges));
+    const hasEndNode = Boolean(findExitNode(nodes, edges));
 
     if (!hasStartNode) issues.push('Workflow must include at least one audio/greeting or booking entry node.');
     if (!hasEndNode) issues.push('Workflow must include at least one end node.');
@@ -393,18 +444,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
 
     const nodeCount = nodes.length;
     const edgeCount = edges.length;
-    const incoming = new Map();
-    const outgoing = new Map();
-
-    nodes.forEach((node) => {
-      incoming.set(node.id, 0);
-      outgoing.set(node.id, 0);
-    });
-
-    edges.forEach((edge) => {
-      outgoing.set(edge.source, (outgoing.get(edge.source) || 0) + 1);
-      incoming.set(edge.target, (incoming.get(edge.target) || 0) + 1);
-    });
+    const { incoming, outgoing } = buildNodeDegreeMaps(nodes, edges);
 
     const disconnectedCount = nodes.filter((node) => {
       const inCount = incoming.get(node.id) || 0;
@@ -412,11 +452,8 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
       return inCount === 0 && outCount === 0;
     }).length;
 
-    const hasStartNode = nodes.some((node) => {
-      const nodeType = (node.type || '').toLowerCase();
-      return nodeType === 'start' || nodeType === 'audio' || nodeType === 'greeting' || nodeType === 'availability_check' || nodeType === 'slot_offer' || nodeType === 'booking_confirm';
-    });
-    const hasEndNode = nodes.some((node) => (node.type || '').toLowerCase() === 'end');
+    const hasStartNode = Boolean(findEntryNode(nodes, edges));
+    const hasEndNode = Boolean(findExitNode(nodes, edges));
     const audioNodeCount = nodes.filter((node) => {
       const nodeType = (node.type || '').toLowerCase();
       return nodeType === 'audio' || nodeType === 'greeting';
@@ -850,23 +887,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
   const resolveStartNodeIdForTest = () => {
     const nodes = migratedWorkflow?.nodes || [];
     const edges = migratedWorkflow?.edges || [];
-    if (!nodes.length) return null;
-
-    const incoming = new Map(nodes.map((node) => [node.id, 0]));
-    edges.forEach((edge) => {
-      incoming.set(edge.target, (incoming.get(edge.target) || 0) + 1);
-    });
-
-    const entryWithNoIncoming = nodes.find((node) => {
-      const type = (node.type || '').toLowerCase();
-      return (type === 'audio' || type === 'greeting' || type === 'availability_check' || type === 'slot_offer' || type === 'booking_confirm') && (incoming.get(node.id) || 0) === 0;
-    });
-    if (entryWithNoIncoming) return entryWithNoIncoming.id;
-
-    const firstEntry = nodes.find((node) => ['audio', 'greeting', 'availability_check', 'slot_offer', 'booking_confirm'].includes((node.type || '').toLowerCase()));
-    if (firstEntry) return firstEntry.id;
-
-    return nodes[0]?.id || null;
+    return findEntryNode(nodes, edges)?.id || null;
   };
 
   const evaluateConditionalForTest = (condition = '') => {
@@ -967,6 +988,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
     const nodesById = new Map(nodes.map((node) => [node.id, node]));
     const currentNodeId = testRunCurrentNodeId || resolveStartNodeIdForTest();
     const currentNode = nodesById.get(currentNodeId);
+    const exitNode = findExitNode(nodes, edges);
 
     if (!currentNode) {
       setTestRunMessage('Unable to resolve start node for test run.');
@@ -981,7 +1003,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
       return;
     }
 
-    if ((currentNode.type || '').toLowerCase() === 'end') {
+    if (exitNode && exitNode.id === currentNode.id) {
       setActivePath({ nodeId: currentNode.id, edgeIds: [] });
       setTestRunSteps((prev) => ([
         ...prev,
