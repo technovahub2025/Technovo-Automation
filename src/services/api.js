@@ -335,11 +335,40 @@ apiService.deleteCustomAudioByPublicId = (publicId) =>
   requestWithIvrFallback({ method: 'delete', path: '/audio/delete', data: { publicId } });
 
 // IVR Menu Management
+const buildIVRMenuRequestData = (menuName, config = {}) => {
+  const nodes = Array.isArray(config?.nodes) ? config.nodes : [];
+  const edges = Array.isArray(config?.edges) ? config.edges : [];
+  const workflowConfig = {
+    nodes,
+    edges,
+    settings: config?.config && typeof config.config === 'object' ? { ...config.config } : {}
+  };
+
+  return {
+    menuName,
+    name: config?.displayName || menuName,
+    displayName: config?.displayName || menuName,
+    workflowId: config?.workflowId || config?.menuId || config?.promptKey || menuName,
+    promptKey: config?.promptKey || menuName,
+    status: config?.status || 'draft',
+    nodes,
+    edges,
+    workflowConfig,
+    metadata: workflowConfig.settings
+  };
+};
+
 apiService.createIVRConfig = (menuName, config) =>
   requestWithIvrFallback({
     method: 'post',
     path: '/menus',
-    data: { menuName, config }
+    data: buildIVRMenuRequestData(menuName, config)
+  });
+apiService.updateIVRConfig = (menuId, config) =>
+  requestWithIvrFallback({
+    method: 'put',
+    path: `/menus/${menuId}`,
+    data: buildIVRMenuRequestData(menuId, config)
   });
 apiService.getIVRConfigs = () =>
   requestWithIvrFallback({ method: 'get', path: '/menus' });

@@ -263,7 +263,7 @@ const useIVRMenus = ({ currentUserId } = {}) => {
       try {
         response = await emitWithAck(socket, 'ivr_menu:update', { menuName, config });
       } catch {
-        response = await apiService.createIVRConfig(menuName, config);
+        response = await apiService.updateIVRConfig(menuId, config);
       }
 
       if (response.snapshot) {
