@@ -688,8 +688,11 @@ const CampaignManagement = () => {
             return;
         }
 
+        const previousCampaign = typeof campaign === 'object' ? campaign : campaigns.find((item) => String(item.id) === String(campaignId));
+
         try {
             setSavingCampaign(true);
+            setCampaigns((prev) => prev.filter((item) => String(item.id) !== String(campaignId)));
             await api.delete(`/api/campaigns/${campaignId}`, {
                 headers: getAuthHeaders(),
                 data: typeof campaign === 'object' ? {
@@ -698,8 +701,14 @@ const CampaignManagement = () => {
                     metaAdId: campaign.metaAdId || ''
                 } : undefined
             });
-            await fetchCampaigns();
         } catch (err) {
+            if (previousCampaign) {
+                setCampaigns((prev) => {
+                    const exists = prev.some((item) => String(item.id) === String(previousCampaign.id));
+                    if (exists) return prev;
+                    return [previousCampaign, ...prev];
+                });
+            }
             console.error('Delete failed', err?.response?.data || err.message);
             setError(err?.response?.data?.message || 'Delete campaign failed.');
         } finally {
