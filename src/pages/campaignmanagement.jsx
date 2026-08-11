@@ -216,6 +216,7 @@ const CampaignManagement = () => {
     const [metaSetup, setMetaSetup] = useState(null);
     const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState('');
     const [campaignFlash, setCampaignFlash] = useState('');
+    const [deletingCampaignId, setDeletingCampaignId] = useState('');
     const dateRangeLabels = {
         today: 'Today',
         yesterday: 'Yesterday',
@@ -688,11 +689,9 @@ const CampaignManagement = () => {
             return;
         }
 
-        const previousCampaign = typeof campaign === 'object' ? campaign : campaigns.find((item) => String(item.id) === String(campaignId));
-
         try {
             setSavingCampaign(true);
-            setCampaigns((prev) => prev.filter((item) => String(item.id) !== String(campaignId)));
+            setDeletingCampaignId(String(campaignId));
             await api.delete(`/api/campaigns/${campaignId}`, {
                 headers: getAuthHeaders(),
                 data: typeof campaign === 'object' ? {
@@ -701,17 +700,12 @@ const CampaignManagement = () => {
                     metaAdId: campaign.metaAdId || ''
                 } : undefined
             });
+            setCampaigns((prev) => prev.filter((item) => String(item.id) !== String(campaignId)));
         } catch (err) {
-            if (previousCampaign) {
-                setCampaigns((prev) => {
-                    const exists = prev.some((item) => String(item.id) === String(previousCampaign.id));
-                    if (exists) return prev;
-                    return [previousCampaign, ...prev];
-                });
-            }
             console.error('Delete failed', err?.response?.data || err.message);
             setError(err?.response?.data?.message || 'Delete campaign failed.');
         } finally {
+            setDeletingCampaignId('');
             setSavingCampaign(false);
         }
     };
@@ -1244,10 +1238,11 @@ const CampaignManagement = () => {
                                             <button
                                                 type="button"
                                                 className="cm-action-btn cm-action-danger"
+                                                disabled={savingCampaign && String(deletingCampaignId) === String(campaign.id)}
                                                 onClick={() => handleDeleteCampaign(campaign)}
                                                 title="Delete"
                                             >
-                                                <Trash2 size={14} />
+                                                {savingCampaign && String(deletingCampaignId) === String(campaign.id) ? 'Deleting...' : <Trash2 size={14} />}
                                             </button>
                                         </div>
                                     </article>
