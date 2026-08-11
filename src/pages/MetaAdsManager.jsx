@@ -133,6 +133,77 @@ const getCampaignId = (campaign = {}) =>
       "",
   ).trim();
 
+const normalizeMetaCampaignRecord = (campaign = {}, fallback = {}) => {
+  const createdAt = campaign?.createdAt || fallback?.createdAt || new Date().toISOString();
+  const updatedAt = campaign?.updatedAt || fallback?.updatedAt || createdAt;
+  const identity = getCampaignId(campaign) || getCampaignId(fallback) || `meta-${Date.now()}`;
+
+  return {
+    ...fallback,
+    ...campaign,
+    _id: String(campaign?._id || fallback?._id || identity).trim(),
+    id: String(campaign?.id || fallback?.id || identity).trim(),
+    localCampaignId: String(
+      campaign?.localCampaignId ||
+        fallback?.localCampaignId ||
+        campaign?._id ||
+        campaign?.id ||
+        campaign?.metaCampaignId ||
+        identity,
+    ).trim(),
+    metaCampaignId: String(
+      campaign?.metaCampaignId ||
+        fallback?.metaCampaignId ||
+        campaign?.localCampaignId ||
+        campaign?.id ||
+        campaign?._id ||
+        identity,
+    ).trim(),
+    campaignName: String(
+      campaign?.campaignName ||
+        campaign?.name ||
+        fallback?.campaignName ||
+        fallback?.name ||
+        "",
+    ).trim(),
+    name: String(
+      campaign?.name ||
+        campaign?.campaignName ||
+        fallback?.name ||
+        fallback?.campaignName ||
+        "",
+    ).trim(),
+    status: String(campaign?.status || campaign?.effective_status || fallback?.status || "DRAFT").trim(),
+    createdAt,
+    updatedAt,
+    wizard: {
+      ...(fallback?.wizard || {}),
+      ...(campaign?.wizard || {}),
+    },
+  };
+};
+
+const upsertMetaCampaignRecord = (items = [], campaign = {}, fallback = {}) => {
+  const normalized = normalizeMetaCampaignRecord(campaign, fallback);
+  const identity = getCampaignId(normalized);
+  const nextItems = (Array.isArray(items) ? items : [])
+    .filter((item) => getCampaignId(item) !== identity)
+    .concat(normalized);
+
+  return nextItems.sort(
+    (a, b) =>
+      new Date(b?.updatedAt || b?.createdAt || 0) -
+      new Date(a?.updatedAt || a?.createdAt || 0),
+  );
+};
+
+const removeMetaCampaignRecord = (items = [], campaignId = "") => {
+  const identity = String(campaignId || "").trim();
+  return (Array.isArray(items) ? items : []).filter(
+    (item) => getCampaignId(item) !== identity,
+  );
+};
+
 const pickAvailablePageId = (preferredPageId, availablePages = []) => {
   const preferred = String(preferredPageId || "").trim();
   if (preferred && availablePages.some((page) => String(page?.id || "") === preferred)) return preferred;
@@ -635,7 +706,79 @@ const MetaAdsManager = () => {
           compliancePolicy: contractPayload.compliancePolicy,
           analytics: contractPayload.analytics,
         });
-        setDraftId(response?.draftId || response?.campaign?._id || "");
+        const savedCampaign =
+          response?.campaign ||
+          response?.data?.campaign ||
+          response?.draft ||
+          response?.data ||
+          null;
+        const nextDraftId = String(
+          response?.draftId ||
+            savedCampaign?._id ||
+            savedCampaign?.id ||
+            savedCampaign?.localCampaignId ||
+            draftId ||
+            "",
+        ).trim();
+
+        if (savedCampaign || nextDraftId) {
+          const optimisticCampaign = normalizeMetaCampaignRecord(
+            savedCampaign || {
+              _id: nextDraftId,
+              id: nextDraftId,
+              localCampaignId: nextDraftId,
+              metaCampaignId: savedCampaign?.metaCampaignId || "",
+              campaignName: form.campaignName,
+              name: form.campaignName,
+              objective: form.objective,
+              status: form.campaignConfig.initialStatus || "PAUSED",
+              lifecycleStatus: "draft",
+              deliveryStatus: "not_published",
+              reviewStatus: "approved",
+              paymentStatus: "verified",
+              wizard: { currentStep: 1 },
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            },
+            {
+              _id: nextDraftId,
+              id: nextDraftId,
+              localCampaignId: nextDraftId,
+              campaignName: form.campaignName,
+              name: form.campaignName,
+              objective: form.objective,
+              status: form.campaignConfig.initialStatus || "PAUSED",
+              lifecycleStatus: "draft",
+              deliveryStatus: "not_published",
+              reviewStatus: "approved",
+              paymentStatus: "verified",
+              wizard: { currentStep: 1 },
+            },
+          );
+          const optimisticStatus = String(
+            optimisticCampaign?.status ||
+              optimisticCampaign?.effective_status ||
+              "DRAFT",
+          ).toUpperCase();
+
+          setOverview((current) => ({
+            ...(current || {}),
+            summary: {
+              ...(current?.summary || {}),
+              totalCampaigns: Number(current?.summary?.totalCampaigns || 0) + 1,
+              activeCampaigns:
+                Number(current?.summary?.activeCampaigns || 0) +
+                (optimisticStatus === "ACTIVE" ? 1 : 0),
+            },
+            campaigns: upsertMetaCampaignRecord(current?.campaigns || [], optimisticCampaign),
+          }));
+          setMetaCampaigns((current) =>
+            upsertMetaCampaignRecord(current || [], optimisticCampaign),
+          );
+          setSelectedCampaignRef((current) => current || getCampaignId(optimisticCampaign));
+        }
+
+        setDraftId(nextDraftId);
         setWizardStep(2);
       } else if (wizardStep === 2) {
         await metaAdsService.saveAdSetStep({
@@ -775,7 +918,33 @@ const MetaAdsManager = () => {
       setDeletingCampaignId(campaignId);
       setError("");
       await metaAdsService.deleteCampaign(campaign);
-      await refreshAll();
+      const removedWasActive = String(
+        campaign?.status || campaign?.effective_status || "",
+      ).toUpperCase() === "ACTIVE";
+      setOverview((current) => ({
+        ...(current || {}),
+        summary: {
+          ...(current?.summary || {}),
+          totalCampaigns: Math.max(
+            0,
+            Number(current?.summary?.totalCampaigns || 0) - 1,
+          ),
+          activeCampaigns: Math.max(
+            0,
+            Number(current?.summary?.activeCampaigns || 0) -
+              (removedWasActive ? 1 : 0),
+          ),
+        },
+        campaigns: removeMetaCampaignRecord(current?.campaigns || [], campaignId),
+      }));
+      setMetaCampaigns((current) =>
+        removeMetaCampaignRecord(current || [], campaignId),
+      );
+      setSelectedCampaignRef((current) =>
+        String(current || "") === String(campaignId || "")
+          ? ""
+          : current,
+      );
       setSuccess("Campaign deleted successfully.");
     } catch (requestError) {
       setError(requestError?.response?.data?.error || requestError?.response?.data?.message || requestError.message || "Failed to delete campaign.");
