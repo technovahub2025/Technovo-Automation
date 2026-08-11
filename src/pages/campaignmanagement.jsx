@@ -681,7 +681,7 @@ const CampaignManagement = () => {
         const campaignId = typeof campaign === 'object' ? campaign?.id : campaign;
         if (
             !campaignId ||
-            !window.confirm('Are you sure you want to delete this campaign? This will also archive the linked Meta campaign assets before removing it from the database.')
+            !window.confirm('Are you sure you want to delete this campaign? This will archive the campaign and clean up the linked Meta assets.')
         ) return;
 
         if (USE_MOCK) {
