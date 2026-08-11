@@ -204,6 +204,34 @@ const removeMetaCampaignRecord = (items = [], campaignId = "") => {
   );
 };
 
+const normalizeSummaryStatusKey = (status) => {
+  const normalized = String(status || "").trim().toLowerCase();
+  if (normalized === "active" || normalized === "running") return "activeCampaigns";
+  if (normalized === "paused") return "pausedCampaigns";
+  if (normalized === "draft" || normalized === "publishing" || normalized === "pending_review") return "draftCampaigns";
+  if (normalized === "ended" || normalized === "archived" || normalized === "rejected") return "endedCampaigns";
+  return "";
+};
+
+const updateMetaSummaryCounts = (summary = {}, previousStatus = "", nextStatus = "", totalDelta = 0) => {
+  const previousKey = normalizeSummaryStatusKey(previousStatus);
+  const nextKey = normalizeSummaryStatusKey(nextStatus);
+  const nextSummary = {
+    ...summary,
+    totalCampaigns: Math.max(0, Number(summary.totalCampaigns || 0) + totalDelta),
+  };
+
+  if (previousKey && previousKey !== nextKey) {
+    nextSummary[previousKey] = Math.max(0, Number(summary[previousKey] || 0) - 1);
+  }
+
+  if (nextKey && previousKey !== nextKey) {
+    nextSummary[nextKey] = Math.max(0, Number(nextSummary[nextKey] || summary[nextKey] || 0) + 1);
+  }
+
+  return nextSummary;
+};
+
 const pickAvailablePageId = (preferredPageId, availablePages = []) => {
   const preferred = String(preferredPageId || "").trim();
   if (preferred && availablePages.some((page) => String(page?.id || "") === preferred)) return preferred;
@@ -725,21 +753,14 @@ const MetaAdsManager = () => {
             savedCampaign,
             savedCampaign,
           );
-          const optimisticStatus = String(
-            optimisticCampaign?.status ||
-              optimisticCampaign?.effective_status ||
-              "DRAFT",
-          ).toUpperCase();
-
           setOverview((current) => ({
             ...(current || {}),
-            summary: {
-              ...(current?.summary || {}),
-              totalCampaigns: Number(current?.summary?.totalCampaigns || 0) + 1,
-              activeCampaigns:
-                Number(current?.summary?.activeCampaigns || 0) +
-                (optimisticStatus === "ACTIVE" ? 1 : 0),
-            },
+            summary: updateMetaSummaryCounts(
+              current?.summary || {},
+              "",
+              optimisticCampaign?.status || optimisticCampaign?.effective_status || "",
+              1,
+            ),
             campaigns: upsertMetaCampaignRecord(current?.campaigns || [], optimisticCampaign),
           }));
           setMetaCampaigns((current) =>
@@ -822,8 +843,25 @@ const MetaAdsManager = () => {
         setError(`Complete these fields before publishing: ${reviewMissingFields.join(", ")}.`);
         return;
       }
-      await metaAdsService.publishCampaignDraft(draftId);
-      await refreshAll();
+      const response = await metaAdsService.publishCampaignDraft(draftId);
+      const serverCampaign = response?.data || response?.campaign || response?.data?.campaign || null;
+      if (serverCampaign) {
+        const normalizedCampaign = normalizeMetaCampaignRecord(serverCampaign);
+        setOverview((current) => {
+          const existing = Array.isArray(current?.campaigns) ? current.campaigns : [];
+          const previousCampaign = existing.find((item) => getCampaignId(item) === getCampaignId(normalizedCampaign)) || null;
+          return {
+            ...(current || {}),
+            summary: updateMetaSummaryCounts(
+              current?.summary || {},
+              previousCampaign?.status || previousCampaign?.effective_status || "",
+              normalizedCampaign?.status || normalizedCampaign?.effective_status || "",
+            ),
+            campaigns: upsertMetaCampaignRecord(existing, normalizedCampaign),
+          };
+        });
+        setMetaCampaigns((current) => upsertMetaCampaignRecord(current || [], normalizedCampaign));
+      }
       closeWizard();
       setSuccess("Campaign published successfully.");
     } catch (requestError) {
@@ -838,8 +876,20 @@ const MetaAdsManager = () => {
     try {
       setSyncingId(campaignId);
       setError("");
-      await metaAdsService.syncCampaign(campaignId);
-      await refreshAll();
+      const response = await metaAdsService.syncCampaign(campaignId);
+      const serverCampaign =
+        response?.data?.campaign ||
+        response?.campaign ||
+        response?.data ||
+        null;
+      if (serverCampaign) {
+        const normalizedCampaign = normalizeMetaCampaignRecord(serverCampaign);
+        setOverview((current) => ({
+          ...(current || {}),
+          campaigns: upsertMetaCampaignRecord(current?.campaigns || [], normalizedCampaign),
+        }));
+        setMetaCampaigns((current) => upsertMetaCampaignRecord(current || [], normalizedCampaign));
+      }
       setSuccess("Campaign synced successfully.");
     } catch (requestError) {
       setError(requestError?.response?.data?.error || requestError.message || "Failed to sync campaign.");
@@ -852,8 +902,18 @@ const MetaAdsManager = () => {
     try {
       setSyncingAll(true);
       setError("");
-      await metaAdsService.syncAllCampaigns();
-      await refreshAll();
+      const response = await metaAdsService.syncAllCampaigns();
+      const serverCampaigns = Array.isArray(response?.data?.campaigns)
+        ? response.data.campaigns
+        : [];
+      if (serverCampaigns.length) {
+        const normalizedCampaigns = serverCampaigns.map((campaign) => normalizeMetaCampaignRecord(campaign));
+        setOverview((current) => ({
+          ...(current || {}),
+          campaigns: normalizedCampaigns,
+        }));
+        setMetaCampaigns(normalizedCampaigns);
+      }
       setSuccess("All campaigns synced.");
     } catch (requestError) {
       setError(requestError?.response?.data?.error || requestError.message || "Failed to sync campaigns.");
@@ -866,8 +926,25 @@ const MetaAdsManager = () => {
     try {
       setStatusUpdatingId(campaignId);
       setError("");
-      await metaAdsService.updateCampaignStatus(campaignId, status);
-      await refreshAll();
+      const response = await metaAdsService.updateCampaignStatus(campaignId, status);
+      const serverCampaign = response?.data || response?.campaign || response?.data?.campaign || null;
+      if (serverCampaign) {
+        const normalizedCampaign = normalizeMetaCampaignRecord(serverCampaign);
+        setOverview((current) => {
+          const existing = Array.isArray(current?.campaigns) ? current.campaigns : [];
+          const previousCampaign = existing.find((item) => getCampaignId(item) === getCampaignId(normalizedCampaign)) || null;
+          return {
+            ...(current || {}),
+            summary: updateMetaSummaryCounts(
+              current?.summary || {},
+              previousCampaign?.status || previousCampaign?.effective_status || "",
+              normalizedCampaign?.status || normalizedCampaign?.effective_status || "",
+            ),
+            campaigns: upsertMetaCampaignRecord(existing, normalizedCampaign),
+          };
+        });
+        setMetaCampaigns((current) => upsertMetaCampaignRecord(current || [], normalizedCampaign));
+      }
       setSuccess(`Campaign ${status === "ACTIVE" ? "activated" : "paused"} successfully.`);
     } catch (requestError) {
       setError(requestError?.response?.data?.error || requestError.message || "Failed to update campaign status.");
@@ -897,27 +974,18 @@ const MetaAdsManager = () => {
         null;
       const deletedCampaignId =
         getCampaignId(deletedCampaign) || campaignId;
-      const removedWasActive = String(
-        deletedCampaign?.status ||
-          deletedCampaign?.effective_status ||
-          campaign?.status ||
-          campaign?.effective_status ||
-          "",
-      ).toUpperCase() === "ACTIVE";
       setOverview((current) => ({
         ...(current || {}),
-        summary: {
-          ...(current?.summary || {}),
-          totalCampaigns: Math.max(
-            0,
-            Number(current?.summary?.totalCampaigns || 0) - 1,
-          ),
-          activeCampaigns: Math.max(
-            0,
-            Number(current?.summary?.activeCampaigns || 0) -
-              (removedWasActive ? 1 : 0),
-          ),
-        },
+        summary: updateMetaSummaryCounts(
+          current?.summary || {},
+          deletedCampaign?.status ||
+            deletedCampaign?.effective_status ||
+            campaign?.status ||
+            campaign?.effective_status ||
+            "",
+          "",
+          -1,
+        ),
         campaigns: removeMetaCampaignRecord(current?.campaigns || [], deletedCampaignId),
       }));
       setMetaCampaigns((current) =>
