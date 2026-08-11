@@ -709,8 +709,7 @@ const MetaAdsManager = () => {
         const savedCampaign =
           response?.campaign ||
           response?.data?.campaign ||
-          response?.draft ||
-          response?.data ||
+          response?.data?.data ||
           null;
         const nextDraftId = String(
           response?.draftId ||
@@ -721,39 +720,10 @@ const MetaAdsManager = () => {
             "",
         ).trim();
 
-        if (savedCampaign || nextDraftId) {
+        if (savedCampaign) {
           const optimisticCampaign = normalizeMetaCampaignRecord(
-            savedCampaign || {
-              _id: nextDraftId,
-              id: nextDraftId,
-              localCampaignId: nextDraftId,
-              metaCampaignId: savedCampaign?.metaCampaignId || "",
-              campaignName: form.campaignName,
-              name: form.campaignName,
-              objective: form.objective,
-              status: form.campaignConfig.initialStatus || "PAUSED",
-              lifecycleStatus: "draft",
-              deliveryStatus: "not_published",
-              reviewStatus: "approved",
-              paymentStatus: "verified",
-              wizard: { currentStep: 1 },
-              createdAt: new Date().toISOString(),
-              updatedAt: new Date().toISOString(),
-            },
-            {
-              _id: nextDraftId,
-              id: nextDraftId,
-              localCampaignId: nextDraftId,
-              campaignName: form.campaignName,
-              name: form.campaignName,
-              objective: form.objective,
-              status: form.campaignConfig.initialStatus || "PAUSED",
-              lifecycleStatus: "draft",
-              deliveryStatus: "not_published",
-              reviewStatus: "approved",
-              paymentStatus: "verified",
-              wizard: { currentStep: 1 },
-            },
+            savedCampaign,
+            savedCampaign,
           );
           const optimisticStatus = String(
             optimisticCampaign?.status ||
@@ -778,7 +748,9 @@ const MetaAdsManager = () => {
           setSelectedCampaignRef((current) => current || getCampaignId(optimisticCampaign));
         }
 
-        setDraftId(nextDraftId);
+        if (nextDraftId) {
+          setDraftId(nextDraftId);
+        }
         setWizardStep(2);
       } else if (wizardStep === 2) {
         await metaAdsService.saveAdSetStep({
@@ -917,9 +889,20 @@ const MetaAdsManager = () => {
     try {
       setDeletingCampaignId(campaignId);
       setError("");
-      await metaAdsService.deleteCampaign(campaign);
+      const response = await metaAdsService.deleteCampaign(campaign);
+      const deletedCampaign =
+        response?.data ||
+        response?.campaign ||
+        response?.deletedCampaign ||
+        null;
+      const deletedCampaignId =
+        getCampaignId(deletedCampaign) || campaignId;
       const removedWasActive = String(
-        campaign?.status || campaign?.effective_status || "",
+        deletedCampaign?.status ||
+          deletedCampaign?.effective_status ||
+          campaign?.status ||
+          campaign?.effective_status ||
+          "",
       ).toUpperCase() === "ACTIVE";
       setOverview((current) => ({
         ...(current || {}),
@@ -935,13 +918,13 @@ const MetaAdsManager = () => {
               (removedWasActive ? 1 : 0),
           ),
         },
-        campaigns: removeMetaCampaignRecord(current?.campaigns || [], campaignId),
+        campaigns: removeMetaCampaignRecord(current?.campaigns || [], deletedCampaignId),
       }));
       setMetaCampaigns((current) =>
-        removeMetaCampaignRecord(current || [], campaignId),
+        removeMetaCampaignRecord(current || [], deletedCampaignId),
       );
       setSelectedCampaignRef((current) =>
-        String(current || "") === String(campaignId || "")
+        String(current || "") === String(deletedCampaignId || "")
           ? ""
           : current,
       );
