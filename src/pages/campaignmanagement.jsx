@@ -692,7 +692,7 @@ const CampaignManagement = () => {
         try {
             setSavingCampaign(true);
             setDeletingCampaignId(String(campaignId));
-            await api.delete(`/api/campaigns/${campaignId}`, {
+            const response = await api.delete(`/api/campaigns/${campaignId}`, {
                 headers: getAuthHeaders(),
                 data: typeof campaign === 'object' ? {
                     metaCampaignId: campaign.metaCampaignId || '',
@@ -700,6 +700,16 @@ const CampaignManagement = () => {
                     metaAdId: campaign.metaAdId || ''
                 } : undefined
             });
+            const deleteDurationMs = response?.headers?.['x-campaign-delete-duration-ms'];
+            const deletePhase = response?.headers?.['x-campaign-delete-phase'];
+            if (deleteDurationMs || deletePhase) {
+                console.info('[campaign-delete-response]', {
+                    campaignId,
+                    deleteDurationMs,
+                    deletePhase,
+                    requestId: response?.headers?.['x-campaign-delete-request-id']
+                });
+            }
             setCampaigns((prev) => prev.filter((item) => String(item.id) !== String(campaignId)));
         } catch (err) {
             console.error('Delete failed', err?.response?.data || err.message);
