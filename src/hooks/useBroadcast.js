@@ -994,12 +994,15 @@ export const useBroadcast = () => {
       return Math.round(precomputed);
     }
     const snapshot = getBroadcastProgressSnapshot(broadcast);
-    const { read, delivered, failed, sent, base } = snapshot;
+    const { read, replied, delivered, failed, sent, base } = snapshot;
     const totalRecipients = snapshot.totalRecipients || base;
 
     if (base === 0) return 0;
 
-    const validRead = Math.min(read, totalRecipients || delivered + failed || sent || base);
+    const validRead = Math.min(
+      Math.max(read, replied),
+      totalRecipients || delivered + failed || sent || base,
+    );
     let readRate = (validRead / base) * 100;
     if (readRate > 100) readRate = 100;
 
