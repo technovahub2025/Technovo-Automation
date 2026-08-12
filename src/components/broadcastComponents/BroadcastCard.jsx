@@ -90,6 +90,9 @@ const BroadcastCard = ({
       currentBroadcast?.recipientCount ||
       currentBroadcast?.recipients?.length ||
       0;
+    const sent = toNumber(
+      currentBroadcast?.sentCount ?? currentBroadcast?.completedCount ?? stats.sent,
+    );
     const delivered = Math.max(toNumber(stats.delivered), toNumber(stats.read));
     const read = toNumber(stats.read);
     const replied = toNumber(stats.replied);
@@ -98,6 +101,7 @@ const BroadcastCard = ({
       return {
         title: "Successful",
         lines: [
+          { label: "Sent", value: sent },
           { label: "Recipients", value: totalRecipients },
           { label: "Delivered", value: delivered },
         ],

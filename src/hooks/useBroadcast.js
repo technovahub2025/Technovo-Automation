@@ -928,6 +928,30 @@ export const useBroadcast = () => {
     if (!Number.isFinite(parsed)) return 0;
     return Math.max(0, parsed);
   };
+  const getBroadcastProgressSnapshot = (broadcast = {}) => {
+    const totalRecipients =
+      broadcast.recipientCount || broadcast.recipients?.length || 0;
+    const sent = toNonNegative(
+      broadcast?.sentCount ?? broadcast?.completedCount ?? broadcast?.stats?.sent,
+    );
+    const delivered = toNonNegative(broadcast?.stats?.delivered);
+    const read = toNonNegative(broadcast?.stats?.read);
+    const replied = toNonNegative(broadcast?.stats?.replied);
+    const failed = toNonNegative(broadcast?.stats?.failed);
+    const status = String(broadcast?.status || "").toLowerCase();
+    const base = totalRecipients || sent || delivered || read || replied || failed;
+
+    return {
+      totalRecipients,
+      sent,
+      delivered,
+      read,
+      replied,
+      failed,
+      status,
+      base,
+    };
+  };
   const formatLastUpdated = () => {
     const now = new Date();
     const diff = now - lastUpdated;
@@ -943,21 +967,22 @@ export const useBroadcast = () => {
 
   const getSuccessPercentage = (broadcast) => {
     const precomputed = Number(broadcast?.successfulPercentage);
-    if (Number.isFinite(precomputed) && precomputed >= 0) {
+    if (Number.isFinite(precomputed) && precomputed > 0) {
       return Math.round(precomputed);
     }
-    const totalRecipients =
-      broadcast.recipientCount || broadcast.recipients?.length || 0;
-    const deliveredRaw = toNonNegative(broadcast.stats?.delivered);
-    const read = toNonNegative(broadcast.stats?.read);
-    const delivered = Math.max(deliveredRaw, read);
-    const sent = toNonNegative(broadcast.stats?.sent);
-    const failed = toNonNegative(broadcast.stats?.failed);
-    const base = totalRecipients || delivered + failed || sent;
+    const snapshot = getBroadcastProgressSnapshot(broadcast);
+    const { totalRecipients, sent, delivered, read, failed, status, base } =
+      snapshot;
 
     if (base === 0) return 0;
 
-    let successRate = (delivered / base) * 100;
+    const activeProgress =
+      status === "sending" || status === "processing" || status === "scheduled";
+    const progressCount = activeProgress
+      ? Math.max(sent, delivered, read, failed)
+      : Math.max(delivered, read, sent);
+
+    let successRate = (Math.min(progressCount, totalRecipients || base) / base) * 100;
     if (successRate > 100) successRate = 100;
 
     return Math.round(successRate);
@@ -965,20 +990,16 @@ export const useBroadcast = () => {
 
   const getReadPercentage = (broadcast) => {
     const precomputed = Number(broadcast?.readPercentage);
-    if (Number.isFinite(precomputed) && precomputed >= 0) {
+    if (Number.isFinite(precomputed) && precomputed > 0) {
       return Math.round(precomputed);
     }
-    const read = toNonNegative(broadcast.stats?.read);
-    const totalRecipients =
-      broadcast.recipientCount || broadcast.recipients?.length || 0;
-    const delivered = toNonNegative(broadcast.stats?.delivered);
-    const failed = toNonNegative(broadcast.stats?.failed);
-    const sent = toNonNegative(broadcast.stats?.sent);
+    const snapshot = getBroadcastProgressSnapshot(broadcast);
+    const { read, delivered, failed, sent, base } = snapshot;
+    const totalRecipients = snapshot.totalRecipients || base;
 
-    const base = totalRecipients || delivered + failed || sent || delivered;
     if (base === 0) return 0;
 
-    const validRead = Math.min(read, base);
+    const validRead = Math.min(read, totalRecipients || delivered + failed || sent || base);
     let readRate = (validRead / base) * 100;
     if (readRate > 100) readRate = 100;
 
@@ -987,17 +1008,12 @@ export const useBroadcast = () => {
 
   const getRepliedPercentage = (broadcast) => {
     const precomputed = Number(broadcast?.repliedPercentage);
-    if (Number.isFinite(precomputed) && precomputed >= 0) {
+    if (Number.isFinite(precomputed) && precomputed > 0) {
       return Math.round(precomputed);
     }
-    const replied = toNonNegative(broadcast.stats?.replied);
-    const totalRecipients =
-      broadcast.recipientCount || broadcast.recipients?.length || 0;
-    const delivered = toNonNegative(broadcast.stats?.delivered);
-    const failed = toNonNegative(broadcast.stats?.failed);
-    const sent = toNonNegative(broadcast.stats?.sent);
+    const snapshot = getBroadcastProgressSnapshot(broadcast);
+    const { replied, delivered, failed, sent, base } = snapshot;
 
-    const base = totalRecipients || delivered + failed || sent;
     if (base === 0) return 0;
 
     let repliedRate = (replied / base) * 100;
