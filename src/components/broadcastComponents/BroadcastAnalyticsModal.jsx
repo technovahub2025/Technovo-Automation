@@ -13,6 +13,7 @@ import {
 import "./AudienceBadge.css";
 import "./BroadcastAnalyticsModal.css";
 import { apiClient } from "../../services/whatsappapi";
+import webSocketService from "../../services/websocketService";
 
 const FAILURE_CODE_LABELS = {
   131016: "Template parameter issue",
@@ -104,6 +105,7 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
   const [repairLoading, setRepairLoading] = useState(false);
   const [repairMessage, setRepairMessage] = useState("");
   const repairHeaderInputRef = useRef(null);
+  const refreshTimerRef = useRef(null);
   const safeBroadcast = broadcast || {};
   const mergedBroadcast = broadcastDetails || safeBroadcast;
   const stats = mergedBroadcast.stats || {};
@@ -275,7 +277,8 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
     [],
   );
 
-  const loadRecipientDetails = useCallback(async () => {
+  const loadRecipientDetails = useCallback(async (options = {}) => {
+    const { syncStats = false } = options;
     if (!isOpen || !safeBroadcast?._id) {
       setBroadcastDetails(null);
       setRetryMessage("");
@@ -283,6 +286,14 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
     }
     setIsRecipientLoading(true);
     try {
+      if (syncStats) {
+        try {
+          await apiClient.syncBroadcastStats(safeBroadcast._id);
+        } catch (syncError) {
+          console.warn("Broadcast stats sync failed:", syncError);
+        }
+      }
+
       const broadcastResult = await apiClient.getBroadcast(safeBroadcast._id);
 
       const response = broadcastResult || null;
@@ -325,8 +336,45 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
   ]);
 
   useEffect(() => {
-    loadRecipientDetails();
+    loadRecipientDetails({ syncStats: true });
   }, [loadRecipientDetails]);
+
+  useEffect(() => {
+    if (!isOpen || !safeBroadcast?._id) return undefined;
+
+    const scheduleRefresh = (syncStats = false) => {
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+      }
+      refreshTimerRef.current = window.setTimeout(() => {
+        loadRecipientDetails({ syncStats });
+      }, 200);
+    };
+
+    const handleBroadcastRealtimeUpdate = (data = {}) => {
+      const targetBroadcastId = String(data?.broadcastId || data?.broadcast?._id || data?.broadcast?.id || "").trim();
+      if (targetBroadcastId && targetBroadcastId !== String(safeBroadcast._id || "").trim()) {
+        return;
+      }
+      scheduleRefresh(false);
+    };
+
+    webSocketService.on("broadcast_stats_updated", handleBroadcastRealtimeUpdate);
+    webSocketService.on("broadcast_updated", handleBroadcastRealtimeUpdate);
+    webSocketService.on("broadcast_update", handleBroadcastRealtimeUpdate);
+    webSocketService.on("broadcast_chunk_completed", handleBroadcastRealtimeUpdate);
+
+    return () => {
+      webSocketService.off("broadcast_stats_updated", handleBroadcastRealtimeUpdate);
+      webSocketService.off("broadcast_updated", handleBroadcastRealtimeUpdate);
+      webSocketService.off("broadcast_update", handleBroadcastRealtimeUpdate);
+      webSocketService.off("broadcast_chunk_completed", handleBroadcastRealtimeUpdate);
+      if (refreshTimerRef.current) {
+        window.clearTimeout(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+    };
+  }, [isOpen, loadRecipientDetails, safeBroadcast?._id]);
 
   const handleRetryFailedRecipients = async () => {
     if (!safeBroadcast?._id) return;
