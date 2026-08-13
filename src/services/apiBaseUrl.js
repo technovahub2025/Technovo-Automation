@@ -1,4 +1,5 @@
 const LOCAL_BACKEND_FALLBACK = "http://localhost:3001";
+const PRODUCTION_BACKEND_FALLBACK = "https://nexion-broadcast-backend-1.onrender.com";
 
 const toCleanString = (value) => String(value || "").trim();
 
@@ -12,6 +13,15 @@ const isLocalUrl = (value) => {
   } catch {
     return false;
   }
+};
+
+const isProductionAppHost = (hostname = "") => {
+  const normalizedHost = toCleanString(hostname).toLowerCase();
+  return (
+    normalizedHost === "technovahub.in" ||
+    normalizedHost.endsWith(".technovahub.in") ||
+    normalizedHost.endsWith(".vercel.app")
+  );
 };
 
 export const normalizeApiBaseUrl = (value) => {
@@ -40,6 +50,10 @@ export const resolveApiBaseUrl = ({ override } = {}) => {
 
   if (browserIsLocal) {
     return LOCAL_BACKEND_FALLBACK;
+  }
+
+  if (isProductionAppHost(browserHostname)) {
+    return PRODUCTION_BACKEND_FALLBACK;
   }
 
   // Same-origin fallback should target the host origin only.
