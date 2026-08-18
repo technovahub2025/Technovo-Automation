@@ -213,18 +213,17 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
             )
         );
     const isAgentRole = isAgentRestricted;
-    const featureFlags = user?.featureFlags || {};
+    const featureFlags = user?.sidebarFeatureFlags || {};
     const canViewAnalytics = user?.canViewAnalytics !== false;
-    const canUseMetaAds =
-        isAdminWorkspaceUser || isAgentRestricted || Boolean(featureFlags.adsManager || featureFlags.analytics || featureFlags.metaConnect);
-    const canUseBroadcast = isAdminWorkspaceUser || isAgentRestricted || Boolean(
+    const canUseMetaAds = isSuperAdmin || Boolean(featureFlags.adsManager || featureFlags.analytics || featureFlags.metaConnect || featureFlags.metaLeads);
+    const canUseBroadcast = isSuperAdmin || Boolean(
         featureFlags.broadcastDashboard ||
         featureFlags.teamInbox ||
         featureFlags.broadcastMessaging ||
         featureFlags.templates ||
         featureFlags.contacts
     );
-    const canUseCrm = isAdminWorkspaceUser || isAgentRestricted || Boolean(
+    const canUseCrm = isSuperAdmin || Boolean(
         featureFlags.crmHome ||
         featureFlags.crmPipeline ||
         featureFlags.crmTasks ||
@@ -235,10 +234,10 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         featureFlags.crmLeadScoringSettings ||
         featureFlags.crmTaskCalendar
     );
-    const canUseVoiceAutomation = isLoggedIn;
-    const canUseMissedCalls = isAdminWorkspaceUser || (!isAgentRestricted && Boolean(featureFlags.missedCall));
-    const canUseEmailAutomation = isAdminWorkspaceUser || (!isAgentRestricted && Boolean(featureFlags.workflowAutomation || featureFlags.analytics));
-    const canUseCrmAutomation = isAdminWorkspaceUser || isAgentRestricted || Boolean(
+    const canUseVoiceAutomation = isSuperAdmin || Boolean(featureFlags.voiceCampaign || featureFlags.inboundAutomation || featureFlags.outboundVoice || featureFlags.callAnalytics);
+    const canUseMissedCalls = isSuperAdmin || Boolean(featureFlags.missedCall);
+    const canUseEmailAutomation = isSuperAdmin || Boolean(featureFlags.workflowAutomation);
+    const canUseCrmAutomation = isSuperAdmin || Boolean(
         featureFlags.crmOps ||
         featureFlags.crmLeadScoringSettings ||
         featureFlags.crmTaskCalendar

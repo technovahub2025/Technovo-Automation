@@ -23,6 +23,7 @@ import {
 import apiService from "../../services/api";
 import socketService from "../../services/socketService";
 import resolveAdminApiUrl from "../../services/adminApiUrl";
+import { SIDEBAR_ACCESS_GROUPS, buildSidebarFeatureFlags, isSidebarAccessGroupEnabled } from "../../utils/sidebarFeatureFlags";
 import "../admin.css";
 import "../../styles/theme.css";
 
@@ -271,6 +272,7 @@ const UsersListPage = () => {
   const [metaPageAccessToken, setMetaPageAccessToken] = useState("");
   const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+  const [sidebarFeatureFlags, setSidebarFeatureFlags] = useState(buildSidebarFeatureFlags());
   const [showToken, setShowToken] = useState(false);
   const [showTwilioToken, setShowTwilioToken] = useState(false);
   const [showMetaSecret, setShowMetaSecret] = useState(false);
@@ -327,6 +329,7 @@ const UsersListPage = () => {
     setMetaPageAccessToken("");
     setMetaPaymentFundUrl("");
     setPhoneNumber("");
+    setSidebarFeatureFlags(buildSidebarFeatureFlags());
     setShowToken(false);
     setShowTwilioToken(false);
     setShowMetaSecret(false);
@@ -535,6 +538,7 @@ const UsersListPage = () => {
     setMetaPageAccessToken(selectedUser.metaPageAccessToken ?? selectedUser.metapageaccesstoken ?? "");
     setMetaPaymentFundUrl(selectedUser.metaPaymentFundUrl ?? selectedUser.metapaymentfundurl ?? "");
     setPhoneNumber(selectedUser.phoneNumber ?? selectedUser.phonenumber ?? "");
+    setSidebarFeatureFlags(buildSidebarFeatureFlags(selectedUser.sidebarFeatureFlags || {}));
     setShowToken(false);
     setShowTwilioToken(false);
     setShowMetaSecret(false);
@@ -548,6 +552,17 @@ const UsersListPage = () => {
     setShowEditModal(false);
     setEditingUserId(null);
     resetForm();
+  };
+
+  const toggleSidebarAccessGroup = (group) => {
+    setSidebarFeatureFlags((previous) => {
+      const enabled = isSidebarAccessGroupEnabled(previous, group);
+      const next = { ...previous };
+      group.flags.forEach((flag) => {
+        next[flag] = !enabled;
+      });
+      return next;
+    });
   };
 
   const toggleCustomFeature = (featureLabel) => {
