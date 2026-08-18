@@ -2373,35 +2373,34 @@
 .custom-feature-check__input {
   appearance: none;
   -webkit-appearance: none;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   margin: 0;
-  border: 2px solid rgba(37, 99, 235, 0.45);
-  border-radius: 5px;
+  border: 1px solid rgba(148, 163, 184, 0.9);
+  border-radius: 7px;
   background: #ffffff;
   display: inline-grid;
   place-content: center;
   cursor: pointer;
-  transition: background 0.18s ease, border-color 0.18s ease;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
 }
 
 .custom-feature-check__input::before {
   content: "";
   width: 9px;
   height: 9px;
-  transform: scale(0);
-  transform-origin: center;
-  transition: transform 0.15s ease;
-  box-shadow: inset 1em 1em #ffffff;
-  background-color: #ffffff;
   transform: scale(0) rotate(45deg);
+  transition: transform 0.15s ease;
+  box-shadow: inset 1em 1em #2563eb;
+  background-color: #2563eb;
   clip-path: polygon(14% 44%, 0 65%, 40% 100%, 100% 16%, 82% 0, 38% 70%);
   border-radius: 1px;
 }
 
 .custom-feature-check__input:checked {
-  background: #2563eb;
-  border-color: #2563eb;
+  border-color: rgba(37, 99, 235, 0.55);
+  background: rgba(239, 246, 255, 1);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
 }
 
 .custom-feature-check__input:checked::before {
