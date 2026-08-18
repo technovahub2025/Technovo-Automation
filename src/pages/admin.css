@@ -2364,21 +2364,10 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  border: 1px solid rgba(191, 219, 254, 0.95);
-  border-radius: 10px;
-  background: #ffffff;
   color: #0f172a;
-  min-height: 34px;
-  padding: 0 10px 0 8px;
   cursor: pointer;
   font-size: 13px;
   font-weight: 600;
-  transition: background 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
-}
-
-.custom-feature-check:hover {
-  border-color: rgba(37, 99, 235, 0.5);
-  background: #f8fbff;
 }
 
 .custom-feature-check__input {
@@ -2420,25 +2409,7 @@
 }
 
 .custom-feature-check--active {
-  border-color: #2563eb;
-  color: #ffffff;
-  background: #2563eb;
-  box-shadow: 0 6px 14px rgba(37, 99, 235, 0.28);
-}
-
-.custom-feature-check--active:hover {
-  border-color: #1d4ed8;
-  background: #1d4ed8;
-}
-
-.custom-feature-check--active .custom-feature-check__input {
-  border-color: #ffffff;
-  background: #ffffff;
-}
-
-.custom-feature-check--active .custom-feature-check__input::before {
-  box-shadow: inset 1em 1em #2563eb;
-  background-color: #2563eb;
+  color: #1e3a8a;
 }
 
 .customize-doc-upload {
