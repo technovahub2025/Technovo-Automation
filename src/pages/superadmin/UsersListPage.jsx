@@ -1080,21 +1080,6 @@ const UsersListPage = () => {
               </button>
             </div>
 
-            <div className="customize-modal-user-strip">
-              <div className="customize-modal-user-chip">
-                <strong>{customizingUser.username || "User"}</strong>
-                <span>{customizingUser.email || "No email"}</span>
-              </div>
-              <div className="customize-modal-user-chip">
-                <strong>Current Plan</strong>
-                <span>{String(customizingUser.planCode || "trial").toUpperCase()}</span>
-              </div>
-              <div className="customize-modal-user-chip">
-                <strong>Workspace State</strong>
-                <span>{customizingUser.workspaceAccessState || "N/A"}</span>
-              </div>
-            </div>
-
             <div className="customize-form-grid">
               <div className="form-row form-row--customize">
                 <label>Amount</label>
@@ -1161,15 +1146,18 @@ const UsersListPage = () => {
                       {expanded && (
                         <div className="customize-feature-group__grid">
                           {group.features.map((feature) => (
-                            <button
-                              type="button"
+                            <label
                               key={feature}
-                              className={`custom-feature-chip ${customFeatureLabels.includes(feature) ? "custom-feature-chip--active" : ""}`}
-                              onClick={() => toggleCustomFeature(feature)}
+                              className={`custom-feature-check ${customFeatureLabels.includes(feature) ? "custom-feature-check--active" : ""}`}
                             >
-                              {customFeatureLabels.includes(feature) ? <Check size={14} /> : null}
+                              <input
+                                type="checkbox"
+                                className="custom-feature-check__input"
+                                checked={customFeatureLabels.includes(feature)}
+                                onChange={() => toggleCustomFeature(feature)}
+                              />
                               <span>{feature}</span>
-                            </button>
+                            </label>
                           ))}
                         </div>
                       )}
