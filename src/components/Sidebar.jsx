@@ -994,7 +994,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         <div
                             className={`icon-item ${isConversationsRouteActive ? 'active' : ''}`}
                             onMouseEnter={() => {
-                                if (isAgentRestricted) return;
                                 if (!isMobile) {
                                     setOpenMenu(null);
                                 }
@@ -1020,7 +1019,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         <div
                             className={`icon-item ${isCampaignsRouteActive ? 'active' : ''} ${openMenu === 'campaigns' ? 'expanded' : ''}`}
                             onMouseEnter={(e) => {
-                                if (isAgentRestricted) return;
                                 if (!isMobile) {
                                     cancelDesktopFlyoutClose();
                                     openDesktopFlyout('campaigns', e);
@@ -1050,7 +1048,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         <div
                             className={`icon-item ${isCrmRouteActive ? 'active' : ''} ${openMenu === 'crm' ? 'expanded' : ''}`}
                             onMouseEnter={(e) => {
-                                if (isAgentRestricted) return;
                                 if (!isMobile) {
                                     cancelDesktopFlyoutClose();
                                     openDesktopFlyout('crm', e);
@@ -1086,7 +1083,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         <div
                             className={`icon-item ${isMetaAdsRouteActive ? 'active' : ''} ${openMenu === 'metaAds' ? 'expanded' : ''}`}
                             onMouseEnter={(e) => {
-                                if (isAgentRestricted) return;
                                 if (!isMobile) {
                                     cancelDesktopFlyoutClose();
                                     openDesktopFlyout('metaAds', e);
@@ -1201,7 +1197,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         </div>
                     )}
 
-                    {!isAgentRestricted && canUseMissedCalls && (
+                    {canUseMissedCalls && (
                         <div
                             className={`icon-item ${isMissedCallsRouteActive ? 'active' : ''}`}
                             onMouseEnter={() => {
@@ -1221,7 +1217,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         </div>
                     )}
 
-                    {!isAgentRestricted && canUseEmailAutomation && (
+                    {canUseEmailAutomation && (
                         <div
                             className={`icon-item ${isEmailAutomationRouteActive ? 'active' : ''} ${openMenu === 'emailAutomation' ? 'expanded' : ''}`}
                             onMouseEnter={(e) => {
@@ -1433,7 +1429,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 )}
                             </div>
                             <nav className="panel-menu">
-                                {(isSuperAdmin || isAgentRestricted || featureFlags.crmHome) && (
+                                {(isSuperAdmin || featureFlags.crmHome) && (
                                     <NavLink
                                         to="/crm/home"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1445,7 +1441,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>CRM Home</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || isAgentRestricted || featureFlags.crmTasks) && (
+                                {(isSuperAdmin || featureFlags.crmTasks) && (
                                     <NavLink
                                         to="/crm/tasks"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1457,7 +1453,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Tasks</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || isAgentRestricted || featureFlags.crmDeals) && (
+                                {(isSuperAdmin || featureFlags.crmDeals) && (
                                     <NavLink
                                         to="/crm/deals"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1469,7 +1465,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Deals</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || isAgentRestricted || featureFlags.crmMeetings) && (
+                                {(isSuperAdmin || featureFlags.crmMeetings) && (
                                     <NavLink
                                         to="/crm/meetings"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1481,7 +1477,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Meetings</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || isAgentRestricted || featureFlags.crmReports) && (
+                                {(isSuperAdmin || featureFlags.crmReports) && (
                                     <NavLink
                                         to="/crm/reports"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1518,7 +1514,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     <MessageSquare size={20} />
                                     <span>WhatsApp Workflow</span>
                                 </NavLink> */}
-                                {(isSuperAdmin || isAgentRestricted || featureFlags.crmLeadScoringSettings) && (
+                                {(isSuperAdmin || featureFlags.crmLeadScoringSettings) && (
                                     <button
                                         type="button"
                                         className={`panel-item panel-item-button panel-item-submenu ${isLeadScoringSettingsActive ? 'active' : ''}`}
@@ -1528,7 +1524,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Lead Scoring Settings</span>
                                     </button>
                                 )}
-                                {(isSuperAdmin || isAgentRestricted || featureFlags.crmTaskCalendar) && (
+                                {(isSuperAdmin || featureFlags.crmTaskCalendar) && (
                                     <NavLink
                                         to="/crm/tasks-calendar"
                                         className={({ isActive }) => `panel-item panel-item-submenu ${isActive ? 'active' : ''}`}
@@ -1559,7 +1555,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 )}
                             </div>
                             <nav className="panel-menu">
-                                {(isSuperAdmin || isAgentRestricted || featureFlags.adsManager) && (
+                                {(isSuperAdmin || featureFlags.adsManager) && (
                                     <NavLink
                                         to="/ads-manager"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1569,7 +1565,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Campaigns</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || isAgentRestricted || featureFlags.analytics) && (
+                                {(isSuperAdmin || featureFlags.analytics) && (
                                     <NavLink
                                         to="/insights"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1579,7 +1575,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Reports</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || isAgentRestricted || featureFlags.metaConnect) && (
+                                {(isSuperAdmin || featureFlags.metaConnect) && (
                                     <NavLink
                                         to="/meta-connect"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1589,7 +1585,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Connect Meta</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || isAgentRestricted || featureFlags.analytics || featureFlags.metaConnect) && (
+                                {(isSuperAdmin || featureFlags.analytics || featureFlags.metaConnect || featureFlags.metaLeads) && (
                                     <NavLink
                                         to="/meta-leads"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1638,14 +1634,16 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Inbound / IVR</span>
                                     </NavLink>
                                 )}
-                                <NavLink
-                                    to="/voice-automation/outbound"
-                                    className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onClick={closeMobileMenusAfterNavigate}
-                                >
-                                    <PhoneOutgoing size={20} />
-                                    <span>Outbound</span>
-                                </NavLink>
+                                {(isSuperAdmin || featureFlags.outboundVoice) && (
+                                    <NavLink
+                                        to="/voice-automation/outbound"
+                                        className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
+                                        onClick={closeMobileMenusAfterNavigate}
+                                    >
+                                        <PhoneOutgoing size={20} />
+                                        <span>Outbound</span>
+                                    </NavLink>
+                                )}
                                 {(isSuperAdmin || featureFlags.callAnalytics) && (
                                     <NavLink
                                         to="/voice-automation/history"
