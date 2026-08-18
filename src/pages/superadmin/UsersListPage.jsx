@@ -1041,16 +1041,19 @@ const UsersListPage = () => {
                   {SIDEBAR_ACCESS_GROUPS.map((group) => {
                     const enabled = isSidebarAccessGroupEnabled(sidebarFeatureFlags, group);
                     return (
-                      <button
+                      <label
                         key={group.key}
-                        type="button"
-                        className={`custom-feature-chip ${enabled ? "custom-feature-chip--active" : ""}`}
-                        onClick={() => toggleSidebarAccessGroup(group)}
+                        className={`custom-feature-check ${enabled ? "custom-feature-check--active" : ""}`}
                         title={group.description}
                       >
-                        {enabled ? <Check size={14} /> : null}
+                        <input
+                          type="checkbox"
+                          className="custom-feature-check__input"
+                          checked={enabled}
+                          onChange={() => toggleSidebarAccessGroup(group)}
+                        />
                         <span>{group.label}</span>
-                      </button>
+                      </label>
                     );
                   })}
                 </div>
