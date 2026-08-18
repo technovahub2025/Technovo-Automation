@@ -10,7 +10,6 @@ import {
   UserRoundPlus
 } from "lucide-react";
 import apiService from "../../services/api";
-import { SIDEBAR_ACCESS_GROUPS, buildSidebarFeatureFlags, collapseSidebarFeatureFlags } from "../../utils/sidebarFeatureFlags";
 import "../admin.css";
 import "../../styles/theme.css";
 
@@ -35,7 +34,6 @@ const AdminSetupPage = () => {
   const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [missedCallWebhook, setMissedCallWebhook] = useState("");
-  const [sidebarFeatureFlags, setSidebarFeatureFlags] = useState(buildSidebarFeatureFlags());
   const [showTwilioToken, setShowTwilioToken] = useState(false);
   const [showMetaSecret, setShowMetaSecret] = useState(false);
   const [showMetaUserToken, setShowMetaUserToken] = useState(false);
@@ -86,18 +84,10 @@ const AdminSetupPage = () => {
     setMetaPaymentFundUrl("");
     setPhoneNumber("");
     setMissedCallWebhook("");
-    setSidebarFeatureFlags(buildSidebarFeatureFlags());
     setShowTwilioToken(false);
     setShowMetaSecret(false);
     setShowMetaUserToken(false);
     setErrors({});
-  };
-
-  const toggleSidebarAccessFlag = (flag) => {
-    setSidebarFeatureFlags((previous) => ({
-      ...previous,
-      [flag]: !previous?.[flag]
-    }));
   };
 
   const handleRegisterSubmit = async (e) => {
@@ -115,8 +105,7 @@ const AdminSetupPage = () => {
         username,
         email,
         password,
-        role: "admin",
-        sidebarFeatureFlags: collapseSidebarFeatureFlags(sidebarFeatureFlags)
+        role: "admin"
       });
       const createdAdminId = res?.data?.user?.id || res?.data?.user?._id;
 
@@ -338,39 +327,6 @@ const AdminSetupPage = () => {
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                     </span>
                   </div>
-
-                  <section className="customize-feature-section">
-                    <h3>Sidebar Access</h3>
-                    <p>Choose any sidebar modules this admin can see after login. Leave everything unchecked to show all modules.</p>
-                    <div className="customize-feature-groups">
-                      {SIDEBAR_ACCESS_GROUPS.map((group) => {
-                        return (
-                          <div key={group.key} className="customize-feature-group">
-                            <div className="customize-feature-group__toggle" title={group.description}>
-                              <span>{group.label}</span>
-                            </div>
-                            <div className="customize-feature-group__grid">
-                              {group.items.map((item) => {
-                                const enabled = Boolean(sidebarFeatureFlags[item.flag]);
-                                return (
-                                  <button
-                                    key={item.flag}
-                                    type="button"
-                                    className={`custom-feature-chip ${enabled ? "custom-feature-chip--active" : ""}`}
-                                    onClick={() => toggleSidebarAccessFlag(item.flag)}
-                                    title={item.label}
-                                  >
-                                    {enabled ? <Check size={14} /> : null}
-                                    <span>{item.label}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </section>
 
                   {errors.register && <span className="error-text">{errors.register}</span>}
                   <button type="submit" disabled={loading} className="admin-form-submit">
