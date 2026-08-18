@@ -2338,16 +2338,16 @@
 }
 
 .custom-feature-chip--active {
-  border-color: rgba(37, 99, 235, 0.48);
+  border-color: rgba(37, 99, 235, 0.36);
   color: #0f172a;
-  background: #e148e3;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.14) 0 6px, #ffffff 6px 100%);
   opacity: 1;
-  box-shadow: inset 3px 0 0 rgba(37, 99, 235, 0.9);
+  box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.06);
 }
 
 .custom-feature-chip--active:hover {
-  border-color: rgba(37, 99, 235, 0.68);
-  background: #3372e7;
+  border-color: rgba(37, 99, 235, 0.5);
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.18) 0 6px, #f8fbff 6px 100%);
 }
 
 .customize-doc-upload {
