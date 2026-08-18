@@ -10,7 +10,7 @@ import {
   UserRoundPlus
 } from "lucide-react";
 import apiService from "../../services/api";
-import { SIDEBAR_ACCESS_GROUPS, buildSidebarFeatureFlags, isSidebarAccessGroupEnabled } from "../../utils/sidebarFeatureFlags";
+import { SIDEBAR_ACCESS_GROUPS, buildSidebarFeatureFlags, collapseSidebarFeatureFlags, isSidebarAccessGroupEnabled } from "../../utils/sidebarFeatureFlags";
 import "../admin.css";
 import "../../styles/theme.css";
 
@@ -120,7 +120,7 @@ const AdminSetupPage = () => {
         email,
         password,
         role: "admin",
-        sidebarFeatureFlags: buildSidebarFeatureFlags(sidebarFeatureFlags)
+        sidebarFeatureFlags: collapseSidebarFeatureFlags(sidebarFeatureFlags)
       });
       const createdAdminId = res?.data?.user?.id || res?.data?.user?._id;
 

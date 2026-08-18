@@ -16,6 +16,7 @@ import {
     resolveGoogleOAuthEvent
 } from '../utils/googleOAuthEvents';
 import { resolveWorkspaceSettingsAccessState } from '../utils/agentAccess';
+import { hasSidebarAccessSelection } from '../utils/sidebarFeatureFlags';
 import {
     LayoutDashboard,
     MessageSquare,
@@ -214,16 +215,18 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         );
     const isAgentRole = isAgentRestricted;
     const featureFlags = user?.sidebarFeatureFlags || {};
+    const hasSidebarSelection = hasSidebarAccessSelection(featureFlags);
+    const showAllSidebarFeatures = isSuperAdmin || !hasSidebarSelection;
     const canViewAnalytics = user?.canViewAnalytics !== false;
-    const canUseMetaAds = isSuperAdmin || Boolean(featureFlags.adsManager || featureFlags.analytics || featureFlags.metaConnect || featureFlags.metaLeads);
-    const canUseBroadcast = isSuperAdmin || Boolean(
+    const canUseMetaAds = showAllSidebarFeatures || Boolean(featureFlags.adsManager || featureFlags.analytics || featureFlags.metaConnect || featureFlags.metaLeads);
+    const canUseBroadcast = showAllSidebarFeatures || Boolean(
         featureFlags.broadcastDashboard ||
         featureFlags.teamInbox ||
         featureFlags.broadcastMessaging ||
         featureFlags.templates ||
         featureFlags.contacts
     );
-    const canUseCrm = isSuperAdmin || Boolean(
+    const canUseCrm = showAllSidebarFeatures || Boolean(
         featureFlags.crmHome ||
         featureFlags.crmPipeline ||
         featureFlags.crmTasks ||
@@ -234,10 +237,10 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         featureFlags.crmLeadScoringSettings ||
         featureFlags.crmTaskCalendar
     );
-    const canUseVoiceAutomation = isSuperAdmin || Boolean(featureFlags.voiceCampaign || featureFlags.inboundAutomation || featureFlags.outboundVoice || featureFlags.callAnalytics);
-    const canUseMissedCalls = isSuperAdmin || Boolean(featureFlags.missedCall);
-    const canUseEmailAutomation = isSuperAdmin || Boolean(featureFlags.workflowAutomation);
-    const canUseCrmAutomation = isSuperAdmin || Boolean(
+    const canUseVoiceAutomation = showAllSidebarFeatures || Boolean(featureFlags.voiceCampaign || featureFlags.inboundAutomation || featureFlags.outboundVoice || featureFlags.callAnalytics);
+    const canUseMissedCalls = showAllSidebarFeatures || Boolean(featureFlags.missedCall);
+    const canUseEmailAutomation = showAllSidebarFeatures || Boolean(featureFlags.workflowAutomation);
+    const canUseCrmAutomation = showAllSidebarFeatures || Boolean(
         featureFlags.crmOps ||
         featureFlags.crmLeadScoringSettings ||
         featureFlags.crmTaskCalendar
@@ -1051,14 +1054,14 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 if (!isMobile) {
                                     cancelDesktopFlyoutClose();
                                     openDesktopFlyout('crm', e);
-                                    if (isSuperAdmin || featureFlags.crmHome) prefetchRoute('/crm/home');
-                                    if (isSuperAdmin || featureFlags.crmPipeline) prefetchRoute('/crm/pipeline');
-                                    if (isSuperAdmin || featureFlags.crmTasks) prefetchRoute('/crm/tasks');
-                                    if (isSuperAdmin || featureFlags.crmDeals) prefetchRoute('/crm/deals');
-                                    if (isSuperAdmin || featureFlags.crmMeetings) prefetchRoute('/crm/meetings');
-                                    if (isSuperAdmin || featureFlags.crmReports) prefetchRoute('/crm/reports');
-                                    if (isSuperAdmin || featureFlags.crmOps) prefetchRoute('/crm/ops');
-                                    if (isSuperAdmin || featureFlags.crmTaskCalendar) prefetchRoute('/crm/tasks-calendar');
+                                    if (showAllSidebarFeatures || featureFlags.crmHome) prefetchRoute('/crm/home');
+                                    if (showAllSidebarFeatures || featureFlags.crmPipeline) prefetchRoute('/crm/pipeline');
+                                    if (showAllSidebarFeatures || featureFlags.crmTasks) prefetchRoute('/crm/tasks');
+                                    if (showAllSidebarFeatures || featureFlags.crmDeals) prefetchRoute('/crm/deals');
+                                    if (showAllSidebarFeatures || featureFlags.crmMeetings) prefetchRoute('/crm/meetings');
+                                    if (showAllSidebarFeatures || featureFlags.crmReports) prefetchRoute('/crm/reports');
+                                    if (showAllSidebarFeatures || featureFlags.crmOps) prefetchRoute('/crm/ops');
+                                    if (showAllSidebarFeatures || featureFlags.crmTaskCalendar) prefetchRoute('/crm/tasks-calendar');
                                 }
                             }}
                             onClick={(e) => {
@@ -1429,7 +1432,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 )}
                             </div>
                             <nav className="panel-menu">
-                                {(isSuperAdmin || featureFlags.crmHome) && (
+                                {(showAllSidebarFeatures || featureFlags.crmHome) && (
                                     <NavLink
                                         to="/crm/home"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1441,7 +1444,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>CRM Home</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || featureFlags.crmTasks) && (
+                                {(showAllSidebarFeatures || featureFlags.crmTasks) && (
                                     <NavLink
                                         to="/crm/tasks"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1453,7 +1456,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Tasks</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || featureFlags.crmDeals) && (
+                                {(showAllSidebarFeatures || featureFlags.crmDeals) && (
                                     <NavLink
                                         to="/crm/deals"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1465,7 +1468,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Deals</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || featureFlags.crmMeetings) && (
+                                {(showAllSidebarFeatures || featureFlags.crmMeetings) && (
                                     <NavLink
                                         to="/crm/meetings"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1477,7 +1480,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Meetings</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || featureFlags.crmReports) && (
+                                {(showAllSidebarFeatures || featureFlags.crmReports) && (
                                     <NavLink
                                         to="/crm/reports"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1514,7 +1517,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     <MessageSquare size={20} />
                                     <span>WhatsApp Workflow</span>
                                 </NavLink> */}
-                                {(isSuperAdmin || featureFlags.crmLeadScoringSettings) && (
+                                {(showAllSidebarFeatures || featureFlags.crmLeadScoringSettings) && (
                                     <button
                                         type="button"
                                         className={`panel-item panel-item-button panel-item-submenu ${isLeadScoringSettingsActive ? 'active' : ''}`}
@@ -1524,7 +1527,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Lead Scoring Settings</span>
                                     </button>
                                 )}
-                                {(isSuperAdmin || featureFlags.crmTaskCalendar) && (
+                                {(showAllSidebarFeatures || featureFlags.crmTaskCalendar) && (
                                     <NavLink
                                         to="/crm/tasks-calendar"
                                         className={({ isActive }) => `panel-item panel-item-submenu ${isActive ? 'active' : ''}`}
@@ -1555,7 +1558,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 )}
                             </div>
                             <nav className="panel-menu">
-                                {(isSuperAdmin || featureFlags.adsManager) && (
+                                {(showAllSidebarFeatures || featureFlags.adsManager) && (
                                     <NavLink
                                         to="/ads-manager"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1565,7 +1568,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Campaigns</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || featureFlags.analytics) && (
+                                {(showAllSidebarFeatures || featureFlags.analytics) && (
                                     <NavLink
                                         to="/insights"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1575,7 +1578,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Reports</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || featureFlags.metaConnect) && (
+                                {(showAllSidebarFeatures || featureFlags.metaConnect) && (
                                     <NavLink
                                         to="/meta-connect"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1585,7 +1588,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Connect Meta</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || featureFlags.analytics || featureFlags.metaConnect || featureFlags.metaLeads) && (
+                                {(showAllSidebarFeatures || featureFlags.analytics || featureFlags.metaConnect || featureFlags.metaLeads) && (
                                     <NavLink
                                         to="/meta-leads"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1614,7 +1617,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 )}
                             </div>
                             <nav className="panel-menu">
-                                {(isSuperAdmin || featureFlags.voiceCampaign) && (
+                                {(showAllSidebarFeatures || featureFlags.voiceCampaign) && (
                                     <NavLink
                                         to="/voice-broadcast"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1624,7 +1627,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Voice Broadcast</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || featureFlags.inboundAutomation) && (
+                                {(showAllSidebarFeatures || featureFlags.inboundAutomation) && (
                                     <NavLink
                                         to="/voice-automation/inbound"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1634,7 +1637,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Inbound / IVR</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || featureFlags.outboundVoice) && (
+                                {(showAllSidebarFeatures || featureFlags.outboundVoice) && (
                                     <NavLink
                                         to="/voice-automation/outbound"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
@@ -1644,7 +1647,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Outbound</span>
                                     </NavLink>
                                 )}
-                                {(isSuperAdmin || featureFlags.callAnalytics) && (
+                                {(showAllSidebarFeatures || featureFlags.callAnalytics) && (
                                     <NavLink
                                         to="/voice-automation/history"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}

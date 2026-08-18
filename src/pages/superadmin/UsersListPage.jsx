@@ -23,7 +23,7 @@ import {
 import apiService from "../../services/api";
 import socketService from "../../services/socketService";
 import resolveAdminApiUrl from "../../services/adminApiUrl";
-import { SIDEBAR_ACCESS_GROUPS, buildSidebarFeatureFlags, isSidebarAccessGroupEnabled } from "../../utils/sidebarFeatureFlags";
+import { SIDEBAR_ACCESS_GROUPS, buildSidebarFeatureFlags, collapseSidebarFeatureFlags, isSidebarAccessGroupEnabled } from "../../utils/sidebarFeatureFlags";
 import "../admin.css";
 import "../../styles/theme.css";
 
@@ -871,7 +871,7 @@ const UsersListPage = () => {
         email,
         role: selectedRole,
         ...(paymentFundUrl ? { metaPaymentFundUrl: paymentFundUrl } : {}),
-        sidebarFeatureFlags: buildSidebarFeatureFlags(sidebarFeatureFlags)
+        sidebarFeatureFlags: collapseSidebarFeatureFlags(sidebarFeatureFlags)
       });
       await apiService.saveAdminCredentials({
         userId: editingUserId,
