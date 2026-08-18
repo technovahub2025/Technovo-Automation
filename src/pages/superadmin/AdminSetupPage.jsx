@@ -10,6 +10,7 @@ import {
   UserRoundPlus
 } from "lucide-react";
 import apiService from "../../services/api";
+import { SIDEBAR_ACCESS_GROUPS, buildSidebarFeatureFlags, isSidebarAccessGroupEnabled } from "../../utils/sidebarFeatureFlags";
 import "../admin.css";
 import "../../styles/theme.css";
 
@@ -34,6 +35,7 @@ const AdminSetupPage = () => {
   const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [missedCallWebhook, setMissedCallWebhook] = useState("");
+  const [sidebarFeatureFlags, setSidebarFeatureFlags] = useState(buildSidebarFeatureFlags());
   const [showTwilioToken, setShowTwilioToken] = useState(false);
   const [showMetaSecret, setShowMetaSecret] = useState(false);
   const [showMetaUserToken, setShowMetaUserToken] = useState(false);
@@ -84,10 +86,22 @@ const AdminSetupPage = () => {
     setMetaPaymentFundUrl("");
     setPhoneNumber("");
     setMissedCallWebhook("");
+    setSidebarFeatureFlags(buildSidebarFeatureFlags());
     setShowTwilioToken(false);
     setShowMetaSecret(false);
     setShowMetaUserToken(false);
     setErrors({});
+  };
+
+  const toggleSidebarAccessGroup = (group) => {
+    setSidebarFeatureFlags((previous) => {
+      const enabled = isSidebarAccessGroupEnabled(previous, group);
+      const next = { ...previous };
+      group.flags.forEach((flag) => {
+        next[flag] = !enabled;
+      });
+      return next;
+    });
   };
 
   const handleRegisterSubmit = async (e) => {
@@ -101,7 +115,13 @@ const AdminSetupPage = () => {
 
     setLoading(true);
     try {
-      const res = await apiService.registerAdmin({ username, email, password, role: "admin" });
+      const res = await apiService.registerAdmin({
+        username,
+        email,
+        password,
+        role: "admin",
+        sidebarFeatureFlags: buildSidebarFeatureFlags(sidebarFeatureFlags)
+      });
       const createdAdminId = res?.data?.user?.id || res?.data?.user?._id;
 
       if (!createdAdminId) {
@@ -322,6 +342,27 @@ const AdminSetupPage = () => {
                       {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
                     </span>
                   </div>
+
+                  <section className="customize-feature-section">
+                    <h3>Sidebar Access</h3>
+                    <p>Choose which sidebar modules this admin can see after login.</p>
+                    <div className="customize-feature-groups">
+                      {SIDEBAR_ACCESS_GROUPS.map((group) => {
+                        const enabled = isSidebarAccessGroupEnabled(sidebarFeatureFlags, group);
+                        return (
+                          <button
+                            key={group.key}
+                            type="button"
+                            className={`custom-feature-chip ${enabled ? "custom-feature-chip--active" : ""}`}
+                            onClick={() => toggleSidebarAccessGroup(group)}
+                            title={group.description}
+                          >
+                            <span>{group.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
 
                   {errors.register && <span className="error-text">{errors.register}</span>}
                   <button type="submit" disabled={loading} className="admin-form-submit">

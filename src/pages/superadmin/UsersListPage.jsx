@@ -870,7 +870,8 @@ const UsersListPage = () => {
         username,
         email,
         role: selectedRole,
-        ...(paymentFundUrl ? { metaPaymentFundUrl: paymentFundUrl } : {})
+        ...(paymentFundUrl ? { metaPaymentFundUrl: paymentFundUrl } : {}),
+        sidebarFeatureFlags: buildSidebarFeatureFlags(sidebarFeatureFlags)
       });
       await apiService.saveAdminCredentials({
         userId: editingUserId,
@@ -1032,6 +1033,27 @@ const UsersListPage = () => {
                 <label>Phone Number</label>
                 <input value={phoneNumber} onChange={(e) => setPhoneNumber(e.target.value)} />
               </div>
+              <section className="customize-feature-section">
+                <h3>Sidebar Access</h3>
+                <p>Choose which sidebar modules this user can see.</p>
+                <div className="customize-feature-groups">
+                  {SIDEBAR_ACCESS_GROUPS.map((group) => {
+                    const enabled = isSidebarAccessGroupEnabled(sidebarFeatureFlags, group);
+                    return (
+                      <button
+                        key={group.key}
+                        type="button"
+                        className={`custom-feature-chip ${enabled ? "custom-feature-chip--active" : ""}`}
+                        onClick={() => toggleSidebarAccessGroup(group)}
+                        title={group.description}
+                      >
+                        {enabled ? <Check size={14} /> : null}
+                        <span>{group.label}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </section>
               {errors.register && <span className="error-text">{errors.register}</span>}
 
               <div className="modal-actions">
