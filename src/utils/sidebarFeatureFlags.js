@@ -73,6 +73,11 @@ export const buildSidebarFeatureFlags = (flags = {}) => {
   );
 };
 
+export const hasSidebarAccessSelection = (flags = {}) =>
+  SIDEBAR_ACCESS_FLAG_KEYS.some((flag) => Boolean(flags?.[flag]));
+
+export const collapseSidebarFeatureFlags = (flags = {}) =>
+  hasSidebarAccessSelection(flags) ? buildSidebarFeatureFlags(flags) : {};
+
 export const isSidebarAccessGroupEnabled = (flags = {}, group = {}) =>
   Array.isArray(group?.flags) && group.flags.some((flag) => Boolean(flags?.[flag]));
-
