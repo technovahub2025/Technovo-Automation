@@ -10,7 +10,7 @@ import {
   UserRoundPlus
 } from "lucide-react";
 import apiService from "../../services/api";
-import { SIDEBAR_ACCESS_GROUPS, buildSidebarFeatureFlags, collapseSidebarFeatureFlags, isSidebarAccessGroupEnabled } from "../../utils/sidebarFeatureFlags";
+import { SIDEBAR_ACCESS_GROUPS, buildSidebarFeatureFlags, collapseSidebarFeatureFlags } from "../../utils/sidebarFeatureFlags";
 import "../admin.css";
 import "../../styles/theme.css";
 
@@ -93,15 +93,11 @@ const AdminSetupPage = () => {
     setErrors({});
   };
 
-  const toggleSidebarAccessGroup = (group) => {
-    setSidebarFeatureFlags((previous) => {
-      const enabled = isSidebarAccessGroupEnabled(previous, group);
-      const next = { ...previous };
-      group.flags.forEach((flag) => {
-        next[flag] = !enabled;
-      });
-      return next;
-    });
+  const toggleSidebarAccessFlag = (flag) => {
+    setSidebarFeatureFlags((previous) => ({
+      ...previous,
+      [flag]: !previous?.[flag]
+    }));
   };
 
   const handleRegisterSubmit = async (e) => {
@@ -345,20 +341,32 @@ const AdminSetupPage = () => {
 
                   <section className="customize-feature-section">
                     <h3>Sidebar Access</h3>
-                    <p>Choose which sidebar modules this admin can see after login.</p>
+                    <p>Choose any sidebar modules this admin can see after login. Leave everything unchecked to show all modules.</p>
                     <div className="customize-feature-groups">
                       {SIDEBAR_ACCESS_GROUPS.map((group) => {
-                        const enabled = isSidebarAccessGroupEnabled(sidebarFeatureFlags, group);
                         return (
-                          <button
-                            key={group.key}
-                            type="button"
-                            className={`custom-feature-chip ${enabled ? "custom-feature-chip--active" : ""}`}
-                            onClick={() => toggleSidebarAccessGroup(group)}
-                            title={group.description}
-                          >
-                            <span>{group.label}</span>
-                          </button>
+                          <div key={group.key} className="customize-feature-group">
+                            <div className="customize-feature-group__toggle" title={group.description}>
+                              <span>{group.label}</span>
+                            </div>
+                            <div className="customize-feature-group__grid">
+                              {group.items.map((item) => {
+                                const enabled = Boolean(sidebarFeatureFlags[item.flag]);
+                                return (
+                                  <button
+                                    key={item.flag}
+                                    type="button"
+                                    className={`custom-feature-chip ${enabled ? "custom-feature-chip--active" : ""}`}
+                                    onClick={() => toggleSidebarAccessFlag(item.flag)}
+                                    title={item.label}
+                                  >
+                                    {enabled ? <Check size={14} /> : null}
+                                    <span>{item.label}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
                         );
                       })}
                     </div>
