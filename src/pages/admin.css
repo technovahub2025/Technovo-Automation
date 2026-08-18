@@ -2373,11 +2373,11 @@
 .custom-feature-check__input {
   appearance: none;
   -webkit-appearance: none;
-  width: 18px;
-  height: 18px;
+  width: 14px;
+  height: 14px;
   margin: 0;
   border: 1px solid rgba(148, 163, 184, 0.9);
-  border-radius: 7px;
+  border-radius: 4px;
   background: #ffffff;
   display: inline-grid;
   place-content: center;
@@ -2387,8 +2387,8 @@
 
 .custom-feature-check__input::before {
   content: "";
-  width: 9px;
-  height: 9px;
+  width: 7px;
+  height: 7px;
   transform: scale(0) rotate(45deg);
   transition: transform 0.15s ease;
   box-shadow: inset 1em 1em #2563eb;
