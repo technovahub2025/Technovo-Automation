@@ -242,7 +242,10 @@ const CampaignManagement = () => {
         const compliancePolicy = campaign?.compliancePolicy || {};
         const objective = String(getCampaignContractField(audience, 'objective', 'objective', campaign?.objective || 'awareness'));
         const platform = String(getCampaignContractField(audience, 'platform', 'platform', campaign?.platform || 'both'));
-        const status = String(getCampaignContractField(deliveryPolicy, 'status', 'status', campaign?.status || 'draft'));
+        const status = String(
+            campaign?.status ||
+            getCampaignContractField(deliveryPolicy, 'status', 'status', campaign?.status || 'draft')
+        );
         const startDateRaw = getCampaignContractField(deliveryPolicy, 'startDate', 'startDate', campaign?.startDate || '');
         const endDateRaw = getCampaignContractField(deliveryPolicy, 'endDate', 'endDate', campaign?.endDate || '');
 
@@ -569,8 +572,22 @@ const CampaignManagement = () => {
             return;
         }
 
+        const optimisticId = `temp-${Date.now()}`;
+        const optimisticCampaign = normalizeCampaign({
+            ...campaignData,
+            id: optimisticId,
+            _id: optimisticId,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            source: 'local'
+        });
+
         try {
             setSavingCampaign(true);
+            setCampaigns((prev) => [
+                optimisticCampaign,
+                ...prev.filter((item) => String(item.id) !== String(optimisticId))
+            ]);
             const payload = buildCampaignPayload({
                 ...campaignData,
                 adAccountId: campaignData?.adAccountId || metaSetup?.selectedAdAccountId || metaSetup?.adAccountId || ''
@@ -626,6 +643,7 @@ const CampaignManagement = () => {
                 responseData?.message ||
                 (detailMessage ? `${stageMessage}${detailMessage}` : 'Create campaign failed.')
             );
+            setCampaigns((prev) => prev.filter((item) => String(item.id) !== String(optimisticId)));
         } finally {
             setSavingCampaign(false);
         }
