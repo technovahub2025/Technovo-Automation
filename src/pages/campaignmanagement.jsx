@@ -616,7 +616,11 @@ const CampaignManagement = () => {
             });
             setCampaigns((prev) => [
                 normalizedCreated,
-                ...prev.filter((item) => String(item.id) !== String(normalizedCreated.id))
+                ...prev.filter(
+                    (item) =>
+                        String(item.id) !== String(normalizedCreated.id) &&
+                        String(item.id) !== String(optimisticId)
+                )
             ]);
             setCurrentPage(1);
             setCampaignFlash(response?.data?.message || 'Your ad has been created successfully.');
