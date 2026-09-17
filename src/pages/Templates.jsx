@@ -19,6 +19,8 @@ const TEMPLATES_CACHE_NAMESPACE = 'templates-page';
 const sanitizeTemplateForCache = (template = {}) => ({
   _id: String(template?._id || '').trim(),
   id: String(template?.id || '').trim(),
+  whatsappTemplateId: String(template?.whatsappTemplateId || '').trim(),
+  metaTemplateId: String(template?.metaTemplateId || '').trim(),
   name: String(template?.name || '').trim(),
   status: String(template?.status || '').trim(),
   language: String(template?.language || '').trim(),
@@ -215,12 +217,21 @@ const Templates = () => {
       return;
     }
 
-    const confirmed = window.confirm(`Delete template "${templateName}" from Meta and local DB?`);
+    const localOnly = !String(
+      template?.whatsappTemplateId || template?.metaTemplateId || ''
+    ).trim();
+    const confirmed = window.confirm(localOnly
+      ? `Delete local template "${templateName}"?`
+      : `Delete template "${templateName}" from Meta and local DB?`);
     if (!confirmed) return;
 
     setDeletingTemplateName(templateName);
     try {
-      const result = await whatsappService.deleteTemplateFromMeta(templateName);
+      // Local records must be deleted through the ID endpoint. The backend uses
+      // whatsappTemplateId to decide whether this is local-only or Meta + local.
+      const result = template?._id
+        ? await whatsappService.deleteTemplate(template._id)
+        : await whatsappService.deleteTemplateFromMeta(templateName);
       if (!result?.success) {
         showToast(result?.error || 'Failed to delete template', 'error');
         return;
