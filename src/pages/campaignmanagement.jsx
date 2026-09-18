@@ -896,7 +896,15 @@ const CampaignManagement = () => {
     const startIndex = (safeCurrentPage - 1) * ITEMS_PER_PAGE;
     const endIndex = startIndex + ITEMS_PER_PAGE;
     const displayCampaigns = filteredCampaigns.slice(startIndex, endIndex);
-    const pageNumbers = Array.from({ length: totalPages }, (_, idx) => idx + 1);
+    const pageWindowStart = Math.max(2, Math.min(safeCurrentPage - 1, totalPages - 3));
+    const visiblePages = totalPages <= 5
+        ? Array.from({ length: totalPages }, (_, idx) => idx + 1)
+        : [1, pageWindowStart, pageWindowStart + 1, pageWindowStart + 2, totalPages];
+    const pageNumbers = visiblePages.flatMap((page, index) => (
+        index > 0 && page - visiblePages[index - 1] > 1
+            ? [`ellipsis-${page}`, page]
+            : [page]
+    ));
     const showingStart = filteredCampaigns.length === 0 ? 0 : startIndex + 1;
     const showingEnd = filteredCampaigns.length === 0 ? 0 : Math.min(endIndex, filteredCampaigns.length);
     const activeCampaignsCount = campaigns.filter((campaign) => campaign.lifecycleStatus === 'running' || campaign.status === 'active').length;
@@ -1370,20 +1378,25 @@ const CampaignManagement = () => {
                             <div className="cm-pagination-text">
                                 Showing <span className="cm-pagination-strong">{showingStart}-{showingEnd}</span> of <span className="cm-pagination-strong">{filteredCampaigns.length}</span> campaigns
                             </div>
-                            <div className="cm-pagination-controls">
+                            <nav className="cm-pagination-controls" aria-label="Campaign pagination">
                                 <button
                                     className="cm-page-btn"
                                     type="button"
-                                    onClick={() => setCurrentPage((prev) => Math.max(1, prev - 1))}
+                                    aria-label="Previous page"
+                                    onClick={() => setCurrentPage(Math.max(1, safeCurrentPage - 1))}
                                     disabled={safeCurrentPage === 1}
                                 >
                                     <span className="material-symbols-outlined">chevron_left</span>
                                 </button>
-                                {pageNumbers.map((pageNo) => (
+                                {pageNumbers.map((pageNo) => typeof pageNo === 'string' ? (
+                                    <span key={pageNo} className="cm-page-ellipsis" aria-hidden="true">…</span>
+                                ) : (
                                     <button
                                         key={pageNo}
                                         className={`cm-page-btn ${safeCurrentPage === pageNo ? 'cm-page-btn-active' : ''}`}
                                         type="button"
+                                        aria-label={`Page ${pageNo}`}
+                                        aria-current={safeCurrentPage === pageNo ? 'page' : undefined}
                                         onClick={() => setCurrentPage(pageNo)}
                                     >
                                         {pageNo}
@@ -1392,12 +1405,13 @@ const CampaignManagement = () => {
                                 <button
                                     className="cm-page-btn"
                                     type="button"
-                                    onClick={() => setCurrentPage((prev) => Math.min(totalPages, prev + 1))}
+                                    aria-label="Next page"
+                                    onClick={() => setCurrentPage(Math.min(totalPages, safeCurrentPage + 1))}
                                     disabled={safeCurrentPage === totalPages}
                                 >
                                     <span className="material-symbols-outlined">chevron_right</span>
                                 </button>
-                            </div>
+                            </nav>
                         </div>
                     ) : null}
                 </section>
