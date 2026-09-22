@@ -1,4 +1,5 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   ArrowLeft,
   CalendarDays,
@@ -71,6 +72,23 @@ const buildCompanyEmailDomain = (user = {}) => {
 };
 
 const SettingsAgentManagementPage = () => {
+  const { user } = useContext(AuthContext);
+  if (String(user?.role || "").trim().toLowerCase() === "superadmin") {
+    return (
+      <div className="superadmin-shell agent-management-page">
+        <section className="superadmin-panel superadmin-panel--page">
+          <h1>Agent Management</h1>
+          <p>To create an agent, sign in with the company admin account that will own it.</p>
+          <p>Your superadmin account manages admins and agent access across companies.</p>
+          <Link to="/agent-management" className="agent-primary-btn">Manage company agent access</Link>
+        </section>
+      </div>
+    );
+  }
+  return <WorkspaceAgentManagementPage />;
+};
+
+const WorkspaceAgentManagementPage = () => {
   const { user } = useContext(AuthContext);
   const [agents, setAgents] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -514,6 +532,11 @@ const SettingsAgentManagementPage = () => {
             </div>
 
             <form className="agent-modal__form" onSubmit={handleCreateOrUpdate}>
+              {error && (
+                <div className="agent-inline-feedback agent-inline-feedback--error" role="alert">
+                  {error}
+                </div>
+              )}
               <div className="agent-modal__grid">
                 <label className="agent-field">
                   <span>Full Name</span>
