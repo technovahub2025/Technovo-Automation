@@ -235,9 +235,9 @@
     color: var(--color-text-primary);
 }
 
-.templates-grid {
+.templates-page .templates-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
     gap: 22px;
 }
 
@@ -275,26 +275,27 @@
     opacity: 1;
 }
 
-.card-header {
+.templates-page .template-card .card-header {
     display: flex;
+    flex-wrap: wrap;
     justify-content: space-between;
     align-items: flex-start;
     gap: 12px;
     min-height: 32px;
 }
 
-.template-name {
+.templates-page .template-card .template-name {
     font-weight: 700;
     font-size: 15px;
     color: var(--color-text-primary);
-    flex: 1;
+    flex: 1 1 140px;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
 }
 
-.status-badge {
+.templates-page .template-card .status-badge {
     display: inline-flex;
     align-items: center;
     gap: 6px;
@@ -304,26 +305,41 @@
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.12em;
-    white-space: nowrap;
-    flex-shrink: 0;
+    flex: 0 0 auto;
+    width: auto;
+    max-width: 100%;
+    height: auto;
+    box-sizing: border-box;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
     background: rgba(148, 163, 184, 0.12);
     border: 1px solid rgba(148, 163, 184, 0.2);
     color: rgba(71, 85, 105, 0.9);
 }
 
-.status-badge.approved {
+.templates-page .template-card .status-badge svg {
+    flex-shrink: 0;
+}
+
+.templates-page .template-card .template-status-text {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.templates-page .template-card .status-badge.approved {
     background: rgba(22, 163, 74, 0.12);
     color: #16a34a;
     border-color: rgba(22, 163, 74, 0.2);
 }
 
-.status-badge.pending {
+.templates-page .template-card .status-badge.pending {
     background-color: rgba(234, 88, 12, 0.12);
     color: #ea580c;
     border-color: rgba(234, 88, 12, 0.2);
 }
 
-.status-badge.rejected {
+.templates-page .template-card .status-badge.rejected {
     background-color: rgba(220, 38, 38, 0.12);
     color: #dc2626;
     border-color: rgba(220, 38, 38, 0.2);

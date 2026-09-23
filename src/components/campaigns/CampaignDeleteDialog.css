@@ -1,0 +1,62 @@
+.cm-delete-dialog {
+    position: fixed;
+    inset: 0;
+    box-sizing: border-box;
+    width: min(460px, calc(100vw - 32px));
+    max-height: calc(100dvh - 32px);
+    margin: auto;
+    padding: 32px;
+    overflow: auto;
+    border: 1px solid #eef0f6;
+    border-radius: 24px;
+    background: #fff;
+    color: #1e293b;
+    font-family: inherit;
+    box-shadow: 0 24px 80px #17163833;
+}
+.cm-delete-dialog::backdrop { background: #17163880; backdrop-filter: blur(5px); }
+.cm-delete-close {
+    position: absolute;
+    top: 16px;
+    right: 16px;
+    display: grid;
+    place-items: center;
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 50%;
+    background: #f5f6fa;
+    color: #64748b;
+    cursor: pointer;
+}
+.cm-delete-icon {
+    display: grid;
+    place-items: center;
+    width: 64px;
+    height: 64px;
+    margin-bottom: 22px;
+    border: 1px solid #fecdd3;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #fff1f2, #ffe4e6);
+    color: #e11d48;
+}
+.cm-delete-icon.is-busy { background: #eeedff; border-color: #ddd9fb; color: #5146a0; }
+.cm-delete-dialog h2 { margin: 0 0 10px; font-size: 24px; font-weight: 700; letter-spacing: -0.6px; }
+.cm-delete-dialog p { margin: 0; color: #64748b; font-size: 14px; line-height: 1.7; }
+.cm-delete-campaign { display: grid; gap: 7px; margin: 24px 0; padding: 16px; background: #f7f8fc; border: 1px solid #eceef5; border-radius: 14px; }
+.cm-delete-campaign span { color: #7b829b; font-size: 10px; font-weight: 700; letter-spacing: 1.2px; }
+.cm-delete-campaign strong { font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.cm-delete-actions { display: flex; gap: 12px; }
+.cm-delete-actions button { display: flex; align-items: center; justify-content: center; gap: 8px; min-height: 46px; padding: 12px 16px; border-radius: 12px; font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.cm-delete-cancel { flex: 1; border: 1px solid #e2e5ef; background: #fff; color: #475569; }
+.cm-delete-confirm { flex: 1.6; border: 1px solid #e11d48; background: #e11d48; color: white; box-shadow: 0 4px 12px #e11d4826; }
+.cm-delete-cancel:hover:not(:disabled) { background: #f5f6fa; }
+.cm-delete-confirm:hover:not(:disabled) { background: #be123c; }
+.cm-delete-dialog button:focus-visible { outline: 3px solid #9183df; outline-offset: 3px; }
+.cm-delete-dialog button:disabled { cursor: wait; opacity: 0.65; }
+.cm-delete-dialog .cm-delete-error { display: flex; align-items: flex-start; gap: 8px; padding: 12px; margin-bottom: 18px; background: #fff1f2; border-radius: 12px; color: #be123c; }
+.cm-delete-error svg { flex-shrink: 0; margin-top: 3px; }
+.cm-delete-spinner { animation: cm-delete-rotate 1s linear infinite; }
+@keyframes cm-delete-rotate { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .cm-delete-spinner { animation: none; } }
+@media (max-width: 400px) { .cm-delete-dialog { padding: 24px; } .cm-delete-actions { flex-direction: column; } }

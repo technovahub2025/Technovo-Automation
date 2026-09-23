@@ -375,7 +375,7 @@ const Templates = () => {
                 <span className="template-name">{template.name}</span>
                 <span className={`status-badge ${template.status?.toLowerCase()}`}>
                   {getStatusIcon(template.status)}
-                  {template.status}
+                  <span className="template-status-text">{template.status}</span>
                 </span>
               </div>
               <div className="template-content">
