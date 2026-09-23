@@ -37,6 +37,7 @@ import {
 import './campaignmanagement.css';
 import apiService from '../services/api';
 import { resolveApiBaseUrl } from '../services/apiBaseUrl';
+import CampaignDeleteDialog from '../components/campaigns/CampaignDeleteDialog';
 
 
 const API_BASE_URL = resolveApiBaseUrl();
@@ -217,6 +218,8 @@ const CampaignManagement = () => {
     const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState('');
     const [campaignFlash, setCampaignFlash] = useState('');
     const [deletingCampaignId, setDeletingCampaignId] = useState('');
+    const [campaignToDelete, setCampaignToDelete] = useState(null);
+    const [deleteError, setDeleteError] = useState('');
     const dateRangeLabels = {
         today: 'Today',
         yesterday: 'Yesterday',
@@ -701,13 +704,12 @@ const CampaignManagement = () => {
 
     const handleDeleteCampaign = async (campaign) => {
         const campaignId = typeof campaign === 'object' ? campaign?.id : campaign;
-        if (
-            !campaignId ||
-            !window.confirm('Are you sure you want to delete this campaign? This will archive the campaign and clean up the linked Meta assets.')
-        ) return;
+        if (!campaignId || savingCampaign) return;
+        setDeleteError('');
 
         if (USE_MOCK) {
             setCampaigns(prev => prev.filter(c => c.id !== campaignId));
+            setCampaignToDelete(null);
             return;
         }
 
@@ -733,9 +735,11 @@ const CampaignManagement = () => {
                 });
             }
             setCampaigns((prev) => prev.filter((item) => String(item.id) !== String(campaignId)));
+            setCampaignToDelete(null);
+            setCampaignFlash('Campaign deleted successfully.');
         } catch (err) {
             console.error('Delete failed', err?.response?.data || err.message);
-            setError(err?.response?.data?.message || 'Delete campaign failed.');
+            setDeleteError(err?.response?.data?.message || 'Could not delete this campaign. Please try again.');
         } finally {
             setDeletingCampaignId('');
             setSavingCampaign(false);
@@ -992,6 +996,15 @@ const CampaignManagement = () => {
 
     return (
         <div className="meta-access-shell">
+        {campaignToDelete && (
+            <CampaignDeleteDialog
+                campaign={campaignToDelete}
+                busy={Boolean(deletingCampaignId)}
+                error={deleteError}
+                onCancel={() => setCampaignToDelete(null)}
+                onConfirm={() => handleDeleteCampaign(campaignToDelete)}
+            />
+        )}
         <div className={`campaign-management ${!metaSetupLoading && !metaSetupReady ? 'meta-access-blurred' : ''}`}>
             <main className="cm-strict">
                 <section className="cm-strict-container">
@@ -1278,11 +1291,12 @@ const CampaignManagement = () => {
                                             <button
                                                 type="button"
                                                 className="cm-action-btn cm-action-danger"
-                                                disabled={savingCampaign && String(deletingCampaignId) === String(campaign.id)}
-                                                onClick={() => handleDeleteCampaign(campaign)}
+                                                disabled={savingCampaign}
+                                                onClick={() => { setDeleteError(''); setCampaignToDelete(campaign); }}
                                                 title="Delete"
+                                                aria-label={`Delete ${campaign.name || 'campaign'}`}
                                             >
-                                                {savingCampaign && String(deletingCampaignId) === String(campaign.id) ? 'Deleting...' : <Trash2 size={14} />}
+                                                <Trash2 size={14} />
                                             </button>
                                         </div>
                                     </article>
