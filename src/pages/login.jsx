@@ -70,7 +70,7 @@ const Login = () => {
     if (user.role === "superadmin") {
       navigate("/admin", { replace: true });
     } else if (resolveAgentWorkspaceState(user)) {
-      navigate("/inbox", { replace: true });
+      navigate("/broadcast-dashboard", { replace: true });
     } else {
       navigate("/", { replace: true });
     }
@@ -135,7 +135,7 @@ const Login = () => {
       if (user.role === "superadmin") {
         navigate("/admin", { replace: true });
       } else if (resolveAgentWorkspaceState(user)) {
-        navigate("/inbox", { replace: true });
+        navigate("/broadcast-dashboard", { replace: true });
       } else {
         navigate("/", { replace: true });
       }

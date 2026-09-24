@@ -65,7 +65,7 @@ const renderLazyRoute = (element, label = "Loading page...") => (
 const WorkspaceHome = () => {
   const { user } = useContext(AuthContext);
   if (resolveAgentWorkspaceState(user)) {
-    return <Navigate to="/inbox" replace />;
+    return <Navigate to="/broadcast-dashboard" replace />;
   }
 
   return renderLazyRoute(<Dashboard />, "Loading dashboard...");

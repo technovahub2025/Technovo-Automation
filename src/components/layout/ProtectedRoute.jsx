@@ -61,7 +61,7 @@ const ProtectedRoute = ({ children, requiredRole, requiredFeature, requireAuth =
     }
 
     if (isAgentRestricted && !isAgentAllowedRoute) {
-        return <Navigate to="/inbox" replace />;
+        return <Navigate to="/broadcast-dashboard" replace />;
     }
 
     if (isAgentAllowedRoute) {
@@ -70,16 +70,16 @@ const ProtectedRoute = ({ children, requiredRole, requiredFeature, requireAuth =
 
     if (requiredRole && isAuthenticated) {
         if (requiredRole === 'superadmin' && user?.role !== 'superadmin') {
-            return <Navigate to={isAgentRestricted ? '/inbox' : '/'} replace />;
+            return <Navigate to={isAgentRestricted ? '/broadcast-dashboard' : '/'} replace />;
         }
 
         if (requiredRole === 'admin' && !['admin', 'superadmin'].includes(user?.role)) {
-            return <Navigate to={isAgentRestricted ? '/inbox' : '/'} replace />;
+            return <Navigate to={isAgentRestricted ? '/broadcast-dashboard' : '/'} replace />;
         }
     }
 
     if (requireAuth && isAuthenticated && requiredFeature && !hasFeatureAccess(user, requiredFeature)) {
-        return <Navigate to={isAgentRestricted ? '/inbox' : '/'} replace />;
+        return <Navigate to={isAgentRestricted ? '/broadcast-dashboard' : '/'} replace />;
     }
 
     return children;

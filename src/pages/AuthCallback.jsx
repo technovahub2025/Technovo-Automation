@@ -52,7 +52,7 @@ const AuthCallback = () => {
             canViewAnalytics: data.canViewAnalytics !== false
           };
           login(user, token, "local");
-          navigate(resolveAgentWorkspaceState(user) ? "/inbox" : "/", { replace: true });
+          navigate(resolveAgentWorkspaceState(user) ? "/broadcast-dashboard" : "/", { replace: true });
         })
         .catch(() => {
           navigate("/login", { replace: true });
