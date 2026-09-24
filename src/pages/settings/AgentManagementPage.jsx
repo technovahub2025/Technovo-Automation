@@ -73,6 +73,8 @@ const buildCompanyEmailDomain = (user = {}) => {
 const SettingsAgentManagementPage = () => {
   const { user } = useContext(AuthContext);
   const [agents, setAgents] = useState([]);
+  const [agentQuota, setAgentQuota] = useState({ count: 0, limit: 5 });
+  const agentLimitReached = agentQuota.count >= agentQuota.limit;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
@@ -101,6 +103,7 @@ const SettingsAgentManagementPage = () => {
       const response = await apiService.listWorkspaceAgents();
       const nextAgents = Array.isArray(response?.data?.data) ? response.data.data.map(normalizeAgent) : [];
       setAgents(nextAgents);
+      setAgentQuota({ count: response?.data?.agentCount ?? nextAgents.length, limit: response?.data?.agentLimit ?? 5 });
     } catch (err) {
       setError(err?.response?.data?.message || err?.message || "Failed to load agents");
       setAgents([]);
@@ -187,6 +190,7 @@ const SettingsAgentManagementPage = () => {
   };
 
   const openCreateModal = () => {
+    if (loading || agentLimitReached) return;
     setMessage("");
     setError("");
     setEditingAgentId(null);
@@ -212,6 +216,10 @@ const SettingsAgentManagementPage = () => {
 
   const handleCreateOrUpdate = async (event) => {
     event.preventDefault();
+    if (!editingAgentId && agentLimitReached) {
+      setError("A workspace can have a maximum of 5 agent accounts, including disabled accounts.");
+      return;
+    }
 
     const fullName = String(form.fullName || "").trim();
     const email = String(form.email || "").trim();
@@ -303,11 +311,13 @@ const SettingsAgentManagementPage = () => {
             <h1 className="agent-management-page__title">Agent Management</h1>
             <p className="agent-management-page__subtitle">
               Manage your team agents, permissions, and workspace access.
+              {` Maximum ${agentQuota.limit} agent accounts per workspace, including disabled accounts.`}
+              {!loading && ` ${agentQuota.count}/${agentQuota.limit} accounts used.`}
             </p>
           </div>
 
           <div className="agent-management-page__hero-actions">
-            <button type="button" className="agent-primary-btn" onClick={openCreateModal}>
+            <button type="button" className="agent-primary-btn" onClick={openCreateModal} disabled={loading || saving || agentLimitReached}>
               <Plus size={16} />
               Create Agent
             </button>
@@ -417,7 +427,7 @@ const SettingsAgentManagementPage = () => {
               </div>
               <h3>No agents created yet</h3>
               <p>Create your first team agent to begin managing workspace access and roles.</p>
-              <button type="button" className="agent-primary-btn" onClick={openCreateModal}>
+              <button type="button" className="agent-primary-btn" onClick={openCreateModal} disabled={loading || saving || agentLimitReached}>
                 <Plus size={16} />
                 Create Agent
               </button>
@@ -565,7 +575,7 @@ const SettingsAgentManagementPage = () => {
                 <button type="button" className="agent-secondary-btn" onClick={closeModal} disabled={saving}>
                   Cancel
                 </button>
-                <button type="submit" className="agent-primary-btn" disabled={saving}>
+                <button type="submit" className="agent-primary-btn" disabled={saving || (!editingAgentId && agentLimitReached)}>
                   {saving ? "Saving..." : editingAgentId ? "Save Changes" : "Create Agent"}
                 </button>
               </div>
