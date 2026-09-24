@@ -240,9 +240,9 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         featureFlags.crmLeadScoringSettings ||
         featureFlags.crmTaskCalendar
     );
-    const canUseVoiceAutomation = showAllSidebarFeatures || Boolean(featureFlags.voiceCampaign || featureFlags.inboundAutomation || featureFlags.outboundVoice || featureFlags.callAnalytics);
-    const canUseMissedCalls = showAllSidebarFeatures || Boolean(featureFlags.missedCall);
-    const canUseEmailAutomation = showAllSidebarFeatures || Boolean(featureFlags.workflowAutomation);
+    const canUseVoiceAutomation = !isAgentRestricted && (showAllSidebarFeatures || Boolean(featureFlags.voiceCampaign || featureFlags.inboundAutomation || featureFlags.outboundVoice || featureFlags.callAnalytics));
+    const canUseMissedCalls = !isAgentRestricted && (showAllSidebarFeatures || Boolean(featureFlags.missedCall));
+    const canUseEmailAutomation = !isAgentRestricted && (showAllSidebarFeatures || Boolean(featureFlags.workflowAutomation));
     const canUseCrmAutomation = showAllSidebarFeatures || Boolean(
         featureFlags.crmOps ||
         featureFlags.crmLeadScoringSettings ||
@@ -1383,7 +1383,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         </>
                     )}
 
-                    {openMenu === 'emailAutomation' && (
+                    {openMenu === 'emailAutomation' && canUseEmailAutomation && (
                         <>
                             <div className="panel-header">
                                 <h3>Email Automation</h3>
