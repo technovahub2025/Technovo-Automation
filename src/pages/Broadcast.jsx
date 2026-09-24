@@ -5,6 +5,7 @@ import Papa from "papaparse";
 import { apiClient } from "../services/whatsappapi";
 import { whatsappService } from "../services/whatsappService";
 import { useBroadcast, useCampaignAutomation } from "../hooks/useBroadcast";
+import useBroadcastDraft from "../hooks/useBroadcastDraft";
 import webSocketService from "../services/websocketService";
 
 // Import components
@@ -248,6 +249,7 @@ const Broadcast = ({
     setFileVariables,
 
     templateHeaderMediaUrl,
+    setTemplateHeaderMediaUrl,
     templateHeaderMediaUploading,
     templateHeaderMediaError,
 
@@ -397,6 +399,46 @@ const Broadcast = ({
   const broadcastTableScrollRef = useRef(null);
   const broadcastInfiniteScrollSentinelRef = useRef(null);
   const [visibleBroadcastCount, setVisibleBroadcastCount] = useState(10);
+
+  const draft = useBroadcastDraft({
+    enabled: composerMode,
+    userId: currentUserId,
+    type: composerType,
+    fields: {
+      broadcastName: [broadcastName, setBroadcastName],
+      messageType: [messageType, setMessageType],
+      templateName: [templateName, setTemplateName],
+      language: [language, setLanguage],
+      templateFilter: [templateFilter, setTemplateFilter],
+      customMessage: [customMessage, setCustomMessage],
+      scheduledTime: [scheduledTime, setScheduledTime],
+      recipients: [recipients, setRecipients],
+      fileVariables: [fileVariables, setFileVariables],
+      templateVariables: [templateVariables, setTemplateVariables],
+      templateHeaderMediaUrl: [templateHeaderMediaUrl, setTemplateHeaderMediaUrl],
+      audienceSourceMode: [audienceSourceMode, setAudienceSourceMode],
+      selectedAudienceMeta: [selectedAudienceMeta, setSelectedAudienceMeta],
+      selectedCampaignAudience: [selectedCampaignAudience, setSelectedCampaignAudience],
+      quietHoursEnabled: [quietHoursEnabled, setQuietHoursEnabled],
+      quietHoursStartHour: [quietHoursStartHour, setQuietHoursStartHour],
+      quietHoursEndHour: [quietHoursEndHour, setQuietHoursEndHour],
+      quietHoursTimezone: [quietHoursTimezone, setQuietHoursTimezone],
+      quietHoursAction: [quietHoursAction, setQuietHoursAction],
+      deliveryBatchSize: [deliveryBatchSize, setDeliveryBatchSize],
+      deliveryBatchDelaySeconds: [deliveryBatchDelaySeconds, setDeliveryBatchDelaySeconds],
+      retryPolicyEnabled: [retryPolicyEnabled, setRetryPolicyEnabled],
+      retryMaxAttempts: [retryMaxAttempts, setRetryMaxAttempts],
+      retryBackoffSeconds: [retryBackoffSeconds, setRetryBackoffSeconds],
+      respectOptOut: [respectOptOut, setRespectOptOut],
+      suppressionListRaw: [suppressionListRaw, setSuppressionListRaw],
+      uploadedFile: [uploadedFile ? {
+        name: uploadedFile.name,
+        size: uploadedFile.size,
+        type: uploadedFile.type,
+        lastModified: uploadedFile.lastModified,
+      } : null, setUploadedFile],
+    },
+  });
 
   useEffect(
     () => () => {
@@ -2759,6 +2801,7 @@ const Broadcast = ({
       const result = await apiClient.createBroadcast(payload);
 
       if (result.data.success) {
+        if (composerMode) resetComposerForm();
         alert(
           scheduledTime
               ? "Broadcast scheduled successfully!"
@@ -2978,6 +3021,7 @@ const Broadcast = ({
       setSendResults(result.data);
 
       if (result.data.success) {
+        if (composerMode) resetComposerForm();
         setShowResultsPopup(false);
 
         await loadBroadcasts();
@@ -3123,6 +3167,7 @@ const Broadcast = ({
   };
 
   const resetComposerForm = () => {
+    draft.clear();
     setBroadcastName("");
     setTemplateName("");
     clearTemplateHeaderMedia();
@@ -3255,6 +3300,7 @@ const Broadcast = ({
       if (mode === "create") {
         const result = await apiClient.createBroadcast(payload);
         if (result.data.success) {
+          if (composerMode) resetComposerForm();
           alert(
             scheduledTime
               ? "Broadcast scheduled successfully!"
@@ -3272,6 +3318,7 @@ const Broadcast = ({
       const result = await apiClient.sendBulkMessages(payload);
       setSendResults(result.data);
       if (result.data.success) {
+        if (composerMode) resetComposerForm();
         setShowResultsPopup(false);
         await loadBroadcasts();
         setShowNewBroadcastPopup(false);
@@ -3391,6 +3438,22 @@ const Broadcast = ({
           </div>
         </div>
 
+        <div className="broadcast-draft-bar" aria-label="Broadcast draft">
+          <div>
+            <strong>Draft</strong>
+            <span role="status">{draft.status}</span>
+          </div>
+          <div className="broadcast-draft-actions">
+            <button type="button" onClick={draft.save} disabled={!draft.canSave || isSending}>
+              Save draft
+            </button>
+            <button type="button" onClick={() => {
+              if (window.confirm("Discard this draft and clear the form?")) resetComposerForm();
+            }} disabled={!draft.canSave || isSending}>
+              Discard
+            </button>
+          </div>
+        </div>
         <ScheduleForm
           messageType={messageType}
           broadcastName={broadcastName}
