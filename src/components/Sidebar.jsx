@@ -860,7 +860,8 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
     };
 
     const prefetchRoute = useCallback((route) => {
-        if (!route || isMobile) {
+        const connection = navigator.connection;
+        if (!route || connection?.saveData || ['slow-2g', '2g'].includes(connection?.effectiveType)) {
             return;
         }
 
@@ -878,25 +879,13 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         prefetcher().catch(() => {
             prefetchedRoutesRef.current.delete(normalizedRoute);
         });
-    }, [isMobile]);
+    }, []);
 
-    useEffect(() => {
-        if (isMobile || !canUseBroadcast) {
-            return undefined;
-        }
-
-        const prefetchTeamInbox = () => {
-            prefetchRoute('/inbox');
-        };
-
-        if (typeof window.requestIdleCallback === 'function') {
-            const idleHandle = window.requestIdleCallback(prefetchTeamInbox, { timeout: 2000 });
-            return () => window.cancelIdleCallback?.(idleHandle);
-        }
-
-        const timerId = window.setTimeout(prefetchTeamInbox, 1200);
-        return () => window.clearTimeout(timerId);
-    }, [canUseBroadcast, isMobile, prefetchRoute]);
+    const prefetchNavigationTarget = (event) => {
+        const link = event.target.closest?.('a[href]');
+        if (!link || !event.currentTarget.contains(link) || link.origin !== window.location.origin) return;
+        prefetchRoute(stripAppRouteBase(link.pathname));
+    };
 
     // Helper function to check if a route is currently active
     const isRouteActive = (route) => {
@@ -929,7 +918,12 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         isRouteActive('/meta-leads');
 
     return (
-        <div className={`sidebar-container ${isCompactMobile ? 'compact-mobile' : ''}`}>
+        <div
+            className={`sidebar-container ${isCompactMobile ? 'compact-mobile' : ''}`}
+            onPointerOver={prefetchNavigationTarget}
+            onFocusCapture={prefetchNavigationTarget}
+            onTouchStart={prefetchNavigationTarget}
+        >
             {isCompactMobile && (
                 <>
                     <button

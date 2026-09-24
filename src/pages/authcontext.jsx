@@ -1,13 +1,12 @@
 import { createContext, useState, useEffect } from "react";
 import axios from "axios";
-import { auth } from "../firebase/firebase";
-import { onAuthStateChanged } from "firebase/auth";
 import { buildAgentAccessPayload } from "../utils/agentAccess";
 import resolveAdminApiUrl from "../services/adminApiUrl";
 
 export const AuthContext = createContext();
 
 export const AuthProvider = ({ children }) => {
+  const [authProvider, setAuthProvider] = useState(() => localStorage.getItem("authProvider"));
   const [user, setUser] = useState(() => {
     try {
       const storedUser = localStorage.getItem("user");
@@ -29,7 +28,10 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem("authToken", token);
     localStorage.setItem("token", token); // Legacy key used in some modules
     localStorage.setItem("user", JSON.stringify(nextUser));
-    if (provider) localStorage.setItem("authProvider", provider);
+    if (provider) {
+      localStorage.setItem("authProvider", provider);
+      setAuthProvider(provider);
+    }
     setUser(nextUser);
   };
 
@@ -42,6 +44,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.removeItem("username");
     localStorage.removeItem("userId");
     localStorage.removeItem("authProvider");
+    setAuthProvider(null);
     setUser(null);
   };
 
@@ -51,6 +54,7 @@ export const AuthProvider = ({ children }) => {
       return { ok: false, message: "Firebase session not active" };
     }
 
+    const { auth } = await import("../firebase/firebase");
     const firebaseUser = auth.currentUser;
     if (!firebaseUser) {
       return { ok: false, message: "No Firebase user found" };
@@ -99,8 +103,11 @@ export const AuthProvider = ({ children }) => {
   };
 
   useEffect(() => {
+    if (authProvider !== "firebase") return;
     const API_URL = resolveAdminApiUrl();
     let refreshTimer = null;
+    let cancelled = false;
+    let unsubscribe = null;
 
     const clearRefresh = () => {
       if (refreshTimer) {
@@ -114,7 +121,7 @@ export const AuthProvider = ({ children }) => {
       const res = await axios.post(`${API_URL}/api/auth/firebase`, { idToken });
       const token = res.data.token;
       const nextUser = res.data.user;
-      if (token && nextUser) {
+      if (!cancelled && token && nextUser) {
         login({
           ...nextUser,
           ...buildAgentAccessPayload(nextUser)
@@ -122,27 +129,34 @@ export const AuthProvider = ({ children }) => {
       }
     };
 
-    const unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
-      clearRefresh();
-      const provider = localStorage.getItem("authProvider");
-      if (!firebaseUser || provider !== "firebase") return;
+    Promise.all([import("../firebase/firebase"), import("firebase/auth")])
+      .then(([{ auth }, { onAuthStateChanged }]) => {
+        if (cancelled) return;
+        unsubscribe = onAuthStateChanged(auth, (firebaseUser) => {
+          if (cancelled) return;
+          clearRefresh();
+          const provider = localStorage.getItem("authProvider");
+          if (!firebaseUser || provider !== "firebase") return;
 
-      refreshBackendToken(firebaseUser).catch((err) => {
-        console.warn("Firebase token refresh failed:", err?.message || err);
-      });
+          refreshBackendToken(firebaseUser).catch((err) => {
+            console.warn("Firebase token refresh failed:", err?.message || err);
+          });
 
-      refreshTimer = setInterval(() => {
-        refreshBackendToken(firebaseUser).catch((err) => {
-          console.warn("Firebase token refresh failed:", err?.message || err);
+          refreshTimer = setInterval(() => {
+            refreshBackendToken(firebaseUser).catch((err) => {
+              console.warn("Firebase token refresh failed:", err?.message || err);
+            });
+          }, 45 * 60 * 1000);
         });
-      }, 45 * 60 * 1000);
-    });
+      })
+      .catch((err) => console.warn("Firebase session initialization failed:", err?.message || err));
 
     return () => {
+      cancelled = true;
       clearRefresh();
-      unsubscribe();
+      unsubscribe?.();
     };
-  }, []);
+  }, [authProvider]);
 
   useEffect(() => {
     const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useContext } from 'react';
+import React, { useState, useEffect, useContext, useMemo } from 'react';
 import Sidebar from "../components/Sidebar";
 import Header from "../components/Header";
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
@@ -18,7 +18,7 @@ const MainLayout = () => {
   const workspaceAccessState = String(user?.workspaceAccessState || "").toLowerCase();
   const isExpired = workspaceAccessState === "expired_readonly" || subscriptionStatus === "expired";
   const isTrialing = workspaceAccessState === "trialing" || subscriptionStatus === "trialing";
-  const trialEnd = user?.trialEnd ? new Date(user.trialEnd) : null;
+  const trialEnd = useMemo(() => user?.trialEnd ? new Date(user.trialEnd) : null, [user?.trialEnd]);
   const trialUsage = user?.trialUsage || {};
   const trialLimits = user?.trialLimits || {};
   const documentStatus = String(user?.documentStatus || "").toLowerCase();

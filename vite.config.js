@@ -29,20 +29,23 @@ export default defineConfig(({ mode }) => {
       rollupOptions: {
         output: {
           manualChunks(id) {
-            if (!id.includes('node_modules')) return undefined;
-            if (id.includes('react') || id.includes('react-dom') || id.includes('react-router')) {
+            const normalizedId = id.replace(/\\/g, '/');
+            if (!normalizedId.includes('/node_modules/')) return undefined;
+            if (/\/node_modules\/(react|react-dom|react-router|react-router-dom|scheduler)\//.test(normalizedId)) {
               return 'react-vendor';
             }
-            if (id.includes('recharts')) {
+            if (/\/node_modules\/(recharts|recharts-scale|d3-[^/]+)\//.test(normalizedId)) {
               return 'charts-vendor';
             }
-            if (id.includes('axios') || id.includes('socket.io-client')) {
+            if (/\/node_modules\/(axios|socket.io-client)\//.test(normalizedId)) {
               return 'network-vendor';
             }
-            if (id.includes('lucide-react')) {
+            if (normalizedId.includes('/node_modules/lucide-react/')) {
               return 'icons-vendor';
             }
-            return 'vendor';
+            // Let Rollup keep optional libraries with their consuming pages.
+            // A catch-all vendor chunk forces every screen to download them.
+            return undefined;
           }
         }
       }

@@ -5,11 +5,12 @@ import { AuthContext } from "./pages/authcontext";
 import ProtectedRoute from "./components/layout/ProtectedRoute";
 import MainLayout from "./layout/MainLayout";
 import { resolveAgentWorkspaceState } from "./utils/agentAccess";
-import Login from "./pages/login";
-import Register from "./pages/register";
-import ForgotPassword from "./pages/forgotpassword";
-import ResetPassword from "./pages/resetpassword";
-import AuthCallback from "./pages/AuthCallback";
+import "./styles/theme.css";
+const Login = lazy(() => import("./pages/login"));
+const Register = lazy(() => import("./pages/register"));
+const ForgotPassword = lazy(() => import("./pages/forgotpassword"));
+const ResetPassword = lazy(() => import("./pages/resetpassword"));
+const AuthCallback = lazy(() => import("./pages/AuthCallback"));
 const PublicWhatsAppOptInDemo = lazy(() => import("./pages/PublicWhatsAppOptInDemo"));
 const PublicWhatsAppOptInLanding = lazy(() => import("./pages/PublicWhatsAppOptInLanding"));
 const PublicWhatsAppOptInSuccess = lazy(() => import("./pages/PublicWhatsAppOptInSuccess"));
@@ -80,11 +81,11 @@ function App() {
     <AuthProvider>
       <Routes>
         {/* Public auth routes */}
-        <Route path="/login" element={<Login />} />
-        <Route path="/auth/callback" element={<AuthCallback />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/forgot-password" element={<ForgotPassword />} />
-        <Route path="/reset-password/:token" element={<ResetPassword />} />
+        <Route path="/login" element={renderLazyRoute(<Login />)} />
+        <Route path="/auth/callback" element={renderLazyRoute(<AuthCallback />)} />
+        <Route path="/register" element={renderLazyRoute(<Register />)} />
+        <Route path="/forgot-password" element={renderLazyRoute(<ForgotPassword />)} />
+        <Route path="/reset-password/:token" element={renderLazyRoute(<ResetPassword />)} />
         <Route
           path="/whatsapp-opt-in-demo"
           element={renderLazyRoute(<PublicWhatsAppOptInDemo />, "Loading opt-in demo...")}
