@@ -219,7 +219,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
     const showAllSidebarFeatures = isSuperAdmin || !hasSidebarSelection;
     const canViewAnalytics = user?.canViewAnalytics !== false;
     const canUseMetaAds =
-        String(user?.email || '').trim().toLowerCase() !== 'qtechservices@gmail.com' &&
         !isAgentRestricted &&
         String(userRole).toLowerCase() !== "agent" &&
         (showAllSidebarFeatures || Boolean(featureFlags.adsManager || featureFlags.analytics || featureFlags.metaConnect || featureFlags.metaLeads));
