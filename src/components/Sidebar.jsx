@@ -218,7 +218,10 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
     const hasSidebarSelection = hasSidebarAccessSelection(featureFlags);
     const showAllSidebarFeatures = isSuperAdmin || !hasSidebarSelection;
     const canViewAnalytics = user?.canViewAnalytics !== false;
-    const canUseMetaAds = showAllSidebarFeatures || Boolean(featureFlags.adsManager || featureFlags.analytics || featureFlags.metaConnect || featureFlags.metaLeads);
+    const canUseMetaAds =
+        !isAgentRestricted &&
+        String(userRole).toLowerCase() !== "agent" &&
+        (showAllSidebarFeatures || Boolean(featureFlags.adsManager || featureFlags.analytics || featureFlags.metaConnect || featureFlags.metaLeads));
     const canUseBroadcast = showAllSidebarFeatures || Boolean(
         featureFlags.broadcastDashboard ||
         featureFlags.teamInbox ||
