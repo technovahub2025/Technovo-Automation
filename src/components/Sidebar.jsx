@@ -1578,7 +1578,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                         <span>Reports</span>
                                     </NavLink>
                                 )}
-                                {(showAllSidebarFeatures || featureFlags.metaConnect) && (
+                                {isSuperAdmin && (
                                     <NavLink
                                         to="/meta-connect"
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
