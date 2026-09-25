@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useContext, useMemo } from 'react';
 import Sidebar from "../components/Sidebar";
 import Header from "../components/Header";
-import AgentActivitySection from '../components/AgentActivitySection';
 import { Outlet, useLocation, useNavigate } from "react-router-dom";
 import "./MainLayout.css";
 import { AuthContext } from "../pages/authcontext";
@@ -147,7 +146,7 @@ const MainLayout = () => {
         <main
           className={`page-content ${isCrmHome ? "page-content--crm-home" : ""} ${currentPath === "/crm/pipeline" ? "page-content--crm-pipeline" : ""} ${currentPath === "/crm/ops" ? "page-content--crm-ops" : ""}`}
         >
-          <AgentActivitySection key={currentPath} path={currentPath}><Outlet /></AgentActivitySection>
+          <Outlet />
         </main>
       </div>
     </div>
