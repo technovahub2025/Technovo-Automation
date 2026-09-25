@@ -284,7 +284,8 @@ const BroadcastCard = ({
           </span>
           {normalizeText(broadcast?.createdById) ? (
             <span className="broadcast-creator-meta__subtext">
-              ID {normalizeText(broadcast.createdById).slice(-6)}
+              {['agent', 'user'].includes(String(broadcast.createdByWorkspaceRole || '').toLowerCase())
+                ? 'Agent' : ['admin', 'manager', 'superadmin'].includes(String(broadcast.createdByWorkspaceRole || '').toLowerCase()) ? 'Admin' : 'Creator'}
             </span>
           ) : null}
         </div>
@@ -408,6 +409,7 @@ const areEqual = (prevProps, nextProps) => {
       ) &&
     String(prev?.createdBy || "") === String(next?.createdBy || "") &&
     String(prev?.createdByName || "") === String(next?.createdByName || "") &&
+    String(prev?.createdByWorkspaceRole || "") === String(next?.createdByWorkspaceRole || "") &&
     String(prev?.createdByEmail || "") === String(next?.createdByEmail || "") &&
     String(prev?.createdById || "") === String(next?.createdById || "") &&
     prev.scheduledAt === next.scheduledAt &&

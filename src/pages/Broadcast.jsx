@@ -594,6 +594,8 @@ const Broadcast = ({
             {
               value,
               label: activityCreators.labelFor(broadcast) || getCreatorDisplayLabel(broadcast),
+              isAgent: activityCreators.creators.find((creator) => creator.value === value)?.isAgent ||
+                ['agent', 'user'].includes(String(broadcast.createdByWorkspaceRole || '').toLowerCase()),
             },
           ];
         })

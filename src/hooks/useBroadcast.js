@@ -75,6 +75,7 @@ const isLikelyObjectId = (value = "") =>
 
 const matchesCreatorFilter = (broadcast = {}, filterValue = "") => {
   const normalizedFilter = normalizeCreatorFilterValue(filterValue);
+  if (normalizedFilter === '__agents__') return ['agent', 'user'].includes(String(broadcast.createdByWorkspaceRole || '').toLowerCase());
   if (!normalizedFilter || normalizedFilter === "all") return true;
 
   const broadcastCreatorId = normalizeCreatorFilterValue(broadcast?.createdById);
@@ -210,6 +211,8 @@ const sanitizeBroadcastForCache = (broadcast = {}) => ({
   createdBy: String(broadcast?.createdBy || "").trim(),
   createdById: String(broadcast?.createdById || "").trim(),
   createdByEmail: String(broadcast?.createdByEmail || "").trim(),
+  createdByName: String(broadcast?.createdByName || "").trim(),
+  createdByWorkspaceRole: String(broadcast?.createdByWorkspaceRole || "").trim(),
   createdAt: String(broadcast?.createdAt || "").trim(),
   scheduledAt: String(broadcast?.scheduledAt || "").trim(),
   completedAt: String(broadcast?.completedAt || "").trim(),
@@ -425,7 +428,9 @@ export const useBroadcast = () => {
 
       const selectedCreatorFilter = normalizeCreatorFilterValue(creatorFilter);
       const creatorQuery = {};
-      if (selectedCreatorFilter && selectedCreatorFilter !== "all") {
+      if (selectedCreatorFilter === '__agents__') {
+        creatorQuery.creatorRole = 'agent';
+      } else if (selectedCreatorFilter && selectedCreatorFilter !== "all") {
         if (isLikelyObjectId(selectedCreatorFilter)) {
           creatorQuery.createdById = selectedCreatorFilter;
         } else {

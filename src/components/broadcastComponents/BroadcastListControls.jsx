@@ -83,7 +83,13 @@ const BroadcastListControls = ({
             <select className="sorted-select" aria-label="Created By" value={creatorFilter || 'all'}
               onChange={(event) => onCreatorFilterChange?.(event.target.value)}>
               <option value="all">All creators</option>
-              {creatorOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              <option value="__agents__">Created by agents</option>
+              {creatorOptions.some((option) => option.isAgent) && <optgroup label="Agents">
+                {creatorOptions.filter((option) => option.isAgent).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </optgroup>}
+              {creatorOptions.some((option) => !option.isAgent) && <optgroup label="Other creators">
+                {creatorOptions.filter((option) => !option.isAgent).map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+              </optgroup>}
             </select>
           </div>
 
