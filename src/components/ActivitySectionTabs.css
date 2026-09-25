@@ -1,0 +1,4 @@
+.activity-section-tabs { display: flex; gap: 8px; margin: 0 0 16px; }
+.activity-section-tabs button { padding: 9px 22px; border: 1px solid #d7dfef; border-radius: 8px; color: #273657; background: white; font: inherit; cursor: pointer; }
+.activity-section-tabs button.active { color: white; background: #2563eb; border-color: #2563eb; }
+.activity-section-tabs button:focus-visible { outline: 2px solid #2563eb; outline-offset: 3px; }

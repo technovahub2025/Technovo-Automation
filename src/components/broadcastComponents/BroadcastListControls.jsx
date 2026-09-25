@@ -28,8 +28,6 @@ const BroadcastListControls = ({
     { key: 'suppressed', label: 'Suppressed' },
     { key: 'high_risk', label: 'High Risk' }
   ];
-  const creatorInputValue = creatorFilter === 'all' ? '' : String(creatorFilter || '');
-  const creatorDatalistId = 'broadcast-creator-options';
 
   return (
     <div className="broadcast-list-controls-wati">
@@ -82,36 +80,11 @@ const BroadcastListControls = ({
 
           <div className="sorted-by-control">
             <label>Created By</label>
-            <div className="creator-search-control">
-              <Search size={14} className="creator-search-icon" />
-              <input
-                list={creatorDatalistId}
-                className="search-input-wati creator-search-input"
-                value={creatorInputValue}
-                onChange={(event) =>
-                  onCreatorFilterChange?.(event.target.value)
-                }
-                placeholder="Search agent name or email"
-              />
-              {creatorInputValue ? (
-                <button
-                  type="button"
-                  className="creator-clear-btn"
-                  onClick={() => onCreatorFilterChange?.('all')}
-                  title="Clear creator filter"
-                >
-                  Clear
-                </button>
-              ) : null}
-              <datalist id={creatorDatalistId}>
-                {Array.isArray(creatorOptions) &&
-                  creatorOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-              </datalist>
-            </div>
+            <select className="sorted-select" aria-label="Created By" value={creatorFilter || 'all'}
+              onChange={(event) => onCreatorFilterChange?.(event.target.value)}>
+              <option value="all">All creators</option>
+              {creatorOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            </select>
           </div>
 
           <div className="sorted-by-control">

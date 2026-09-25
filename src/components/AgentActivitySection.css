@@ -1,0 +1,13 @@
+.agent-activity-panel { background: var(--bg-primary, #fff); color: var(--text-primary, #172442); border: 1px solid #e0e7f1; border-radius: 16px; padding: 24px; }
+.agent-activity-panel h2 { margin: 0 0 20px; }
+.agent-activity-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 16px; margin-bottom: 24px; }
+.agent-activity-controls label { display: grid; gap: 6px; font-size: 14px; }
+.agent-activity-controls input, .agent-activity-controls select, .agent-activity-panel button { padding: 9px 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: var(--bg-primary, #fff); color: inherit; font: inherit; }
+.agent-activity-panel button { cursor: pointer; }
+.agent-activity-panel button:disabled { cursor: default; opacity: .5; }
+.agent-activity-table { overflow-x: auto; }
+.agent-activity-table table { width: 100%; border-collapse: collapse; text-align: left; }
+.agent-activity-table th, .agent-activity-table td { padding: 16px; border-bottom: 1px solid #e2e8f0; }
+.agent-activity-table th { background: #f5f7fb; color: #334155; white-space: nowrap; }
+.agent-activity-table td:first-child { max-width: 500px; overflow-wrap: anywhere; }
+.agent-activity-pagination { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: flex-end; margin-top: 20px; }

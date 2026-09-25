@@ -22,6 +22,7 @@ import {
 
 import BroadcastListControls from "../components/broadcastComponents/BroadcastListControls";
 import BroadcastTable from "../components/broadcastComponents/BroadcastTable";
+import useActivityCreators from "../hooks/useActivityCreators";
 import ScheduleForm from "../components/broadcastComponents/ScheduleForm";
 import DeleteModal from "../components/broadcastComponents/DeleteModal";
 import BroadcastTypeChoice from "../components/broadcastComponents/BroadcastTypeChoice";
@@ -142,6 +143,7 @@ const Broadcast = ({
   chooserMode = false,
 }) => {
   const navigate = useNavigate();
+  const activityCreators = useActivityCreators();
   const location = useLocation();
   const [searchParams] = useSearchParams();
   const currentPath = stripAppRouteBase(location.pathname);
@@ -571,7 +573,8 @@ const Broadcast = ({
 
   // Get filtered and sorted broadcasts
 
-  const filteredBroadcasts = getFilteredAndSortedBroadcasts();
+  const filteredBroadcasts = getFilteredAndSortedBroadcasts()
+    .map((broadcast) => ({ ...broadcast, createdBy: activityCreators.labelFor(broadcast) }));
   const visibleBroadcasts = filteredBroadcasts.slice(0, visibleBroadcastCount);
   const creatorOptions = Array.from(
     new Map(
@@ -3713,6 +3716,7 @@ const Broadcast = ({
               <ReliabilityInsights data={reliabilitySummary} />
 
               <div className="history-section">
+                {activityCreators.error && <p role="status">{activityCreators.error}</p>}
                 <BroadcastListControls
                   searchTerm={searchTerm}
                   onSearchChange={(e) => setSearchTerm(e.target.value)}
@@ -3720,7 +3724,9 @@ const Broadcast = ({
                   onStatusFilterChange={(value) => setStatusFilter(value)}
                   creatorFilter={creatorFilter}
                   onCreatorFilterChange={(value) => setCreatorFilter(value)}
-                  creatorOptions={creatorOptions}
+                  creatorOptions={activityCreators.isAdmin
+                    ? activityCreators.creators
+                    : creatorOptions}
                   reliabilityFilter={reliabilityFilter}
                   onReliabilityFilterChange={(value) =>
                     setReliabilityFilter(value)
