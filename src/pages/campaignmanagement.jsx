@@ -460,7 +460,10 @@ const CampaignManagement = () => {
                 }
             });
             const data = response.data?.data || [];
-            setCampaigns(data.map(normalizeCampaign));
+            setCampaigns((previous) => [
+                ...previous.filter((campaign) => String(campaign.id || '').startsWith('temp-')),
+                ...data.map(normalizeCampaign)
+            ]);
         } catch (err) {
             console.error('Failed to load campaigns', err?.response?.data || err.message);
             setError(err?.response?.data?.message || 'Unable to load campaigns from server.');
@@ -591,6 +594,9 @@ const CampaignManagement = () => {
                 optimisticCampaign,
                 ...prev.filter((item) => String(item.id) !== String(optimisticId))
             ]);
+            // Show the optimistic row immediately while the video/file request is still uploading.
+            setCampaignFlash('Campaign added. Uploading creative and publishing in the background…');
+            setShowCreateModal(false);
             const payload = buildCampaignPayload({
                 ...campaignData,
                 adAccountId: campaignData?.adAccountId || metaSetup?.selectedAdAccountId || metaSetup?.adAccountId || ''
@@ -1095,6 +1101,7 @@ const CampaignManagement = () => {
                             <button
                                 className="cm-create-btn"
                                 type="button"
+                                disabled={savingCampaign}
                                 onClick={() => setShowCreateModal(true)}
                             >
                                 Create Campaign
@@ -1211,7 +1218,7 @@ const CampaignManagement = () => {
                                     <AlertCircle size={44} />
                                     <h3>No campaigns found</h3>
                                     <p>Try adjusting your filters or create a new campaign.</p>
-                                    <button className="cm-create-btn" onClick={() => setShowCreateModal(true)} type="button">
+                                    <button className="cm-create-btn" onClick={() => setShowCreateModal(true)} type="button" disabled={savingCampaign}>
                                         Create Campaign
                                     </button>
                                 </>
