@@ -15,9 +15,27 @@ export default function useActivityCreators(enabled = true) {
     setAgents([]);
     setError('');
     if (isAdmin && enabled) apiService.listWorkspaceAgents().then((response) => {
-      if (active) setAgents(response?.data?.data || []);
-    }).catch(() => {
-      if (active) setError('Agent names could not be loaded. Refresh to try again.');
+      if (active) {
+        const loadedAgents = response?.data?.data || [];
+        console.info('[BroadcastCreator] agent directory loaded', {
+          viewerId: userId,
+          count: loadedAgents.length,
+          agents: loadedAgents.slice(0, 30).map((agent) => ({
+            id: String(agent._id || agent.id || ''),
+            name: agent.username || agent.name || agent.fullName || '',
+          })),
+        });
+        setAgents(loadedAgents);
+      }
+    }).catch((requestError) => {
+      if (active) {
+        console.error('[BroadcastCreator] agent directory failed', {
+          viewerId: userId,
+          status: requestError?.response?.status || null,
+          code: requestError?.code || 'UNKNOWN',
+        });
+        setError('Agent names could not be loaded. Refresh to try again.');
+      }
     });
     return () => { active = false; };
   }, [isAdmin, userId, enabled]);

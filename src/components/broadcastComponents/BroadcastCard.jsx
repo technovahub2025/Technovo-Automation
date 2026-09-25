@@ -1,4 +1,4 @@
-import React, { memo } from "react";
+import React, { memo, useEffect } from "react";
 import { LineChart, Trash } from "lucide-react";
 import "./BroadcastCampaignMeta.css";
 import "./BroadcastPolicyChip.css";
@@ -30,6 +30,22 @@ const BroadcastCard = ({
   onDeleteClick,
   onViewAnalytics,
 }) => {
+  const creatorId = String(broadcast.createdById?._id || broadcast.createdById || '');
+  const displayedCreator = getCreatorLabel(broadcast);
+  useEffect(() => {
+    const details = {
+      broadcastId: String(broadcast._id || ''),
+      creatorId,
+      displayedName: displayedCreator,
+      creatorRole: broadcast.createdByWorkspaceRole || '',
+    };
+    if (!creatorId || ['Unknown', 'Unknown creator'].includes(displayedCreator)) {
+      console.error('[BroadcastCreator] render missing creator', details);
+    } else {
+      console.info('[BroadcastCreator] render', details);
+    }
+  }, [broadcast._id, creatorId, displayedCreator, broadcast.createdByWorkspaceRole]);
+
   const toNumber = (value) => {
     const parsed = Number(value || 0);
     return Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
