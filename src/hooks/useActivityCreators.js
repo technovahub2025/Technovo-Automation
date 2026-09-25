@@ -34,7 +34,7 @@ export default function useActivityCreators(enabled = true) {
     }))
   ].filter((creator) => creator.value), [userId, user?.username, user?.name, user?.email, agents]);
   const byId = useMemo(() => new Map(creators.map((creator) => [creator.value, creator])), [creators]);
-  const labelFor = (record) => byId.get(activityCreatorId(record))?.label ||
+  const labelFor = (record) => record.createdByName || byId.get(activityCreatorId(record))?.label ||
     record.createdBy?.username || record.createdBy?.name || record.createdByName ||
     (typeof record.createdBy === 'string' && !/^[a-f\d]{24}$/i.test(record.createdBy) ? record.createdBy : '') ||
     record.createdByEmail || 'Unknown creator';

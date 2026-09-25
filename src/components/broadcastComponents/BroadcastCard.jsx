@@ -8,6 +8,7 @@ import "./BroadcastCard.css";
 const normalizeText = (value = "") => String(value || "").trim();
 
 const getCreatorLabel = (broadcast = {}) => {
+  if (normalizeText(broadcast.createdByName)) return normalizeText(broadcast.createdByName);
   const createdBy = normalizeText(broadcast?.createdBy);
   if (createdBy) return createdBy;
   const createdByEmail = normalizeText(broadcast?.createdByEmail);
@@ -406,6 +407,7 @@ const areEqual = (prevProps, nextProps) => {
         next?.audienceSource?.type || next?.audienceSnapshot?.sourceType || "",
       ) &&
     String(prev?.createdBy || "") === String(next?.createdBy || "") &&
+    String(prev?.createdByName || "") === String(next?.createdByName || "") &&
     String(prev?.createdByEmail || "") === String(next?.createdByEmail || "") &&
     String(prev?.createdById || "") === String(next?.createdById || "") &&
     prev.scheduledAt === next.scheduledAt &&

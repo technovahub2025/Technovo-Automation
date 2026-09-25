@@ -86,6 +86,7 @@ const getFailureReasonDetail = (item = {}) => {
 };
 
 const getCreatorLabel = (broadcast = {}) => {
+  if (normalizeText(broadcast.createdByName)) return normalizeText(broadcast.createdByName);
   const createdBy = normalizeText(broadcast?.createdBy);
   if (createdBy) return createdBy;
   const createdByEmail = normalizeText(broadcast?.createdByEmail);

@@ -70,6 +70,7 @@ const normalizePhoneForDelivery = (value = "") => {
 };
 
 const getCreatorDisplayLabel = (broadcast = {}) => {
+  if (normalizeText(broadcast.createdByName)) return normalizeText(broadcast.createdByName);
   const createdBy = normalizeText(broadcast?.createdBy);
   if (createdBy) return createdBy;
   const createdByEmail = normalizeText(broadcast?.createdByEmail);
@@ -581,6 +582,7 @@ const Broadcast = ({
       broadcasts
         .map((broadcast) => {
           const value =
+            normalizeText(broadcast?.createdById?._id || broadcast?.createdById) ||
             normalizeText(broadcast?.createdByEmail) ||
             normalizeText(broadcast?.createdBy) ||
             normalizeText(broadcast?.createdById);
@@ -591,13 +593,17 @@ const Broadcast = ({
             value,
             {
               value,
-              label: getCreatorDisplayLabel(broadcast),
+              label: activityCreators.labelFor(broadcast) || getCreatorDisplayLabel(broadcast),
             },
           ];
         })
         .filter(Boolean),
   ).values(),
   ).sort((a, b) => a.label.localeCompare(b.label));
+  const allCreatorOptions = Array.from(new Map([
+    ...activityCreators.creators,
+    ...creatorOptions
+  ].map((creator) => [creator.value, creator])).values()).sort((a, b) => a.label.localeCompare(b.label));
   const currentBroadcasts = visibleBroadcasts;
 
   useEffect(() => {
@@ -3724,9 +3730,7 @@ const Broadcast = ({
                   onStatusFilterChange={(value) => setStatusFilter(value)}
                   creatorFilter={creatorFilter}
                   onCreatorFilterChange={(value) => setCreatorFilter(value)}
-                  creatorOptions={activityCreators.isAdmin
-                    ? activityCreators.creators
-                    : creatorOptions}
+                  creatorOptions={allCreatorOptions}
                   reliabilityFilter={reliabilityFilter}
                   onReliabilityFilterChange={(value) =>
                     setReliabilityFilter(value)
