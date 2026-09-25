@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import apiService from "../../services/api";
 import socketService from "../../services/socketService";
 import resolveAdminApiUrl from "../../services/adminApiUrl";
+import SubscriptionDates from "./SubscriptionDates";
 import "../admin.css";
 import "../../styles/theme.css";
 
@@ -606,6 +607,7 @@ const PaymentsDetailsPage = () => {
 
         {plansTab === "payments" && (
           <div className="plans-tab-content">
+            <SubscriptionDates backendUrl={backendUrl} />
             <div className="users-toolbar-surface payments-toolbar-surface">
               <div className="page-toolbar users-page-toolbar">
                 <div className="users-toolbar-control">

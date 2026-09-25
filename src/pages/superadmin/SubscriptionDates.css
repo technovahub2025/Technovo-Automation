@@ -1,0 +1,8 @@
+.subscription-dates-panel { margin-bottom: 24px; }
+.subscription-dates-panel > p { margin: 8px 0 16px; }
+.subscription-dates-row { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; padding: 16px 0; border-bottom: 1px solid #e2e8f0; }
+.subscription-dates-row > div { flex: 1 1 180px; overflow-wrap: anywhere; }
+.subscription-dates-row label { display: grid; gap: 6px; font-size: 13px; }
+.subscription-dates-row input { padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; background: var(--bg-primary, white); color: inherit; }
+.subscription-dates-row > [role="status"] { flex-basis: 100%; }
+.subscription-dates-row button:disabled { opacity: .5; cursor: default; }

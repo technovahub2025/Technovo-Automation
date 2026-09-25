@@ -88,6 +88,11 @@ const MainLayout = () => {
       )}
       <div className={`main-content ${expandedPanel ? 'content-shifted' : ''} ${isFullPageRoute ? 'full-page' : ''}`}>
         {shouldShowHeader && <Header />}
+        {user?.role === "admin" && user?.subscriptionEndsAt && Number.isFinite(new Date(user.subscriptionEndsAt).getTime()) && (
+          <div className="plan-expired-banner plan-state-banner">
+            <div><strong>Subscription end date:</strong> {new Date(user.subscriptionEndsAt).toLocaleDateString(undefined, { day: "numeric", month: "long", year: "numeric" })}</div>
+          </div>
+        )}
         {isExpired && (
           <div className="plan-expired-banner">
             <div>
