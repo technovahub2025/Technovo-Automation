@@ -17,6 +17,10 @@ export const resolveActivityCreator = (record, creators) => {
     ...record,
     createdBy: name,
     createdByName: name,
-    createdByWorkspaceRole: creator?.isAgent ? 'agent' : record.createdByWorkspaceRole,
+    // The current workspace owner is the non-agent entry in this directory.
+    // Make its role explicit so the table can label admin and agent rows alike.
+    createdByWorkspaceRole: creator
+      ? (creator.isAgent ? 'agent' : 'admin')
+      : record.createdByWorkspaceRole,
   };
 };

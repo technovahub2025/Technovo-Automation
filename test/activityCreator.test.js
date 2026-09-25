@@ -22,3 +22,9 @@ test('keeps stored agent name before directory loads and does not assign agents 
   assert.equal(resolveActivityCreator({ createdById: 'admin-id', createdByName: 'Qtech services' }, creators).createdByName, 'Qtech services');
   assert.equal(resolveActivityCreator({ createdById: { _id: 'agent-id' } }, creators).createdByName, 'lirisha');
 });
+
+test('known workspace owner is labelled as admin in the all-creators list', () => {
+  const resolved = resolveActivityCreator({ createdById: 'admin-id', createdByName: 'Qtech services' }, creators);
+  assert.equal(resolved.createdByName, 'Qtech services');
+  assert.equal(resolved.createdByWorkspaceRole, 'admin');
+});

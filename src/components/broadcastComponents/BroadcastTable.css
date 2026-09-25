@@ -1094,3 +1094,18 @@
     line-height: 1.2;
     word-break: break-word;
 }
+
+.broadcast-load-more {
+    border: 1px solid #2563eb;
+    border-radius: 6px;
+    background: #fff;
+    color: #1d4ed8;
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+    padding: 7px 12px;
+}
+
+.broadcast-load-more:hover {
+    background: #eff6ff;
+}

@@ -23,6 +23,7 @@ const BroadcastTable = ({
   isLoadingMore = false,
   hasMoreBroadcasts = false,
   hasMoreVisibleBroadcasts = false,
+  onLoadMore,
 }) => {
   if (broadcasts.length === 0) {
     return (
@@ -99,7 +100,9 @@ const BroadcastTable = ({
                     <span>Loading more campaigns...</span>
                   </>
                 ) : hasMoreVisibleBroadcasts || hasMoreBroadcasts ? (
-                  <span>Scroll to load more</span>
+                  <button type="button" className="broadcast-load-more" onClick={onLoadMore}>
+                    Load more campaigns
+                  </button>
                 ) : (
                   <span>All campaigns loaded</span>
                 )}

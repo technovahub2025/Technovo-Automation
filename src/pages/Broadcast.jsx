@@ -609,6 +609,22 @@ const Broadcast = ({
   ].map((creator) => [creator.value, creator])).values()).sort((a, b) => a.label.localeCompare(b.label));
   const currentBroadcasts = visibleBroadcasts;
 
+  const handleLoadMoreCampaigns = useCallback(async () => {
+    if (visibleBroadcastCount < filteredBroadcasts.length) {
+      setVisibleBroadcastCount((previous) => Math.min(previous + 10, filteredBroadcasts.length));
+      return;
+    }
+    if (!broadcastPageMeta?.hasMore || loadingMoreBroadcasts) return;
+    const loaded = await loadMoreBroadcasts();
+    if (loaded) setVisibleBroadcastCount((previous) => previous + 10);
+  }, [
+    broadcastPageMeta?.hasMore,
+    filteredBroadcasts.length,
+    loadMoreBroadcasts,
+    loadingMoreBroadcasts,
+    visibleBroadcastCount,
+  ]);
+
   useEffect(() => {
     const sentinel = broadcastInfiniteScrollSentinelRef.current;
     const root = broadcastTableScrollRef.current;
@@ -3778,6 +3794,7 @@ const Broadcast = ({
                   hasMoreVisibleBroadcasts={
                     visibleBroadcastCount < filteredBroadcasts.length
                   }
+                  onLoadMore={handleLoadMoreCampaigns}
                 />
 
               </div>
