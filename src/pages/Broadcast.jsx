@@ -23,6 +23,7 @@ import {
 import BroadcastListControls from "../components/broadcastComponents/BroadcastListControls";
 import BroadcastTable from "../components/broadcastComponents/BroadcastTable";
 import useActivityCreators from "../hooks/useActivityCreators";
+import { resolveActivityCreator } from "../utils/activityCreator";
 import ScheduleForm from "../components/broadcastComponents/ScheduleForm";
 import DeleteModal from "../components/broadcastComponents/DeleteModal";
 import BroadcastTypeChoice from "../components/broadcastComponents/BroadcastTypeChoice";
@@ -575,7 +576,7 @@ const Broadcast = ({
   // Get filtered and sorted broadcasts
 
   const filteredBroadcasts = getFilteredAndSortedBroadcasts()
-    .map((broadcast) => ({ ...broadcast, createdBy: activityCreators.labelFor(broadcast) }));
+    .map((broadcast) => resolveActivityCreator(broadcast, activityCreators.creators));
   const visibleBroadcasts = filteredBroadcasts.slice(0, visibleBroadcastCount);
   const creatorOptions = Array.from(
     new Map(

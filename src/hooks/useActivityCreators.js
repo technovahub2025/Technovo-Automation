@@ -1,11 +1,8 @@
 import { useContext, useEffect, useMemo, useState } from 'react';
 import { AuthContext } from '../pages/authcontext';
 import apiService from '../services/api';
-
-export const activityCreatorId = (record = {}) => {
-  const creator = record.createdById || record.createdBy;
-  return String(creator?._id || creator?.id || creator || '').trim();
-};
+import { activityCreatorLabel } from '../utils/activityCreator';
+export { activityCreatorId } from '../utils/activityCreator';
 
 export default function useActivityCreators(enabled = true) {
   const { user } = useContext(AuthContext);
@@ -34,9 +31,6 @@ export default function useActivityCreators(enabled = true) {
     }))
   ].filter((creator) => creator.value), [userId, user?.username, user?.name, user?.email, agents]);
   const byId = useMemo(() => new Map(creators.map((creator) => [creator.value, creator])), [creators]);
-  const labelFor = (record) => record.createdByName || byId.get(activityCreatorId(record))?.label ||
-    record.createdBy?.username || record.createdBy?.name || record.createdByName ||
-    (typeof record.createdBy === 'string' && !/^[a-f\d]{24}$/i.test(record.createdBy) ? record.createdBy : '') ||
-    record.createdByEmail || 'Unknown creator';
+  const labelFor = (record) => activityCreatorLabel(record, byId);
   return { userId, isAdmin, creators, labelFor, error };
 }
