@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
+import { toDateInput, subscriptionEndDate } from '../../utils/subscriptionDates';
 import {
   ArrowLeft,
   Building2,
@@ -294,6 +295,8 @@ const UsersListPage = () => {
   const [cashPaymentUser, setCashPaymentUser] = useState(null);
   const [cashPaymentPlanCode, setCashPaymentPlanCode] = useState("basic");
   const [cashPaymentBillingCycle, setCashPaymentBillingCycle] = useState("monthly");
+  const [cashPaymentStartDate, setCashPaymentStartDate] = useState('');
+  const [cashPaymentEndDate, setCashPaymentEndDate] = useState('');
   const [cashPaymentAmount, setCashPaymentAmount] = useState("");
   const [cashPaymentReference, setCashPaymentReference] = useState("");
   const [cashPaymentLoading, setCashPaymentLoading] = useState(false);
@@ -359,6 +362,8 @@ const UsersListPage = () => {
     setCashPaymentUser(null);
     setCashPaymentPlanCode("basic");
     setCashPaymentBillingCycle("monthly");
+    setCashPaymentStartDate('');
+    setCashPaymentEndDate('');
     setCashPaymentAmount("");
     setCashPaymentReference("");
     setCashPaymentLoading(false);
@@ -394,12 +399,15 @@ const UsersListPage = () => {
 
   const applyCashPaymentSnapshot = (user) => {
     const existingPlanCode = normalizePlanCode(user?.latestPaymentPlanCode || user?.planCode || "basic");
-    const existingBillingCycle = normalizeBillingCycle(user?.latestPaymentBillingCycle || "monthly");
+    const existingBillingCycle = normalizeBillingCycle(user?.subscriptionBillingCycle || user?.latestPaymentBillingCycle || "monthly");
     const existingAmount = Number(user?.latestPaymentAmount || 0);
 
     setCashPaymentUser(user);
     setCashPaymentPlanCode(existingPlanCode);
     setCashPaymentBillingCycle(existingBillingCycle);
+    const start = toDateInput(user?.subscriptionStartsAt) || toDateInput(new Date());
+    setCashPaymentStartDate(start);
+    setCashPaymentEndDate(toDateInput(user?.subscriptionEndsAt) || subscriptionEndDate(start, existingBillingCycle));
     setCashPaymentAmount(existingAmount > 0 ? String(existingAmount) : "");
     setCashPaymentReference(String(user?.latestPaymentReference || "").trim());
     setCashPaymentMessage("");
@@ -615,6 +623,9 @@ const UsersListPage = () => {
           ...user,
           planCode,
           subscriptionStatus: responseData.subscriptionStatus || "active",
+          subscriptionStartsAt: responseData.startsAt || responseData.context?.subscriptionStartsAt,
+          subscriptionEndsAt: responseData.endsAt || responseData.context?.subscriptionEndsAt,
+          subscriptionBillingCycle: billingCycle,
           workspaceAccessState: responseData.context?.workspaceAccessState || "active",
           canPerformActions: responseData.context?.canPerformActions ?? true,
           canViewAnalytics: responseData.context?.canViewAnalytics ?? true,
@@ -639,6 +650,11 @@ const UsersListPage = () => {
     const billingCycle = normalizeBillingCycle(cashPaymentBillingCycle);
     const amount = Number(cashPaymentAmount);
 
+    if (!cashPaymentStartDate || !cashPaymentEndDate || cashPaymentEndDate < cashPaymentStartDate) {
+      setCashPaymentError('Enter a start date and an end date on or after it.');
+      return;
+    }
+
     if (!Number.isFinite(amount) || amount <= 0) {
       setCashPaymentError("Enter a valid amount greater than zero.");
       return;
@@ -652,6 +668,10 @@ const UsersListPage = () => {
       planCode,
       billingCycle,
       amount,
+      startsAt: cashPaymentStartDate === toDateInput(cashPaymentUser.subscriptionStartsAt)
+        ? cashPaymentUser.subscriptionStartsAt : new Date(`${cashPaymentStartDate}T00:00:00`).toISOString(),
+      endsAt: cashPaymentEndDate === toDateInput(cashPaymentUser.subscriptionEndsAt)
+        ? cashPaymentUser.subscriptionEndsAt : new Date(`${cashPaymentEndDate}T23:59:59.999`).toISOString(),
       paymentReference: String(cashPaymentReference || "").trim()
     };
 
@@ -1305,7 +1325,10 @@ const UsersListPage = () => {
                   <label>Plan</label>
                   <select
                     value={cashPaymentPlanCode}
-                    onChange={(e) => setCashPaymentPlanCode(e.target.value)}
+                    onChange={(e) => {
+                      setCashPaymentPlanCode(e.target.value);
+                      setCashPaymentEndDate(subscriptionEndDate(cashPaymentStartDate, cashPaymentBillingCycle));
+                    }}
                     className="customize-select"
                   >
                     {PLAN_OPTIONS.map((option) => (
@@ -1319,7 +1342,10 @@ const UsersListPage = () => {
                   <label>Billing Cycle</label>
                   <select
                     value={cashPaymentBillingCycle}
-                    onChange={(e) => setCashPaymentBillingCycle(e.target.value)}
+                    onChange={(e) => {
+                      setCashPaymentBillingCycle(e.target.value);
+                      setCashPaymentEndDate(subscriptionEndDate(cashPaymentStartDate, e.target.value));
+                    }}
                     className="customize-select"
                   >
                     {BILLING_CYCLE_OPTIONS.map((option) => (
@@ -1358,6 +1384,23 @@ const UsersListPage = () => {
               </div>
 
               <section className="cash-payment-summary">
+                <div className="cash-payment-grid">
+                  <div className="form-row form-row--customize">
+                    <label htmlFor="cash-subscription-start">Subscription Start Date</label>
+                    <input id="cash-subscription-start" type="date" required disabled={cashPaymentLoading}
+                      className="customize-select" value={cashPaymentStartDate} onChange={(event) => {
+                        setCashPaymentStartDate(event.target.value);
+                        setCashPaymentEndDate(subscriptionEndDate(event.target.value, cashPaymentBillingCycle));
+                      }} />
+                  </div>
+                  <div className="form-row form-row--customize">
+                    <label htmlFor="cash-subscription-end">Subscription End Date</label>
+                    <input id="cash-subscription-end" type="date" required disabled={cashPaymentLoading}
+                      className="customize-select" min={cashPaymentStartDate} value={cashPaymentEndDate}
+                      onChange={(event) => setCashPaymentEndDate(event.target.value)} />
+                  </div>
+                </div>
+                <p className="cash-payment-summary__note">Changing the plan, billing cycle, or start date recalculates the end date: one month for Monthly, one year for Yearly. You can edit the end date afterwards. Dates use your local time.</p>
                 <h3>Confirm Assignment</h3>
                 <div className="cash-payment-summary__grid">
                   <div>
@@ -1376,9 +1419,11 @@ const UsersListPage = () => {
                     <span>Reference</span>
                     <strong>{cashPaymentReference.trim() || "Auto-generated"}</strong>
                   </div>
+                  <div><span>Start Date</span><strong>{cashPaymentStartDate || 'Choose start date'}</strong></div>
+                  <div><span>End Date</span><strong>{cashPaymentEndDate || 'Choose end date'}</strong></div>
                 </div>
                 <div className="cash-payment-summary__note">
-                  This will mark the user as active via cash, update the latest payment details, and refresh access right away.
+                  This will save the selected subscription period, record the cash payment, and refresh access. A past end date leaves the subscription expired.
                 </div>
               </section>
 
