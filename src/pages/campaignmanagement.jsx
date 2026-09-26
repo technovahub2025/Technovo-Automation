@@ -1318,7 +1318,7 @@ const CampaignManagement = () => {
                                                 <h4 className="cm-list-title headline-font">{campaign.name}</h4>
                                                 <div className="cm-list-meta">
                                                     <span className="material-symbols-outlined">calendar_today</span>
-                                                    <span>{campaign.startDate || 'Not set'} - {campaign.endDate || 'Ongoing'}</span>
+                                                    <span>Starts {campaign.startDate || 'Not set'}{campaign.endDate ? ` - ${campaign.endDate}` : ''}</span>
                                                 </div>
                                             </div>
                                             <span className={`cm-status-badge cm-list-status ${statusMeta.badgeClass}`}>{statusMeta.label}</span>
@@ -1447,7 +1447,7 @@ const CampaignManagement = () => {
                                                     <h4 className="cm-card-title headline-font">{campaign.name}</h4>
                                                     <div className="cm-card-date">
                                                         <span className="material-symbols-outlined">calendar_today</span>
-                                                        <span>{campaign.startDate || 'Not set'} - {campaign.endDate || 'Ongoing'}</span>
+                                                        <span>Starts {campaign.startDate || 'Not set'}{campaign.endDate ? ` - ${campaign.endDate}` : ''}</span>
                                                     </div>
                                                 </div>
                                                 <button
@@ -1648,6 +1648,9 @@ const CampaignModal = ({
             ...formData,
             name: String(formData.name || '').trim() || (mode === 'create' ? 'Untitled Campaign' : ''),
             startDate: formData.startDate || getTodayDateValue(),
+            endDate: '',
+            lifetimeBudget: '',
+            budgetType: 'daily',
             platform: formData.platform || 'both',
             objective: formData.objective || 'awareness',
             status: formData.status || 'draft'
@@ -1827,7 +1830,7 @@ const CampaignModal = ({
 
                         {activeTab === 'budget' && (
                             <div className="tab-panel">
-                                <div className="form-group">
+                                {mode === 'edit' && (<div className="form-group">
                                     <label>Budget Type</label>
                                     <div className="budget-type-options">
                                         <label className="budget-option">
@@ -1861,7 +1864,7 @@ const CampaignModal = ({
                                             <span>Lifetime Budget</span>
                                         </label>
                                     </div>
-                                </div>
+                                </div>)}
 
                                 {formData.budgetType === 'daily' && (
                                     <div className="form-group">
@@ -1905,7 +1908,7 @@ const CampaignModal = ({
                                             required
                                         />
                                     </div>
-                                    <div className="form-group">
+                                    {mode === 'edit' && (<div className="form-group">
                                         <label>{formData.lifetimeBudget ? 'End Date (Required for Lifetime Budget)' : 'End Date (Optional)'}</label>
                                         <input
                                             type="date"
@@ -1913,7 +1916,7 @@ const CampaignModal = ({
                                             onChange={(e) => setFormData({...formData, endDate: e.target.value})}
                                             required={Boolean(formData.lifetimeBudget)}
                                         />
-                                    </div>
+                                    </div>)}
                                 </div>
 
                             </div>
@@ -2140,6 +2143,16 @@ const CampaignModal = ({
                                     </>
                                 )}
 
+                                <div className="form-group">
+                                    <label>Media Preview</label>
+                                    <div className="cm-draft-ad__media">
+                                        {mediaPreviewUrl && !mediaPreviewFailed ? (
+                                            formData.mediaType === 'video'
+                                                ? <video key={mediaPreviewUrl} src={mediaPreviewUrl} controls playsInline preload="metadata" onError={() => setMediaPreviewFailed(true)} />
+                                                : <img src={mediaPreviewUrl} alt="Campaign creative" onError={() => setMediaPreviewFailed(true)} />
+                                        ) : <p>{mediaPreviewFailed ? 'Unable to play this file. Try an MP4 video or check the URL.' : 'Choose an image or video to preview it here.'}</p>}
+                                    </div>
+                                </div>
                             </div>
                         )}
                         {activeTab === 'preview' && (
@@ -2182,7 +2195,8 @@ const CampaignModal = ({
                                                 ['Objective', formData.objective],
                                                 ['Initial status', formData.status],
                                                 [formData.budgetType === 'lifetime' ? 'Lifetime budget ($)' : 'Daily budget ($)', formData.budgetType === 'lifetime' ? formData.lifetimeBudget : formData.dailyBudget],
-                                                ['Schedule', `${formData.startDate} – ${formData.endDate || 'Ongoing'}`],
+                                                ['Start Date', formData.startDate],
+                                                ...(mode === 'edit' && formData.endDate ? [['End Date', formData.endDate]] : []),
                                                 ['Location', formData.targeting || 'Default targeting'],
                                                 ['Age range', `${formData.ageMin}–${formData.ageMax}`],
                                                 ['Gender', formData.gender],
