@@ -1648,9 +1648,6 @@ const CampaignModal = ({
             ...formData,
             name: String(formData.name || '').trim() || (mode === 'create' ? 'Untitled Campaign' : ''),
             startDate: formData.startDate || getTodayDateValue(),
-            endDate: '',
-            lifetimeBudget: '',
-            budgetType: 'daily',
             platform: formData.platform || 'both',
             objective: formData.objective || 'awareness',
             status: formData.status || 'draft'
@@ -1830,7 +1827,7 @@ const CampaignModal = ({
 
                         {activeTab === 'budget' && (
                             <div className="tab-panel">
-                                {mode === 'edit' && (<div className="form-group">
+                                <div className="form-group">
                                     <label>Budget Type</label>
                                     <div className="budget-type-options">
                                         <label className="budget-option">
@@ -1864,7 +1861,7 @@ const CampaignModal = ({
                                             <span>Lifetime Budget</span>
                                         </label>
                                     </div>
-                                </div>)}
+                                </div>
 
                                 {formData.budgetType === 'daily' && (
                                     <div className="form-group">
@@ -1908,7 +1905,7 @@ const CampaignModal = ({
                                             required
                                         />
                                     </div>
-                                    {mode === 'edit' && (<div className="form-group">
+                                    <div className="form-group">
                                         <label>{formData.lifetimeBudget ? 'End Date (Required for Lifetime Budget)' : 'End Date (Optional)'}</label>
                                         <input
                                             type="date"
@@ -1916,7 +1913,7 @@ const CampaignModal = ({
                                             onChange={(e) => setFormData({...formData, endDate: e.target.value})}
                                             required={Boolean(formData.lifetimeBudget)}
                                         />
-                                    </div>)}
+                                    </div>
                                 </div>
 
                             </div>
@@ -2196,7 +2193,7 @@ const CampaignModal = ({
                                                 ['Initial status', formData.status],
                                                 [formData.budgetType === 'lifetime' ? 'Lifetime budget ($)' : 'Daily budget ($)', formData.budgetType === 'lifetime' ? formData.lifetimeBudget : formData.dailyBudget],
                                                 ['Start Date', formData.startDate],
-                                                ...(mode === 'edit' && formData.endDate ? [['End Date', formData.endDate]] : []),
+                                                ['End Date', formData.endDate || 'Ongoing'],
                                                 ['Location', formData.targeting || 'Default targeting'],
                                                 ['Age range', `${formData.ageMin}–${formData.ageMax}`],
                                                 ['Gender', formData.gender],
