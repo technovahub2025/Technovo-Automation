@@ -1045,6 +1045,9 @@ const CampaignManagement = () => {
     };
     const getCampaignStatusMeta = (campaign) => {
         const statusKey = String(campaign?.lifecycleStatus || campaign?.status || 'draft').toLowerCase();
+        if (statusKey === 'rejected' && campaign?.metaResponse?.stage) {
+            return { label: 'PUBLISHING FAILED', badgeClass: 'cm-status-ended', metricsClass: 'cm-faded-metrics' };
+        }
         const map = {
             active: { label: 'ACTIVE', badgeClass: 'cm-status-running', metricsClass: '' },
             running: { label: 'RUNNING', badgeClass: 'cm-status-running', metricsClass: '' },
@@ -1331,6 +1334,9 @@ const CampaignManagement = () => {
                                             </div>
                                             <span className={`cm-status-badge cm-list-status ${statusMeta.badgeClass}`}>{statusMeta.label}</span>
                                         </div>
+                                        {campaign.lifecycleStatus === 'rejected' && campaign.reviewNotes ? (
+                                            <p className="cm-campaign-error" role="status">{campaign.reviewNotes}</p>
+                                        ) : null}
                                         <div className="cm-list-details">
                                             <div className="cm-list-platforms">
                                                 {(campaign.platform === 'facebook' || campaign.platform === 'both') ? (
@@ -1467,6 +1473,9 @@ const CampaignManagement = () => {
                                                     <span className="material-symbols-outlined">more_vert</span>
                                                 </button>
                                             </div>
+                                            {campaign.lifecycleStatus === 'rejected' && campaign.reviewNotes ? (
+                                                <p className="cm-campaign-error" role="status">{campaign.reviewNotes}</p>
+                                            ) : null}
                                             <div className="cm-budget-box">
                                                 <div>
                                                     <p className="cm-budget-label">Daily Budget</p>

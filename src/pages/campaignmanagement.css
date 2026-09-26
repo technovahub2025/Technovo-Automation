@@ -1585,6 +1585,18 @@
   gap: 0.5rem;
 }
 
+.campaign-management .cm-campaign-error {
+  padding: 12px;
+  margin: 12px 0;
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background: #fef2f2;
+  color: #991b1b;
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
 .campaign-management .cm-card-head > div {
   min-width: 0;
 }
