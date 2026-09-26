@@ -1,5 +1,5 @@
 // CampaignManagement.jsx
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -217,6 +217,12 @@ const CampaignManagement = () => {
     const [metaSetup, setMetaSetup] = useState(null);
     const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState('');
     const [campaignFlash, setCampaignFlash] = useState('');
+    const campaignPreviews = useRef(new Map());
+    const loadedCampaigns = useRef(false);
+
+    useEffect(() => () => {
+        campaignPreviews.current.forEach((url) => URL.revokeObjectURL(url));
+    }, []);
     const [deletingCampaignId, setDeletingCampaignId] = useState('');
     const [campaignToDelete, setCampaignToDelete] = useState(null);
     const [deleteError, setDeleteError] = useState('');
@@ -446,8 +452,9 @@ const CampaignManagement = () => {
             return;
         }
 
-        setLoading(true);
+        if (!loadedCampaigns.current) setLoading(true);
         setError('');
+        const requestedAt = Date.now();
         try {
             const response = await api.get('/api/campaigns', {
                 headers: getAuthHeaders(),
@@ -460,14 +467,25 @@ const CampaignManagement = () => {
                 }
             });
             const data = response.data?.data || [];
-            setCampaigns((previous) => [
-                ...previous.filter((campaign) => String(campaign.id || '').startsWith('temp-')),
-                ...data.map(normalizeCampaign)
-            ]);
+            setCampaigns((previous) => {
+                const incoming = data.map(normalizeCampaign);
+                const ids = new Set(incoming.map((item) => String(item.id)));
+                const previousById = new Map(previous.map((item) => [String(item.id), item]));
+                return [
+                    ...previous.filter((item) => !ids.has(String(item.id)) &&
+                        (String(item.id).startsWith('temp-') || item.lifecycleStatus === 'publishing' ||
+                            new Date(item.createdAt).getTime() >= requestedAt)),
+                    ...incoming.map((item) => {
+                        const existing = previousById.get(String(item.id));
+                        return existing && new Date(existing.updatedAt) > new Date(item.updatedAt)
+                            ? existing : item;
+                    })
+                ];
+            });
+            loadedCampaigns.current = true;
         } catch (err) {
             console.error('Failed to load campaigns', err?.response?.data || err.message);
             setError(err?.response?.data?.message || 'Unable to load campaigns from server.');
-            setCampaigns([]);
         } finally {
             setLoading(false);
         }
@@ -531,6 +549,39 @@ const CampaignManagement = () => {
         fetchMetaSetupState();
     }, [fetchMetaSetupState]);
 
+    const publishingIds = campaigns
+        .filter((item) => item.lifecycleStatus === 'publishing' && !String(item.id).startsWith('temp-'))
+        .map((item) => String(item.id)).sort().join(',');
+
+    useEffect(() => {
+        if (!publishingIds) return undefined;
+        let cancelled = false;
+        let timer;
+        const refreshPublishing = async () => {
+            const results = await Promise.allSettled(publishingIds.split(',').map(async (id) => {
+                const response = await api.get(`/api/campaigns/${id}`, { headers: getAuthHeaders() });
+                return normalizeCampaign(response.data.data);
+            }));
+            if (cancelled) return;
+            const updates = new Map(results.filter((result) => result.status === 'fulfilled')
+                .map((result) => [String(result.value.id), result.value]));
+            setCampaigns((previous) => previous.map((item) => updates.get(String(item.id)) || item));
+            timer = window.setTimeout(refreshPublishing, 3000);
+        };
+        refreshPublishing();
+        return () => { cancelled = true; window.clearTimeout(timer); };
+    }, [publishingIds, getAuthHeaders]);
+
+    useEffect(() => {
+        campaigns.forEach((campaign) => {
+            const id = String(campaign.id);
+            if (campaignPreviews.current.has(id) && (campaign.imageUrl || campaign.videoUrl)) {
+                URL.revokeObjectURL(campaignPreviews.current.get(id));
+                campaignPreviews.current.delete(id);
+            }
+        });
+    }, [campaigns]);
+
     useEffect(() => {
         let cancelled = false;
 
@@ -579,17 +630,25 @@ const CampaignManagement = () => {
         }
 
         const optimisticId = `temp-${Date.now()}`;
+        const creativeFile = campaignData.mediaType === 'video' ? campaignData.creativeVideo : campaignData.creativeImage;
+        if (creativeFile) campaignPreviews.current.set(optimisticId, URL.createObjectURL(creativeFile));
         const optimisticCampaign = normalizeCampaign({
             ...campaignData,
             id: optimisticId,
             _id: optimisticId,
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            source: 'local'
+            source: 'local',
+            lifecycleStatus: 'publishing',
+            deliveryStatus: 'publishing'
         });
 
         try {
             setSavingCampaign(true);
+            setCurrentPage(1);
+            setSelectedPlatform('all');
+            setSelectedStatus('all');
+            setSearchQuery('');
             setCampaigns((prev) => [
                 optimisticCampaign,
                 ...prev.filter((item) => String(item.id) !== String(optimisticId))
@@ -623,6 +682,10 @@ const CampaignManagement = () => {
                 updatedAt: new Date().toISOString(),
                 source: 'local'
             });
+            if (campaignPreviews.current.has(optimisticId)) {
+                campaignPreviews.current.set(String(normalizedCreated.id), campaignPreviews.current.get(optimisticId));
+                campaignPreviews.current.delete(optimisticId);
+            }
             setCampaigns((prev) => [
                 normalizedCreated,
                 ...prev.filter(
@@ -634,7 +697,6 @@ const CampaignManagement = () => {
             setCurrentPage(1);
             setCampaignFlash(response?.data?.message || 'Your ad has been created successfully.');
             setShowCreateModal(false);
-            window.alert('Campaign successfully created.');
             window.clearTimeout(window.__campaignFlashTimer);
             window.__campaignFlashTimer = window.setTimeout(() => {
                 setCampaignFlash('');
@@ -657,6 +719,10 @@ const CampaignManagement = () => {
                 (detailMessage ? `${stageMessage}${detailMessage}` : 'Create campaign failed.')
             );
             setCampaigns((prev) => prev.filter((item) => String(item.id) !== String(optimisticId)));
+            const preview = campaignPreviews.current.get(optimisticId);
+            if (preview) URL.revokeObjectURL(preview);
+            campaignPreviews.current.delete(optimisticId);
+            setCampaignFlash('');
         } finally {
             setSavingCampaign(false);
         }
@@ -1327,16 +1393,18 @@ const CampaignManagement = () => {
                             {displayCampaigns.map((campaign) => {
                                 const roas = getSafeRatio(campaign.revenue, campaign.spent);
                                 const statusMeta = getCampaignStatusMeta(campaign);
-                                const imageSrc = getCampaignImageSrc(campaign);
+                                const localPreview = campaignPreviews.current.get(String(campaign.id)) || '';
+                                const imageSrc = getCampaignImageSrc(campaign) || (campaign.mediaType !== 'video' ? localPreview : '');
+                                const videoSrc = campaign.videoUrl || (campaign.mediaType === 'video' ? localPreview : '');
                                 const shouldShowImage = Boolean(imageSrc);
                                 return (
                                     <div key={campaign.id} className="cm-campaign-card">
                                         <div className="cm-card-media">
-                                            {campaign.videoUrl ? (
+                                            {videoSrc ? (
                                                 <video
-                                                    key={campaign.videoUrl}
+                                                    key={videoSrc}
                                                     className="cm-card-media-img"
-                                                    src={campaign.videoUrl}
+                                                    src={videoSrc}
                                                     poster={imageSrc || undefined}
                                                     controls
                                                     muted
@@ -1527,7 +1595,7 @@ const CampaignModal = ({
         startDate: campaign?.startDate || getTodayDateValue(),
         endDate: campaign?.endDate || '',
         targeting: campaign?.targeting || '',
-        status: campaign?.status || 'draft',
+        status: campaign?.status || (mode === 'create' ? 'active' : 'draft'),
         ageMin: campaign?.ageMin || 18,
         ageMax: campaign?.ageMax || 65,
         gender: campaign?.gender || 'all',
