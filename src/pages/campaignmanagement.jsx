@@ -925,7 +925,7 @@ const CampaignManagement = () => {
     };
 
     const getWorkflowActions = (campaign, variant = 'card') => {
-        if (campaign.readOnly) return [];
+        if (campaign.readOnly || campaign.lifecycleStatus === 'publishing') return [];
 
         const actionClass = variant === 'table' ? 'cm-action-btn' : 'cm-action-btn';
         const actions = [];
