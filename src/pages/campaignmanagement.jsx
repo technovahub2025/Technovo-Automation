@@ -219,6 +219,7 @@ const CampaignManagement = () => {
     const [campaignFlash, setCampaignFlash] = useState('');
     const campaignPreviews = useRef(new Map());
     const loadedCampaigns = useRef(false);
+    const createCampaignInFlight = useRef(false);
 
     useEffect(() => () => {
         campaignPreviews.current.forEach((url) => URL.revokeObjectURL(url));
@@ -604,7 +605,11 @@ const CampaignManagement = () => {
         };
     }, [getAuthHeaders]);
 
+    const localMetaIds = new Set(campaigns
+        .filter((campaign) => !String(campaign.id).startsWith('meta_'))
+        .map((campaign) => String(campaign.metaCampaignId || '')).filter(Boolean));
     const filteredCampaigns = campaigns.filter(campaign => {
+        if (String(campaign.id).startsWith('meta_') && localMetaIds.has(String(campaign.metaCampaignId))) return false;
         const matchesPlatform = selectedPlatform === 'all' || campaign.platform === selectedPlatform;
         const matchesStatus = selectedStatus === 'all' || campaign.status === selectedStatus;
         const matchesSearch = campaign.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -622,6 +627,7 @@ const CampaignManagement = () => {
     }, [filteredCampaigns.length]);
 
     const handleCreateCampaign = async (campaignData) => {
+        if (createCampaignInFlight.current) return;
         if (USE_MOCK) {
             setCampaigns(prev => [...prev, { ...normalizeCampaign(campaignData), id: Date.now() }]);
             setShowCreateModal(false);
@@ -629,6 +635,7 @@ const CampaignManagement = () => {
             return;
         }
 
+        createCampaignInFlight.current = true;
         const optimisticId = `temp-${Date.now()}`;
         const creativeFile = campaignData.mediaType === 'video' ? campaignData.creativeVideo : campaignData.creativeImage;
         if (creativeFile) campaignPreviews.current.set(optimisticId, URL.createObjectURL(creativeFile));
@@ -724,6 +731,7 @@ const CampaignManagement = () => {
             campaignPreviews.current.delete(optimisticId);
             setCampaignFlash('');
         } finally {
+            createCampaignInFlight.current = false;
             setSavingCampaign(false);
         }
     };
