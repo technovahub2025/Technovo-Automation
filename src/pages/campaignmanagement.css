@@ -379,10 +379,140 @@
   align-content: start;
 }
 
+.campaign-management .step-tabs-create {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+@media (max-width: 760px) {
+  .campaign-management .step-tabs-create {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
 .campaign-management .campaign-preview-panel {
   display: grid;
   gap: 18px;
   padding: 4px 0;
+}
+
+.campaign-management .cm-creation-review {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.campaign-management .cm-draft-ad,
+.campaign-management .cm-creation-summary {
+  border: 1px solid #dbe4f0;
+  border-radius: 16px;
+  overflow: hidden;
+  background: #fff;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.campaign-management .cm-draft-ad__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  color: #1d4ed8;
+}
+
+.campaign-management .cm-draft-ad small,
+.campaign-management .cm-draft-ad strong {
+  display: block;
+}
+
+.campaign-management .cm-draft-ad small {
+  color: #64748b;
+  margin-top: 4px;
+}
+
+.campaign-management .cm-draft-ad__text {
+  padding: 0 16px 16px;
+  margin: 0;
+  white-space: pre-wrap;
+}
+
+.campaign-management .cm-draft-ad__media {
+  background: #f1f5f9;
+  min-height: 180px;
+  display: grid;
+  place-items: center;
+}
+
+.campaign-management .cm-draft-ad__media img,
+.campaign-management .cm-draft-ad__media video {
+  display: block;
+  width: 100%;
+  max-height: 360px;
+  object-fit: contain;
+}
+
+.campaign-management .cm-draft-ad__media p {
+  padding: 20px;
+  color: #64748b;
+  text-align: center;
+}
+
+.campaign-management .cm-draft-ad__destination {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 16px;
+  background: #f8fafc;
+}
+
+.campaign-management .cm-draft-ad__destination > div {
+  flex: 1;
+  min-width: 160px;
+}
+
+.campaign-management .cm-draft-ad__cta {
+  border-radius: 8px;
+  background: #e2e8f0;
+  padding: 10px 14px;
+  font-weight: 600;
+}
+
+.campaign-management .cm-creation-summary {
+  padding: 18px;
+}
+
+.campaign-management .cm-creation-summary h3 {
+  margin: 0 0 12px;
+}
+
+.campaign-management .cm-creation-summary dl > div {
+  display: grid;
+  grid-template-columns: 1fr 1.3fr;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.campaign-management .cm-creation-summary dt,
+.campaign-management .cm-creation-summary p {
+  color: #64748b;
+}
+
+.campaign-management .cm-creation-summary dd {
+  margin: 0;
+  font-weight: 600;
+}
+
+.campaign-management .step-tab:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+@media (max-width: 760px) {
+  .campaign-management .cm-creation-review {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .campaign-management .campaign-preview-panel__header {

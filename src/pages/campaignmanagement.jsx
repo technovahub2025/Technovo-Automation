@@ -1525,11 +1525,28 @@ const CampaignModal = ({
     });
 
     const [activeTab, setActiveTab] = useState('basic');
+    const [mediaPreviewUrl, setMediaPreviewUrl] = useState('');
+    const [mediaPreviewFailed, setMediaPreviewFailed] = useState(false);
+    const previewFile = formData.mediaType === 'video' ? formData.creativeVideo : formData.creativeImage;
+    const previewRemoteUrl = formData.mediaType === 'video' ? formData.videoUrl : formData.imageUrl;
+
+    useEffect(() => {
+        setMediaPreviewFailed(false);
+        if (!previewFile) {
+            setMediaPreviewUrl(previewRemoteUrl || '');
+            return undefined;
+        }
+        const objectUrl = URL.createObjectURL(previewFile);
+        setMediaPreviewUrl(objectUrl);
+        return () => URL.revokeObjectURL(objectUrl);
+    }, [previewFile, previewRemoteUrl]);
+
     const tabSteps = [
         { key: 'basic', label: 'Basic Info', step: 1 },
         { key: 'budget', label: 'Budget & Schedule', step: 2 },
         { key: 'targeting', label: 'Targeting', step: 3 },
-        { key: 'advanced', label: 'Advanced', step: 4 }
+        { key: 'advanced', label: 'Advanced', step: 4 },
+        ...(mode === 'create' ? [{ key: 'preview', label: 'Preview & Review', step: 5 }] : [])
     ];
     const activeTabIndex = tabSteps.findIndex((tab) => tab.key === activeTab);
     const isFirstTab = activeTabIndex <= 0;
@@ -1548,6 +1565,7 @@ const CampaignModal = ({
 
     const handleSubmit = (e) => {
         e.preventDefault();
+        if (submitting) return;
 
         if (!isLastTab) {
             const nextTab = tabSteps[activeTabIndex + 1];
@@ -1572,13 +1590,6 @@ const CampaignModal = ({
         });
     };
 
-    const handleNextTab = () => {
-        const nextTab = tabSteps[activeTabIndex + 1];
-        if (nextTab) {
-            setActiveTab(nextTab.key);
-        }
-    };
-
     const handlePreviousTab = () => {
         const previousTab = tabSteps[activeTabIndex - 1];
         if (previousTab) {
@@ -1596,12 +1607,13 @@ const CampaignModal = ({
                     </button>
                 </div>
 
-                <div className="modal-tabs step-tabs">
+                <div className={`modal-tabs step-tabs ${mode === 'create' ? 'step-tabs-create' : ''}`}>
                     {tabSteps.map((tab, index) => (
                         <React.Fragment key={tab.key}>
                             <button 
                                 type="button"
                                 className={`tab-btn step-tab ${activeTab === tab.key ? 'active' : ''}`}
+                                disabled={submitting || (mode === 'create' && index > activeTabIndex)}
                                 onClick={() => setActiveTab(tab.key)}
                             >
                                 <span className="step-number">{tab.step}</span>
@@ -2039,6 +2051,61 @@ const CampaignModal = ({
 
                             </div>
                         )}
+                        {activeTab === 'preview' && (
+                            <section className="campaign-preview-panel" aria-label="Campaign preview and review">
+                                <div className="campaign-preview-panel__header">
+                                    <div>
+                                        <h3>Preview & Review</h3>
+                                        <p>Review your ad before creating the campaign. Actual appearance may vary by placement.</p>
+                                    </div>
+                                </div>
+                                <div className="cm-creation-review">
+                                    <article className="cm-draft-ad" aria-label="Ad preview">
+                                        <div className="cm-draft-ad__header">
+                                            {formData.platform === 'instagram' ? <Instagram size={24} /> : <Facebook size={24} />}
+                                            <div><strong>{formData.platform === 'both' ? 'Facebook + Instagram' : formData.platform === 'instagram' ? 'Instagram' : 'Facebook'}</strong><small>Sponsored · Ad preview</small></div>
+                                        </div>
+                                        <p className="cm-draft-ad__text">{formData.primaryText || 'No primary text added'}</p>
+                                        <div className="cm-draft-ad__media">
+                                            {mediaPreviewUrl && !mediaPreviewFailed ? (
+                                                formData.mediaType === 'video'
+                                                    ? <video key={mediaPreviewUrl} src={mediaPreviewUrl} controls preload="metadata" onError={() => setMediaPreviewFailed(true)} />
+                                                    : <img src={mediaPreviewUrl} alt="Campaign creative" onError={() => setMediaPreviewFailed(true)} />
+                                            ) : <p>{mediaPreviewFailed ? 'Media could not be loaded. Go Back to check the file or URL.' : 'No image or video added. Go Back to add your creative.'}</p>}
+                                        </div>
+                                        <div className="cm-draft-ad__destination">
+                                            <div>
+                                                <small>{formData.destinationUrl || 'No destination URL'}</small>
+                                                <strong>{formData.headline || 'No headline added'}</strong>
+                                                {formData.description ? <p>{formData.description}</p> : null}
+                                            </div>
+                                            <span className="cm-draft-ad__cta">{{ LEARN_MORE: 'Learn More', SHOP_NOW: 'Shop Now', SIGN_UP: 'Sign Up', CONTACT_US: 'Contact Us', APPLY_NOW: 'Apply Now' }[formData.callToAction] || formData.callToAction}</span>
+                                        </div>
+                                    </article>
+                                    <div className="cm-creation-summary">
+                                        <h3>Campaign details</h3>
+                                        <dl>
+                                            {[
+                                                ['Name', formData.name],
+                                                ['Ad account', adAccounts.find((account) => account.id === formData.adAccountId)?.name || formData.adAccountId],
+                                                ['Objective', formData.objective],
+                                                ['Initial status', formData.status],
+                                                [formData.budgetType === 'lifetime' ? 'Lifetime budget ($)' : 'Daily budget ($)', formData.budgetType === 'lifetime' ? formData.lifetimeBudget : formData.dailyBudget],
+                                                ['Schedule', `${formData.startDate} – ${formData.endDate || 'Ongoing'}`],
+                                                ['Location', formData.targeting || 'Default targeting'],
+                                                ['Age range', `${formData.ageMin}–${formData.ageMax}`],
+                                                ['Gender', formData.gender],
+                                                ['Interests', formData.interests || 'None specified'],
+                                                ['Behaviors', formData.behaviors || 'None specified'],
+                                                ['Optimization', getOptimizationGoalOptions(formData.objective).find((option) => option.value === formData.optimizationGoal)?.label || formData.optimizationGoal],
+                                                ['Bid strategy', formData.bidStrategy.replaceAll('_', ' ')]
+                                            ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || 'Not set'}</dd></div>)}
+                                        </dl>
+                                        <p>Click Confirm & Create to create this campaign with the settings above.</p>
+                                    </div>
+                                </div>
+                            </section>
+                        )}
                     </div>
 
                 <div className="campaign-create-footer">
@@ -2046,20 +2113,20 @@ const CampaignModal = ({
                         Cancel
                     </button>
                     {!isFirstTab ? (
-                        <button type="button" className="btn btn-secondary campaign-create-cancel" onClick={handlePreviousTab}>
+                        <button type="button" className="btn btn-secondary campaign-create-cancel" onClick={handlePreviousTab} disabled={submitting}>
                             Back
                         </button>
                     ) : null}
                     {isLastTab ? (
-                        <button type="submit" className="btn btn-primary campaign-create-submit" disabled={submitting}>
+                        <button key="confirm" type="submit" className="btn btn-primary campaign-create-submit" disabled={submitting}>
                             <Save size={16} />
                             {submitting
                                 ? (mode === 'create' ? 'Creating...' : 'Saving...')
                                 : (mode === 'create' ? 'Confirm & Create' : 'Save Changes')}
                         </button>
                     ) : (
-                        <button type="button" className="btn btn-primary campaign-create-submit" onClick={handleNextTab}>
-                            Next
+                        <button key="next" type="submit" className="btn btn-primary campaign-create-submit" disabled={submitting}>
+                            {mode === 'create' && activeTab === 'advanced' ? 'Next: Preview' : 'Next'}
                         </button>
                         )}
                     </div>
