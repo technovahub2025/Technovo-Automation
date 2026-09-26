@@ -662,6 +662,19 @@ const CampaignManagement = () => {
         }
     };
 
+    const openEditCampaign = async (campaign) => {
+        try {
+            setError('');
+            const record = !USE_MOCK && !String(campaign.id).startsWith('meta_')
+                ? (await api.get(`/api/campaigns/${campaign.id}`, { headers: getAuthHeaders() })).data.data
+                : campaign;
+            setSelectedCampaign(normalizeCampaign(record));
+            setShowEditModal(true);
+        } catch (err) {
+            setError(err?.response?.data?.message || 'Unable to load campaign details. Please try again.');
+        }
+    };
+
     const handleEditCampaign = async (campaignData) => {
         if (!selectedCampaign) return;
 
@@ -684,7 +697,9 @@ const CampaignManagement = () => {
                     status: campaignData?.status || selectedCampaign?.status || 'draft'
                 }
                 : campaignData;
-            const payload = buildCampaignPayload(publishSafeData);
+            const payload = selectedCampaign?.metaCampaignId
+                ? publishSafeData
+                : buildCampaignPayload(publishSafeData);
             if (payload instanceof FormData) {
                 await axios.put(`${API_BASE_URL}/api/campaigns/${selectedCampaign.id}`, payload, {
                     headers: getAuthHeaders()
@@ -698,12 +713,12 @@ const CampaignManagement = () => {
                 });
             }
             await fetchCampaigns();
+            setShowEditModal(false);
+            setSelectedCampaign(null);
         } catch (err) {
             console.error('Update failed', err?.response?.data || err.message);
             setError(err?.response?.data?.message || 'Update campaign failed.');
         } finally {
-            setShowEditModal(false);
-            setSelectedCampaign(null);
             setSavingCampaign(false);
         }
     };
@@ -1279,10 +1294,7 @@ const CampaignManagement = () => {
                                             <button
                                                 type="button"
                                                 className="cm-action-btn cm-action-secondary"
-                                                onClick={() => {
-                                                    setSelectedCampaign(campaign);
-                                                    setShowEditModal(true);
-                                                }}
+                                                onClick={() => openEditCampaign(campaign)}
                                                 title="Edit"
                                             >
                                                 <Edit size={14} />
@@ -1320,7 +1332,18 @@ const CampaignManagement = () => {
                                 return (
                                     <div key={campaign.id} className="cm-campaign-card">
                                         <div className="cm-card-media">
-                                            {shouldShowImage ? (
+                                            {campaign.videoUrl ? (
+                                                <video
+                                                    key={campaign.videoUrl}
+                                                    className="cm-card-media-img"
+                                                    src={campaign.videoUrl}
+                                                    poster={imageSrc || undefined}
+                                                    controls
+                                                    muted
+                                                    playsInline
+                                                    preload="metadata"
+                                                />
+                                            ) : shouldShowImage ? (
                                                 <img
                                                     key={imageSrc}
                                                     className="cm-card-media-img"
@@ -1362,10 +1385,7 @@ const CampaignManagement = () => {
                                                 <button
                                                     className="cm-card-menu"
                                                     type="button"
-                                                    onClick={() => {
-                                                        setSelectedCampaign(campaign);
-                                                        setShowEditModal(true);
-                                                    }}
+                                                    onClick={() => openEditCampaign(campaign)}
                                                     title="Edit campaign"
                                                 >
                                                     <span className="material-symbols-outlined">more_vert</span>
@@ -1453,6 +1473,7 @@ const CampaignManagement = () => {
             {/* Edit Campaign Modal */}
             {showEditModal && selectedCampaign && (
                 <CampaignModal
+                    key={selectedCampaign.id}
                     campaign={selectedCampaign}
                     onClose={() => {
                         setShowEditModal(false);
@@ -1461,6 +1482,8 @@ const CampaignManagement = () => {
                     onSave={handleEditCampaign}
                     submitting={savingCampaign}
                     mode="edit"
+                    adAccounts={metaSetup?.adAccounts || []}
+                    selectedAdAccountId={metaSetup?.selectedAdAccountId || metaSetup?.adAccountId || ''}
                 />
             )}
         </div>
@@ -1499,7 +1522,7 @@ const CampaignModal = ({
         objective: campaign?.objective || 'awareness',
         adAccountId: campaign?.adAccountId || selectedAdAccountId || '',
         budgetType: campaign?.lifetimeBudget ? 'lifetime' : 'daily',
-        dailyBudget: campaign?.dailyBudget || 50,
+        dailyBudget: campaign?.dailyBudget ?? (mode === 'create' ? 50 : ''),
         lifetimeBudget: campaign?.lifetimeBudget || '',
         startDate: campaign?.startDate || getTodayDateValue(),
         endDate: campaign?.endDate || '',
@@ -1546,7 +1569,7 @@ const CampaignModal = ({
         { key: 'budget', label: 'Budget & Schedule', step: 2 },
         { key: 'targeting', label: 'Targeting', step: 3 },
         { key: 'advanced', label: 'Advanced', step: 4 },
-        ...(mode === 'create' ? [{ key: 'preview', label: 'Preview & Review', step: 5 }] : [])
+        { key: 'preview', label: 'Preview & Review', step: 5 }
     ];
     const activeTabIndex = tabSteps.findIndex((tab) => tab.key === activeTab);
     const isFirstTab = activeTabIndex <= 0;
@@ -2056,7 +2079,7 @@ const CampaignModal = ({
                                 <div className="campaign-preview-panel__header">
                                     <div>
                                         <h3>Preview & Review</h3>
-                                        <p>Review your ad before creating the campaign. Actual appearance may vary by placement.</p>
+                                        <p>Review your ad before {mode === 'create' ? 'creating' : 'saving'} the campaign. Actual appearance may vary by placement.</p>
                                     </div>
                                 </div>
                                 <div className="cm-creation-review">
@@ -2101,7 +2124,7 @@ const CampaignModal = ({
                                                 ['Bid strategy', formData.bidStrategy.replaceAll('_', ' ')]
                                             ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value || 'Not set'}</dd></div>)}
                                         </dl>
-                                        <p>Click Confirm & Create to create this campaign with the settings above.</p>
+                                        <p>{mode === 'create' ? 'Click Confirm & Create to create this campaign with the settings above.' : 'Click Save Changes to update this campaign.'}</p>
                                     </div>
                                 </div>
                             </section>

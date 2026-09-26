@@ -1486,6 +1486,7 @@
 }
 
 .campaign-management .cm-card-media-overlay {
+  pointer-events: none;
   position: absolute;
   inset: 0;
   background: linear-gradient(to top, rgba(0, 0, 0, 0.4), transparent);
