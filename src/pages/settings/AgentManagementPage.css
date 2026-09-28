@@ -493,6 +493,12 @@
   border-color: rgba(220, 38, 38, 0.16);
 }
 
+.agent-action-btn--delete {
+  background: rgba(220, 38, 38, 0.08);
+  color: #b91c1c;
+  border-color: rgba(220, 38, 38, 0.16);
+}
+
 .agent-action-btn:hover {
   transform: translateY(-1px);
   box-shadow: 0 10px 20px rgba(15, 23, 42, 0.08);

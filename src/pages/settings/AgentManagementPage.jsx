@@ -7,6 +7,7 @@ import {
   Mail,
   PencilLine,
   Plus,
+  Trash2,
   Search,
   SlidersHorizontal,
   Sparkles,
@@ -289,6 +290,25 @@ const SettingsAgentManagementPage = () => {
     }
   };
 
+  const deleteAgent = async (agent) => {
+    if (!agent?.id || saving) return;
+    const agentLabel = agent.name || agent.email || "this agent";
+    if (!window.confirm(`Delete ${agentLabel}? This cannot be undone.`)) return;
+
+    setSaving(true);
+    setError("");
+    setMessage("");
+    try {
+      await apiService.deleteMyAgent(agent.id);
+      setMessage("Agent deleted successfully.");
+      await fetchAgents();
+    } catch (err) {
+      setError(err?.response?.data?.message || err?.message || "Unable to delete agent.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="superadmin-shell agent-management-page">
       <header className="superadmin-header agent-management-page__header">
@@ -494,6 +514,16 @@ const SettingsAgentManagementPage = () => {
                       >
                         {agent.isEnabled ? <ToggleLeft size={14} /> : <ToggleRight size={14} />}
                         {agent.isEnabled ? "Disable" : "Enable"}
+                      </button>
+                      <button
+                        type="button"
+                        className="agent-action-btn agent-action-btn--delete"
+                        onClick={() => deleteAgent(agent)}
+                        disabled={saving}
+                        aria-label={`Delete ${agent.name || agent.email || "agent"}`}
+                      >
+                        <Trash2 size={14} />
+                        Delete
                       </button>
                     </div>
                   </article>
