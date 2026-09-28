@@ -74,7 +74,7 @@ const buildCompanyEmailDomain = (user = {}) => {
 const SettingsAgentManagementPage = () => {
   const { user } = useContext(AuthContext);
   const [agents, setAgents] = useState([]);
-  const [agentQuota, setAgentQuota] = useState({ count: 0, limit: 5 });
+  const [agentQuota, setAgentQuota] = useState({ count: 0, limit: 8 });
   const agentLimitReached = agentQuota.count >= agentQuota.limit;
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -104,7 +104,7 @@ const SettingsAgentManagementPage = () => {
       const response = await apiService.listWorkspaceAgents();
       const nextAgents = Array.isArray(response?.data?.data) ? response.data.data.map(normalizeAgent) : [];
       setAgents(nextAgents);
-      setAgentQuota({ count: response?.data?.agentCount ?? nextAgents.length, limit: response?.data?.agentLimit ?? 5 });
+      setAgentQuota({ count: response?.data?.agentCount ?? nextAgents.length, limit: response?.data?.agentLimit ?? 8 });
     } catch (err) {
       setError(err?.response?.data?.message || err?.message || "Failed to load agents");
       setAgents([]);
@@ -218,7 +218,7 @@ const SettingsAgentManagementPage = () => {
   const handleCreateOrUpdate = async (event) => {
     event.preventDefault();
     if (!editingAgentId && agentLimitReached) {
-      setError("A workspace can have a maximum of 5 agent accounts, including disabled accounts.");
+      setError("A workspace can have a maximum of 8 agent accounts, including disabled accounts.");
       return;
     }
 
