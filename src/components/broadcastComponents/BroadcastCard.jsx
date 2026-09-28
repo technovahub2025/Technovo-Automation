@@ -202,10 +202,11 @@ const BroadcastCard = ({
     percentage,
     tooltip = { title: "", lines: [] },
   ) => {
-    const progressClass = getProgressClass(percentage);
+    const roundedPercentage = Math.max(0, Math.min(100, Math.round(Number(percentage) || 0)));
+    const progressClass = getProgressClass(roundedPercentage);
     const radius = 20;
     const circumference = 2 * Math.PI * radius;
-    const strokeDashoffset = circumference - (percentage / 100) * circumference;
+    const strokeDashoffset = circumference - (roundedPercentage / 100) * circumference;
 
     return (
       <div
@@ -249,7 +250,7 @@ const BroadcastCard = ({
             fontSize="6"
             fontWeight="400"
           >
-            {percentage}%
+            {roundedPercentage}%
           </text>
         </svg>
         <div className="metric-hover-card" role="tooltip">

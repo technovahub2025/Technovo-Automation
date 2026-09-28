@@ -74,7 +74,8 @@ const normalizeCampaignObjective = (value) => {
 
 const api = axios.create({
     baseURL: API_BASE_URL,
-    headers: { 'Content-Type': 'application/json' }
+    headers: { 'Content-Type': 'application/json' },
+    timeout: 30000
 });
 
 const getOptimizationGoalOptions = (objective) => {
@@ -1064,24 +1065,24 @@ const CampaignManagement = () => {
     const avgImpressionsPerCampaign = campaigns.length > 0 ? totalImpressions / campaigns.length : null;
     const activeCampaignsTrendLabel = campaigns.length
         ? `${Math.round((activeCampaignsCount / campaigns.length) * 100)}% active`
-        : '+12% vs LY';
+        : 'No campaigns';
     const spendTrendLabel = spendTargetPercentage !== null
         ? `${spendTargetPercentage}% of budget`
-        : '88% of target';
+        : 'No budget';
     const revenueTrendLabel = totalSpend > 0
         ? `${formatRatio(getSafeRatio(totalRevenue, totalSpend), 2)} ROAS`
-        : '+24% MoM';
+        : 'No spend data';
     const impressionsTrendLabel = avgImpressionsPerCampaign !== null
         ? `${compactCount(avgImpressionsPerCampaign)} avg`
-        : 'Stable';
+        : 'No campaign data';
     const selectedDateRangeLabel = dateRangeLabels[dateRange] || 'Last 30 Days';
     const activeFillPercent = campaigns.length ? Math.min(100, Math.round((activeCampaignsCount / campaigns.length) * 100)) : 0;
-    const spendFillPercent = spendTargetPercentage !== null ? Math.min(100, Math.max(0, spendTargetPercentage)) : 50;
+    const spendFillPercent = spendTargetPercentage !== null ? Math.min(100, Math.max(0, spendTargetPercentage)) : 0;
     const roasValue = getSafeRatio(totalRevenue, totalSpend);
     const revenueFillPercent = totalSpend > 0 ? Math.min(100, Math.max(0, Math.round(roasValue * 20))) : 0;
     const impressionFillPercent = campaigns.length > 0 && avgImpressionsPerCampaign !== null
-        ? Math.min(100, Math.max(10, Math.round((avgImpressionsPerCampaign / (totalImpressions || 1)) * 100 * 3)))
-        : 66;
+        ? Math.min(100, Math.max(0, Math.round((avgImpressionsPerCampaign / 100000) * 100)))
+        : 0;
     const safePaymentFundUrl = resolveSafeExternalUrl(metaPaymentFundUrl);
     const handleOpenPaymentFund = () => {
         if (safePaymentFundUrl) {
