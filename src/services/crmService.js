@@ -281,8 +281,13 @@ const ensureCrmUserRosterSocketBinding = () => {
 };
 
 const fetchCrmUserRosterFallback = async () => {
-  const response = await axios.get(`${ADMIN_API_BASE_URL}/api/admin/users`, {
-    ...buildRequestConfig(false)
+  const storedUser = getStoredWorkspaceUser() || {};
+  const isSuperAdmin = String(storedUser.role || '').trim().toLowerCase() === 'superadmin';
+  const endpoint = isSuperAdmin
+    ? `${ADMIN_API_BASE_URL}/api/admin/users`
+    : `${ADMIN_API_BASE_URL}/api/crm/ops/users`;
+  const response = await axios.get(endpoint, {
+    ...buildRequestConfig(false, isSuperAdmin ? {} : { workspaceScopeType: false })
   });
 
   const users = Array.isArray(response?.data?.data?.users)
