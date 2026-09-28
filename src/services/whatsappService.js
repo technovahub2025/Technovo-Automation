@@ -849,7 +849,9 @@ export const whatsappService = {
 
   async getConversationsPage(filters = {}) {
     try {
-      const scopedFilters = { ...(filters && typeof filters === 'object' ? filters : {}), ...getWorkspaceScope("assignedTo") };
+      // Agent visibility is enforced by the backend ownership filter. A client
+      // assignedTo scope would hide broadcasts created by this agent.
+      const scopedFilters = { ...(filters && typeof filters === 'object' ? filters : {}), ...getWorkspaceScope("createdBy") };
       const requestedLimit = Number(scopedFilters?.limit || 0) || null;
       const cacheKey = buildInboxRequestCacheKey(
         'conversations-page',
