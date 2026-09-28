@@ -139,6 +139,25 @@
   margin-bottom: 16px;
 }
 
+.meta-leads-campaign-filter {
+  display: grid;
+  gap: 6px;
+  min-width: min(280px, 100%);
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.meta-leads-campaign-filter select {
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid #dbe3ec;
+  border-radius: 9px;
+  background: #fff;
+  color: #172033;
+  font: inherit;
+}
+
 .meta-leads-card__head h2 {
   margin: 0 0 6px;
   font-size: 1.45rem;

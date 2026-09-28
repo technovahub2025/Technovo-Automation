@@ -5,48 +5,17 @@ import { AuthContext } from "./authcontext";
 import metaAdsService from "../services/metaAdsService";
 import "./MetaLeadsPage.css";
 
-const SAMPLE_LEADS = [
-  {
-    leadId: "sample-1",
-    fullName: "Aarav Sharma",
-    phoneNumber: "+91 98765 43210",
-    email: "aarav.sharma@example.com",
-    phoneVerified: true,
-    createdTime: "2026-07-31T09:15:00.000Z",
-  },
-  {
-    leadId: "sample-2",
-    fullName: "Priya Mehta",
-    phoneNumber: "+91 91234 56789",
-    email: "priya.mehta@example.com",
-    phoneVerified: false,
-    createdTime: "2026-07-31T10:40:00.000Z",
-  },
-  {
-    leadId: "sample-3",
-    fullName: "Rahul Verma",
-    phoneNumber: "+91 99887 76655",
-    email: "rahul.verma@example.com",
-    phoneVerified: true,
-    createdTime: "2026-07-31T12:05:00.000Z",
-  },
-  {
-    leadId: "sample-4",
-    fullName: "Sneha Iyer",
-    phoneNumber: "+91 90123 45098",
-    email: "sneha.iyer@example.com",
-    phoneVerified: true,
-    createdTime: "2026-07-31T13:30:00.000Z",
-  },
-  {
-    leadId: "sample-5",
-    fullName: "Karan Patel",
-    phoneNumber: "+91 90909 80808",
-    email: "karan.patel@example.com",
-    phoneVerified: false,
-    createdTime: "2026-07-31T15:00:00.000Z",
-  },
-];
+const getCampaignId = (campaign) => String(
+  campaign?.campaignId || campaign?.meta?.campaignId || campaign?.metaCampaignId || campaign?.id || ""
+).trim();
+
+const getCampaignName = (campaign) => String(
+  campaign?.campaignName || campaign?.name || ""
+).trim();
+
+const isLeadGenerationCampaign = (campaign) => [
+  "LEAD_GENERATION", "OUTCOME_LEADS", "LEADS", "LEADGEN"
+].includes(String(campaign?.objective || "").trim().toUpperCase());
 
 const formatLeadCreatedTime = (value) => {
   if (!value) return "--";
@@ -68,7 +37,8 @@ const MetaLeadsPage = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [leads, setLeads] = useState([]);
-  const [isSampleData, setIsSampleData] = useState(false);
+  const [campaigns, setCampaigns] = useState([]);
+  const [selectedCampaignId, setSelectedCampaignId] = useState("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
@@ -120,21 +90,26 @@ const MetaLeadsPage = () => {
       else setLoading(true);
 
       if (!requestParams.userId) {
-        setLeads(SAMPLE_LEADS);
-        setIsSampleData(true);
+        setLeads([]);
         setError("Unable to resolve the current user for Meta leads.");
         return;
       }
 
       const response = await metaAdsService.getMetaLeads(requestParams);
       const receivedLeads = Array.isArray(response?.leads) ? response.leads : [];
-      if (receivedLeads.length > 0) {
-        setLeads(receivedLeads);
-        setIsSampleData(false);
-      } else {
-        setLeads(SAMPLE_LEADS);
-        setIsSampleData(true);
-      }
+      setLeads(receivedLeads);
+      const overview = await metaAdsService.getOverview().catch(() => null);
+      const overviewCampaigns = Array.isArray(overview?.campaigns) ? overview.campaigns : [];
+      const campaignsWithLeads = Array.isArray(response?.campaigns) ? response.campaigns : [];
+      const mergedCampaigns = new Map();
+      [...overviewCampaigns, ...campaignsWithLeads].forEach((campaign) => {
+        const id = getCampaignId(campaign);
+        const name = getCampaignName(campaign);
+        if (id && name && (isLeadGenerationCampaign(campaign) || campaignsWithLeads.includes(campaign))) {
+          mergedCampaigns.set(id, { ...campaign, campaignId: id, campaignName: name });
+        }
+      });
+      setCampaigns(Array.from(mergedCampaigns.values()));
     } catch (requestError) {
       setError(
         requestError?.response?.data?.error ||
@@ -142,8 +117,8 @@ const MetaLeadsPage = () => {
           requestError.message ||
           "Failed to load leads."
       );
-      setLeads(SAMPLE_LEADS);
-      setIsSampleData(true);
+      setLeads([]);
+      setCampaigns([]);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -156,6 +131,9 @@ const MetaLeadsPage = () => {
   }, [requestParams.userId, requestParams.formId]);
 
   const leadCount = leads.length;
+  const visibleLeads = selectedCampaignId
+    ? leads.filter((lead) => String(lead?.campaignId || lead?.campaign_id || "").trim() === selectedCampaignId)
+    : leads;
 
   return (
     <div className="meta-leads-page">
@@ -172,15 +150,15 @@ const MetaLeadsPage = () => {
                 <span>Meta Leads</span>
               </div>
               <h1>Leads</h1>
-              <p>Latest lead submissions fetched from Meta through the backend.</p>
+              <p>View lead submissions from your Meta lead generation campaigns.</p>
             </div>
           </div>
 
           <div className="meta-leads-topbar__right">
             <div className="meta-leads-count">
               <span>Total leads</span>
-              <strong>{leadCount}</strong>
-              <small>{leads.length ? `${leads.length} total` : "No results"}</small>
+              <strong>{visibleLeads.length}</strong>
+              <small>{selectedCampaignId ? `${visibleLeads.length} for selected campaign` : `${leadCount} total`}</small>
             </div>
             <button
               type="button"
@@ -198,19 +176,22 @@ const MetaLeadsPage = () => {
           <div className="meta-leads-card__head">
             <div>
               <h2>Lead Data</h2>
-              <p>Columns are mapped from the Meta Graph API response returned by your backend.</p>
+              <p>Choose a campaign to view its lead submissions.</p>
             </div>
+            <label className="meta-leads-campaign-filter">
+              <span>Campaign</span>
+              <select value={selectedCampaignId} onChange={(event) => setSelectedCampaignId(event.target.value)}>
+                <option value="">All lead generation campaigns</option>
+                {campaigns.map((campaign) => (
+                  <option key={campaign.campaignId} value={campaign.campaignId}>{campaign.campaignName}</option>
+                ))}
+              </select>
+            </label>
             <div className="meta-leads-card__meta">
               <span>Source</span>
-              <strong>{isSampleData ? "Sample data" : "Backend API"}</strong>
+              <strong>Backend API</strong>
             </div>
           </div>
-
-          {isSampleData ? (
-            <div className="meta-leads-sample-note">
-              Showing 5 dummy leads because no live Meta lead data is currently available.
-            </div>
-          ) : null}
 
           {error ? (
             <div className="meta-leads-alert">
@@ -221,7 +202,7 @@ const MetaLeadsPage = () => {
 
           {loading ? (
             <div className="meta-leads-empty">Loading leads...</div>
-          ) : leads.length === 0 ? (
+          ) : visibleLeads.length === 0 ? (
             <div className="meta-leads-empty">No leads found.</div>
           ) : (
             <div className="meta-leads-table-wrap">
@@ -236,7 +217,7 @@ const MetaLeadsPage = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {leads.map((lead, index) => {
+                  {visibleLeads.map((lead, index) => {
                     const key = String(lead?.leadId || lead?.id || `${index}`).trim() || `${index}`;
                     return (
                       <tr key={key}>
