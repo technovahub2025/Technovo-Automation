@@ -115,6 +115,10 @@
     color: #ef4444;
 }
 
+.progress-circle.failure .progress-fill {
+    color: #ef4444;
+}
+
 .progress-circle.zero .progress-fill {
     color: #e5e7eb;
 }

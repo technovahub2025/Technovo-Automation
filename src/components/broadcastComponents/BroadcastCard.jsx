@@ -113,6 +113,7 @@ const BroadcastCard = ({
     const delivered = Math.max(toNumber(stats.delivered), toNumber(stats.read));
     const read = toNumber(stats.read);
     const replied = toNumber(stats.replied);
+    const failed = toNumber(stats.failed);
 
     if (metricType === "successful") {
       return {
@@ -138,6 +139,15 @@ const BroadcastCard = ({
         title: "Replied",
         lines: [
           { label: "Replied", value: replied },
+          { label: "Recipients", value: totalRecipients },
+        ],
+      };
+    }
+    if (metricType === "failed") {
+      return {
+        title: "Failed",
+        lines: [
+          { label: "Failed", value: failed },
           { label: "Recipients", value: totalRecipients },
         ],
       };
@@ -201,9 +211,10 @@ const BroadcastCard = ({
   const renderProgressCircle = (
     percentage,
     tooltip = { title: "", lines: [] },
+    variant = "",
   ) => {
     const roundedPercentage = Math.max(0, Math.min(100, Math.round(Number(percentage) || 0)));
-    const progressClass = getProgressClass(roundedPercentage);
+    const progressClass = variant || getProgressClass(roundedPercentage);
     const radius = 20;
     const circumference = 2 * Math.PI * radius;
     const strokeDashoffset = circumference - (roundedPercentage / 100) * circumference;
@@ -265,6 +276,12 @@ const BroadcastCard = ({
       </div>
     );
   };
+
+  const recipientCount = toNumber(broadcast?.recipientCount || broadcast?.recipients?.length || 0);
+  const failedCount = toNumber(broadcast?.stats?.failed);
+  const failedPercentage = recipientCount > 0
+    ? Math.min(100, Math.round((failedCount / recipientCount) * 100))
+    : 0;
 
   return (
     <tr>
@@ -339,8 +356,11 @@ const BroadcastCard = ({
       </td>
 
       <td className="col-failed">
-        {broadcast.stats?.failed || 0} Contact
-        {(broadcast.stats?.failed || 0) !== 1 ? "s" : ""}
+        {renderProgressCircle(
+          failedPercentage,
+          getMetricTooltip("failed", broadcast),
+          "failure",
+        )}
       </td>
 
       <td className="col-reliability">
