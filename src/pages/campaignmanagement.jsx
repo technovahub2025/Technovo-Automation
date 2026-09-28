@@ -1487,10 +1487,9 @@ const CampaignManagement = () => {
                                                 </div>
                                             </div>
                                             <div className={`cm-metrics-grid ${statusMeta.metricsClass}`}>
-                                                <div className="cm-metric"><span>ROAS</span><strong className={roas > 0 ? 'cm-metric-primary' : ''}>{formatRatio(roas, 1)}</strong></div>
-                                                <div className="cm-metric"><span>CTR</span><strong>{formatPercent(campaign.ctr || 0)}</strong></div>
-                                                <div className="cm-metric"><span>CPC</span><strong>{formatCurrency(campaign.cpc || 0, 2)}</strong></div>
-                                                <div className="cm-metric"><span>Conversions</span><strong>{Number(campaign.conversions ?? campaign.clicks ?? 0).toLocaleString()}</strong></div>
+                                                <div className="cm-metric"><span>Spend</span><strong>{formatCurrency(campaign.spent || 0)}</strong></div>
+                                                <div className="cm-metric"><span>Impressions</span><strong>{compactCount(campaign.impressions || 0)}</strong></div>
+                                                <div className="cm-metric"><span>Revenue</span><strong>{formatCurrency(campaign.revenue || 0)}</strong></div>
                                             </div>
                                         </div>
                                     </div>
