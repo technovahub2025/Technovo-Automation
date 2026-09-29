@@ -3809,34 +3809,6 @@ const ChatArea = ({
             </div>
           )}
 
-          {selectedConversation && isFreeformBlocked && (
-            <div
-              className={`chat-policy-banner ${
-                whatsappMessagingState?.optedOut ? 'is-opted-out' : 'is-template-only'
-              }`}
-            >
-              <div className="chat-policy-banner-copy">
-                <strong className="chat-policy-banner-title">
-                  {whatsappMessagingState?.optedOut ? 'WhatsApp outreach blocked' : 'Template required'}
-                </strong>
-                <span className="chat-policy-banner-text">
-                  {whatsappMessagingState?.optedOut
-                    ? 'This contact has opted out of WhatsApp messaging. Update consent before sending again.'
-                    : 'The 24-hour customer service window is closed. Use an approved template to restart the conversation.'}
-                </span>
-              </div>
-              {!whatsappMessagingState?.optedOut && typeof onOpenTemplateSendModal === 'function' && (
-                <button
-                  type="button"
-                  className="chat-policy-banner-action"
-                  onClick={onOpenTemplateSendModal}
-                >
-                  Send Template
-                </button>
-              )}
-            </div>
-          )}
-
           {selectedConversation &&
             !whatsappMessagingState?.optedOut &&
             whatsappMessagingState?.marketingRateLimited && (
