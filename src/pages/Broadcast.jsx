@@ -4,6 +4,7 @@ import Papa from "papaparse";
 
 import { apiClient } from "../services/whatsappapi";
 import { whatsappService } from "../services/whatsappService";
+import { crmService } from "../services/crmService";
 import { useBroadcast, useCampaignAutomation } from "../hooks/useBroadcast";
 import useBroadcastDraft from "../hooks/useBroadcastDraft";
 import webSocketService from "../services/websocketService";
@@ -291,6 +292,8 @@ const Broadcast = ({
   } = useBroadcast();
 
   const [showAnalyticsModal, setShowAnalyticsModal] = useState(false);
+  const [whatsAppReplyStatus, setWhatsAppReplyStatus] = useState(null);
+  const [whatsAppReplyStatusLoading, setWhatsAppReplyStatusLoading] = useState(true);
   const [selectedBroadcast, setSelectedBroadcast] = useState(null);
   const [audienceValidationModalOpen, setAudienceValidationModalOpen] =
     useState(false);
@@ -300,6 +303,37 @@ const Broadcast = ({
   const [metaLeadBatchResult, setMetaLeadBatchResult] = useState(null);
   const [broadcastMode, setBroadcastMode] = useState("whatsapp");
   const [outboundPhaseTab, setOutboundPhaseTab] = useState("quick");
+
+  const refreshWhatsAppReplyStatus = useCallback(async () => {
+    setWhatsAppReplyStatusLoading(true);
+    const response = await crmService.getWhatsAppInboundStatus();
+    setWhatsAppReplyStatus(
+      response?.success
+        ? response.data
+        : { error: response?.error || "Could not load reply status." },
+    );
+    setWhatsAppReplyStatusLoading(false);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const loadStatus = async () => {
+      const response = await crmService.getWhatsAppInboundStatus();
+      if (!active) return;
+      setWhatsAppReplyStatus(
+        response?.success
+          ? response.data
+          : { error: response?.error || "Could not load reply status." },
+      );
+      setWhatsAppReplyStatusLoading(false);
+    };
+    void loadStatus();
+    const timer = window.setInterval(loadStatus, 60000);
+    return () => {
+      active = false;
+      window.clearInterval(timer);
+    };
+  }, []);
   const [showContactAudiencePicker, setShowContactAudiencePicker] =
     useState(false);
   const [contactAudiencePickerPurpose, setContactAudiencePickerPurpose] =
@@ -3739,6 +3773,27 @@ const Broadcast = ({
 
               <OverviewStats stats={mergedOverviewStats} />
               <ReliabilityInsights data={reliabilitySummary} />
+
+              <section className={`broadcast-reply-status${whatsAppReplyStatus?.hasReply ? " broadcast-reply-status--received" : ""}${whatsAppReplyStatus?.error ? " broadcast-reply-status--error" : ""}`} role="status" aria-live="polite">
+                <div className="broadcast-reply-status__copy">
+                  <strong>WhatsApp reply status</strong>
+                  {whatsAppReplyStatusLoading ? (
+                    <span>Checking the latest customer reply…</span>
+                  ) : whatsAppReplyStatus?.error ? (
+                    <span>{whatsAppReplyStatus.error}</span>
+                  ) : whatsAppReplyStatus?.hasReply ? (
+                    <span>
+                      Latest reply received{whatsAppReplyStatus.contactName ? ` from ${whatsAppReplyStatus.contactName}` : ""}{whatsAppReplyStatus.phone ? ` (${whatsAppReplyStatus.phone})` : ""} at {new Date(whatsAppReplyStatus.lastReplyAt).toLocaleString()}.
+                    </span>
+                  ) : (
+                    <span>No customer WhatsApp replies have been recorded for your workspace yet.</span>
+                  )}
+                  <small>This shows replies saved by the backend; it does not independently verify Meta webhook connectivity.</small>
+                </div>
+                <button type="button" className="broadcast-reply-status__refresh" onClick={() => void refreshWhatsAppReplyStatus()} disabled={whatsAppReplyStatusLoading}>
+                  Refresh
+                </button>
+              </section>
 
               <div className="history-section">
                 {activityCreators.error && <p role="status">{activityCreators.error}</p>}
