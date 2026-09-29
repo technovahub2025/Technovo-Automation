@@ -52,7 +52,18 @@ apiService.interceptors.response.use(
   (error) => {
     console.error("API Error:", error.response?.data || error.message);
 
-    if (error.response?.status === 401 && !error.config?.skipAuthRedirect) {
+    let storedUser = null;
+    try {
+      storedUser = JSON.parse(localStorage.getItem("user") || "null");
+    } catch {
+      storedUser = null;
+    }
+    const isSuperadmin = String(storedUser?.role || "").trim().toLowerCase() === "superadmin";
+
+    // A 401 from a feature API does not necessarily mean the core login token
+    // is invalid. Keep superadmin's session intact so one unsupported endpoint
+    // cannot log them out of the entire dashboard.
+    if (error.response?.status === 401 && !error.config?.skipAuthRedirect && !isSuperadmin) {
       console.warn("401 Unauthorized - Logging out user");
       const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
       socketService.disconnect();

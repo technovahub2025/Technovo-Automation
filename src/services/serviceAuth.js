@@ -16,6 +16,15 @@ export const clearStoredAuthSession = () => {
   localStorage.removeItem("user");
 };
 
+const isSuperadminSession = () => {
+  try {
+    const user = JSON.parse(localStorage.getItem("user") || "null");
+    return String(user?.role || "").trim().toLowerCase() === "superadmin";
+  } catch {
+    return false;
+  }
+};
+
 export const isUnauthorizedError = (error) => {
   const status = Number(error?.response?.status || 0);
   if (status === 401) return true;
@@ -25,6 +34,7 @@ export const isUnauthorizedError = (error) => {
 
 export const handleUnauthorizedServiceError = (error, fallback = "Your session expired. Please login again.") => {
   if (!isUnauthorizedError(error)) return false;
+  if (isSuperadminSession()) return false;
 
   clearStoredAuthSession();
   sessionStorage.setItem("auth_expired_notice", fallback);
@@ -56,7 +66,7 @@ export const registerUnauthorizedAxiosInterceptor = (
   axiosInstance.interceptors.response.use(
     (response) => response,
     (error) => {
-      if (isUnauthorizedError(error) && !error?.config?.skipAuthRedirect) {
+      if (isUnauthorizedError(error) && !error?.config?.skipAuthRedirect && !isSuperadminSession()) {
         if (typeof onUnauthorized === "function") {
           try {
             onUnauthorized(error);
