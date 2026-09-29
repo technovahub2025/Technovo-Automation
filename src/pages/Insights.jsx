@@ -369,6 +369,7 @@ const Insights = () => {
               data={insights?.timeseries || []}
               granularity={granularity}
               onGranularityChange={setGranularity}
+              loading={loading}
             />
             <DemographicsChart data={insights?.demographics || []} />
           </div>

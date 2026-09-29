@@ -52,7 +52,7 @@ const chartTooltipFormatter = (value, name) => {
   return [formatCompactNumber(value), name];
 };
 
-const PerformanceChart = ({ data = [], granularity = 'day', onGranularityChange }) => {
+const PerformanceChart = ({ data = [], granularity = 'day', onGranularityChange, loading = false }) => {
   const chartData = useMemo(() => {
     if (granularity === 'week') {
       return aggregateWeekly(data);
@@ -95,7 +95,12 @@ const PerformanceChart = ({ data = [], granularity = 'day', onGranularityChange 
       </div>
 
       <div className="chart-shell">
-        {!chartData.length || !hasPlottableData ? (
+        {loading ? (
+          <div className="insights-chart-loading" role="status" aria-live="polite">
+            <span className="insights-loading-spinner" aria-hidden="true" />
+            <span>Loading performance trends...</span>
+          </div>
+        ) : !chartData.length || !hasPlottableData ? (
           <div className="insights-chart-empty">
             No trend data from Meta for this range/filter yet.
           </div>
