@@ -1,4 +1,5 @@
 import React, { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Search, Filter, MoreVertical, Trash2, CheckCheck, UserRound, Bell } from 'lucide-react';
 import ConversationListContainer from './inbox/components/ConversationListContainer';
 
@@ -74,7 +75,9 @@ const ConversationSidebar = ({
 }) => {
   const [openConversationMenuId, setOpenConversationMenuId] = useState('');
   const [showAdminActionsMenu, setShowAdminActionsMenu] = useState(false);
+  const [notificationMenuPosition, setNotificationMenuPosition] = useState(null);
   const inboxNotificationMenuRef = useRef(null);
+  const notificationMenuRef = useRef(null);
   const bulkAssignSelectRef = useRef(null);
   const displayableAgents = useMemo(() => {
     return (Array.isArray(availableAgents) ? availableAgents : []).map((agent) => {
@@ -115,12 +118,27 @@ const ConversationSidebar = ({
       const target = event?.target;
       if (!target) return;
       const menu = inboxNotificationMenuRef.current;
-      if (menu && menu.contains(target)) return;
+      if (menu?.contains(target) || notificationMenuRef.current?.contains(target)) return;
       onToggleInboxNotificationsMenu?.();
     };
 
     document.addEventListener('mousedown', handlePointerDown);
     return () => document.removeEventListener('mousedown', handlePointerDown);
+  }, [onToggleInboxNotificationsMenu, showInboxNotificationsMenu]);
+
+  const handleToggleInboxNotifications = useCallback(() => {
+    if (!showInboxNotificationsMenu) {
+      const bounds = inboxNotificationMenuRef.current?.getBoundingClientRect();
+      if (bounds) {
+        const top = Math.min(bounds.bottom + 6, Math.max(12, window.innerHeight - 120));
+        setNotificationMenuPosition({
+          top,
+          right: Math.max(12, window.innerWidth - bounds.right),
+          maxHeight: Math.max(100, window.innerHeight - top - 16)
+        });
+      }
+    }
+    onToggleInboxNotificationsMenu?.();
   }, [onToggleInboxNotificationsMenu, showInboxNotificationsMenu]);
 
   const handleConversationClick = useCallback(
@@ -162,7 +180,7 @@ const ConversationSidebar = ({
               type="button"
               aria-label="Inbox notifications"
               title="Inbox notifications"
-              onClick={onToggleInboxNotificationsMenu}
+              onClick={handleToggleInboxNotifications}
             >
               <Bell size={18} />
               {Array.isArray(inboxNotifications) && inboxNotifications.length > 0 ? (
@@ -171,8 +189,17 @@ const ConversationSidebar = ({
                 </span>
               ) : null}
             </button>
-            {showInboxNotificationsMenu ? (
-              <div className="inbox-select-menu inbox-notification-menu" role="menu">
+            {showInboxNotificationsMenu && notificationMenuPosition ? createPortal(
+              <div
+                ref={notificationMenuRef}
+                className="inbox-select-menu inbox-notification-menu"
+                role="menu"
+                style={{
+                  top: notificationMenuPosition.top,
+                  right: notificationMenuPosition.right,
+                  maxHeight: notificationMenuPosition.maxHeight
+                }}
+              >
                 <div className="inbox-notification-menu__header">
                   <strong>Inbox alerts</strong>
                   <button
@@ -205,7 +232,8 @@ const ConversationSidebar = ({
                 ) : (
                   <div className="inbox-notification-menu__empty">No recent alerts</div>
                 )}
-              </div>
+              </div>,
+              document.body
             ) : null}
           </div>
 

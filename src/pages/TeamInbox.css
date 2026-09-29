@@ -864,12 +864,8 @@
 
     .inbox-header-menu--alerts .inbox-notification-menu {
         position: fixed;
-        top: 66px;
-        right: 12px;
-        left: auto;
         width: min(360px, calc(100vw - 24px));
         max-width: min(360px, calc(100vw - 24px));
-        max-height: min(420px, calc(100vh - 84px));
         z-index: 1200;
     }
 
@@ -7666,6 +7662,8 @@
 }
 
 .inbox-notification-menu {
+    position: fixed;
+    z-index: 1200;
     width: 280px;
     max-width: min(320px, calc(100vw - 32px));
     max-height: min(360px, calc(100vh - 96px));
