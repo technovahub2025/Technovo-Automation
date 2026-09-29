@@ -809,6 +809,38 @@
   font-weight: 700;
 }
 
+.insights-campaign-search {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 14px;
+  padding: 0 12px;
+  min-height: 42px;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  background: #fff;
+  color: #64748b;
+}
+
+.insights-campaign-search:focus-within {
+  border-color: #60a5fa;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.insights-campaign-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: #0f172a;
+  font: inherit;
+}
+
+.insights-campaign-search input::placeholder {
+  color: #94a3b8;
+}
+
 .insights-campaign-list {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));

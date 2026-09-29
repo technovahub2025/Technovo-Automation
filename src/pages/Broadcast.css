@@ -381,66 +381,6 @@
   box-sizing: border-box;
 }
 
-.broadcast-reply-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  margin: 16px 0;
-  padding: 14px 16px;
-  border: 1px solid #bfdbfe;
-  border-radius: 12px;
-  background: #eff6ff;
-  color: #1e3a8a;
-}
-
-.broadcast-reply-status--received {
-  border-color: #a7f3d0;
-  background: #ecfdf5;
-  color: #065f46;
-}
-
-.broadcast-reply-status--error {
-  border-color: #fecaca;
-  background: #fef2f2;
-  color: #991b1b;
-}
-
-.broadcast-reply-status__copy {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.broadcast-reply-status__copy strong {
-  font-size: 14px;
-}
-
-.broadcast-reply-status__copy span,
-.broadcast-reply-status__copy small {
-  line-height: 1.45;
-}
-
-.broadcast-reply-status__copy small {
-  opacity: 0.8;
-}
-
-.broadcast-reply-status__refresh {
-  flex: 0 0 auto;
-  padding: 8px 12px;
-  border: 1px solid currentColor;
-  border-radius: 8px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.broadcast-reply-status__refresh:disabled {
-  cursor: wait;
-  opacity: 0.6;
-}
-
 .history-section h3,
 .form-section h3,
 .preview-section h3 {

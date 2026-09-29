@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { CalendarRange, AlertCircle, RefreshCw, BarChart3, Facebook } from 'lucide-react';
+import { CalendarRange, AlertCircle, RefreshCw, BarChart3, Facebook, Search } from 'lucide-react';
 import InsightCard from '../components/InsightCard';
 import PerformanceChart from '../components/PerformanceChart';
 import DemographicsChart from '../components/DemographicsChart';
@@ -43,6 +43,7 @@ const Insights = () => {
   const navigate = useNavigate();
   const [filters, setFilters] = useState({ campaigns: [] });
   const [selectedCampaign, setSelectedCampaign] = useState('all');
+  const [campaignSearch, setCampaignSearch] = useState('');
   const [selectedAdSet, setSelectedAdSet] = useState('all');
   const [dateRange, setDateRange] = useState('30d');
   const [granularity, setGranularity] = useState('day');
@@ -63,6 +64,13 @@ const Insights = () => {
     () => (filters.campaigns || []).filter((campaign) => campaign.id !== 'all'),
     [filters.campaigns]
   );
+  const visibleCampaigns = useMemo(() => {
+    const query = campaignSearch.trim().toLowerCase();
+    if (!query) return campaignList;
+    return campaignList.filter((campaign) =>
+      `${campaign.name || ''} ${campaign.id || ''}`.toLowerCase().includes(query)
+    );
+  }, [campaignList, campaignSearch]);
 
   useEffect(() => {
     let isMounted = true;
@@ -263,11 +271,22 @@ const Insights = () => {
               </span>
             </div>
 
+            <label className="insights-campaign-search">
+              <Search size={16} aria-hidden="true" />
+              <input
+                type="search"
+                value={campaignSearch}
+                onChange={(event) => setCampaignSearch(event.target.value)}
+                placeholder="Search campaigns"
+                aria-label="Search campaigns by name or ID"
+              />
+            </label>
+
             {campaignList.length === 0 ? (
               <div className="insights-empty-list">No campaigns available for insights yet.</div>
             ) : (
               <div className="insights-campaign-list insights-campaign-list-sidebar">
-                {campaignList.map((campaign) => {
+                {visibleCampaigns.map((campaign) => {
                   const isSelected = campaign.id === selectedCampaign;
                   const adSetCount = Math.max(0, (campaign.adSets || []).filter((adSet) => adSet.id !== 'all').length);
 
@@ -289,6 +308,9 @@ const Insights = () => {
                     </button>
                   );
                 })}
+                {visibleCampaigns.length === 0 ? (
+                  <div className="insights-empty-list">No campaigns match your search.</div>
+                ) : null}
               </div>
             )}
           </div>
