@@ -477,6 +477,17 @@ export const getCrmUserRoster = async ({ preferWebSocket = true, waitMs = CRM_US
 };
 
 export const crmService = {
+  async getWhatsAppInboundStatus() {
+    try {
+      const response = await axios.get(`${API_BASE_URL}/api/crm/whatsapp/inbound-status`, {
+        ...buildRequestConfig(false, { workspaceScopeType: false })
+      });
+      return response.data;
+    } catch (error) {
+      return withServiceError(error, "Failed to fetch WhatsApp reply status");
+    }
+  },
+
   async getContacts(filters = {}) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/contacts`, {
