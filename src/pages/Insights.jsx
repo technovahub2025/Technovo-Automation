@@ -59,6 +59,11 @@ const Insights = () => {
     const selected = filters.campaigns.find((campaign) => campaign.id === selectedCampaign);
     return selected?.adSets || [{ id: 'all', name: 'All Ad Sets' }];
   }, [filters.campaigns, selectedCampaign]);
+  // A campaign change can make the previously selected ad set invalid. Resolve
+  // that in the render so the new campaign makes one request with "all" right away.
+  const effectiveAdSet = adSetOptions.some((adSet) => adSet.id === selectedAdSet)
+    ? selectedAdSet
+    : 'all';
 
   const campaignList = useMemo(
     () => (filters.campaigns || []).filter((campaign) => campaign.id !== 'all'),
@@ -134,10 +139,6 @@ const Insights = () => {
   }, []);
 
   useEffect(() => {
-    setSelectedAdSet('all');
-  }, [selectedCampaign]);
-
-  useEffect(() => {
     let isMounted = true;
 
     const loadInsights = async () => {
@@ -148,7 +149,7 @@ const Insights = () => {
         const response = await fetchInsights({
           range: dateRange,
           campaignId: selectedCampaign,
-          adSetId: selectedAdSet
+          adSetId: effectiveAdSet
         });
 
         if (!isMounted) return;
@@ -173,7 +174,7 @@ const Insights = () => {
     return () => {
       isMounted = false;
     };
-  }, [dateRange, selectedCampaign, selectedAdSet]);
+  }, [dateRange, selectedCampaign, effectiveAdSet]);
 
   if (loading && !insights) {
     return <InsightSkeleton />;
@@ -217,7 +218,7 @@ const Insights = () => {
 
           <label className="insights-filter">
             <span>Ad Set</span>
-            <select value={selectedAdSet} onChange={(event) => setSelectedAdSet(event.target.value)}>
+            <select value={effectiveAdSet} onChange={(event) => setSelectedAdSet(event.target.value)}>
               {adSetOptions.map((adSet) => (
                 <option key={adSet.id} value={adSet.id}>
                   {adSet.name}
