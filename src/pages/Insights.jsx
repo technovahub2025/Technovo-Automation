@@ -296,7 +296,10 @@ const Insights = () => {
                       key={campaign.id}
                       type="button"
                       className={`insights-campaign-item ${isSelected ? 'selected' : ''}`}
-                      onClick={() => setSelectedCampaign(campaign.id)}
+                      onClick={() => {
+                        setSelectedAdSet('all');
+                        setSelectedCampaign(campaign.id);
+                      }}
                     >
                       <div className="insights-campaign-copy">
                         <strong>{campaign.name}</strong>
