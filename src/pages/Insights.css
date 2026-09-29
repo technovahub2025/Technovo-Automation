@@ -722,6 +722,33 @@
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.insights-loading-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 14px;
+  border: 2px solid rgba(37, 99, 235, 0.22);
+  border-top-color: #2563eb;
+  border-radius: 50%;
+  animation: insights-spinner-rotate 0.7s linear infinite;
+  vertical-align: -2px;
+}
+
+.insights-campaign-meta em.is-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+@keyframes insights-spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .insights-empty-data-note {

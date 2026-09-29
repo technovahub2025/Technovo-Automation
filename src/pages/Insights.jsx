@@ -242,7 +242,12 @@ const Insights = () => {
         </div>
       ) : null}
 
-      {loading ? <div className="insights-inline-loading">Refreshing insights...</div> : null}
+      {loading ? (
+        <div className="insights-inline-loading" role="status" aria-live="polite">
+          <span className="insights-loading-spinner" aria-hidden="true" />
+          Loading campaign report...
+        </div>
+      ) : null}
       {!loading && !error && metaSetupWarning ? (
         <div className="insights-warning-note">{metaSetupWarning}</div>
       ) : null}
@@ -307,7 +312,12 @@ const Insights = () => {
                       </div>
                       <div className="insights-campaign-meta">
                         <span>{adSetCount} Ad Set{adSetCount === 1 ? '' : 's'}</span>
-                        {isSelected ? <em>Selected</em> : <em>View Insights</em>}
+                        {isSelected ? (
+                          <em className={loading ? 'is-loading' : ''}>
+                            {loading ? <span className="insights-loading-spinner" aria-hidden="true" /> : null}
+                            {loading ? 'Loading report' : 'Selected'}
+                          </em>
+                        ) : <em>View Insights</em>}
                       </div>
                     </button>
                   );
