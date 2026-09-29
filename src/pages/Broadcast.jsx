@@ -12,7 +12,6 @@ import webSocketService from "../services/websocketService";
 import BroadcastHeader from "../components/broadcastComponents/BroadcastHeader";
 import DateRangeFilter from "../components/broadcastComponents/DateRangeFilter";
 import OverviewStats from "../components/broadcastComponents/OverviewStats";
-import ReliabilityInsights from "../components/broadcastComponents/ReliabilityInsights";
 
 import { getCachedOverviewStats } from "../utils/stableBroadcastStats";
 import {
@@ -3739,8 +3738,6 @@ const Broadcast = ({
               />
 
               <OverviewStats stats={mergedOverviewStats} />
-              <ReliabilityInsights data={reliabilitySummary} />
-
               <div className="history-section">
                 {activityCreators.error && <p role="status">{activityCreators.error}</p>}
                 <BroadcastListControls
