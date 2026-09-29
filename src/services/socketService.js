@@ -21,6 +21,17 @@ class SocketService {
   }
 
   clearAuthAndRedirect() {
+    try {
+      const user = JSON.parse(localStorage.getItem('user') || 'null');
+      if (String(user?.role || '').trim().toLowerCase() === 'superadmin') {
+        // The shared realtime socket can reject a token even when the
+        // superadmin's HTTP session is valid. Keep the dashboard session.
+        this.disconnect();
+        return;
+      }
+    } catch {
+      // Continue with normal cleanup if stored user data is malformed.
+    }
     const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
     const baseUrl = import.meta.env.BASE_URL || '/';
     const normalizedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
