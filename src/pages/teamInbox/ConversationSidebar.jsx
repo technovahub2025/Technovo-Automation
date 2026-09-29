@@ -31,6 +31,7 @@ const ConversationSidebar = ({
   showSelectMenu,
   showInboxNotificationsMenu,
   showSelectMode,
+  filterMenuRef,
   selectedForDeletion,
   bulkAssignTarget,
   bulkAssignBusy,
@@ -237,7 +238,7 @@ const ConversationSidebar = ({
             ) : null}
           </div>
 
-          <div className="inbox-header-menu">
+          <div className="inbox-header-menu" ref={filterMenuRef}>
             <button
               className="icon-btn"
               type="button"
