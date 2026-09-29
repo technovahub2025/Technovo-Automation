@@ -187,12 +187,13 @@ export const getConversationAssignedLookupId = (conversation = {}) =>
 
 export const resolveAgentDisplayLabel = (agent = {}, fallbackLabel = '') =>
   pickMeaningfulAgentLabel(
-    agent?.label,
     agent?.displayName,
-    agent?.name,
     agent?.fullName,
+    agent?.name,
+    [agent?.firstName, agent?.lastName].map(toCleanString).filter(Boolean).join(' '),
     agent?.username,
-    agent?.email
+    agent?.email,
+    agent?.label
   ) || toCleanString(fallbackLabel);
 
 const getAgentDisplayLabel = (agent = {}) => resolveAgentDisplayLabel(agent, '');
