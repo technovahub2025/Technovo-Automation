@@ -56,7 +56,6 @@ import {
   buildGroupedMessages,
   formatMessageTime,
   getMessageKey,
-  getConversationAssignedLookupId,
   resolveAgentDisplayLabel
 } from './teamInbox/teamInboxDisplayUtils';
 import { resolvePreferredMessageStatus } from './teamInbox/replyMessageMergeUtils';
@@ -1900,28 +1899,22 @@ const TeamInbox = () => {
 
   const filteredConversations = useMemo(() => {
     const safeConversations = Array.isArray(conversations) ? conversations : [];
-    const workspaceFiltered = !isAgentRestricted
-      ? safeConversations
-      : safeConversations.filter((conversation) => {
-          const assigneeId = String(getConversationAssignedLookupId(conversation) || '').trim();
-          return !currentWorkspaceAssigneeId || assigneeId === currentWorkspaceAssigneeId;
-        });
+    // The backend already applies the agent ownership scope, including
+    // broadcastOwnerId. Re-filtering by assignedTo here hides those valid rows.
 
     const unreadFiltered = (() => {
       if (normalizedConversationFilter === 'unread') {
-        return workspaceFiltered.filter((conversation) => Number(getUnreadCount(conversation) || 0) > 0);
+        return safeConversations.filter((conversation) => Number(getUnreadCount(conversation) || 0) > 0);
       }
       if (normalizedConversationFilter === 'read') {
-        return workspaceFiltered.filter((conversation) => Number(getUnreadCount(conversation) || 0) <= 0);
+        return safeConversations.filter((conversation) => Number(getUnreadCount(conversation) || 0) <= 0);
       }
-      return workspaceFiltered;
+      return safeConversations;
     })();
 
     return unreadFiltered.filter((conversation) => matchesLeadScoreBand(conversation, leadScoreBand));
   }, [
     conversations,
-    isAgentRestricted,
-    currentWorkspaceAssigneeId,
     leadScoreBand,
     normalizedConversationFilter,
     getUnreadCount
