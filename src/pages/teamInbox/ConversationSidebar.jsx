@@ -134,7 +134,10 @@ const ConversationSidebar = ({
         const top = Math.min(bounds.bottom + 6, Math.max(12, window.innerHeight - 120));
         setNotificationMenuPosition({
           top,
-          right: Math.max(12, window.innerWidth - bounds.right),
+          left: Math.min(
+            Math.max(12, bounds.left),
+            Math.max(12, window.innerWidth - Math.min(360, window.innerWidth - 24) - 12)
+          ),
           maxHeight: Math.max(100, window.innerHeight - top - 16)
         });
       }
@@ -197,7 +200,7 @@ const ConversationSidebar = ({
                 role="menu"
                 style={{
                   top: notificationMenuPosition.top,
-                  right: notificationMenuPosition.right,
+                  left: notificationMenuPosition.left,
                   maxHeight: notificationMenuPosition.maxHeight
                 }}
               >
