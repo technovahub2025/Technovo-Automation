@@ -431,24 +431,39 @@ export const subscribeCrmUserRoster = (listener) => {
 export const getCrmUserRoster = async ({ preferWebSocket = true, waitMs = CRM_USER_ROSTER_WAIT_MS } = {}) => {
   ensureCrmUserRosterSocketBinding();
 
+  let websocketUsers = [];
   if (Array.isArray(crmUserRosterCache) && crmUserRosterCache.length) {
     if (crmUserRosterCache.some((user) => !hasMeaningfulCrmUserLabel(user))) {
       crmUserRosterCache = [];
     } else {
-      return {
-        success: true,
-        data: crmUserRosterCache,
-        source: crmUserRosterSource || "websocket",
-        updatedAt: crmUserRosterUpdatedAt
-      };
+      websocketUsers = crmUserRosterCache;
     }
   }
 
-  if (preferWebSocket && webSocketService?.isConnected?.()) {
-    const nextUsers = await waitForCrmUserList(waitMs);
-    if (nextUsers.length) {
-      const enrichedUsers = await enrichCrmUserRosterUsers(nextUsers);
-      const nextRoster = enrichedUsers.length ? enrichedUsers : nextUsers;
+  if (!websocketUsers.length && preferWebSocket && webSocketService?.isConnected?.()) {
+    websocketUsers = await waitForCrmUserList(waitMs);
+  }
+
+  try {
+    const fallbackUsers = await fetchCrmUserRosterFallback();
+    // The socket's user_list only contains connected users. Include the full
+    // workspace directory so offline agents still appear in assignment menus.
+    const combinedUsers = normalizeCrmUserRosterList([...fallbackUsers, ...websocketUsers]);
+    const enrichedUsers = await enrichCrmUserRosterUsers(combinedUsers);
+    const nextRoster = enrichedUsers.length ? enrichedUsers : combinedUsers;
+    const source = websocketUsers.length ? "workspace-directory" : "fallback";
+    emitCrmUserRoster(nextRoster, { source, fallback: !websocketUsers.length });
+    return {
+      success: true,
+      data: nextRoster,
+      source,
+      fallback: !websocketUsers.length,
+      updatedAt: crmUserRosterUpdatedAt
+    };
+  } catch (error) {
+    if (websocketUsers.length) {
+      const enrichedUsers = await enrichCrmUserRosterUsers(websocketUsers);
+      const nextRoster = enrichedUsers.length ? enrichedUsers : websocketUsers;
       emitCrmUserRoster(nextRoster, { source: "websocket" });
       return {
         success: true,
@@ -457,21 +472,6 @@ export const getCrmUserRoster = async ({ preferWebSocket = true, waitMs = CRM_US
         updatedAt: crmUserRosterUpdatedAt
       };
     }
-  }
-
-  try {
-    const fallbackUsers = await fetchCrmUserRosterFallback();
-    const enrichedFallbackUsers = await enrichCrmUserRosterUsers(fallbackUsers);
-    const nextRoster = enrichedFallbackUsers.length ? enrichedFallbackUsers : fallbackUsers;
-    emitCrmUserRoster(nextRoster, { source: "fallback", fallback: true });
-    return {
-      success: true,
-      data: nextRoster,
-      source: "fallback",
-      fallback: true,
-      updatedAt: crmUserRosterUpdatedAt
-    };
-  } catch (error) {
     return withServiceError(error, "Failed to fetch CRM users");
   }
 };
