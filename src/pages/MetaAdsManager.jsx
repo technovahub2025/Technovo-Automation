@@ -338,7 +338,8 @@ const MetaAdsManager = () => {
   const draftCampaigns = campaigns.filter((campaign) => String(campaign.status).toUpperCase() === "DRAFT");
   const liveCampaigns = campaigns.filter((campaign) => String(campaign.status).toUpperCase() !== "DRAFT");
   const wallet = overview?.wallet || { balance: 0 };
-  const liveMetaBilling = overview?.metaBilling || metaBilling;
+  // Prefer the latest explicit billing refresh over the overview snapshot.
+  const liveMetaBilling = metaBilling || overview?.metaBilling;
   const liveMetaBalance = liveMetaBilling?.billing?.currentBalance;
   const liveMetaCurrency = liveMetaBilling?.adAccount?.currency || "INR";
   const hasLiveMetaBalance =

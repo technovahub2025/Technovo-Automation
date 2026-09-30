@@ -796,8 +796,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
 
         try {
             const response = await metaAdsService.getWallet();
-            const nextWallet = response?.wallet || null;
-            setMetaWalletState(nextWallet?.metaBilling || null);
+            setMetaWalletState(response?.metaBilling || null);
         } catch (_error) {
             // Keep the previous value if the wallet request briefly fails.
         }
