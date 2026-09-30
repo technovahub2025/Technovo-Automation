@@ -340,7 +340,7 @@ const MetaAdsManager = () => {
   const wallet = overview?.wallet || { balance: 0 };
   // Prefer the latest explicit billing refresh over the overview snapshot.
   const liveMetaBilling = metaBilling || overview?.metaBilling;
-  const liveMetaBalance = liveMetaBilling?.billing?.currentBalance;
+  const liveMetaBalance = liveMetaBilling?.billing?.availableFunds;
   const liveMetaCurrency = liveMetaBilling?.adAccount?.currency || "INR";
   const hasLiveMetaBalance =
     liveMetaBalance !== null &&

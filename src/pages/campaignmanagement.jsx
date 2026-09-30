@@ -501,7 +501,7 @@ const CampaignManagement = () => {
                 headers: getAuthHeaders()
             });
             const billing = response?.data?.metaBilling;
-            const balance = billing?.billing?.currentBalance;
+            const balance = billing?.billing?.availableFunds;
             setAvailableFunds(
                 balance === null || balance === undefined || String(balance).trim() === ''
                     ? null
