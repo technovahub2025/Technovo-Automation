@@ -214,8 +214,8 @@ const CampaignManagement = () => {
     const [metaSetupReady, setMetaSetupReady] = useState(true);
     const [metaSetupLoading, setMetaSetupLoading] = useState(true);
     const [metaSetupMessage, setMetaSetupMessage] = useState('');
-    const [metaWalletBalance, setMetaWalletBalance] = useState(null);
-    const [metaWalletCurrency, setMetaWalletCurrency] = useState('INR');
+    const [availableFunds, setAvailableFunds] = useState(null);
+    const [availableFundsCurrency, setAvailableFundsCurrency] = useState('INR');
     const [metaSetup, setMetaSetup] = useState(null);
     const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState('');
     const [campaignFlash, setCampaignFlash] = useState('');
@@ -502,14 +502,14 @@ const CampaignManagement = () => {
             });
             const billing = response?.data?.metaBilling;
             const balance = billing?.billing?.currentBalance;
-            setMetaWalletBalance(
+            setAvailableFunds(
                 balance === null || balance === undefined || String(balance).trim() === ''
                     ? null
                     : Number.isFinite(Number(balance))
                         ? Number(balance)
                         : null
             );
-            setMetaWalletCurrency(String(billing?.adAccount?.currency || 'INR').toUpperCase());
+            setAvailableFundsCurrency(String(billing?.adAccount?.currency || 'INR').toUpperCase());
             const setup = response?.data?.setup || {};
             setMetaSetup(setup);
             const isReady = Boolean(setup.connected && setup.pageId);
@@ -520,7 +520,7 @@ const CampaignManagement = () => {
         } catch (loadError) {
             setMetaSetup(null);
             setMetaSetupReady(false);
-            setMetaWalletBalance(null);
+            setAvailableFunds(null);
             setMetaSetupMessage(
                 loadError?.response?.data?.error ||
                 loadError?.response?.data?.message ||
@@ -1140,11 +1140,11 @@ const CampaignManagement = () => {
                                     onChange={(e) => setSearchQuery(e.target.value)}
                                 />
                             </div>
-                            <div className="cm-wallet-pill" title="Connected Meta ad balance">
+                                <div className="cm-wallet-pill" title="Available funds from the selected Meta ad account">
                                 <span className="material-symbols-outlined cm-wallet-pill__icon">account_balance_wallet</span>
                                 <div className="cm-wallet-pill__copy">
-                                    <span>Meta balance</span>
-                                    <strong>{formatMetaBalance(metaWalletBalance, metaWalletCurrency)}</strong>
+                                    <span>Available funds</span>
+                                    <strong>{formatMetaBalance(availableFunds, availableFundsCurrency)}</strong>
                                 </div>
                             </div>
                         </div>
@@ -1200,7 +1200,7 @@ const CampaignManagement = () => {
                                 </select>
                             </label>
 
-                            <button className="cm-refresh-btn" type="button" onClick={fetchCampaigns}>
+                            <button className="cm-refresh-btn" type="button" onClick={() => { fetchCampaigns(); fetchMetaSetupState(); }}>
                                 <span className="material-symbols-outlined">refresh</span>
                             </button>
                             <button
