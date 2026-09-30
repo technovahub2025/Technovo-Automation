@@ -2,7 +2,6 @@ import React, { useCallback, useContext, useEffect, useRef, useState } from 'rea
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import axios from "axios";
 import { AuthContext } from '../pages/authcontext';
-import { metaAdsService } from '../services/metaAdsService';
 import { whatsappService } from '../services/whatsappService';
 import { googleCalendarService } from '../services/googleCalendarService';
 import { crmService } from '../services/crmService';
@@ -139,7 +138,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         openDeals: 0,
         automationAlerts: 0
     });
-    const [metaWalletState, setMetaWalletState] = useState(null);
     const closeTimerRef = useRef(null);
     const prefetchedRoutesRef = useRef(new Set());
     const googleOAuthPopupRef = useRef(null);
@@ -788,40 +786,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         return () => window.clearInterval(intervalId);
     }, [loadHubBadges]);
 
-    const loadMetaWalletState = useCallback(async () => {
-        if (!isLoggedIn || !canUseMetaAds) {
-            setMetaWalletState(null);
-            return;
-        }
-
-        try {
-            const response = await metaAdsService.getWallet();
-            setMetaWalletState(response?.metaBilling || null);
-        } catch (_error) {
-            // Keep the previous value if the wallet request briefly fails.
-        }
-    }, [canUseMetaAds, isLoggedIn]);
-
-    useEffect(() => {
-        loadMetaWalletState();
-        const intervalId = window.setInterval(loadMetaWalletState, 60000);
-        return () => window.clearInterval(intervalId);
-    }, [loadMetaWalletState]);
-
-    const formatMetaWalletBalance = (value, currency = 'INR') => {
-        const amount = Number(value);
-        if (!Number.isFinite(amount)) return '--';
-        try {
-            return new Intl.NumberFormat('en-IN', {
-                style: 'currency',
-                currency: String(currency || 'INR').toUpperCase(),
-                maximumFractionDigits: 0
-            }).format(amount);
-        } catch {
-            return amount.toLocaleString('en-IN');
-        }
-    };
-
     const handleHubBadgeNavigate = (event, route) => {
         event.preventDefault();
         event.stopPropagation();
@@ -1109,11 +1073,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                             title="Meta Ads"
                         >
                             <Megaphone size={24} />
-                            {metaWalletState ? (
-                                <span className="meta-wallet-badge" title="Live Meta billing balance">
-                                    {formatMetaWalletBalance(metaWalletState?.billing?.currentBalance, metaWalletState?.adAccount?.currency)}
-                                </span>
-                            ) : null}
                             <span className="icon-label icon-label-multiline">
                                 <span>Meta</span>
                                 <span>Ads</span>
