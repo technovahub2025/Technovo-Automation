@@ -214,7 +214,8 @@ const CampaignManagement = () => {
     const [metaSetupReady, setMetaSetupReady] = useState(true);
     const [metaSetupLoading, setMetaSetupLoading] = useState(true);
     const [metaSetupMessage, setMetaSetupMessage] = useState('');
-    const [metaWalletBalance, setMetaWalletBalance] = useState(0);
+    const [metaWalletBalance, setMetaWalletBalance] = useState(null);
+    const [metaWalletCurrency, setMetaWalletCurrency] = useState('INR');
     const [metaSetup, setMetaSetup] = useState(null);
     const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState('');
     const [campaignFlash, setCampaignFlash] = useState('');
@@ -499,19 +500,27 @@ const CampaignManagement = () => {
             const response = await api.get('/api/meta-ads/overview', {
                 headers: getAuthHeaders()
             });
-            const walletBalance = Number(response?.data?.wallet?.balance || 0);
+            const billing = response?.data?.metaBilling;
+            const balance = billing?.billing?.currentBalance;
+            setMetaWalletBalance(
+                balance === null || balance === undefined || String(balance).trim() === ''
+                    ? null
+                    : Number.isFinite(Number(balance))
+                        ? Number(balance)
+                        : null
+            );
+            setMetaWalletCurrency(String(billing?.adAccount?.currency || 'INR').toUpperCase());
             const setup = response?.data?.setup || {};
             setMetaSetup(setup);
             const isReady = Boolean(setup.connected && setup.pageId);
             setMetaSetupReady(isReady);
-            setMetaWalletBalance(walletBalance);
             setMetaSetupMessage(
                 setup.setupError || 'Connect Meta and select a Facebook page to continue.'
             );
         } catch (loadError) {
             setMetaSetup(null);
             setMetaSetupReady(false);
-            setMetaWalletBalance(0);
+            setMetaWalletBalance(null);
             setMetaSetupMessage(
                 loadError?.response?.data?.error ||
                 loadError?.response?.data?.message ||
@@ -1034,6 +1043,18 @@ const CampaignManagement = () => {
             maximumFractionDigits: digits
         })}`;
     };
+    const formatMetaBalance = (value, currency = 'INR') => {
+        if (value === null || value === undefined || !Number.isFinite(Number(value))) return '--';
+        try {
+            return new Intl.NumberFormat('en-IN', {
+                style: 'currency',
+                currency: String(currency || 'INR').toUpperCase(),
+                maximumFractionDigits: 0
+            }).format(Number(value));
+        } catch {
+            return Number(value).toLocaleString('en-IN');
+        }
+    };
     const formatPercent = (value, digits = 2) => {
         const amount = Number(value);
         if (!Number.isFinite(amount)) return '--';
@@ -1123,7 +1144,7 @@ const CampaignManagement = () => {
                                 <span className="material-symbols-outlined cm-wallet-pill__icon">account_balance_wallet</span>
                                 <div className="cm-wallet-pill__copy">
                                     <span>Meta balance</span>
-                                    <strong>{formatCurrency(metaWalletBalance)}</strong>
+                                    <strong>{formatMetaBalance(metaWalletBalance, metaWalletCurrency)}</strong>
                                 </div>
                             </div>
                         </div>
