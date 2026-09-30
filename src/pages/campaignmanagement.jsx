@@ -216,6 +216,7 @@ const CampaignManagement = () => {
     const [metaSetupMessage, setMetaSetupMessage] = useState('');
     const [availableFunds, setAvailableFunds] = useState(null);
     const [availableFundsCurrency, setAvailableFundsCurrency] = useState('INR');
+    const [availableFundsLoading, setAvailableFundsLoading] = useState(false);
     const [metaSetup, setMetaSetup] = useState(null);
     const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState('');
     const [campaignFlash, setCampaignFlash] = useState('');
@@ -528,6 +529,30 @@ const CampaignManagement = () => {
             );
         } finally {
             setMetaSetupLoading(false);
+        }
+    }, [getAuthHeaders]);
+
+    const refreshAvailableFunds = useCallback(async () => {
+        setAvailableFundsLoading(true);
+        try {
+            const response = await api.get('/api/meta-ads/billing-summary?refresh=1', {
+                headers: getAuthHeaders()
+            });
+            const billing = response?.data?.billing;
+            const amount = billing?.billing?.availableFunds;
+            setAvailableFunds(
+                amount === null || amount === undefined || String(amount).trim() === ''
+                    ? null
+                    : Number.isFinite(Number(amount))
+                        ? Number(amount)
+                        : null
+            );
+            setAvailableFundsCurrency(String(billing?.adAccount?.currency || 'INR').toUpperCase());
+        } catch (refreshError) {
+            console.error('Failed to refresh Meta available funds', refreshError?.response?.data || refreshError.message);
+            setAvailableFunds(null);
+        } finally {
+            setAvailableFundsLoading(false);
         }
     }, [getAuthHeaders]);
 
@@ -1049,7 +1074,8 @@ const CampaignManagement = () => {
             return new Intl.NumberFormat('en-IN', {
                 style: 'currency',
                 currency: String(currency || 'INR').toUpperCase(),
-                maximumFractionDigits: 0
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
             }).format(Number(value));
         } catch {
             return Number(value).toLocaleString('en-IN');
@@ -1146,6 +1172,16 @@ const CampaignManagement = () => {
                                     <span>Available funds</span>
                                     <strong>{formatMetaBalance(availableFunds, availableFundsCurrency)}</strong>
                                 </div>
+                                <button
+                                    className={`cm-wallet-pill__refresh${availableFundsLoading ? ' is-loading' : ''}`}
+                                    type="button"
+                                    onClick={refreshAvailableFunds}
+                                    disabled={availableFundsLoading}
+                                    aria-label="Refresh available funds from Meta Payment settings"
+                                    title="Refresh available funds"
+                                >
+                                    <RefreshCw size={15} />
+                                </button>
                             </div>
                         </div>
                         <div className="cm-toolbar-actions">

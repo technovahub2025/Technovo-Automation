@@ -1169,6 +1169,38 @@
   color: #163a63;
 }
 
+.campaign-management .cm-wallet-pill__refresh {
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 9px;
+  color: #315a86;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.campaign-management .cm-wallet-pill__refresh:hover:not(:disabled) {
+  color: #1248bd;
+  background: #e8f0ff;
+}
+
+.campaign-management .cm-wallet-pill__refresh:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.campaign-management .cm-wallet-pill__refresh.is-loading svg {
+  animation: cm-wallet-spin 850ms linear infinite;
+}
+
+@keyframes cm-wallet-spin {
+  to { transform: rotate(360deg); }
+}
+
 .campaign-management .cm-search-icon {
   position: absolute;
   left: 1rem;
