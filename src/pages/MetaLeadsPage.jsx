@@ -13,10 +13,6 @@ const getCampaignName = (campaign) => String(
   campaign?.campaignName || campaign?.name || ""
 ).trim();
 
-const isLeadGenerationCampaign = (campaign) => [
-  "LEAD_GENERATION", "OUTCOME_LEADS", "LEADS", "LEADGEN"
-].includes(String(campaign?.objective || "").trim().toUpperCase());
-
 const formatLeadCreatedTime = (value) => {
   if (!value) return "--";
   const date = new Date(value);
@@ -91,6 +87,8 @@ const MetaLeadsPage = () => {
 
       if (!requestParams.userId) {
         setLeads([]);
+        setCampaigns([]);
+        setSelectedCampaignId("");
         setError("Unable to resolve the current user for Meta leads.");
         return;
       }
@@ -98,18 +96,27 @@ const MetaLeadsPage = () => {
       const response = await metaAdsService.getMetaLeads(requestParams);
       const receivedLeads = Array.isArray(response?.leads) ? response.leads : [];
       setLeads(receivedLeads);
-      const overview = await metaAdsService.getOverview().catch(() => null);
-      const overviewCampaigns = Array.isArray(overview?.campaigns) ? overview.campaigns : [];
       const campaignsWithLeads = Array.isArray(response?.campaigns) ? response.campaigns : [];
+      const campaignNames = new Map(campaignsWithLeads.map((campaign) => [
+        getCampaignId(campaign), getCampaignName(campaign)
+      ]));
       const mergedCampaigns = new Map();
-      [...overviewCampaigns, ...campaignsWithLeads].forEach((campaign) => {
-        const id = getCampaignId(campaign);
-        const name = getCampaignName(campaign);
-        if (id && name && (isLeadGenerationCampaign(campaign) || campaignsWithLeads.includes(campaign))) {
-          mergedCampaigns.set(id, { ...campaign, campaignId: id, campaignName: name });
+      receivedLeads.forEach((lead) => {
+        const id = String(lead?.campaignId || lead?.campaign_id || "").trim();
+        if (!id) return;
+        const name = String(lead?.campaignName || lead?.campaign_name || campaignNames.get(id) || "").trim();
+        const campaign = mergedCampaigns.get(id);
+        if (campaign) {
+          campaign.leadCount += 1;
+          if (name) campaign.campaignName = name;
+        } else {
+          mergedCampaigns.set(id, { campaignId: id, campaignName: name || `Campaign ${id}`, leadCount: 1 });
         }
       });
-      setCampaigns(Array.from(mergedCampaigns.values()));
+      setCampaigns(Array.from(mergedCampaigns.values()).sort((left, right) =>
+        left.campaignName.localeCompare(right.campaignName)
+      ));
+      setSelectedCampaignId((current) => mergedCampaigns.has(current) ? current : "");
     } catch (requestError) {
       setError(
         requestError?.response?.data?.error ||
@@ -119,6 +126,7 @@ const MetaLeadsPage = () => {
       );
       setLeads([]);
       setCampaigns([]);
+      setSelectedCampaignId("");
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -181,9 +189,11 @@ const MetaLeadsPage = () => {
             <label className="meta-leads-campaign-filter">
               <span>Campaign</span>
               <select value={selectedCampaignId} onChange={(event) => setSelectedCampaignId(event.target.value)}>
-                <option value="">All lead generation campaigns</option>
+                <option value="">All leads</option>
                 {campaigns.map((campaign) => (
-                  <option key={campaign.campaignId} value={campaign.campaignId}>{campaign.campaignName}</option>
+                  <option key={campaign.campaignId} value={campaign.campaignId}>
+                    {campaign.campaignName} ({campaign.leadCount} {campaign.leadCount === 1 ? "lead" : "leads"})
+                  </option>
                 ))}
               </select>
             </label>
