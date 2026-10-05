@@ -6,6 +6,53 @@
     font-family: 'Inter', sans-serif;
 }
 
+.leads-date-filters,
+.leads-pagination,
+.leads-page-buttons {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.leads-date-filters,
+.leads-pagination {
+    margin: 12px 0;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: white;
+    color: #475569;
+    font-size: 13px;
+}
+
+.leads-date-filters label,
+.leads-pagination label {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.leads-date-filters input,
+.leads-pagination select,
+.leads-pagination button {
+    padding: 8px 10px;
+    border: 1px solid #cbd5e1;
+    border-radius: 6px;
+    background: white;
+    color: #334155;
+    font: inherit;
+}
+
+.leads-pagination {
+    justify-content: space-between;
+}
+
+.leads-pagination button { cursor: pointer; }
+.leads-pagination button:disabled { opacity: 0.5; cursor: not-allowed; }
+.leads-pagination button:hover:not(:disabled) { background: #eff6ff; }
+
 .leads-header {
     display: grid;
     grid-template-columns: minmax(0, 1fr) max-content;

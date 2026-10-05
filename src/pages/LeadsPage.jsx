@@ -25,7 +25,7 @@ import useIVRMenus from '../hooks/useIVRMenus';
 import { normalizeLead, normalizePagination } from '../utils/inboundNormalizers';
 import './LeadsPage.css';
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 25;
 
 const normalizeDurationSeconds = (lead) => {
   const rawValue = lead?.duration ?? lead?.durationSeconds;
@@ -76,13 +76,14 @@ const LeadsPage = () => {
     search: '',
     status: '',
     workflowId: '',
+    startDate: '',
+    endDate: '',
     page: 1,
     limit: PAGE_SIZE
   });
   const refreshTimerRef = useRef(null);
   const requestSeqRef = useRef(0);
   const tableScrollRef = useRef(null);
-  const [loadingMore, setLoadingMore] = useState(false);
 
   const selectedIvrName = useMemo(() => {
     if (!filters.workflowId) return '';
@@ -99,20 +100,16 @@ const LeadsPage = () => {
     [leads, activeDrawerLeadId]
   );
 
-  const fetchLeads = useCallback(async ({ append = false, pageOverride = null } = {}) => {
+  const fetchLeads = useCallback(async () => {
     const requestSeq = requestSeqRef.current + 1;
     requestSeqRef.current = requestSeq;
     const requestFilters = {
       ...filters,
-      page: pageOverride || filters.page || 1,
-      limit: PAGE_SIZE
+      startDate: filters.startDate ? new Date(`${filters.startDate}T00:00:00`).toISOString() : '',
+      endDate: filters.endDate ? new Date(`${filters.endDate}T23:59:59.999`).toISOString() : ''
     };
     try {
-      if (append) {
-        setLoadingMore(true);
-      } else {
-        setLoading(true);
-      }
+      setLoading(true);
       const response = await leadService.getLeads(requestFilters);
       if (requestSeq !== requestSeqRef.current) return;
       const leadData = response?.data || response || {};
@@ -121,14 +118,11 @@ const LeadsPage = () => {
       const normalizedLeads = fetchedLeads.map(mapLeadForView);
       const safePagination = normalizePagination(nextPagination, requestFilters);
 
-      setLeads((prev) => {
-        if (!append) return normalizedLeads;
-        const byId = new Map();
-        [...prev, ...normalizedLeads].forEach((lead) => {
-          byId.set(String(lead._id || lead.id || lead.callSid), lead);
-        });
-        return Array.from(byId.values());
-      });
+      if (requestFilters.page > safePagination.totalPages) {
+        setFilters((prev) => ({ ...prev, page: safePagination.totalPages }));
+        return;
+      }
+      setLeads(normalizedLeads);
       setStats({
         contactsUsed: safePagination.total
       });
@@ -141,70 +135,13 @@ const LeadsPage = () => {
     } finally {
       if (requestSeq === requestSeqRef.current) {
         setLoading(false);
-        setLoadingMore(false);
       }
     }
   }, [filters]);
 
-  const matchesLeadFilters = useCallback((lead, activeFilters) => {
-    if (!lead) return false;
-    const searchValue = String(activeFilters.search || '').toLowerCase();
-    const statusFilter = String(activeFilters.status || '').toLowerCase();
-    const workflowFilter = String(activeFilters.workflowId || '');
-    const nameValue = `${lead.callerName || ''} ${lead.callerNumber || ''}`.toLowerCase();
-    const leadStatus = String(lead.status || '').toLowerCase();
-    const leadWorkflowId = String(lead.workflowId || lead.workflow?._id || '');
-
-    if (searchValue && !nameValue.includes(searchValue)) return false;
-    if (statusFilter && leadStatus !== statusFilter) return false;
-    if (workflowFilter && leadWorkflowId !== workflowFilter) return false;
-    return true;
-  }, []);
-
-  const applyLiveLeadUpdate = useCallback((payload) => {
-    const leadPayload = payload?.lead || payload?.leadData || payload?.leadDetails || payload;
-    const leadId = leadPayload?._id || leadPayload?.leadId || leadPayload?.id;
-    if (!leadId) return false;
-
-    const mappedLead = mapLeadForView(leadPayload);
-    const matchesFilters = matchesLeadFilters(mappedLead, filters);
-
-    setLeads((prev) => {
-      const next = Array.isArray(prev) ? [...prev] : [];
-      const index = next.findIndex((item) => String(item?._id) === String(leadId));
-
-      if (index >= 0) {
-        if (matchesFilters) {
-          next[index] = { ...next[index], ...mappedLead };
-        } else {
-          next.splice(index, 1);
-        }
-      } else if (payload?.action !== 'deleted' && matchesFilters) {
-        next.unshift(mappedLead);
-      }
-
-      return next;
-    });
-
-    setPagination((prev) => {
-      const nextTotal = payload?.action === 'created' && matchesFilters
-        ? Number(prev.total || 0) + 1
-        : payload?.action === 'deleted' && matchesFilters
-          ? Math.max(0, Number(prev.total || 0) - 1)
-        : Number(prev.total || 0);
-
-      return {
-        ...prev,
-        total: nextTotal,
-        totalPages: Math.max(1, Math.ceil(nextTotal / Number(prev.limit || PAGE_SIZE)))
-      };
-    });
-    return true;
-  }, [filters, matchesLeadFilters]);
-
   useEffect(() => {
     const timer = setTimeout(() => {
-      setFilters((prev) => ({
+      setFilters((prev) => prev.search === searchInput.trim() ? prev : ({
         ...prev,
         search: searchInput.trim(),
         page: 1
@@ -219,6 +156,8 @@ const LeadsPage = () => {
 
   useEffect(() => {
     fetchLeads();
+    if (tableScrollRef.current) tableScrollRef.current.scrollTop = 0;
+    return () => { requestSeqRef.current += 1; };
   }, [fetchLeads]);
 
   useEffect(() => {
@@ -240,10 +179,7 @@ const LeadsPage = () => {
       }, 500);
     };
 
-    const handleSocketUpdate = (payload) => {
-      const applied = applyLiveLeadUpdate(payload);
-      if (!applied) scheduleRefresh();
-    };
+    const handleSocketUpdate = scheduleRefresh;
 
     socket.on('lead_update', handleSocketUpdate);
     socket.on('lead:updated', handleSocketUpdate);
@@ -257,7 +193,7 @@ const LeadsPage = () => {
       socket.off('lead:updated', handleSocketUpdate);
       socket.off('inbound_lead_update', handleSocketUpdate);
     };
-  }, [socket, connected, fetchLeads, applyLiveLeadUpdate]);
+  }, [socket, connected, fetchLeads]);
 
   useEffect(() => {
     if (!activeDrawerLeadId) return undefined;
@@ -381,11 +317,22 @@ const LeadsPage = () => {
     }
   };
 
-  const handleLeadTableScroll = (event) => {
-    const target = event.currentTarget;
-    const nearBottom = target.scrollTop + target.clientHeight >= target.scrollHeight - 96;
-    if (!nearBottom || loading || loadingMore || !pagination.hasMore) return;
-    fetchLeads({ append: true, pageOverride: Number(pagination.page || 1) + 1 });
+  const handlePageChange = (page) => {
+    setSelectedLeadIds([]);
+    setActiveActionMenuLeadId(null);
+    setActiveDrawerLeadId(null);
+    setFilters((prev) => ({ ...prev, page }));
+  };
+
+  const handleDateChange = (event) => {
+    const { name, value } = event.target;
+    setFilters((prev) => {
+      const next = { ...prev, [name]: value, page: 1 };
+      if (next.startDate && next.endDate && next.startDate > next.endDate) {
+        next[name === 'startDate' ? 'endDate' : 'startDate'] = value;
+      }
+      return next;
+    });
   };
 
   const handleToggleSelectVisible = () => {
@@ -495,8 +442,9 @@ const LeadsPage = () => {
         <div className="search-bar">
           <Search size={18} className="search-icon" />
           <input
-            type="text"
-            placeholder="Search by name, phone..."
+            type="search"
+            aria-label="Search leads by name, phone or notes"
+            placeholder="Search by name, phone, notes..."
             value={searchInput}
             onChange={handleSearchChange}
           />
@@ -532,6 +480,23 @@ const LeadsPage = () => {
             Export Excel
           </button>
         </div>
+      </div>
+
+      <div className="leads-date-filters">
+        <label htmlFor="leads-start-date">Received from
+          <input id="leads-start-date" type="date" name="startDate" value={filters.startDate}
+            max={filters.endDate || undefined} onChange={handleDateChange} />
+        </label>
+        <label htmlFor="leads-end-date">Received to
+          <input id="leads-end-date" type="date" name="endDate" value={filters.endDate}
+            min={filters.startDate || undefined} onChange={handleDateChange} />
+        </label>
+        {(filters.startDate || filters.endDate) && (
+          <button type="button" className="filter-action-btn"
+            onClick={() => setFilters((prev) => ({ ...prev, startDate: '', endDate: '', page: 1 }))}>
+            Clear dates
+          </button>
+        )}
       </div>
 
       {showFilters && (
@@ -604,7 +569,6 @@ const LeadsPage = () => {
       <div
         className="leads-table-container"
         ref={tableScrollRef}
-        onScroll={handleLeadTableScroll}
       >
         {loading ? (
           <div className="loading-state">Loading leads...</div>
@@ -744,15 +708,30 @@ const LeadsPage = () => {
             </tbody>
           </table>
         )}
-        {!loading && loadingMore && (
-          <div className="leads-scroll-state">Loading more leads...</div>
-        )}
-        {!loading && !loadingMore && pagination.total > 0 && (
-          <div className="leads-scroll-state">
-            Showing {leads.length} of {pagination.total}
-          </div>
-        )}
       </div>
+
+      <nav className="leads-pagination" aria-label="Leads pagination">
+        <span aria-live="polite">
+          {loading ? 'Loading leads...' : error ? 'Unable to load leads' : (
+            <>Showing {leads.length ? (pagination.page - 1) * pagination.limit + 1 : 0}?{leads.length ? (pagination.page - 1) * pagination.limit + leads.length : 0} of {pagination.total} leads</>
+          )}
+        </span>
+        <label>Rows per page
+          <select value={filters.limit} disabled={loading} onChange={(event) => {
+            setSelectedLeadIds([]);
+            setFilters((prev) => ({ ...prev, limit: Number(event.target.value), page: 1 }));
+          }}>
+            {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+          </select>
+        </label>
+        <div className="leads-page-buttons">
+          <button type="button" disabled={loading || filters.page <= 1} onClick={() => handlePageChange(1)}>First</button>
+          <button type="button" disabled={loading || filters.page <= 1} onClick={() => handlePageChange(filters.page - 1)}>Previous</button>
+          <span>Page {filters.page} of {pagination.totalPages}</span>
+          <button type="button" disabled={loading || !!error || filters.page >= pagination.totalPages} onClick={() => handlePageChange(filters.page + 1)}>Next</button>
+          <button type="button" disabled={loading || !!error || filters.page >= pagination.totalPages} onClick={() => handlePageChange(pagination.totalPages)}>Last</button>
+        </div>
+      </nav>
 
       {activeDrawerLead && (
         <div className="lead-drawer-layer" role="presentation">
