@@ -38,6 +38,11 @@ const MetaLeadsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
 
   const requestParams = useMemo(() => {
     const search = new URLSearchParams(location.search || "");
@@ -96,6 +101,7 @@ const MetaLeadsPage = () => {
       const response = await metaAdsService.getMetaLeads(requestParams);
       const receivedLeads = Array.isArray(response?.leads) ? response.leads : [];
       setLeads(receivedLeads);
+      setPage(1);
       const campaignsWithLeads = Array.isArray(response?.campaigns) ? response.campaigns : [];
       const campaignNames = new Map(campaignsWithLeads.map((campaign) => [
         getCampaignId(campaign), getCampaignName(campaign)
@@ -139,9 +145,24 @@ const MetaLeadsPage = () => {
   }, [requestParams.userId, requestParams.formId]);
 
   const leadCount = leads.length;
-  const visibleLeads = selectedCampaignId
-    ? leads.filter((lead) => String(lead?.campaignId || lead?.campaign_id || "").trim() === selectedCampaignId)
-    : leads;
+  const visibleLeads = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    const start = startDate ? new Date(startDate + "T00:00:00").getTime() : null;
+    const end = endDate ? new Date(endDate + "T23:59:59.999").getTime() : null;
+    return leads.filter((lead) => {
+      if (selectedCampaignId && String(lead?.campaignId || lead?.campaign_id || "").trim() !== selectedCampaignId) return false;
+      if (query && ![lead?.fullName, lead?.phoneNumber, lead?.email].some((value) => String(value || "").toLowerCase().includes(query))) return false;
+      if (start !== null || end !== null) {
+        const created = new Date(lead?.createdTime || lead?.created_time || "").getTime();
+        if (!Number.isFinite(created) || (start !== null && created < start) || (end !== null && created > end)) return false;
+      }
+      return true;
+    });
+  }, [leads, selectedCampaignId, searchQuery, startDate, endDate]);
+  const totalPages = Math.max(1, Math.ceil(visibleLeads.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageOffset = (currentPage - 1) * pageSize;
+  const pageLeads = visibleLeads.slice(pageOffset, pageOffset + pageSize);
 
   return (
     <div className="meta-leads-page">
@@ -166,7 +187,7 @@ const MetaLeadsPage = () => {
             <div className="meta-leads-count">
               <span>Total leads</span>
               <strong>{visibleLeads.length}</strong>
-              <small>{selectedCampaignId ? `${visibleLeads.length} for selected campaign` : `${leadCount} total`}</small>
+              <small>{selectedCampaignId ? `${visibleLeads.length} matching leads` : `${leadCount} total`}</small>
             </div>
             <button
               type="button"
@@ -188,7 +209,7 @@ const MetaLeadsPage = () => {
             </div>
             <label className="meta-leads-campaign-filter">
               <span>Campaign</span>
-              <select value={selectedCampaignId} onChange={(event) => setSelectedCampaignId(event.target.value)}>
+              <select value={selectedCampaignId} onChange={(event) => { setSelectedCampaignId(event.target.value); setPage(1); }}>
                 <option value="">All leads</option>
                 {campaigns.map((campaign) => (
                   <option key={campaign.campaignId} value={campaign.campaignId}>
@@ -201,6 +222,34 @@ const MetaLeadsPage = () => {
               <span>Source</span>
               <strong>Backend API</strong>
             </div>
+          </div>
+
+          <div className="meta-leads-filters">
+            <label className="meta-leads-search">Search
+              <input type="search" placeholder="Name, phone or email" value={searchQuery}
+                onChange={(event) => { setSearchQuery(event.target.value); setPage(1); }} />
+            </label>
+            <label>Created from
+              <input type="date" value={startDate} max={endDate || undefined}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setStartDate(value);
+                  if (endDate && value > endDate) setEndDate(value);
+                  setPage(1);
+                }} />
+            </label>
+            <label>Created to
+              <input type="date" value={endDate} min={startDate || undefined}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setEndDate(value);
+                  if (value && startDate > value) setStartDate(value);
+                  setPage(1);
+                }} />
+            </label>
+            <button type="button" onClick={() => {
+              setSearchQuery(""); setStartDate(""); setEndDate(""); setSelectedCampaignId(""); setPage(1);
+            }}>Clear filters</button>
           </div>
 
           {error ? (
@@ -227,7 +276,7 @@ const MetaLeadsPage = () => {
                   </tr>
                 </thead>
                 <tbody>
-                  {visibleLeads.map((lead, index) => {
+                  {pageLeads.map((lead, index) => {
                     const key = String(lead?.leadId || lead?.id || `${index}`).trim() || `${index}`;
                     return (
                       <tr key={key}>
@@ -242,6 +291,23 @@ const MetaLeadsPage = () => {
                 </tbody>
               </table>
             </div>
+          )}
+          {!loading && !error && (
+            <nav className="meta-leads-pagination" aria-label="Meta leads pagination">
+              <span aria-live="polite">Showing {visibleLeads.length ? pageOffset + 1 : 0}?{pageOffset + pageLeads.length} of {visibleLeads.length} leads</span>
+              <label>Rows per page
+                <select value={pageSize} onChange={(event) => { setPageSize(Number(event.target.value)); setPage(1); }}>
+                  {[10, 25, 50, 100].map((size) => <option key={size} value={size}>{size}</option>)}
+                </select>
+              </label>
+              <div className="meta-leads-page-buttons">
+                <button type="button" disabled={currentPage <= 1} onClick={() => setPage(1)}>First</button>
+                <button type="button" disabled={currentPage <= 1} onClick={() => setPage(currentPage - 1)}>Previous</button>
+                <span>Page {currentPage} of {totalPages}</span>
+                <button type="button" disabled={currentPage >= totalPages} onClick={() => setPage(currentPage + 1)}>Next</button>
+                <button type="button" disabled={currentPage >= totalPages} onClick={() => setPage(totalPages)}>Last</button>
+              </div>
+            </nav>
           )}
         </article>
       </section>
