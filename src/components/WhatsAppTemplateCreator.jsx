@@ -138,6 +138,8 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
   const [variableExamples, setVariableExamples] = useState({});
   const editingTemplateId = initialTemplate?._id || initialTemplate?.id || '';
   const isEditingTemplate = Boolean(editingTemplateId);
+  const isRetryingTemplate = isEditingTemplate && !initialTemplate?.whatsappTemplateId &&
+    ['failed', 'draft'].includes(String(initialTemplate?.status || '').toLowerCase());
 
   const fileInputRef = useRef(null);
   const textareaRef = useRef(null);
@@ -1340,7 +1342,7 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
                 ) : (
                   <>
                     <Send size={20} />
-                    {isEditingTemplate ? 'Save Changes' : 'Submit for Approval'}
+                    {isRetryingTemplate ? 'Resubmit for Approval' : isEditingTemplate ? 'Save Changes' : 'Submit for Approval'}
                   </>
                 )}
               </button>
@@ -1348,7 +1350,7 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
               {submitStatus === 'success' && (
                 <div className="status-message success">
                   <CheckCircle size={20} />
-                  {isEditingTemplate
+                  {isEditingTemplate && !isRetryingTemplate
                     ? 'Template updated successfully.'
                     : 'Template submitted successfully! It will be reviewed by WhatsApp.'}
                 </div>
