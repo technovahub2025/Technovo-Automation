@@ -2001,6 +2001,21 @@ export const whatsappService = {
   },
 
   // Create template via Meta-backed backend endpoint
+  async uploadTemplateImage(file) {
+    const form = new FormData();
+    form.append('file', file);
+    try {
+      const response = await axios.post(`${API_BASE_URL}/api/templates/media`, form, {
+        headers: getAuthHeaders(false),
+        timeout: 60000
+      });
+      if (!response.data?.success) throw new Error(response.data?.error || 'Image upload failed.');
+      return response.data.data;
+    } catch (error) {
+      throw new Error(error?.response?.data?.error || error.message || 'Image upload failed.');
+    }
+  },
+
   async createTemplate(templateData) {
     try {
       const response = await axios.post(`${API_BASE_URL}/api/templates`, templateData, {

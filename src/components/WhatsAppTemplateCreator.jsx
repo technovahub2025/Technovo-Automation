@@ -67,7 +67,8 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
       return {
         type: String(contentHeader.type || 'text').toLowerCase(),
         text: String(contentHeader.text || ''),
-        mediaUrl: String(contentHeader.mediaUrl || '')
+        mediaUrl: String(contentHeader.mediaUrl || ''),
+        mediaHandle: String(contentHeader.mediaHandle || '')
       };
     }
 
@@ -268,6 +269,10 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
   const handleImageUpload = (event) => {
     const file = event.target.files[0];
     if (file) {
+      if (!['image/jpeg', 'image/png'].includes(file.type)) {
+        alert('Select a JPEG or PNG image.');
+        return;
+      }
       if (file.size > 5 * 1024 * 1024) {
         alert('Image size should be less than 5MB');
         return;
@@ -349,7 +354,8 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
         header: {
           type: header.type || 'text',
           text: header.text || '',
-          mediaUrl: header.mediaUrl || ''
+          mediaUrl: header.mediaUrl || '',
+          mediaHandle: header.mediaHandle || ''
         },
         body: bodyText || '',
         footer: footerText || '',
@@ -603,6 +609,13 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
     setSubmitStatus(null);
 
     try {
+      let uploadedImage = null;
+      if (templateData.content.header.type === 'image' && headerImage) {
+        uploadedImage = await whatsappService.uploadTemplateImage(headerImage);
+      }
+      if (templateData.content.header.type === 'image' && !isEditingTemplate && !uploadedImage?.headerHandle) {
+        throw new Error('Select and upload a JPEG or PNG header image before submitting.');
+      }
       const preparedBody = prepareMetaTemplateText(templateData.content.body);
       const sanitizedBody = preparedBody.text;
       const sanitizedHeaderText = prepareMetaTemplateText(templateData.content.header.text).text;
@@ -616,7 +629,8 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
           header: {
             type: templateData.content.header.type,
             text: sanitizedHeaderText,
-            mediaUrl: templateData.content.header.mediaUrl || ''
+            mediaUrl: uploadedImage?.mediaUrl || templateData.content.header.mediaUrl || '',
+            mediaHandle: uploadedImage?.headerHandle || templateData.content.header.mediaHandle || ''
           },
           body: sanitizedBody,
           footer: sanitizedFooter,
@@ -664,8 +678,8 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
         metaFormatData.components.push({
           type: "HEADER",
           format: templateData.content.header.type.toUpperCase(),
-          example: templateData.content.header.type === 'image' ? {
-            header_handle: ["example"]
+          example: templateData.content.header.type === 'image' && editorPayload.content.header.mediaHandle ? {
+            header_handle: [editorPayload.content.header.mediaHandle]
           } : undefined
         });
       } else if (templateData.content.header.type === 'text' && sanitizedHeaderText) {
@@ -705,6 +719,7 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
       }
 
       editorPayload.components = metaFormatData.components;
+      metaFormatData.content = editorPayload.content;
       editorPayload.variables = detectedVariables.map((number, index) => ({
         name: `var${number}`,
         example: variableExamples[number] || preparedBody.examples[index] || `Example ${number}`,
@@ -717,7 +732,7 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
         ? await whatsappService.updateTemplate(editingTemplateId, editorPayload)
         : await whatsappService.createTemplate(metaFormatData);
 
-      if (response.success) {
+      if (response.success && response.metaSubmission?.success !== false) {
         setSubmitStatus('success');
         if (isEditingTemplate) {
           setTimeout(() => {
@@ -750,6 +765,8 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
         }, 3000);
       } else {
         const backendMessage =
+          response?.metaSubmission?.details?.error?.error_user_msg ||
+          response?.metaSubmission?.error ||
           response?.error ||
           response?.message ||
           response?.details?.error?.message ||
@@ -1117,7 +1134,7 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
                       <input
                         ref={fileInputRef}
                         type="file"
-                        accept="image/*"
+                        accept="image/jpeg,image/png"
                         onChange={handleImageUpload}
                         style={{ display: 'none' }}
                       />
