@@ -2301,6 +2301,7 @@ const ScheduleForm = ({
           )}
 
           {uploadedFile &&
+          !isCsvUploadBusy &&
           messageType === "template" &&
           selectedTemplate &&
           getTemplateVariableCount(selectedTemplate) > 0 &&

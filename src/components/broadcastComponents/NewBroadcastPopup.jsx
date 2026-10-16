@@ -220,6 +220,7 @@ const NewBroadcastPopup = ({
     messageType === "template" ? getTemplateVariableCount(selectedTemplate) : 0;
   const missingTemplateVariables = Boolean(
     uploadedFile &&
+    !isCsvUploadBusy &&
     messageType === "template" &&
     selectedTemplate &&
     selectedTemplateVariableCount > 0 &&

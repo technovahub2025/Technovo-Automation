@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import Papa from "papaparse";
+import { getCsvVariableNames, getRecipientVariableNames, getCsvRowVariables } from "../utils/broadcastCsvVariables";
 
 import { apiClient } from "../services/whatsappapi";
 import { whatsappService } from "../services/whatsappService";
@@ -1000,6 +1001,7 @@ const Broadcast = ({
       lastUpdateAt: 0,
     };
     setUploadedFile(file);
+    setFileVariables([]);
     setCsvUploadState({
       phase: "parsing",
       message: "Parsing CSV...",
@@ -1088,9 +1090,7 @@ const Broadcast = ({
           const fields = detectedFields.length
             ? detectedFields
             : Object.keys(normalizedRow || {});
-          const variables = fields
-            .filter((field) => String(field || "").trim() !== phoneField)
-            .map((field) => normalizeText(normalizedRow?.[field] || ""));
+          const variables = getCsvRowVariables(normalizedRow, fields, phoneField);
 
           return {
             phone: normalizedPhone,
@@ -1332,17 +1332,7 @@ const Broadcast = ({
         mergeRecipientCollections(current, enrichedRecipients),
       );
 
-      if (enrichedRecipients.length > 0) {
-        const firstRecipient = enrichedRecipients[0];
-        const fileVarKeys = Object.keys(firstRecipient).filter(
-          (key) =>
-            /^var\d+$/i.test(String(key || "").trim()) &&
-            firstRecipient[key] != null,
-        );
-        setFileVariables(fileVarKeys);
-      } else {
-        setFileVariables([]);
-      }
+      setFileVariables(getCsvVariableNames(detectedFields));
 
       updateCsvUploadState(
         "completed",
@@ -1549,7 +1539,9 @@ const Broadcast = ({
           ? recipient.data
           : recipient;
       const fullData =
-        raw?.fullData && typeof raw.fullData === "object" ? raw.fullData : raw;
+        recipient?.fullData && typeof recipient.fullData === "object"
+          ? recipient.fullData
+          : raw?.fullData && typeof raw.fullData === "object" ? raw.fullData : raw;
       const phoneDigits = normalizePhoneForLookup(
         recipient?.phone ||
           raw?.phone ||
@@ -1674,15 +1666,7 @@ const Broadcast = ({
       );
       setRecipients(refreshedRecipients);
 
-      if (refreshedRecipients.length > 0) {
-        const firstRecipient = refreshedRecipients[0];
-        const fileVarKeys = Object.keys(firstRecipient).filter(
-          (key) =>
-            /^var\d+$/i.test(String(key || "").trim()) &&
-            firstRecipient[key] != null,
-        );
-        setFileVariables(fileVarKeys);
-      }
+      setFileVariables(getRecipientVariableNames(refreshedRecipients));
     } catch (error) {
       console.warn("Failed to refresh CSV recipients after CRM change:", error);
     }
@@ -1924,7 +1908,11 @@ const Broadcast = ({
       sourceType:
         String(raw?.sourceType || contact?.sourceType || "manual").trim() ||
         "manual",
-      variables: [],
+      variables: Array.isArray(contact?.variables)
+        ? contact.variables
+        : Array.isArray(raw?.variables)
+          ? raw.variables
+          : [],
       data: raw && typeof raw === "object" ? raw : { phone, name },
       fullData: raw && typeof raw === "object" ? raw : { phone, name },
     };
