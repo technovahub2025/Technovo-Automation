@@ -10,6 +10,7 @@ import {
 } from "../utils/sidebarPageCache";
 import { normalizeIVRMenus } from "../utils/inboundNormalizers";
 import { downloadCsvAsync } from "../utils/csvExport";
+import { mergeBroadcastProgress } from "../utils/broadcastProgress";
 import {
   BROADCAST_CAMPAIGN_EXPORT_HEADERS,
   mapBroadcastToCampaignExportRow,
@@ -538,10 +539,9 @@ export const useBroadcast = () => {
   const handleWebSocketMessage = useCallback(() => {}, []);
 
   const scheduleBroadcastRefresh = useCallback(() => {
-    if (broadcastRefreshTimerRef.current) {
-      window.clearTimeout(broadcastRefreshTimerRef.current);
-    }
+    if (broadcastRefreshTimerRef.current) return;
     broadcastRefreshTimerRef.current = window.setTimeout(() => {
+      broadcastRefreshTimerRef.current = null;
       loadBroadcasts();
     }, 200);
   }, [loadBroadcasts]);
@@ -556,25 +556,8 @@ export const useBroadcast = () => {
           const broadcastId = String(broadcast._id || "");
 
           if (broadcastId === targetId) {
-            const currentRecipients =
-              broadcast.recipientCount || broadcast.recipients?.length || 0;
-            const updatedStats = { ...data.stats };
-
-            if (
-              updatedStats.delivered > currentRecipients &&
-              currentRecipients > 0
-            ) {
-              updatedStats.delivered = currentRecipients;
-            }
-
-            return {
-              ...broadcast,
-              status: normalizeBroadcastStatus({
-                ...broadcast,
-                stats: updatedStats,
-              }),
-              stats: updatedStats,
-            };
+            const updated = mergeBroadcastProgress(broadcast, data.stats);
+            return { ...updated, status: normalizeBroadcastStatus(updated) };
           }
           return broadcast;
         });
@@ -617,8 +600,7 @@ export const useBroadcast = () => {
               toNumber(stats.read),
             );
             return {
-              ...broadcast,
-              stats,
+              ...mergeBroadcastProgress(broadcast, stats),
               status: normalizeBroadcastStatus({ ...broadcast, stats }),
             };
           }),
@@ -773,6 +755,7 @@ export const useBroadcast = () => {
         webSocketService.on("broadcast_updated", scheduleBroadcastRefresh);
         webSocketService.on("broadcast_update", scheduleBroadcastRefresh);
         webSocketService.on("message_sent", scheduleBroadcastRefresh);
+        webSocketService.on("new_message", scheduleBroadcastRefresh);
         webSocketService.on(
           "broadcast_message_batch",
           scheduleBroadcastRefresh,
@@ -785,6 +768,7 @@ export const useBroadcast = () => {
           webSocketService.off("broadcast_updated", scheduleBroadcastRefresh);
           webSocketService.off("broadcast_update", scheduleBroadcastRefresh);
           webSocketService.off("message_sent", scheduleBroadcastRefresh);
+          webSocketService.off("new_message", scheduleBroadcastRefresh);
           webSocketService.off(
             "broadcast_message_batch",
             scheduleBroadcastRefresh,
@@ -828,17 +812,15 @@ export const useBroadcast = () => {
     scheduleBroadcastRefresh,
   ]);
 
-  // Fallback polling only when websocket is unavailable.
-  useEffect(() => {
-    if (wsConnected) return undefined;
-
-    const hasActiveBroadcasts = broadcasts.some((b) =>
+  const hasActiveBroadcasts = broadcasts.some((b) =>
       ["scheduled", "sending", "processing"].includes(
         String(b?.status || "").toLowerCase(),
       ),
     );
 
-    const intervalMs = hasActiveBroadcasts ? 2500 : 5000;
+  // Reconcile missed socket events, including reads/replies after sending finishes.
+  useEffect(() => {
+    const intervalMs = wsConnected ? 15000 : hasActiveBroadcasts ? 2500 : 5000;
 
     const interval = setInterval(() => {
       if (activeTab !== "overview") return;
@@ -867,7 +849,7 @@ export const useBroadcast = () => {
       document.removeEventListener("visibilitychange", handleVisibility);
       window.removeEventListener("focus", handleFocus);
     };
-  }, [activeTab, broadcasts, loadBroadcasts, wsConnected]);
+  }, [activeTab, hasActiveBroadcasts, loadBroadcasts, wsConnected]);
 
   // Fetch official templates when template mode is selected
   useEffect(() => {
