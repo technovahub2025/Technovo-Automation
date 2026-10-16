@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import Papa from "papaparse";
 import { buildValidationRecipientPayload } from "../utils/broadcastValidationRecipient";
-import { getCsvVariableNames, getRecipientVariableNames, getCsvRowVariables } from "../utils/broadcastCsvVariables";
+import { getCsvVariableNames, getRecipientVariableNames, getCsvRowVariables, getRecipientVariables } from "../utils/broadcastCsvVariables";
 
 import { apiClient } from "../services/whatsappapi";
 import { whatsappService } from "../services/whatsappService";
@@ -1676,7 +1676,7 @@ const Broadcast = ({
   const buildProcessedRecipients = () =>
     recipients.map((recipient) => ({
       phone: recipient.phone,
-      variables: recipient.variables || [],
+      variables: getRecipientVariables(recipient),
       data: recipient.data || recipient.fullData || recipient,
     }));
 

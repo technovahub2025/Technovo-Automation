@@ -1,6 +1,8 @@
+import { getRecipientVariables } from "./broadcastCsvVariables.js";
+
 export const buildValidationRecipientPayload = (recipient = {}) => ({
   phone: String(recipient?.phone || "").trim(),
-  variables: Array.isArray(recipient?.variables) ? recipient.variables : [],
+  variables: getRecipientVariables(recipient),
   name: String(recipient?.name || "").trim(),
   contactId: String(recipient?.contactId || "").trim() || null,
   sourceType:

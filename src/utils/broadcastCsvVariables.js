@@ -17,6 +17,17 @@ export const getRecipientVariableNames = (recipients = []) =>
       .flatMap((data) => Object.keys(data || {})),
   ));
 
+export const getRecipientVariables = (recipient = {}) => {
+  for (const data of [recipient, recipient?.data, recipient?.fullData, recipient?.attributes, recipient?.data?.fullData]) {
+    if (Array.isArray(data?.variables) && data.variables.length > 0) return data.variables;
+  }
+  for (const data of [recipient?.fullData, recipient?.data, recipient?.attributes, recipient?.data?.fullData, recipient]) {
+    const fields = getCsvVariableFields(Object.keys(data || {}));
+    if (fields.length) return getCsvRowVariables(data, fields, "phone");
+  }
+  return [];
+};
+
 export const getCsvRowVariables = (row, fields, phoneField) => {
   const variableFields = getCsvVariableFields(fields);
   if (!variableFields.length) {
