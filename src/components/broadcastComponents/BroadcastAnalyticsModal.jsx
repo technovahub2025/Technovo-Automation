@@ -108,7 +108,14 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
   const repairHeaderInputRef = useRef(null);
   const refreshTimerRef = useRef(null);
   const safeBroadcast = broadcast || {};
-  const mergedBroadcast = broadcastDetails || safeBroadcast;
+  const mergedBroadcast = {
+    ...safeBroadcast,
+    ...(broadcastDetails || {}),
+    stats: {
+      ...(safeBroadcast.stats || {}),
+      ...(broadcastDetails?.stats || {}),
+    },
+  };
   const stats = mergedBroadcast.stats || {};
   const totalRecipients =
     mergedBroadcast.recipientCount || mergedBroadcast.recipients?.length || 0;
@@ -154,12 +161,35 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
     .map(([code, count]) => ({ code, count: Number(count || 0) }))
     .filter((item) => item.count > 0)
     .sort((a, b) => b.count - a.count);
+  const campaignFinishedAt = new Date(
+    mergedBroadcast.completedAt || mergedBroadcast.startedAt || mergedBroadcast.createdAt,
+  );
+  const campaignHasSentMessages =
+    Number(stats.sent || 0) > 0 ||
+    Number(safeBroadcast?.stats?.sent || 0) > 0 ||
+    Number(safeBroadcast?.sentCount || 0) > 0 ||
+    Number(safeBroadcast?.successfulPercentage || 0) > 0;
+  const receiptWaitExpired =
+    !Number.isNaN(campaignFinishedAt.getTime()) &&
+    Date.now() - campaignFinishedAt.getTime() >= 2 * 60 * 1000;
+  const noStatusReceiptsRecorded =
+    campaignHasSentMessages &&
+    Number(stats.delivered || 0) === 0 &&
+    Number(stats.read || 0) === 0 &&
+    Number(stats.failed || 0) === 0 &&
+    receiptWaitExpired &&
+    ["completed", "completed_with_errors"].includes(
+      String(mergedBroadcast.status || "").toLowerCase(),
+    );
   const systemFailureReasons = [
     normalizeText(mergedBroadcast?.statusProcessingIssue?.message)
       ? `Status processing: ${normalizeText(mergedBroadcast.statusProcessingIssue.message)}`
       : "",
     normalizeText(mergedBroadcast?.queueLastError)
       ? `Queue: ${normalizeText(mergedBroadcast.queueLastError)}`
+      : "",
+    noStatusReceiptsRecorded
+      ? "Status receipts were not recorded after the campaign was sent. The earlier backend status-processing error may have prevented delivery/read updates."
       : "",
   ].filter(Boolean);
   const failureReasonBreakdown = recipientDetails.reduce(
