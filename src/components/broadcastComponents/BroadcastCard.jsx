@@ -89,41 +89,7 @@ const BroadcastCard = ({
   })();
   const audienceChipClass = audienceMode || "unknown";
 
-  const getReceiptDelayIssue = (currentBroadcast = {}) => {
-    if (currentBroadcast?.statusProcessingIssue?.message) {
-      return currentBroadcast.statusProcessingIssue;
-    }
-
-    const stats = currentBroadcast.stats || {};
-    const sent = toNumber(currentBroadcast.sentCount ?? stats.sent);
-    const receivedReceipt = toNumber(stats.delivered) + toNumber(stats.read) + toNumber(stats.failed);
-    const campaignStatus = String(currentBroadcast.status || "").toLowerCase();
-    const finishedAt = new Date(
-      currentBroadcast.completedAt || currentBroadcast.startedAt || currentBroadcast.createdAt,
-    );
-    const hasWaitedForReceipt =
-      !Number.isNaN(finishedAt.getTime()) && Date.now() - finishedAt.getTime() >= 2 * 60 * 1000;
-
-    if (
-      sent > 0 &&
-      receivedReceipt === 0 &&
-      hasWaitedForReceipt &&
-      ["completed", "completed_with_errors"].includes(campaignStatus)
-    ) {
-      return {
-        severity: "warning",
-        code: "STATUS_RECEIPT_DELAYED",
-        message:
-          "Messages were sent, but no delivery, read, or failure receipt has reached the server yet. Check the WhatsApp webhook and backend status processing.",
-        receiptStatus: "No receipt received",
-        occurredAt: finishedAt,
-      };
-    }
-
-    return null;
-  };
-
-  const statusIssue = getReceiptDelayIssue(broadcast);
+  const statusIssue = broadcast?.statusProcessingIssue || null;
 
   const getDisplayDateTime = (currentBroadcast) => {
     const dateValue =
