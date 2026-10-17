@@ -300,6 +300,20 @@ const BroadcastCard = ({
           <span className="broadcast-campaign-meta__title">
             {broadcast.name}
           </span>
+          {broadcast.statusProcessingIssue?.message && (
+            <details className={`broadcast-status-issue broadcast-status-issue--${broadcast.statusProcessingIssue.severity || 'error'}`}>
+              <summary>
+                {broadcast.statusProcessingIssue.severity === 'warning' ? 'Status warning' : 'Status update failed'}
+              </summary>
+              <div role="status">
+                <p>{broadcast.statusProcessingIssue.message}</p>
+                <p>Code: {broadcast.statusProcessingIssue.code}</p>
+                {broadcast.statusProcessingIssue.receiptStatus && <p>Receipt: {broadcast.statusProcessingIssue.receiptStatus}</p>}
+                {broadcast.statusProcessingIssue.occurredAt && <p>{new Date(broadcast.statusProcessingIssue.occurredAt).toLocaleString()}</p>}
+                <p>A successful status update clears this notice.</p>
+              </div>
+            </details>
+          )}
           {audienceLabel ? (
             <span
               className={`audience-badge audience-badge--${audienceChipClass}`}
@@ -432,6 +446,7 @@ const areEqual = (prevProps, nextProps) => {
     prev._id === next._id &&
     prev.status === next.status &&
     prev.name === next.name &&
+    JSON.stringify(prev.statusProcessingIssue || null) === JSON.stringify(next.statusProcessingIssue || null) &&
     String(
       prev?.audienceSource?.label || prev?.audienceSnapshot?.label || "",
     ) ===
