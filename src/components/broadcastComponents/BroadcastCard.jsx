@@ -89,6 +89,42 @@ const BroadcastCard = ({
   })();
   const audienceChipClass = audienceMode || "unknown";
 
+  const getReceiptDelayIssue = (currentBroadcast = {}) => {
+    if (currentBroadcast?.statusProcessingIssue?.message) {
+      return currentBroadcast.statusProcessingIssue;
+    }
+
+    const stats = currentBroadcast.stats || {};
+    const sent = toNumber(currentBroadcast.sentCount ?? stats.sent);
+    const receivedReceipt = toNumber(stats.delivered) + toNumber(stats.read) + toNumber(stats.failed);
+    const campaignStatus = String(currentBroadcast.status || "").toLowerCase();
+    const finishedAt = new Date(
+      currentBroadcast.completedAt || currentBroadcast.startedAt || currentBroadcast.createdAt,
+    );
+    const hasWaitedForReceipt =
+      !Number.isNaN(finishedAt.getTime()) && Date.now() - finishedAt.getTime() >= 2 * 60 * 1000;
+
+    if (
+      sent > 0 &&
+      receivedReceipt === 0 &&
+      hasWaitedForReceipt &&
+      ["completed", "completed_with_errors"].includes(campaignStatus)
+    ) {
+      return {
+        severity: "warning",
+        code: "STATUS_RECEIPT_DELAYED",
+        message:
+          "Messages were sent, but no delivery, read, or failure receipt has reached the server yet. Check the WhatsApp webhook and backend status processing.",
+        receiptStatus: "No receipt received",
+        occurredAt: finishedAt,
+      };
+    }
+
+    return null;
+  };
+
+  const statusIssue = getReceiptDelayIssue(broadcast);
+
   const getDisplayDateTime = (currentBroadcast) => {
     const dateValue =
       currentBroadcast.scheduledAt ||
@@ -300,16 +336,16 @@ const BroadcastCard = ({
           <span className="broadcast-campaign-meta__title">
             {broadcast.name}
           </span>
-          {broadcast.statusProcessingIssue?.message && (
-            <details className={`broadcast-status-issue broadcast-status-issue--${broadcast.statusProcessingIssue.severity || 'error'}`}>
+          {statusIssue?.message && (
+            <details className={`broadcast-status-issue broadcast-status-issue--${statusIssue.severity || 'error'}`}>
               <summary>
-                {broadcast.statusProcessingIssue.severity === 'warning' ? 'Status warning' : 'Status update failed'}
+                {statusIssue.severity === 'warning' ? 'Status warning' : 'Status update failed'}
               </summary>
               <div role="status">
-                <p>{broadcast.statusProcessingIssue.message}</p>
-                <p>Code: {broadcast.statusProcessingIssue.code}</p>
-                {broadcast.statusProcessingIssue.receiptStatus && <p>Receipt: {broadcast.statusProcessingIssue.receiptStatus}</p>}
-                {broadcast.statusProcessingIssue.occurredAt && <p>{new Date(broadcast.statusProcessingIssue.occurredAt).toLocaleString()}</p>}
+                <p>{statusIssue.message}</p>
+                <p>Code: {statusIssue.code}</p>
+                {statusIssue.receiptStatus && <p>Receipt: {statusIssue.receiptStatus}</p>}
+                {statusIssue.occurredAt && <p>{new Date(statusIssue.occurredAt).toLocaleString()}</p>}
                 <p>A successful status update clears this notice.</p>
               </div>
             </details>
