@@ -154,6 +154,14 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
     .map(([code, count]) => ({ code, count: Number(count || 0) }))
     .filter((item) => item.count > 0)
     .sort((a, b) => b.count - a.count);
+  const systemFailureReasons = [
+    normalizeText(mergedBroadcast?.statusProcessingIssue?.message)
+      ? `Status processing: ${normalizeText(mergedBroadcast.statusProcessingIssue.message)}`
+      : "",
+    normalizeText(mergedBroadcast?.queueLastError)
+      ? `Queue: ${normalizeText(mergedBroadcast.queueLastError)}`
+      : "",
+  ].filter(Boolean);
   const failureReasonBreakdown = recipientDetails.reduce(
     (accumulator, item) => {
       if (
@@ -168,7 +176,10 @@ const BroadcastAnalyticsModal = ({ isOpen, onClose, broadcast }) => {
       accumulator[key] = Number(accumulator[key] || 0) + 1;
       return accumulator;
     },
-    {},
+    systemFailureReasons.reduce((accumulator, reason) => {
+      accumulator[reason] = Number(accumulator[reason] || 0) + 1;
+      return accumulator;
+    }, {}),
   );
   const failureReasonRows = Object.entries(failureReasonBreakdown)
     .map(([reason, count]) => ({ reason, count: Number(count || 0) }))
