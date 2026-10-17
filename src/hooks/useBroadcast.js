@@ -217,6 +217,7 @@ const sanitizeBroadcastForCache = (broadcast = {}) => ({
   createdAt: String(broadcast?.createdAt || "").trim(),
   scheduledAt: String(broadcast?.scheduledAt || "").trim(),
   completedAt: String(broadcast?.completedAt || "").trim(),
+  statusProcessingIssue: broadcast?.statusProcessingIssue || null,
   recipientCount:
     Number.isFinite(Number(broadcast?.recipientCount)) &&
     Number(broadcast.recipientCount) >= 0
