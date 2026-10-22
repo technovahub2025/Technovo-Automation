@@ -1997,12 +1997,15 @@ const CampaignModal = ({
                             <div className="tab-panel">
                                 <div className="form-group">
                                     <label>Location</label>
-                                    <input
-                                        type="text"
+                                    <textarea
                                         value={formData.targeting}
                                         onChange={(e) => setFormData({...formData, targeting: e.target.value})}
-                                        placeholder="e.g., United States, Canada or US, CA"
+                                        placeholder="Enter up to 200 locations, separated by commas or one per line. For example: United States, Canada, London"
+                                        rows={5}
                                     />
+                                    <small className="location-field-hint">
+                                        Separate locations with commas or line breaks. {String(formData.targeting || '').split(/[\n,]+/).filter((location) => location.trim()).length} locations entered (up to 200 supported).
+                                    </small>
                                 </div>
 
                                 <div className="form-group">
@@ -2042,22 +2045,28 @@ const CampaignModal = ({
 
                                 <div className="form-group">
                                     <label>Interests</label>
-                                    <input
-                                        type="text"
+                                    <textarea
                                         value={formData.interests}
                                         onChange={(e) => setFormData({...formData, interests: e.target.value})}
-                                        placeholder="e.g., Fitness, Technology, Fashion"
+                                        placeholder="Enter up to 200 interests, separated by commas or one per line. For example: Fitness, Technology, Fashion"
+                                        rows={5}
                                     />
+                                    <small className="location-field-hint">
+                                        Separate interests with commas or line breaks. {String(formData.interests || '').split(/[\n,]+/).filter((interest) => interest.trim()).length} interests entered (up to 200 supported).
+                                    </small>
                                 </div>
 
                                 <div className="form-group">
                                     <label>Behaviors</label>
-                                    <input
-                                        type="text"
+                                    <textarea
                                         value={formData.behaviors}
                                         onChange={(e) => setFormData({...formData, behaviors: e.target.value})}
-                                        placeholder="e.g., Frequent travelers, Online shoppers"
+                                        placeholder="Enter up to 200 behaviors, separated by commas or one per line. For example: Frequent travelers, Online shoppers"
+                                        rows={5}
                                     />
+                                    <small className="location-field-hint">
+                                        Separate behaviors with commas or line breaks. {String(formData.behaviors || '').split(/[\n,]+/).filter((behavior) => behavior.trim()).length} behaviors entered (up to 200 supported).
+                                    </small>
                                 </div>
 
                             </div>
