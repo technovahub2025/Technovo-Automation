@@ -38,6 +38,7 @@ import './campaignmanagement.css';
 import apiService from '../services/api';
 import { resolveApiBaseUrl } from '../services/apiBaseUrl';
 import CampaignDeleteDialog from '../components/campaigns/CampaignDeleteDialog';
+import { getMetaDeliveryLabel, getMetaDeliverySummary, formatMetaSyncTime } from '../utils/metaDeliveryStatus';
 
 
 const API_BASE_URL = resolveApiBaseUrl();
@@ -208,6 +209,8 @@ const CampaignManagement = () => {
     const [showCreateModal, setShowCreateModal] = useState(false);
     const [showEditModal, setShowEditModal] = useState(false);
     const [selectedCampaign, setSelectedCampaign] = useState(null);
+    const [metaStatusRefreshing, setMetaStatusRefreshing] = useState({});
+    const [metaStatusErrors, setMetaStatusErrors] = useState({});
     const [viewMode, setViewMode] = useState('grid'); // grid or list
     const [dateRange, setDateRange] = useState('last30days');
     const [currentPage, setCurrentPage] = useState(1);
@@ -779,9 +782,82 @@ const CampaignManagement = () => {
                 : campaign;
             setSelectedCampaign(normalizeCampaign(record));
             setShowEditModal(true);
+            if (record?.metaCampaignId) refreshMetaStatus(record, true);
         } catch (err) {
             setError(err?.response?.data?.message || 'Unable to load campaign details. Please try again.');
         }
+    };
+
+    const refreshMetaStatus = async (campaign, forceRefresh = true) => {
+        const localId = String(campaign?._id || campaign?.id || '');
+        const metaId = String(campaign?.metaCampaignId || '').trim();
+        if (!localId || !metaId || /^[a-f\d]{24}$/i.test(metaId) || USE_MOCK) return;
+        setMetaStatusRefreshing((current) => ({ ...current, [localId]: true }));
+        setMetaStatusErrors((current) => ({ ...current, [localId]: '' }));
+        try {
+            const response = await api.get(`/api/campaigns/${encodeURIComponent(localId)}/meta-status`, {
+                headers: getAuthHeaders(),
+                params: forceRefresh ? { refresh: 'true' } : {}
+            });
+            const payload = response.data?.data || {};
+            const update = (record) => normalizeCampaign({
+                ...record,
+                metaDeliverySnapshot: payload.snapshot ?? record.metaDeliverySnapshot,
+                metaDeliveryStatusSyncedAt: payload.syncedAt ?? record.metaDeliveryStatusSyncedAt,
+                metaDeliveryStatusStale: Boolean(payload.stale)
+            });
+            setCampaigns((current) => current.map((item) => String(item.id) === localId ? update(item) : item));
+            setSelectedCampaign((current) => current && String(current.id) === localId ? update(current) : current);
+        } catch (err) {
+            const payload = err?.response?.data?.data || {};
+            setCampaigns((current) => current.map((item) => String(item.id) === localId ? normalizeCampaign({
+                ...item,
+                metaDeliverySnapshot: payload.snapshot ?? item.metaDeliverySnapshot,
+                metaDeliveryStatusSyncedAt: payload.syncedAt ?? item.metaDeliveryStatusSyncedAt,
+                metaDeliveryStatusStale: true
+            }) : item));
+            setSelectedCampaign((current) => current && String(current.id) === localId ? normalizeCampaign({
+                ...current,
+                metaDeliverySnapshot: payload.snapshot ?? current.metaDeliverySnapshot,
+                metaDeliveryStatusSyncedAt: payload.syncedAt ?? current.metaDeliveryStatusSyncedAt,
+                metaDeliveryStatusStale: true
+            }) : current);
+            setMetaStatusErrors((current) => ({ ...current, [localId]: payload.message || 'Meta status could not be refreshed.' }));
+        } finally {
+            setMetaStatusRefreshing((current) => ({ ...current, [localId]: false }));
+        }
+    };
+
+    const renderMetaDeliveryStatus = (campaign) => {
+        const localId = String(campaign?._id || campaign?.id || '');
+        const hasMetaId = Boolean(String(campaign?.metaCampaignId || '').trim()) && !/^[a-f\d]{24}$/i.test(String(campaign?.metaCampaignId || '').trim());
+        const snapshot = campaign?.metaDeliverySnapshot;
+        const confirmed = Boolean(snapshot?.campaign);
+        const stale = Boolean(campaign?.metaDeliveryStatusStale);
+        const label = confirmed
+            ? getMetaDeliverySummary(snapshot)
+            : (hasMetaId ? 'Status unavailable' : 'Not published to Meta');
+        return (
+            <div className="cm-meta-delivery-status" aria-label="Meta delivery status">
+                <span><strong>Meta Delivery Status:</strong> {label}{stale && confirmed ? ' — stale' : ''}</span>
+                {confirmed ? <small>{formatMetaSyncTime(campaign.metaDeliveryStatusSyncedAt)}</small> : null}
+                {confirmed && (snapshot.adSets?.length || snapshot.ads?.length) ? (
+                    <small>
+                        {snapshot.adSets?.length ? `Ad sets: ${snapshot.adSets.map(getMetaDeliveryLabel).join(', ')}` : ''}
+                        {snapshot.adSets?.length && snapshot.ads?.length ? ' · ' : ''}
+                        {snapshot.ads?.length ? `Ads: ${snapshot.ads.map(getMetaDeliveryLabel).join(', ')}` : ''}
+                    </small>
+                ) : null}
+                {metaStatusErrors[localId] ? <small role="status">{metaStatusErrors[localId]}</small> : null}
+                {hasMetaId ? (
+                    <button type="button" className="cm-meta-refresh" disabled={Boolean(metaStatusRefreshing[localId])}
+                        onClick={() => refreshMetaStatus(campaign, true)}>
+                        <RefreshCw size={13} className={metaStatusRefreshing[localId] ? 'cm-spin' : ''} />
+                        {metaStatusRefreshing[localId] ? 'Refreshing…' : 'Refresh Status'}
+                    </button>
+                ) : null}
+            </div>
+        );
     };
 
     const handleEditCampaign = async (campaignData) => {
@@ -1390,8 +1466,9 @@ const CampaignManagement = () => {
                                                     <span>Starts {campaign.startDate || 'Not set'}{campaign.endDate ? ` - ${campaign.endDate}` : ''}</span>
                                                 </div>
                                             </div>
-                                            <span className={`cm-status-badge cm-list-status ${statusMeta.badgeClass}`}>{statusMeta.label}</span>
+                                            <span className={`cm-status-badge cm-list-status ${statusMeta.badgeClass}`}>Nexion Status: {statusMeta.label}</span>
                                         </div>
+                                        {renderMetaDeliveryStatus(campaign)}
                                         {campaign.lifecycleStatus === 'rejected' && campaign.reviewNotes ? (
                                             <p className="cm-campaign-error" role="status">{campaign.reviewNotes}</p>
                                         ) : null}
@@ -1511,9 +1588,10 @@ const CampaignManagement = () => {
                                                     </div>
                                                 ) : null}
                                             </div>
-                                            <div className={`cm-status-badge ${statusMeta.badgeClass}`}>{statusMeta.label}</div>
+                                            <div className={`cm-status-badge ${statusMeta.badgeClass}`}>Nexion Status: {statusMeta.label}</div>
                                         </div>
                                         <div className="cm-card-body">
+                                            {renderMetaDeliveryStatus(campaign)}
                                             <div className="cm-card-head">
                                                 <div>
                                                     <h4 className="cm-card-title headline-font">{campaign.name}</h4>
