@@ -73,7 +73,15 @@ metaApi.interceptors.request.use((config) => {
 
 export const metaAdsService = {
   async getCampaigns() {
-    const response = await metaApi.get("/meta-ads/campaigns");
+    const response = await metaApi.get("/campaigns", { params: { limit: 100 } });
+    return { campaigns: Array.isArray(response.data?.data) ? response.data.data : [] };
+  },
+
+  async getCampaignMetaDeliveryStatus(localCampaignId, { refresh = false } = {}) {
+    if (!localCampaignId) throw new Error("A local campaign ID is required to refresh Meta status.");
+    const response = await metaApi.get(`/campaigns/${encodeURIComponent(localCampaignId)}/meta-status`, {
+      params: refresh ? { refresh: "true" } : {},
+    });
     return response.data;
   },
 

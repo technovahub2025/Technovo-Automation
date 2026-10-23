@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation } from "react-router-dom";
 import {
   AlertCircle,
@@ -15,6 +15,7 @@ import {
   Wallet,
 } from "lucide-react";
 import metaAdsService from "../services/metaAdsService";
+import { formatMetaSyncTime, getMetaDeliveryLabel } from "../utils/metaDeliveryStatus";
 import "./MetaAdsManager.css";
 
 const sections = [
@@ -331,10 +332,15 @@ const MetaAdsManager = () => {
   const [hierarchyLoading, setHierarchyLoading] = useState(false);
   const [adSetsLoading, setAdSetsLoading] = useState(false);
   const [adsLoading, setAdsLoading] = useState(false);
+  const [metaDeliveryStatus, setMetaDeliveryStatus] = useState(null);
+  const [metaDeliveryStatusLoading, setMetaDeliveryStatusLoading] = useState(false);
+  const [metaDeliveryStatusError, setMetaDeliveryStatusError] = useState("");
   const [metaBilling, setMetaBilling] = useState(null);
 
   const setup = overview?.setup || {};
   const campaigns = overview?.campaigns || [];
+  const selectedMetaCampaign = metaCampaigns.find((campaign) => getCampaignId(campaign) === selectedCampaignRef) || null;
+  const selectedLocalCampaignId = String(selectedMetaCampaign?._id || selectedMetaCampaign?.localCampaignId || "").trim();
   const draftCampaigns = campaigns.filter((campaign) => String(campaign.status).toUpperCase() === "DRAFT");
   const liveCampaigns = campaigns.filter((campaign) => String(campaign.status).toUpperCase() !== "DRAFT");
   const wallet = overview?.wallet || { balance: 0 };
@@ -424,15 +430,56 @@ const MetaAdsManager = () => {
     try {
       setHierarchyLoading(true);
       const response = await metaAdsService.getCampaigns();
-      const nextCampaigns = response?.campaigns || [];
+      const nextCampaigns = (response?.campaigns || []).filter((campaign) => Boolean(campaign?._id)).map((campaign) => normalizeMetaCampaignRecord(campaign));
       setMetaCampaigns(nextCampaigns);
-      setSelectedCampaignRef((current) => (current && nextCampaigns.some((item) => (item.localCampaignId || item.id) === current) ? current : (nextCampaigns[0]?.localCampaignId || nextCampaigns[0]?.id || "")));
+      setSelectedCampaignRef((current) => (current && nextCampaigns.some((item) => getCampaignId(item) === current) ? current : (nextCampaigns[0]?._id || nextCampaigns[0]?.localCampaignId || "")));
     } catch (requestError) {
       setError(requestError?.response?.data?.error || requestError.message || "Failed to load campaigns.");
     } finally {
       setHierarchyLoading(false);
     }
   };
+
+  const mergeCampaignMetaStatus = useCallback((localCampaignId, statusData) => {
+    if (!statusData) return;
+    const normalizedId = String(localCampaignId || "");
+    if (selectedCampaignRef === normalizedId) setMetaDeliveryStatus(statusData);
+    const merge = (campaign) => getCampaignId(campaign) === normalizedId
+      ? {
+          ...campaign,
+          metaDeliverySnapshot: statusData.snapshot || campaign.metaDeliverySnapshot || null,
+          metaDeliveryStatusSyncedAt: statusData.syncedAt || campaign.metaDeliveryStatusSyncedAt || null,
+          metaDeliveryStatusStale: Boolean(statusData.stale),
+          metaDeliveryStatusError: statusData.errorCategory || "",
+        }
+      : campaign;
+    setOverview((current) => current && Array.isArray(current.campaigns)
+      ? { ...current, campaigns: current.campaigns.map(merge) }
+      : current);
+    setMetaCampaigns((current) => current.map(merge));
+  }, [selectedCampaignRef]);
+
+  const refreshCampaignMetaStatus = useCallback(async (localCampaignId, { refresh = true, quiet = false } = {}) => {
+    if (!localCampaignId) return null;
+    if (!quiet) setMetaDeliveryStatusLoading(true);
+    try {
+      const response = await metaAdsService.getCampaignMetaDeliveryStatus(localCampaignId, { refresh });
+      mergeCampaignMetaStatus(localCampaignId, response?.data);
+      if (String(localCampaignId) === selectedCampaignRef) {
+        setMetaDeliveryStatusError(response?.data?.stale ? "Some Meta status data could not be refreshed." : "");
+      }
+      return response?.data || null;
+    } catch (requestError) {
+      const body = requestError?.response?.data;
+      if (body?.data) mergeCampaignMetaStatus(localCampaignId, body.data);
+      if (String(localCampaignId) === selectedCampaignRef) {
+        setMetaDeliveryStatusError(body?.message || requestError.message || "Meta status could not be refreshed.");
+      }
+      return body?.data || null;
+    } finally {
+      if (!quiet) setMetaDeliveryStatusLoading(false);
+    }
+  }, [mergeCampaignMetaStatus, selectedCampaignRef]);
 
   const loadPageLeads = async (formIdValue) => {
     const resolvedFormId = String(formIdValue || selectedLeadFormId || leadFormId || "").trim();
@@ -479,43 +526,75 @@ const MetaAdsManager = () => {
   }, [activeSection, selectedLeadFormId, leadFormId]);
 
   useEffect(() => {
-    if (!selectedCampaignRef) {
+    if (activeSection !== "campaigns") return undefined;
+    if (!/^[a-f\d]{24}$/i.test(selectedLocalCampaignId)) {
+      setMetaDeliveryStatus(null);
+      setMetaDeliveryStatusError("");
       setAdSets([]);
-      setSelectedAdSetId("");
-      return;
-    }
-    (async () => {
-      try {
-        setAdSetsLoading(true);
-        const response = await metaAdsService.getCampaignAdSets(selectedCampaignRef);
-        const nextAdSets = response?.adsets || [];
-        setAdSets(nextAdSets);
-        setSelectedAdSetId((current) => (current && nextAdSets.some((item) => item.id === current) ? current : (nextAdSets[0]?.id || "")));
-      } catch (requestError) {
-        setError(requestError?.response?.data?.error || requestError.message || "Failed to load ad sets.");
-      } finally {
-        setAdSetsLoading(false);
-      }
-    })();
-  }, [selectedCampaignRef]);
-
-  useEffect(() => {
-    if (!selectedAdSetId) {
       setAds([]);
-      return;
+      setSelectedAdSetId("");
+      return undefined;
     }
-    (async () => {
-      try {
-        setAdsLoading(true);
-        const response = await metaAdsService.getAdSetAds(selectedAdSetId);
-        setAds(response?.ads || []);
-      } catch (requestError) {
-        setError(requestError?.response?.data?.error || requestError.message || "Failed to load ads.");
-      } finally {
+
+    if (!selectedMetaCampaign?.metaCampaignId || /^[a-f\d]{24}$/i.test(String(selectedMetaCampaign.metaCampaignId))) {
+      setMetaDeliveryStatus({
+        publicationStatus: selectedMetaCampaign?.lifecycleStatus || selectedMetaCampaign?.status || "draft",
+        snapshot: selectedMetaCampaign?.metaDeliverySnapshot || null,
+        syncedAt: selectedMetaCampaign?.metaDeliveryStatusSyncedAt || null,
+        stale: false,
+      });
+      setAdSets([]);
+      setAds([]);
+      setAdSetsLoading(false);
+      setAdsLoading(false);
+      setSelectedAdSetId("");
+      return undefined;
+    }
+
+    let active = true;
+    let pollCount = 0;
+    setAdSetsLoading(true);
+    setAdsLoading(true);
+    setMetaDeliveryStatusError("");
+    setMetaDeliveryStatus(selectedMetaCampaign ? {
+      publicationStatus: selectedMetaCampaign.lifecycleStatus || selectedMetaCampaign.status,
+      snapshot: selectedMetaCampaign.metaDeliverySnapshot || null,
+      syncedAt: selectedMetaCampaign.metaDeliveryStatusSyncedAt || null,
+      stale: Boolean(selectedMetaCampaign.metaDeliveryStatusStale),
+      errorCategory: selectedMetaCampaign.metaDeliveryStatusError || "",
+    } : null);
+    const refresh = async (force, quiet = false) => {
+      const result = await refreshCampaignMetaStatus(selectedLocalCampaignId, { refresh: force, quiet });
+      if (!active) return;
+      if (!result?.snapshot) {
+        setAdSetsLoading(false);
         setAdsLoading(false);
+        return;
       }
-    })();
-  }, [selectedAdSetId]);
+      const nextAdSets = Array.isArray(result.snapshot.adSets) ? result.snapshot.adSets : [];
+      const nextAds = Array.isArray(result.snapshot.ads) ? result.snapshot.ads : [];
+      setAdSets(nextAdSets);
+      setAds(nextAds);
+      setSelectedAdSetId((current) => current && nextAdSets.some((item) => item.id === current) ? current : (nextAdSets[0]?.id || ""));
+      setAdSetsLoading(false);
+      setAdsLoading(false);
+    };
+
+    void refresh(false);
+    const intervalId = window.setInterval(() => {
+      if (pollCount >= 4) {
+        window.clearInterval(intervalId);
+        return;
+      }
+      pollCount += 1;
+      void refresh(true, true);
+    }, 60_000);
+
+    return () => {
+      active = false;
+      window.clearInterval(intervalId);
+    };
+  }, [activeSection, selectedLocalCampaignId, selectedMetaCampaign?.metaCampaignId, refreshCampaignMetaStatus]);
 
   useEffect(() => {
     if (!creativeFile) {
@@ -862,6 +941,9 @@ const MetaAdsManager = () => {
           };
         });
         setMetaCampaigns((current) => upsertMetaCampaignRecord(current || [], normalizedCampaign));
+        if (serverCampaign?._id) {
+          await refreshCampaignMetaStatus(String(serverCampaign._id), { refresh: true });
+        }
       }
       closeWizard();
       setSuccess("Campaign published successfully.");
@@ -945,6 +1027,7 @@ const MetaAdsManager = () => {
           };
         });
         setMetaCampaigns((current) => upsertMetaCampaignRecord(current || [], normalizedCampaign));
+        await refreshCampaignMetaStatus(String(serverCampaign?._id || campaignId), { refresh: true });
       }
       setSuccess(`Campaign ${status === "ACTIVE" ? "resumed" : "paused"} successfully.`);
     } catch (requestError) {
@@ -1068,13 +1151,35 @@ const MetaAdsManager = () => {
             <article className="meta-card">
               <div className="meta-card-head"><div><h3>Campaign Hierarchy</h3><p>Campaign -&gt; Ad Set -&gt; Ad</p></div><button type="button" className="meta-button meta-button-secondary" disabled={hierarchyLoading} onClick={loadCampaigns}>{hierarchyLoading ? <RefreshCw className="spin" size={16} /> : "Refresh"}</button></div>
               <div className="meta-hierarchy-grid">
-                <div className="meta-hierarchy-column"><div className="meta-hierarchy-head"><strong>Campaigns</strong><span>{metaCampaigns.length}</span></div><div className="meta-hierarchy-list">{hierarchyLoading ? <div className="meta-empty-inline">Loading campaigns...</div> : metaCampaigns.map((campaign, index) => { const ref = campaign.localCampaignId || campaign.id; return <button key={buildListKey("campaign", ref, campaign.name || campaign.campaignName, index)} type="button" className={`meta-hierarchy-item ${selectedCampaignRef === ref ? "active" : ""}`} onClick={() => setSelectedCampaignRef(ref)}><strong>{campaign.name || campaign.campaignName}</strong><span>{campaign.objective || "--"}</span><small>{campaign.status || campaign.effective_status || "--"}</small></button>; })}</div></div>
-                <div className="meta-hierarchy-column"><div className="meta-hierarchy-head"><strong>Ad Sets</strong><span>{adSets.length}</span></div><div className="meta-hierarchy-list">{adSetsLoading ? <div className="meta-empty-inline">Loading ad sets...</div> : adSets.map((adSet, index) => <button key={buildListKey("adset", adSet.id, adSet.name, index)} type="button" className={`meta-hierarchy-item ${selectedAdSetId === adSet.id ? "active" : ""}`} onClick={() => setSelectedAdSetId(adSet.id)}><strong>{adSet.name || "Ad Set"}</strong><span>{adSet.optimization_goal || "--"}</span><small>{adSet.status || adSet.effective_status || "--"}</small></button>)}</div></div>
+                <div className="meta-hierarchy-column"><div className="meta-hierarchy-head"><strong>Campaigns</strong><span>{metaCampaigns.length}</span></div><div className="meta-hierarchy-list">{hierarchyLoading ? <div className="meta-empty-inline">Loading campaigns...</div> : metaCampaigns.map((campaign, index) => { const ref = getCampaignId(campaign); const metaCampaign = campaign.metaDeliverySnapshot?.campaign; return <button key={buildListKey("campaign", ref, campaign.name || campaign.campaignName, index)} type="button" className={`meta-hierarchy-item ${selectedCampaignRef === ref ? "active" : ""}`} onClick={() => setSelectedCampaignRef(ref)}><strong>{campaign.name || campaign.campaignName}</strong><span>Nexion publication: {String(campaign.lifecycleStatus || campaign.status || "draft").replaceAll("_", " ")}</span><small>Meta delivery: {getMetaDeliveryLabel(metaCampaign || {})}{campaign.metaDeliveryStatusStale ? " - Stale" : ""}</small></button>; })}</div></div>
+                <div className="meta-hierarchy-column"><div className="meta-hierarchy-head"><strong>Ad Sets</strong><span>{adSets.length}</span></div><div className="meta-hierarchy-list">{adSetsLoading ? <div className="meta-empty-inline">Loading ad sets...</div> : adSets.length ? adSets.map((adSet, index) => <button key={buildListKey("adset", adSet.id, adSet.name, index)} type="button" className={`meta-hierarchy-item ${selectedAdSetId === adSet.id ? "active" : ""}`} onClick={() => setSelectedAdSetId(adSet.id)}><strong>{adSet.name || "Ad Set"}</strong><span>Meta ad set</span><small>{getMetaDeliveryLabel(adSet)}</small></button>) : <div className="meta-empty-inline">No confirmed Meta ad set status.</div>}</div></div>
                 <div className="meta-hierarchy-column"><div className="meta-hierarchy-head"><strong>Ads</strong><span>{ads.length}</span></div><div className="meta-hierarchy-list">{adsLoading ? <div className="meta-empty-inline">Loading ads...</div> : ads.map((ad, index) => {
                   const adId = String(ad.id || ad.ad_id || ad.metaAdId || "").trim();
-                  return <div key={buildListKey("ad", adId, ad.name, index)} className="meta-hierarchy-item static"><div><strong>{ad.name || "Ad"}</strong><span>{ad.creative?.name || ad.creativeId || "Creative linked"}</span><small>{ad.status || ad.effective_status || "--"}</small></div><div className="meta-inline-actions"><button type="button" className="meta-button meta-button-secondary small" disabled={!adId || adPreviewLoading} onClick={() => openAdPreview(ad)}>{adPreviewLoading && previewAdId === adId ? <RefreshCw className="spin" size={14} /> : "Preview"}</button></div></div>;
+                  return <div key={buildListKey("ad", adId, ad.name, index)} className="meta-hierarchy-item static"><div><strong>{ad.name || "Ad"}</strong><span>Meta ad</span><small>{getMetaDeliveryLabel(ad)}</small></div><div className="meta-inline-actions"><button type="button" className="meta-button meta-button-secondary small" disabled={!adId || adPreviewLoading} onClick={() => openAdPreview(ad)}>{adPreviewLoading && previewAdId === adId ? <RefreshCw className="spin" size={14} /> : "Preview"}</button></div></div>;
                 })}</div></div>
               </div>
+            </article>
+
+            <article className="meta-card">
+              <div className="meta-card-head">
+                <div>
+                  <h3>Delivery status details</h3>
+                  <p>{selectedMetaCampaign?.name || selectedMetaCampaign?.campaignName || "Select a campaign"} · {formatMetaSyncTime(metaDeliveryStatus?.syncedAt)}</p>
+                </div>
+                <button type="button" className="meta-button meta-button-secondary" disabled={!selectedLocalCampaignId || metaDeliveryStatusLoading} onClick={() => refreshCampaignMetaStatus(selectedLocalCampaignId, { refresh: true })}>
+                  {metaDeliveryStatusLoading ? <RefreshCw className="spin" size={16} /> : "Refresh Status"}
+                </button>
+              </div>
+              {metaDeliveryStatus?.stale ? <div className="meta-alert meta-alert-error" role="status">Meta status data is stale. {metaDeliveryStatusError || "The last confirmed values are shown."}</div> : null}
+              {metaDeliveryStatusError && !metaDeliveryStatus?.snapshot ? <div className="meta-alert meta-alert-error" role="alert">{metaDeliveryStatusError}</div> : null}
+              <div className="meta-diagnostics-grid">
+                <div><span>Nexion publication</span><strong>{String(metaDeliveryStatus?.publicationStatus || selectedMetaCampaign?.lifecycleStatus || selectedMetaCampaign?.status || "Not published").replaceAll("_", " ")}</strong></div>
+                <div><span>Meta campaign delivery</span><strong>{getMetaDeliveryLabel(metaDeliveryStatus?.snapshot?.campaign || {})}</strong></div>
+                <div><span>Meta configured status</span><strong>{getMetaDeliveryLabel({ status: metaDeliveryStatus?.snapshot?.campaign?.configured_status || metaDeliveryStatus?.snapshot?.campaign?.status })}</strong></div>
+                <div><span>Meta ad sets / ads</span><strong>{metaDeliveryStatus?.snapshot ? `${metaDeliveryStatus.snapshot.adSets?.length || 0} / ${metaDeliveryStatus.snapshot.ads?.length || 0}` : "Not synchronized"}</strong></div>
+              </div>
+              {metaDeliveryStatus?.snapshot?.campaign?.issues_info?.length ? <div className="meta-empty-inline">Meta reported {metaDeliveryStatus.snapshot.campaign.issues_info.length} campaign issue(s).</div> : null}
+              <p className="meta-empty-inline">Campaign, ad set, and ad states are reported separately. Active at campaign level does not mean the ad is delivering.</p>
             </article>
 
               <article className="meta-card">
@@ -1155,7 +1260,9 @@ const MetaAdsManager = () => {
                         >
                           <div>
                             <strong>{campaign.campaignName}</strong>
-                            <span>{formatDate(campaign.createdAt)}</span>
+                            <span>Nexion publication: {String(campaign.lifecycleStatus || campaign.status || "draft").replaceAll("_", " ")}</span>
+                            <span>Meta campaign: {getMetaDeliveryLabel(campaign.metaDeliverySnapshot?.campaign || {})}{campaign.metaDeliveryStatusStale ? " - Stale" : ""}</span>
+                            <span>{formatMetaSyncTime(campaign.metaDeliveryStatusSyncedAt)}</span>
                           </div>
                           <div className="meta-inline-actions">
                             <button
