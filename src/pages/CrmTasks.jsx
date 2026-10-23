@@ -25,6 +25,11 @@ import {
 } from "lucide-react";
 import { crmService } from "../services/crmService";
 import { getTaskAssigneeForEdit } from "../utils/crmTaskAssignment";
+import {
+  getTaskContactLabel,
+  normalizeTaskContact,
+  normalizeTaskContactList
+} from "../utils/crmTaskContacts";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
 import {
   readSidebarPageCache,
@@ -99,13 +104,6 @@ const normalizeTaskApiList = (value) => {
 
 const getDisplayName = (value = "") => String(value || "").trim();
 
-const getTaskContactLabel = (contact = {}) => {
-  const name = String(contact?.name || contact?.displayName || contact?.contactName || "").trim();
-  const phone = String(contact?.phone || contact?.mobile || contact?.phoneNumber || "").trim();
-  if (name && phone) return `${name} (${phone})`;
-  return name || phone || "Unknown contact";
-};
-
 const getUserDisplayLabel = (user = {}, currentUserId = "") => {
   const name = String(user?.name || user?.displayName || user?.fullName || "").trim();
   const email = String(user?.email || "").trim();
@@ -163,22 +161,6 @@ const toIsoDateTime = (value) => {
   return parsed.toISOString();
 };
 
-const sanitizeCrmTaskContact = (contact = {}) => ({
-  _id: String(contact?._id || "").trim(),
-  id: String(contact?.id || "").trim(),
-  name: String(contact?.name || "").trim(),
-  phone: String(contact?.phone || "").trim(),
-  stage: String(contact?.stage || "").trim(),
-  status: String(contact?.status || "").trim(),
-  leadScore:
-    Number.isFinite(Number(contact?.leadScore)) && Number(contact?.leadScore) >= 0
-      ? Number(contact.leadScore)
-      : 0,
-  temperature: String(contact?.temperature || "").trim(),
-  ownerId: String(contact?.ownerId || "").trim(),
-  nextFollowUpAt: String(contact?.nextFollowUpAt || "").trim()
-});
-
 const sanitizeTaskComment = (comment = {}) => ({
   text: String(comment?.text || "").trim(),
   createdBy: String(comment?.createdBy || "").trim(),
@@ -208,7 +190,7 @@ const sanitizeCrmTask = (task = {}) => ({
   completedBy: String(task?.completedBy || "").trim(),
   recurrence: sanitizeTaskRecurrence(task?.recurrence || {}),
   comments: Array.isArray(task?.comments) ? task.comments.map(sanitizeTaskComment) : [],
-  contactId: sanitizeCrmTaskContact(task?.contactId)
+  contactId: normalizeTaskContact(task?.contactId)
 });
 
 const toTaskTypeLabel = (value) =>
@@ -311,6 +293,7 @@ const CrmTasks = () => {
   const [actionMenuPosition, setActionMenuPosition] = useState(null);
   const [taskContactSearch, setTaskContactSearch] = useState("");
   const [taskContactLoading, setTaskContactLoading] = useState(false);
+  const [taskContactSearchError, setTaskContactSearchError] = useState("");
   const [taskContactSearchResults, setTaskContactSearchResults] = useState([]);
   const [expandedTaskId, setExpandedTaskId] = useState("");
   const hasInitializedFilterEffectRef = useRef(false);
@@ -393,7 +376,7 @@ const CrmTasks = () => {
       setEditingTaskId(taskId);
       setForm(getTaskFormFromTask(task));
       taskContactSearchSeqRef.current += 1;
-      const normalizedContact = sanitizeCrmTaskContact(task?.contactId || {});
+      const normalizedContact = normalizeTaskContact(task?.contactId || {});
       setTaskContactSearch(getTaskContactLabel(normalizedContact));
       setTaskContactSearchResults(normalizedContact._id || normalizedContact.phone ? [normalizedContact] : []);
       setCreateTaskOpen(true);
@@ -456,7 +439,7 @@ const CrmTasks = () => {
 
       if (Array.isArray(nextContacts)) {
         cachePayload.contacts = nextContacts
-          .map(sanitizeCrmTaskContact)
+          .map(normalizeTaskContact)
           .filter((contact) => contact._id || contact.id || contact.phone);
       }
 
@@ -706,26 +689,33 @@ const CrmTasks = () => {
       setTaskContactSearch("");
       setTaskContactSearchResults([]);
       setTaskContactLoading(false);
+      setTaskContactSearchError("");
       return undefined;
     }
 
     const query = String(taskContactSearch || "").trim();
+    const requestSeq = taskContactSearchSeqRef.current + 1;
+    taskContactSearchSeqRef.current = requestSeq;
+    setTaskContactLoading(true);
+    setTaskContactSearchError("");
+    setTaskContactSearchResults([]);
     const loadContacts = async () => {
-      const requestSeq = taskContactSearchSeqRef.current + 1;
-      taskContactSearchSeqRef.current = requestSeq;
       try {
-        setTaskContactLoading(true);
         const result = await crmService.getContacts({
           search: query,
           limit: CRM_TASK_CONTACT_PAGE_SIZE,
           page: 1
         });
         if (taskContactSearchSeqRef.current !== requestSeq) return;
-        const nextContacts = normalizeTaskApiList(result?.data).map(sanitizeCrmTaskContact);
+        if (result?.success === false) {
+          throw new Error(result?.error || "Failed to search contacts");
+        }
+        const nextContacts = normalizeTaskContactList(result?.data);
         setTaskContactSearchResults(nextContacts);
       } catch (contactError) {
         if (taskContactSearchSeqRef.current !== requestSeq) return;
         setTaskContactSearchResults([]);
+        setTaskContactSearchError(contactError?.message || "Could not load contacts");
       } finally {
         if (taskContactSearchSeqRef.current === requestSeq) {
           setTaskContactLoading(false);
@@ -734,7 +724,12 @@ const CrmTasks = () => {
     };
 
     const timer = window.setTimeout(loadContacts, CRM_TASK_CONTACT_SEARCH_DEBOUNCE_MS);
-    return () => window.clearTimeout(timer);
+    return () => {
+      window.clearTimeout(timer);
+      if (taskContactSearchSeqRef.current === requestSeq) {
+        taskContactSearchSeqRef.current += 1;
+      }
+    };
   }, [createTaskOpen, taskContactSearch]);
 
   const contactOptions = useMemo(
@@ -1542,9 +1537,13 @@ const CrmTasks = () => {
                         ))}
                       </select>
                       <span className="crm-field__help">
-                        {taskContactLoading
+                        {taskContactSearchError
+                          ? taskContactSearchError
+                          : taskContactLoading
                           ? "Loading matching contacts..."
-                          : "Search to narrow the contact list before selecting a task contact."}
+                          : contactOptions.length
+                            ? `${contactOptions.length} matching contact${contactOptions.length === 1 ? "" : "s"}. Select one to attach it to the task.`
+                            : "No matching contacts. Try a name, phone number, or email address."}
                       </span>
                     </label>
                     <label className="crm-field">
