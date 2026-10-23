@@ -4,6 +4,7 @@ import apiService from '../services/api';
 import { normalizeIVRMenus } from '../utils/inboundNormalizers';
 import { resolveCacheUserId } from '../utils/sidebarPageCache';
 import { writeSidebarPageCache } from '../utils/sidebarPageCache';
+import { normalizeIVRMenuListResponse } from '../utils/ivrWorkflowPersistence';
 
 const IVR_MENU_SOCKET_TIMEOUT_MS = 5000;
 const IVR_MENU_CACHE_NAMESPACE = 'inbound-ivr-menus';
@@ -117,7 +118,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
     const requestSeq = requestSeqRef.current + 1;
     requestSeqRef.current = requestSeq;
     const requestUserId = currentUserIdRef.current;
-    const socket = socketService.connect();
     const shouldShowLoading = !silent && !hasHydratedMenusRef.current;
     if (shouldShowLoading) setLoading(true);
     setError(null);
@@ -126,7 +126,7 @@ const useIVRMenus = ({ currentUserId } = {}) => {
       .then((response) => {
         if (requestSeq !== requestSeqRef.current) return [];
         if (requestUserId !== currentUserIdRef.current) return [];
-        const menus = persistMenuSnapshot(response.data);
+        const menus = persistMenuSnapshot(normalizeIVRMenuListResponse(response));
         setLoading(false);
         setError(null);
         return menus;
@@ -140,13 +140,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
         throw new Error(message);
       });
 
-    const emitListRequest = () => socket.emit('ivr_menu:list', { userId: requestUserId, scope: 'user' });
-    if (socket.connected || socketService.isConnected()) {
-      emitListRequest();
-    } else if (typeof socket.connect === 'function') {
-      socket.connect();
-    }
-
     return fetchPromise.finally(() => {
       if (requestSeq === requestSeqRef.current) {
         setLoading(false);
@@ -157,23 +150,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
   useEffect(() => {
     const socket = socketService.connect();
     let isMounted = true;
-
-    const applyListPayload = (payload = {}) => {
-      if (!isMounted) return;
-      const responseUserId = String(payload?.userId || payload?.requestUserId || '').trim();
-      const activeUserId = currentUserIdRef.current;
-      if (responseUserId && activeUserId && responseUserId !== activeUserId) return;
-      const menus = persistMenuSnapshot(payload);
-      setLoading(false);
-      setError(null);
-    };
-
-    const handleListError = (eventError = {}) => {
-      if (!isMounted) return;
-      const message = eventError.error || eventError.message || 'Failed to load IVR menus';
-      setError(message);
-      setLoading(false);
-    };
 
     const handleConnect = () => {
       if (!isMounted) return;
@@ -188,11 +164,10 @@ const useIVRMenus = ({ currentUserId } = {}) => {
     const handleMenuChanged = () => {
       if (!isMounted) return;
       setError(null);
+      requestMenus({ silent: true }).catch(() => {});
     };
 
     if (socket) {
-      socket.on('ivr_menu:list:success', applyListPayload);
-      socket.on('ivr_menu:list:error', handleListError);
       socket.on('ivr_menu:changed', handleMenuChanged);
       socket.on('connect', handleConnect);
       socket.on('disconnect', handleDisconnect);
@@ -204,8 +179,6 @@ const useIVRMenus = ({ currentUserId } = {}) => {
     return () => {
       isMounted = false;
       if (!socket) return;
-      socket.off('ivr_menu:list:success', applyListPayload);
-      socket.off('ivr_menu:list:error', handleListError);
       socket.off('ivr_menu:changed', handleMenuChanged);
       socket.off('connect', handleConnect);
       socket.off('disconnect', handleDisconnect);

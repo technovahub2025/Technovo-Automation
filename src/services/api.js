@@ -6,6 +6,7 @@
  *   apiService.getActiveCalls() // helper
  */
 import axios from "axios";
+import { buildIVRMenuRequestData } from '../utils/ivrWorkflowPersistence';
 import socketService from "./socketService";
 import resolveAdminApiUrl from "./adminApiUrl";
 
@@ -340,35 +341,17 @@ apiService.deleteCustomAudioByPublicId = (publicId) =>
   requestWithIvrFallback({ method: 'delete', path: '/audio/delete', data: { publicId } });
 
 // IVR Menu Management
-const buildIVRMenuRequestData = (menuName, config = {}) => {
-  const nodes = Array.isArray(config?.nodes) ? config.nodes : [];
-  const edges = Array.isArray(config?.edges) ? config.edges : [];
-  const workflowConfig = {
-    nodes,
-    edges,
-    settings: config?.config && typeof config.config === 'object' ? { ...config.config } : {}
-  };
-
-  return {
-    menuName,
-    name: config?.displayName || menuName,
-    displayName: config?.displayName || menuName,
-    workflowId: config?.workflowId || config?.menuId || config?.promptKey || menuName,
-    promptKey: config?.promptKey || menuName,
-    status: config?.status || 'draft',
-    nodes,
-    edges,
-    workflowConfig,
-    metadata: workflowConfig.settings
-  };
+apiService.createIVRConfig = async (menuName, config) => {
+  const data = buildIVRMenuRequestData(menuName, config);
+  try {
+    return await requestWithIvrFallback({ method: 'post', path: '/menus', data });
+  } catch (error) {
+    // Keep compatibility with older IVR deployments while preferring the
+    // collection route exposed by the current Node backend.
+    if (error?.response?.status !== 404) throw error;
+    return requestWithIvrFallback({ method: 'post', path: '/menus/workflow', data });
+  }
 };
-
-apiService.createIVRConfig = (menuName, config) =>
-  requestWithIvrFallback({
-    method: 'post',
-    path: '/menus/workflow',
-    data: buildIVRMenuRequestData(menuName, config)
-  });
 apiService.updateIVRConfig = (menuId, config) =>
   requestWithIvrFallback({
     method: 'put',
@@ -481,4 +464,3 @@ apiService.updateMyTwilio = (payload) => apiService.put(`${ADMIN_API_BASE_URL}/a
 // EXPORT
 // ------------------------
 export default apiService;
-
