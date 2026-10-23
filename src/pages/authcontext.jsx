@@ -17,12 +17,16 @@ export const AuthProvider = ({ children }) => {
   });
 
   const login = (userData, token, provider) => {
+    const authenticatedUserId = String(userData?.userId || userData?.id || userData?._id || "").trim();
     const nextUser = {
       ...userData,
-      ...buildAgentAccessPayload(userData)
+      ...buildAgentAccessPayload(userData),
+      ...(authenticatedUserId
+        ? { id: authenticatedUserId, userId: authenticatedUserId, _id: authenticatedUserId }
+        : {})
     };
     localStorage.setItem("username", userData.username);
-    localStorage.setItem("userId", String(nextUser.id || nextUser.userId || ""));
+    localStorage.setItem("userId", authenticatedUserId);
     const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
     localStorage.setItem(tokenKey, token);
     localStorage.setItem("authToken", token);
@@ -87,11 +91,14 @@ export const AuthProvider = ({ children }) => {
       });
       const data = res?.data?.data;
       if (data) {
+        const authenticatedUserId = String(data.userId || data.id || data._id || user?.userId || user?.id || user?._id || "").trim();
         const nextUser = {
           ...(user || {}),
           ...data,
           ...buildAgentAccessPayload(data),
-          id: data.userId || user?.id
+          ...(authenticatedUserId
+            ? { id: authenticatedUserId, userId: authenticatedUserId, _id: authenticatedUserId }
+            : {})
         };
         login(nextUser, token, localStorage.getItem("authProvider") || "local");
         return { ok: true, message: "Session refreshed" };

@@ -199,6 +199,15 @@ const normalizeCrmUserRecord = (user = {}, fallbackId = "") => {
     email,
     label,
     source,
+    role: String(user?.role || '').trim(),
+    companyRole: String(user?.companyRole || '').trim(),
+    companyId: user?.companyId || null,
+    createdBy: user?.createdBy || null,
+    ownerId: user?.ownerId || null,
+    parentUserId: user?.parentUserId || null,
+    isAgentWorkspace: user?.isAgentWorkspace === true,
+    isEnabled: user?.isEnabled !== false,
+    isActive: user?.isActive !== false,
     connected: user?.connected !== false,
     lastSeenAt: String(user?.lastSeenAt || "").trim()
   };
@@ -280,11 +289,13 @@ const ensureCrmUserRosterSocketBinding = () => {
   crmUserRosterSocketListenerBound = true;
 };
 
-const fetchCrmUserRosterFallback = async () => {
-  const storedUser = getStoredWorkspaceUser() || {};
+const fetchCrmUserRosterFallback = async (authenticatedUser = null) => {
+  const storedUser = authenticatedUser || getStoredWorkspaceUser() || {};
   const isSuperAdmin = String(storedUser.role || '').trim().toLowerCase() === 'superadmin';
+  const companyId = String(storedUser.companyId || '').trim();
+  if (isSuperAdmin && !companyId) return [];
   const endpoint = isSuperAdmin
-    ? `${ADMIN_API_BASE_URL}/api/admin/users`
+    ? `${ADMIN_API_BASE_URL}/api/admin/users/roster?companyId=${encodeURIComponent(companyId)}`
     : `${ADMIN_API_BASE_URL}/api/crm/ops/users`;
   const response = await axios.get(endpoint, {
     ...buildRequestConfig(false, isSuperAdmin ? {} : { workspaceScopeType: false })
@@ -406,7 +417,7 @@ const waitForCrmUserList = (waitMs = CRM_USER_ROSTER_WAIT_MS) =>
     timeoutId = window.setTimeout(() => settle([]), Math.max(0, Number(waitMs) || 0));
   });
 
-export const subscribeCrmUserRoster = (listener) => {
+export const subscribeCrmUserRoster = (listener, { scopeId = '' } = {}) => {
   ensureCrmUserRosterSocketBinding();
 
   if (typeof listener !== "function") {
@@ -414,7 +425,13 @@ export const subscribeCrmUserRoster = (listener) => {
   }
 
   crmUserRosterListeners.add(listener);
-  if (Array.isArray(crmUserRosterCache) && crmUserRosterCache.length) {
+  const storedUser = getStoredWorkspaceUser() || {};
+  const storedUserId = String(storedUser._id || storedUser.userId || storedUser.id || '').trim().toLowerCase();
+  if (
+    Array.isArray(crmUserRosterCache) &&
+    crmUserRosterCache.length &&
+    String(scopeId || '').trim().toLowerCase() === storedUserId
+  ) {
     listener({
       users: crmUserRosterCache,
       source: crmUserRosterSource || "websocket",
@@ -428,11 +445,15 @@ export const subscribeCrmUserRoster = (listener) => {
   };
 };
 
-export const getCrmUserRoster = async ({ preferWebSocket = true, waitMs = CRM_USER_ROSTER_WAIT_MS } = {}) => {
+export const getCrmUserRoster = async ({
+  preferWebSocket = true,
+  waitMs = CRM_USER_ROSTER_WAIT_MS,
+  user = null
+} = {}) => {
   ensureCrmUserRosterSocketBinding();
 
   let websocketUsers = [];
-  if (Array.isArray(crmUserRosterCache) && crmUserRosterCache.length) {
+  if (preferWebSocket && Array.isArray(crmUserRosterCache) && crmUserRosterCache.length) {
     if (crmUserRosterCache.some((user) => !hasMeaningfulCrmUserLabel(user))) {
       crmUserRosterCache = [];
     } else {
@@ -445,7 +466,7 @@ export const getCrmUserRoster = async ({ preferWebSocket = true, waitMs = CRM_US
   }
 
   try {
-    const fallbackUsers = await fetchCrmUserRosterFallback();
+    const fallbackUsers = await fetchCrmUserRosterFallback(user);
     // The socket's user_list only contains connected users. Include the full
     // workspace directory so offline agents still appear in assignment menus.
     const combinedUsers = normalizeCrmUserRosterList([...fallbackUsers, ...websocketUsers]);

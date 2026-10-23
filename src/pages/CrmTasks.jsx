@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { TableVirtuoso } from "react-virtuoso";
 import {
@@ -24,7 +24,13 @@ import {
   X
 } from "lucide-react";
 import { crmService } from "../services/crmService";
-import { getTaskAssigneeForEdit } from "../utils/crmTaskAssignment";
+import {
+  getTaskAssigneeForEdit,
+  getTaskUserDisplayLabel,
+  isActiveTaskAssignee,
+  normalizeTaskUserId,
+  resolveAuthenticatedTaskUserId
+} from "../utils/crmTaskAssignment";
 import {
   getTaskContactLabel,
   normalizeTaskContact,
@@ -33,12 +39,12 @@ import {
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
 import {
   readSidebarPageCache,
-  resolveCacheUserId,
   writeSidebarPageCache
 } from "../utils/sidebarPageCache";
 import useCrmRealtimeRefresh from "../hooks/useCrmRealtimeRefresh";
 import useCrmUserRoster from "../hooks/useCrmUserRoster";
-import { getStoredWorkspaceUser, resolveWorkspaceManagementAccessState } from "../utils/agentAccess";
+import { AuthContext } from "./authcontext";
+import { resolveWorkspaceManagementAccessState } from "../utils/agentAccess";
 import CrmContactDrawer from "../components/crm/CrmContactDrawer";
 import CrmPageSkeleton from "../components/crm/CrmPageSkeleton";
 import CrmToast from "../components/crm/CrmToast";
@@ -103,15 +109,6 @@ const normalizeTaskApiList = (value) => {
 };
 
 const getDisplayName = (value = "") => String(value || "").trim();
-
-const getUserDisplayLabel = (user = {}, currentUserId = "") => {
-  const name = String(user?.name || user?.displayName || user?.fullName || "").trim();
-  const email = String(user?.email || "").trim();
-  const id = String(user?._id || user?.id || user?.userId || "").trim();
-  const resolved = name || email || id || "Unknown user";
-  if (currentUserId && id === currentUserId) return `${resolved} (Me)`;
-  return resolved;
-};
 
 const CrmTasksVirtuosoTable = React.forwardRef(({ style, className = "", ...props }, ref) => (
   <table
@@ -227,6 +224,7 @@ const getTaskFormFromTask = (task = {}) => ({
 });
 
 const CrmTasks = () => {
+  const { user: authenticatedUser } = useContext(AuthContext);
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -300,13 +298,25 @@ const CrmTasks = () => {
   const taskContactSearchSeqRef = useRef(0);
   const taskLoadRequestIdRef = useRef(0);
   const loadDataRef = useRef(null);
-  const currentUserId = resolveCacheUserId();
-  const workspaceUser = getStoredWorkspaceUser();
+  const currentUserId = resolveAuthenticatedTaskUserId(authenticatedUser);
+  const rosterScopeKey = [
+    currentUserId,
+    authenticatedUser?.companyId || "",
+    authenticatedUser?.role || "",
+    authenticatedUser?.companyRole || ""
+  ].join(":");
+  const workspaceUser = authenticatedUser;
   const isAdminWorkspace = resolveWorkspaceManagementAccessState(workspaceUser);
   const {
     users,
-    loading: usersLoading
-  } = useCrmUserRoster();
+    loading: usersLoading,
+    error: usersError
+  } = useCrmUserRoster({
+    scopeId: currentUserId,
+    scopeKey: rosterScopeKey,
+    user: authenticatedUser,
+    preferWebSocket: false
+  });
 
   useEffect(() => {
     if (!isAdminWorkspace) {
@@ -322,16 +332,16 @@ const CrmTasks = () => {
     const nextAgents = Array.isArray(users)
       ? users.filter((agent) => {
           const role = String(agent?.companyRole || agent?.role || "").trim().toLowerCase();
-          return role !== "admin" && agent?.isEnabled !== false;
+          return role !== "admin" && isActiveTaskAssignee(agent);
         })
       : [];
 
     setTaskAdminAgents(nextAgents);
 
     if (!usersLoading && nextAgents.length === 0) {
-      setTaskAdminAgentsError("No active agents available.");
+      setTaskAdminAgentsError(usersError || "No active agents available.");
     }
-  }, [isAdminWorkspace, users, usersLoading]);
+  }, [isAdminWorkspace, users, usersError, usersLoading]);
 
   const [form, setForm] = useState(() => getInitialTaskForm(currentUserId));
   const isDefaultView =
@@ -745,37 +755,32 @@ const CrmTasks = () => {
     const uniqueUsers = [];
     const seen = new Set();
 
-    const addUser = (user, fallbackId = "") => {
-      const userId = String(user?._id || user?.id || user?.userId || fallbackId || "").trim();
+    const addUser = (user) => {
+      if (!isActiveTaskAssignee(user)) return;
+      const userId = normalizeTaskUserId(user);
       if (!userId || seen.has(userId)) return;
       seen.add(userId);
       uniqueUsers.push({
         id: userId,
-        label: getUserDisplayLabel(user, currentUserId)
+        label: getTaskUserDisplayLabel(user, currentUserId)
       });
     };
 
     users.forEach((user) => addUser(user));
-    if (currentUserId) {
-      addUser({ _id: currentUserId, name: currentUserId }, currentUserId);
-    }
-    if (bulkAssignedTo) {
-      addUser({ _id: bulkAssignedTo, name: bulkAssignedTo }, bulkAssignedTo);
-    }
-    if (form.assignedTo) {
-      addUser({ _id: form.assignedTo, name: form.assignedTo }, form.assignedTo);
+    if (currentUserId && authenticatedUser) {
+      addUser(authenticatedUser);
     }
 
     return uniqueUsers;
-  }, [bulkAssignedTo, currentUserId, form.assignedTo, users]);
+  }, [authenticatedUser, currentUserId, users]);
 
   const activeAgentOptions = useMemo(() => {
     return (Array.isArray(taskAdminAgents) ? taskAdminAgents : [])
       .map((agent) => ({
-        id: String(agent?._id || agent?.id || agent?.userId || "").trim(),
-        label: getUserDisplayLabel(agent, currentUserId)
+        id: normalizeTaskUserId(agent),
+        label: getTaskUserDisplayLabel(agent, currentUserId)
       }))
-      .filter((agent) => agent.id);
+      .filter((agent) => agent.id && isActiveTaskAssignee(agent));
   }, [currentUserId, taskAdminAgents]);
 
   const taskAdminBulkAssignCount =
@@ -1601,7 +1606,7 @@ const CrmTasks = () => {
                         onChange={(event) =>
                           setForm((previous) => ({ ...previous, assignedTo: event.target.value }))
                         }
-                        disabled={usersLoading && users.length === 0}
+                        disabled={usersLoading && assigneeOptions.length === 0}
                       >
                         <option value="">{usersLoading && users.length === 0 ? "Loading users..." : "Unassigned"}</option>
                         {assigneeOptions.map((assignee) => (
@@ -1610,6 +1615,15 @@ const CrmTasks = () => {
                           </option>
                         ))}
                       </select>
+                      <span className={`crm-field__help${usersError ? " crm-field__help--error" : ""}`}>
+                        {usersLoading && assigneeOptions.length === 0
+                          ? "Loading authorized workspace users..."
+                          : usersError
+                            ? `Could not load workspace users: ${usersError}`
+                            : assigneeOptions.length
+                              ? "Only active users from your authorized workspace are available."
+                              : "No active workspace users are available."}
+                      </span>
                     </label>
                   </div>
 
