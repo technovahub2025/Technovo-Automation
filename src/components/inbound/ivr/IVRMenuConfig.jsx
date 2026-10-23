@@ -40,6 +40,7 @@ const IVRMenuConfig = () => {
   } = useIVRMenus({ currentUserId });
 
   const [newIvrName, setNewIvrName] = useState('');
+  const [newIvrGreeting, setNewIvrGreeting] = useState('');
   const [createModalOpen, setCreateModalOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
@@ -110,6 +111,7 @@ const IVRMenuConfig = () => {
       if (event.key === 'Escape') {
         setCreateModalOpen(false);
         setNewIvrName('');
+        setNewIvrGreeting('');
       }
     };
 
@@ -120,6 +122,7 @@ const IVRMenuConfig = () => {
   const handleCloseCreateModal = useCallback(() => {
     setCreateModalOpen(false);
     setNewIvrName('');
+    setNewIvrGreeting('');
   }, []);
 
   const handleCreateMenu = useCallback(async () => {
@@ -128,12 +131,19 @@ const IVRMenuConfig = () => {
       setError('IVR name is required');
       return;
     }
+    const greeting = newIvrGreeting.trim();
+    if (!greeting) {
+      setError('Greeting text is required');
+      return;
+    }
 
     try {
       const now = Date.now();
 
       const menuData = {
         displayName: trimmedName,
+        greeting,
+        menu: [],
         promptKey: `ivr_${trimmedName.replace(/\s+/g, '_').toLowerCase()}_${now}`,
         workflowConfig: {
           nodes: [],
@@ -144,13 +154,14 @@ const IVRMenuConfig = () => {
 
       await createMenu(menuData);
       setNewIvrName('');
+      setNewIvrGreeting('');
       setCreateModalOpen(false);
       setError(null);
     } catch (error) {
       console.error('Error creating IVR:', error);
       setError(`Failed to create IVR: ${error.message}`);
     }
-  }, [newIvrName, createMenu, setError]);
+  }, [newIvrName, newIvrGreeting, createMenu, setError]);
 
   const handleMenuDelete = useCallback(async (menuId) => {
     const confirmed = window.confirm(
@@ -344,6 +355,15 @@ const IVRMenuConfig = () => {
                 placeholder="Type IVR name..."
                 disabled={loading}
               />
+              <label htmlFor="ivr-create-greeting">Greeting</label>
+              <textarea
+                id="ivr-create-greeting"
+                value={newIvrGreeting}
+                onChange={(event) => setNewIvrGreeting(event.target.value)}
+                placeholder="Enter the greeting callers will hear..."
+                disabled={loading}
+                required
+              />
             </div>
             <div className="ivr-create-modal-footer">
               <button
@@ -357,7 +377,7 @@ const IVRMenuConfig = () => {
               <button
                 type="submit"
                 className="btn btn-primary ivr-modal-primary"
-                disabled={loading || !newIvrName.trim()}
+                disabled={loading || !newIvrName.trim() || !newIvrGreeting.trim()}
               >
                 <Plus size={16} />
                 Create

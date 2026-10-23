@@ -25,6 +25,8 @@ const buildConfigPayload = (menuData = {}, existingMenu = null) => {
 
   return {
     displayName: menuData.displayName || existingMenu?.displayName || existingMenu?.promptKey || 'Untitled IVR',
+    greeting: String(menuData.greeting || '').trim(),
+    menu: Array.isArray(menuData.menu) ? menuData.menu : [],
     nodes: workflowNodes,
     edges: workflowEdges,
     config: {
