@@ -238,6 +238,7 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
       });
     }
 
+    let audioRefreshError = '';
     if (node?.type === 'audio' && nextConfig.mode === 'tts') {
       const previousMessageText = (node?.data?.messageText || node?.data?.text || '').trim();
       const previousVoice = node?.data?.voice || 'en-GB-SoniaNeural';
@@ -246,6 +247,7 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
       const shouldRegenerateAudio =
         Boolean(nextMessageText) &&
         (
+          node?.data?.audioStatus === 'failed' ||
           nextMessageText !== previousMessageText ||
           (nextConfig.voice || 'en-GB-SoniaNeural') !== previousVoice ||
           (nextConfig.language || 'en-GB') !== previousLanguage
@@ -257,13 +259,6 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
           const existingPublicId = extractCloudinaryPublicId(
             nextConfig.audioPublicId || nextConfig.audioAssetId || nextConfig.audioUrl
           );
-
-          if (existingPublicId) {
-            const deleteResponse = await apiService.deleteCustomAudioByPublicId(existingPublicId);
-            if (!deleteResponse?.data?.success) {
-              throw new Error(deleteResponse?.data?.error || 'Failed to delete old audio');
-            }
-          }
 
           const ttsResponse = await apiService.post('/ivr/tts/preview', {
             text: nextMessageText,
@@ -280,9 +275,25 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
           nextConfig.audioUrl = ttsResponse.data.audioUrl;
           nextConfig.audioPublicId = ttsResponse.data.publicId;
           nextConfig.audioAssetId = ttsResponse.data.publicId;
+          nextConfig.audioStatus = 'completed';
+          nextConfig.audioError = '';
+
+          // Keep the currently attached audio until its replacement exists.
+          if (existingPublicId && existingPublicId !== ttsResponse.data.publicId) {
+            try {
+              await apiService.deleteCustomAudioByPublicId(existingPublicId);
+            } catch (cleanupError) {
+              console.warn('Could not remove replaced IVR audio asset:', cleanupError?.message || cleanupError);
+            }
+          }
         } catch (error) {
-          alert(`Failed to refresh TTS audio: ${error.message}`);
-          return;
+          audioRefreshError =
+            error?.response?.data?.error ||
+            error?.response?.data?.message ||
+            error?.message ||
+            'TTS audio generation failed';
+          nextConfig.audioStatus = 'failed';
+          nextConfig.audioError = audioRefreshError;
         } finally {
           setIsSaving(false);
         }
@@ -291,6 +302,9 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
 
     onSave(node.id, nextConfig);
     onClose();
+    if (typeof audioRefreshError === 'string' && audioRefreshError) {
+      alert(`Node settings were kept in the workflow draft, but TTS audio could not be refreshed: ${audioRefreshError}\n\nSave the workflow to persist the text and voice settings. Reopen this node and save again to retry audio generation.`);
+    }
   };
 
   useEffect(() => {
