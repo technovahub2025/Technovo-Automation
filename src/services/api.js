@@ -357,8 +357,6 @@ const buildIVRMenuRequestData = (menuName, config = {}) => {
 
   return {
     menuName,
-    greeting: String(config?.greeting || '').trim(),
-    menu: Array.isArray(config?.menu) ? config.menu : [],
     name: config?.displayName || menuName,
     displayName: config?.displayName || menuName,
     workflowId: config?.workflowId || config?.menuId || config?.promptKey || menuName,
@@ -374,7 +372,7 @@ const buildIVRMenuRequestData = (menuName, config = {}) => {
 apiService.createIVRConfig = (menuName, config) =>
   requestWithIvrFallback({
     method: 'post',
-    path: '/menus',
+    path: '/menus/workflow',
     data: buildIVRMenuRequestData(menuName, config)
   });
 apiService.updateIVRConfig = (menuId, config) =>
