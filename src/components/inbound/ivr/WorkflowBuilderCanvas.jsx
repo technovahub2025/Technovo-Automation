@@ -1066,18 +1066,16 @@ const WorkflowBuilderCanvas = ({
   }, [nodes]);
 
   const handleNodeConfigSave = useCallback((nodeId, config) => {
-    const updatedNodes = nodes.map((n) =>
+    const currentWorkflow = lastWorkflowRef.current || workflow;
+    const updatedNodes = (currentWorkflow?.nodes || []).map((n) =>
       n.id === nodeId ? { ...n, data: { ...n.data, ...config } } : n
     );
 
     applyWorkflowUpdate({
-      ...workflow,
+      ...currentWorkflow,
       nodes: updatedNodes
     }, { recordHistory: true, saveToBackend: false });
-
-    setConfigPanelOpen(false);
-    setConfigNode(null);
-  }, [nodes, workflow, applyWorkflowUpdate]);
+  }, [workflow, applyWorkflowUpdate]);
 
   const handleNodeConfigClose = useCallback(() => {
     setConfigPanelOpen(false);

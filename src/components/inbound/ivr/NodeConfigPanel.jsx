@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { X, Save, Trash2 } from 'lucide-react';
 import apiService from '../../../services/api';
+import { markTtsAudioFailure, shouldRefreshTtsAudio } from '../../../utils/ivrTtsAudio';
 import './NodeConfigPanel.css';
 
 const getNodeField = (data, camelKey, snakeKey, fallback) => {
@@ -125,6 +126,7 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
   const [config, setConfig] = useState(() => buildInitialConfig(node));
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [audioRefreshError, setAudioRefreshError] = useState('');
   const parseNumber = (value, fallback = 0) => {
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
@@ -238,23 +240,31 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
       });
     }
 
-    let audioRefreshError = '';
+    let audioRefreshFailed = false;
     if (node?.type === 'audio' && nextConfig.mode === 'tts') {
       const previousMessageText = (node?.data?.messageText || node?.data?.text || '').trim();
       const previousVoice = node?.data?.voice || 'en-GB-SoniaNeural';
       const previousLanguage = node?.data?.language || 'en-GB';
       const nextMessageText = (nextConfig.messageText || '').trim();
-      const shouldRegenerateAudio =
-        Boolean(nextMessageText) &&
-        (
-          node?.data?.audioStatus === 'failed' ||
-          nextMessageText !== previousMessageText ||
-          (nextConfig.voice || 'en-GB-SoniaNeural') !== previousVoice ||
-          (nextConfig.language || 'en-GB') !== previousLanguage
-        );
+      const shouldRegenerateAudio = shouldRefreshTtsAudio({
+        messageText: nextMessageText,
+        previousMessageText,
+        voice: nextConfig.voice,
+        previousVoice,
+        language: nextConfig.language,
+        previousLanguage,
+        audioStatus: config.audioStatus === 'failed' || node?.data?.audioStatus === 'failed'
+          ? 'failed'
+          : config.audioStatus
+      });
 
       if (shouldRegenerateAudio) {
+        // Update the builder draft before the optional network call. If the
+        // preview times out or the user closes this panel, the node settings
+        // are already retained for the workflow-level save.
+        onSave(node.id, nextConfig);
         try {
+          setAudioRefreshError('');
           setIsSaving(true);
           const existingPublicId = extractCloudinaryPublicId(
             nextConfig.audioPublicId || nextConfig.audioAssetId || nextConfig.audioUrl
@@ -287,13 +297,15 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
             }
           }
         } catch (error) {
-          audioRefreshError =
+          audioRefreshFailed = true;
+          const refreshError =
             error?.response?.data?.error ||
             error?.response?.data?.message ||
             error?.message ||
             'TTS audio generation failed';
-          nextConfig.audioStatus = 'failed';
-          nextConfig.audioError = audioRefreshError;
+          Object.assign(nextConfig, markTtsAudioFailure(nextConfig, refreshError));
+          setConfig(nextConfig);
+          setAudioRefreshError(refreshError);
         } finally {
           setIsSaving(false);
         }
@@ -301,10 +313,9 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
     }
 
     onSave(node.id, nextConfig);
-    onClose();
-    if (typeof audioRefreshError === 'string' && audioRefreshError) {
-      alert(`Node settings were kept in the workflow draft, but TTS audio could not be refreshed: ${audioRefreshError}\n\nSave the workflow to persist the text and voice settings. Reopen this node and save again to retry audio generation.`);
-    }
+    // Keep the editor open after a TTS failure so the warning is visible and
+    // Save Changes can retry audio generation from the retained draft values.
+    if (!audioRefreshFailed) onClose();
   };
 
   useEffect(() => {
@@ -1708,6 +1719,14 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
       <div className="panel-content">
         {renderConfigByNodeType()}
       </div>
+
+      {audioRefreshError && (
+        <div className="node-config-audio-warning" role="status">
+          <strong>Settings saved to the workflow draft. Audio generation is unavailable.</strong>
+          <span>{audioRefreshError}</span>
+          <span>Save the workflow to persist these settings. You can retry audio generation by saving this node again.</span>
+        </div>
+      )}
 
       <div className="panel-footer">
         <button type="button" className="node-config-action node-config-cancel-btn" onClick={onClose}>

@@ -12,8 +12,6 @@ import resolveAdminApiUrl from "./adminApiUrl";
 // Base URL from environment variable
 const API_BASE_URL =
   String(import.meta.env.VITE_VOICE_API_URL || import.meta.env.VITE_API_URL || "").trim();
-const AI_SERVICE_BASE_URL =
-  String(import.meta.env.VITE_AI_SERVICE_URL || import.meta.env.VITE_PYTHON_AI_URL || "").trim();
 const ADMIN_API_BASE_URL = resolveAdminApiUrl() || API_BASE_URL;
 const USE_CREDENTIALS = String(import.meta.env.VITE_API_WITH_CREDENTIALS || "false").toLowerCase() === "true";
 
@@ -203,11 +201,7 @@ apiService.getScheduledCalls = () =>
 apiService.checkBackendHealth = () =>
   apiService.get("/health/basic", { skipAuthRedirect: true });
 apiService.checkAIHealth = () =>
-  (AI_SERVICE_BASE_URL
-    ? axios.get(`${AI_SERVICE_BASE_URL.replace(/\/+$/, "")}/health`, {
-        skipAuthRedirect: true
-      })
-    : apiService.get("/ai/health", { skipAuthRedirect: true }));
+  apiService.get("/ai/health", { skipAuthRedirect: true });
 
 // Inbound and IVR methods
 const fetchInboundAnalyticsHttp = (period = 'today', params = {}) => {
