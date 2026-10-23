@@ -858,6 +858,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
     const isConversationsRouteActive =
         currentPath.startsWith('/inbox');
     const isCampaignsRouteActive =
+        isRouteActive('/campaignmanagement') ||
         isRouteActive('/broadcast-dashboard') ||
         isRouteActive('/broadcast') ||
         isRouteActive('/templates') ||
@@ -985,7 +986,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 if (!isMobile) {
                                     cancelDesktopFlyoutClose();
                                     openDesktopFlyout('campaigns', e);
-                                    prefetchRoute('/broadcast-dashboard');
+                                    prefetchRoute('/campaignmanagement');
                                     prefetchRoute('/broadcast');
                                     prefetchRoute('/templates');
                                     prefetchRoute('/contacts');
@@ -1298,10 +1299,10 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                             </div>
                             <nav className="panel-menu">
                                 <NavLink
-                                    to="/broadcast-dashboard"
+                                    to="/campaignmanagement"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onMouseEnter={() => prefetchRoute('/broadcast-dashboard')}
-                                    onFocus={() => prefetchRoute('/broadcast-dashboard')}
+                                    onMouseEnter={() => prefetchRoute('/campaignmanagement')}
+                                    onFocus={() => prefetchRoute('/campaignmanagement')}
                                     onClick={closeMobileMenusAfterNavigate}
                                 >
                                     <LayoutDashboard size={20} />

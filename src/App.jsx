@@ -114,7 +114,7 @@ function App() {
             }
           />
           <Route path="conversations" element={<Navigate to="/inbox" replace />} />
-          <Route path="campaigns" element={<Navigate to="/broadcast-dashboard" replace />} />
+          <Route path="campaigns" element={<Navigate to="/campaignmanagement" replace />} />
           <Route path="automation" element={<Navigate to="/crm/ops" replace />} />
           <Route path="conversations/inbox" element={<Navigate to="/inbox" replace />} />
           <Route path="campaigns/dashboard" element={<Navigate to="/broadcast-dashboard" replace />} />
