@@ -24,6 +24,7 @@ import {
   X
 } from "lucide-react";
 import { crmService } from "../services/crmService";
+import { getTaskAssigneeForEdit } from "../utils/crmTaskAssignment";
 import { startLoadingTimeoutGuard } from "../utils/loadingGuard";
 import {
   readSidebarPageCache,
@@ -202,7 +203,7 @@ const sanitizeCrmTask = (task = {}) => ({
   reminderAt: String(task?.reminderAt || "").trim(),
   priority: String(task?.priority || "").trim(),
   status: String(task?.status || "").trim(),
-  assignedTo: String(task?.assignedTo || "").trim(),
+  assignedTo: getTaskAssigneeForEdit(task),
   completedAt: String(task?.completedAt || "").trim(),
   completedBy: String(task?.completedBy || "").trim(),
   recurrence: sanitizeTaskRecurrence(task?.recurrence || {}),
@@ -229,7 +230,7 @@ const getInitialTaskForm = (currentUserId = "") => ({
   comment: ""
 });
 
-const getTaskFormFromTask = (task = {}, currentUserId = "") => ({
+const getTaskFormFromTask = (task = {}) => ({
   contactId: getEntityId(task?.contactId),
   title: String(task?.title || ""),
   description: String(task?.description || ""),
@@ -237,7 +238,7 @@ const getTaskFormFromTask = (task = {}, currentUserId = "") => ({
   reminderAt: toLocalDateTimeInputValue(task?.reminderAt),
   priority: String(task?.priority || "medium"),
   taskType: String(task?.taskType || "follow_up"),
-  assignedTo: String(task?.assignedTo || "").trim() || String(currentUserId || "").trim(),
+  assignedTo: String(task?.assignedTo || "").trim(),
   recurrenceFrequency: String(task?.recurrence?.frequency || "none"),
   recurrenceInterval: String(task?.recurrence?.interval || "1"),
   comment: ""
@@ -390,14 +391,14 @@ const CrmTasks = () => {
       const taskId = getEntityId(task);
       if (!taskId) return;
       setEditingTaskId(taskId);
-      setForm(getTaskFormFromTask(task, currentUserId));
+      setForm(getTaskFormFromTask(task));
       taskContactSearchSeqRef.current += 1;
       const normalizedContact = sanitizeCrmTaskContact(task?.contactId || {});
       setTaskContactSearch(getTaskContactLabel(normalizedContact));
       setTaskContactSearchResults(normalizedContact._id || normalizedContact.phone ? [normalizedContact] : []);
       setCreateTaskOpen(true);
     },
-    [currentUserId]
+    []
   );
 
   useEffect(() => {
