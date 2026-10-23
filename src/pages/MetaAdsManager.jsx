@@ -946,9 +946,9 @@ const MetaAdsManager = () => {
         });
         setMetaCampaigns((current) => upsertMetaCampaignRecord(current || [], normalizedCampaign));
       }
-      setSuccess(`Campaign ${status === "ACTIVE" ? "activated" : "paused"} successfully.`);
+      setSuccess(`Campaign ${status === "ACTIVE" ? "resumed" : "paused"} successfully.`);
     } catch (requestError) {
-      setError(requestError?.response?.data?.error || requestError.message || "Failed to update campaign status.");
+      setError(requestError?.response?.data?.message || requestError?.response?.data?.error || requestError.message || "Failed to update campaign status.");
     } finally {
       setStatusUpdatingId("");
     }
@@ -1128,7 +1128,7 @@ const MetaAdsManager = () => {
                 <div className="meta-card-head">
                   <div>
                     <h3>Published Campaigns</h3>
-                    <p>Sync and control existing campaigns.</p>
+                    <p>Sync and control campaigns. Resuming a campaign does not resume paused ad sets or ads.</p>
                   </div>
                   <button type="button" className="meta-button meta-button-secondary" disabled={syncingAll} onClick={handleSyncAll}>
                     {syncingAll ? <RefreshCw className="spin" size={16} /> : "Sync All"}
@@ -1141,6 +1141,8 @@ const MetaAdsManager = () => {
                     liveCampaigns.map((campaign, index) => {
                       const campaignId = getCampaignId(campaign);
                       const isActive = String(campaign.status).toUpperCase() === "ACTIVE";
+                      const isPaused = String(campaign.status).toUpperCase() === "PAUSED";
+                      const canChangeStatus = isActive || isPaused;
                       const isBusy =
                         syncingId === campaignId ||
                         statusUpdatingId === campaignId ||
@@ -1167,12 +1169,12 @@ const MetaAdsManager = () => {
                             <button
                               type="button"
                               className="meta-button meta-button-secondary small"
-                              disabled={isBusy || !campaignId}
+                              disabled={isBusy || !campaign?._id || !canChangeStatus}
                               onClick={() => handleStatusUpdate(campaignId, isActive ? "PAUSED" : "ACTIVE")}
                             >
                               {statusUpdatingId === campaignId ? (
                                 <RefreshCw className="spin" size={14} />
-                              ) : isActive ? "Pause" : "Activate"}
+                              ) : isActive ? "Pause" : "Resume"}
                             </button>
                             <button
                               type="button"

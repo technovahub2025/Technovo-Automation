@@ -213,7 +213,12 @@ export const metaAdsService = {
   },
 
   async updateCampaignStatus(campaignId, status) {
-    const response = await metaApi.post(`/meta-ads/campaigns/${campaignId}/status`, { status });
+    const normalizedStatus = String(status || "").trim().toUpperCase();
+    const action = normalizedStatus === "PAUSED" ? "pause" : normalizedStatus === "ACTIVE" ? "resume" : "";
+    if (!campaignId || !action) {
+      throw new Error("A local campaign ID and ACTIVE or PAUSED status are required.");
+    }
+    const response = await metaApi.post(`/campaigns/${encodeURIComponent(campaignId)}/${action}`);
     return response.data;
   },
 
