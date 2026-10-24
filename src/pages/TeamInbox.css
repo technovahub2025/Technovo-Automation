@@ -6589,11 +6589,20 @@
 
 .contact-info-item--admin-strip .contact-info-assignment {
     width: 100%;
+    max-width: none;
     margin-top: 10px;
+    align-items: stretch;
 }
 
 .contact-info-item--admin-strip .contact-info-assignment__hint {
+    width: 100%;
     margin-top: 8px;
+    text-align: left;
+}
+
+.contact-info-item--admin-strip .contact-info-assignment .lead-stage-select {
+    width: 100%;
+    max-width: 100%;
 }
 
 .contact-info-item--admin-strip > .contact-info-item-label-row {
@@ -8392,18 +8401,21 @@
 }
 
 .contact-info-item--actions {
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
 }
 
 .contact-info-item--actions .whatsapp-status-actions {
     width: 100%;
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
 }
 
 .contact-info-item--actions .lead-action-btn {
-    flex: 1 1 140px;
+    min-width: 0;
+    margin-bottom: 0;
 }
 
 @media (max-width: 640px) {
