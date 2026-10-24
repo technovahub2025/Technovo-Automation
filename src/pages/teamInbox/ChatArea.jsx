@@ -1104,11 +1104,11 @@ const ChatArea = ({
   );
   const freeformBlockedAttachmentMessage = conversationWhatsAppState?.optedOut
     ? 'This contact has opted out of WhatsApp messaging. Update consent before sending attachments.'
-    : 'The 24-hour customer service window is closed. Send an approved template before attaching media.';
+    : 'The 24-hour customer service window is closed. You can send an approved template, then resume free-form chat after the customer replies.';
   const composerPlaceholder = isFreeformBlocked
     ? conversationWhatsAppState?.optedOut
       ? 'WhatsApp outreach is blocked for this contact'
-      : 'Send an approved template to continue this chat'
+      : 'Waiting for the customer to reply to reopen free-form chat'
     : 'Type a message...';
   const resetPlacementIfNeeded = (setter) => {
     setter((prev) => {
@@ -3214,7 +3214,7 @@ const ChatArea = ({
                       ? 'This contact has opted out of WhatsApp outreach.'
                       : whatsappMessagingState?.freeformAllowed
                         ? 'Free-form replies are allowed for this contact.'
-                        : 'Free-form replies are closed. Use an approved template.'
+                        : 'Send an approved template and wait for the customer to reply before sending free-form messages.'
                   }
                 >
                   {whatsappStateLabel}

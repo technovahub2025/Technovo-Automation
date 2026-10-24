@@ -605,7 +605,7 @@ const ContactInfoPanel = ({
                   ? 'Marketing template limit reached for this contact. Use service templates or wait for the cooldown.'
                   : whatsappMessagingState?.freeformAllowed
                     ? 'The 24-hour customer service window is open for free-form replies.'
-                    : 'Free-form chat is closed. Use an approved template to continue the conversation.'}
+                    : 'You can send an approved template now. Free-form chat opens for 24 hours after the customer replies.'}
             </p>
           </div>
           <div className="whatsapp-status-actions">
