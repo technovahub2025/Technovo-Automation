@@ -289,51 +289,6 @@ const TeamInbox = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const { user } = useContext(AuthContext);
   const initialConversationPageLimit = 20;
-  const latestInboundMessageAtFromThread = useMemo(() => {
-    if (!Array.isArray(messages) || messages.length === 0) return null;
-
-    let latestTime = 0;
-    for (const message of messages) {
-      if (String(message?.sender || '').trim().toLowerCase() !== 'contact') continue;
-      const candidate = new Date(
-        message?.whatsappTimestamp || message?.timestamp || message?.createdAt
-      );
-      const candidateTime = candidate.getTime();
-      if (Number.isNaN(candidateTime)) continue;
-      if (candidateTime > latestTime) latestTime = candidateTime;
-    }
-
-    return latestTime ? new Date(latestTime).toISOString() : null;
-  }, [messages]);
-
-  const whatsappStateContactSource = {
-    ...(selectedConversation?.contactId && typeof selectedConversation.contactId === 'object'
-      ? selectedConversation.contactId
-      : {}),
-    ...(selectedConversation?.contactId && typeof selectedConversation.contactId !== 'object'
-      ? { _id: selectedConversation.contactId }
-      : {}),
-    ...(selectedConversation?.contactName ? { name: selectedConversation.contactName } : {}),
-    ...(selectedConversation?.contactPhone ? { phone: selectedConversation.contactPhone } : {}),
-    ...(selectedConversation?.whatsappOptInStatus
-      ? { whatsappOptInStatus: selectedConversation.whatsappOptInStatus }
-      : {}),
-    ...(selectedConversation?.whatsappOptInScope
-      ? { whatsappOptInScope: selectedConversation.whatsappOptInScope }
-      : {}),
-    ...(selectedConversation?.serviceWindowClosesAt
-      ? { serviceWindowClosesAt: selectedConversation.serviceWindowClosesAt }
-      : {}),
-    ...(selectedConversation?.lastInboundMessageAt
-      ? { lastInboundMessageAt: selectedConversation.lastInboundMessageAt }
-      : {}),
-    ...(latestInboundMessageAtFromThread
-      ? { lastInboundMessageAt: latestInboundMessageAtFromThread }
-      : {})
-  };
-
-  const selectedWhatsAppState = getWhatsAppConversationState(whatsappStateContactSource);
-
   const {
     conversations,
     setConversations,
