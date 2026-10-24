@@ -199,6 +199,23 @@
   margin-bottom: 0;
 }
 
+.slot-advanced-settings { margin: 8px 0 18px; border: 1px solid #e2e8f0; border-radius: 9px; padding: 10px 12px 0; }
+.slot-advanced-settings summary { cursor: pointer; color: #475569; font-size: 13px; font-weight: 600; padding-bottom: 10px; }
+.slot-builder-heading { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 18px 0 12px; }
+.slot-builder-heading h5 { margin: 0 0 3px; font-size: 14px; color: #1e293b; }
+.slot-add-button, .slot-preview-button { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border: 1px solid #bfdbfe; border-radius: 8px; background: #eff6ff; color: #1d4ed8; padding: 8px 10px; font-size: 12px; font-weight: 600; cursor: pointer; }
+.slot-builder-card { border: 1px solid #e2e8f0; border-radius: 11px; padding: 13px; margin: 10px 0; background: #fff; }
+.slot-builder-card-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; color: #334155; font-size: 13px; }
+.slot-active-toggle { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; font-size: 12px; color: #475569; }
+.slot-active-toggle input { accent-color: #2563eb; }
+.slot-card-actions { display: flex; gap: 3px; }
+.slot-card-actions button { display: inline-flex; align-items: center; justify-content: center; border: 0; border-radius: 6px; background: transparent; color: #64748b; padding: 5px; cursor: pointer; }
+.slot-card-actions button:hover { background: #f1f5f9; color: #1e293b; }
+.slot-preview-button { margin-top: 8px; }
+.slot-menu-preview { margin-top: 9px; border-radius: 8px; background: #f1f5f9; color: #334155; padding: 11px 12px; font-size: 13px; line-height: 1.5; }
+.slot-config-error { margin: 8px 0; border: 1px solid #fecaca; border-radius: 8px; background: #fef2f2; color: #991b1b; padding: 10px 12px; font-size: 12px; line-height: 1.45; }
+@media (max-width: 520px) { .slot-builder-heading { align-items: flex-start; flex-direction: column; } .slot-builder-card .form-row { grid-template-columns: 1fr; gap: 0; } }
+
 /* Keep voicemail settings readable in narrow right drawer */
 .voicemail-config-section .voicemail-row-stacked {
   grid-template-columns: 1fr;
