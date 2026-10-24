@@ -5,6 +5,7 @@ import {
   resolveConversationAssigneeLabel
 } from './teamInboxDisplayUtils';
 import { getLeadStageLabel } from './teamInboxUtils';
+import { useWhatsAppWindowStatus } from './useWhatsAppWindowStatus';
 import {
   CalendarClock,
   Download,
@@ -144,6 +145,10 @@ const ContactInfoPanel = ({
   contactInfoMessage,
   contactInfoMessageTone
 }) => {
+  const whatsappWindowStatus = useWhatsAppWindowStatus(
+    selectedConversation || {},
+    whatsappMessagingState || {}
+  );
   const crmDocumentInputRef = React.useRef(null);
   const assignedAgentSelectRef = React.useRef(null);
   const sectionRefs = React.useRef({});
@@ -592,20 +597,29 @@ const ContactInfoPanel = ({
           <div className="contact-info-item">
             <span>Messaging</span>
             <strong>
-              <span className={`whatsapp-status-badge whatsapp-status-badge--${whatsappMessagingState?.badgeTone || 'template-only'}`}>
-                {whatsappMessagingState?.statusLabel || 'Template Only'}
+              <span className={`whatsapp-status-badge whatsapp-status-badge--${
+                whatsappWindowStatus.optedOut
+                  ? 'opted-out'
+                  : whatsappWindowStatus.status === 'Open'
+                    ? 'service-open'
+                    : whatsappWindowStatus.status === 'Expiring soon'
+                      ? 'service-expiring'
+                      : 'template-only'
+              }`}>
+                {whatsappWindowStatus.status}
+                {whatsappWindowStatus.countdown ? ` · ${whatsappWindowStatus.countdown}` : ''}
               </span>
             </strong>
           </div>
           <div className="whatsapp-status-explainer">
             <p className="whatsapp-status-meta">
-              {whatsappMessagingState?.optedOut
+              {whatsappWindowStatus.optedOut
                 ? 'This contact has opted out. Update consent before sending WhatsApp outreach.'
                 : whatsappMessagingState?.marketingRateLimited
                   ? 'Marketing template limit reached for this contact. Use service templates or wait for the cooldown.'
-                  : whatsappMessagingState?.freeformAllowed
-                    ? 'The 24-hour customer service window is open for free-form replies.'
-                    : 'Free-form chat is closed. Use an approved template to continue the conversation.'}
+                  : whatsappWindowStatus.isOpen
+                    ? `The 24-hour customer service window is open for free-form replies${whatsappWindowStatus.countdown ? ` for ${whatsappWindowStatus.countdown}` : ''}.`
+                    : 'You can send an approved template now. Free-form chat opens for 24 hours after the customer replies.'}
             </p>
           </div>
           <div className="whatsapp-status-actions">
