@@ -109,7 +109,9 @@ apiService.bulkOutboundCall = (data) =>
   });
 apiService.quickOutboundCall = (payload) =>
   apiService.post("/api/voice/outbound-local", payload, {
-    timeout: Number(import.meta.env.VITE_OUTBOUND_QUICKCALL_TIMEOUT_MS || 90000)
+    // The backend may spend up to 95s generating Tamil audio before placing
+    // the call, so allow time for that work and the provider request to finish.
+    timeout: Number(import.meta.env.VITE_OUTBOUND_QUICKCALL_TIMEOUT_MS || 120000)
   });
 apiService.outboundLocalQuickCall = apiService.quickOutboundCall;
 apiService.outboundVoiceQuickCall = apiService.quickOutboundCall;

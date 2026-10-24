@@ -16,6 +16,7 @@ const NODE_TYPES = [
     { type: 'booking_create', label: 'Booking Create', icon: '📝', description: 'Save the booking' },
     { type: 'whatsapp_notify', label: 'WhatsApp Notify', icon: '💬', description: 'Send booking notifications' },
     { type: 'handoff', label: 'Hand Off', icon: '📞', description: 'Transfer to human agent' },
+    { type: 'ai_voice_agent', label: 'AI Voice Agent', icon: '🤖', description: 'Natural voice conversation powered by AI' },
     { type: 'end', label: 'End', icon: '🔚', description: 'Hang up call' }
 ];
 
