@@ -130,16 +130,10 @@ export const useTemplateSendModal = ({
         ['APPROVED', 'ACTIVE'].includes(String(template?.status || '').toUpperCase())
       );
       const availableTemplates = approvedTemplates.length > 0 ? approvedTemplates : rawTemplates;
-      const allowedTemplates = contactOptedOut
-        ? []
-        : contactMarketingTemplateAllowed
-          ? availableTemplates
-          : availableTemplates.filter((template) => getTemplateCategory(template) !== 'marketing');
-      const usableTemplates = contactOptedOut
-        ? []
-        : contactMarketingTemplateAllowed
-          ? availableTemplates
-          : allowedTemplates;
+      // Keep approved templates visible so agents can see the full account catalog.
+      // Ineligible marketing templates are disabled in the picker and rejected again
+      // by the send handler/backend policy checks.
+      const usableTemplates = contactOptedOut ? [] : availableTemplates;
       setTemplateOptions(usableTemplates);
 
       if (!usableTemplates.length) {
@@ -171,11 +165,6 @@ export const useTemplateSendModal = ({
       if (approvedTemplates.length === 0) {
         setTemplateModalMessage('No approved template found. Showing available templates.');
         setTemplateModalMessageTone('error');
-      } else if (!contactMarketingTemplateAllowed) {
-        setTemplateModalMessage(
-          'Marketing templates are hidden because this contact is not eligible for marketing sends.'
-        );
-        setTemplateModalMessageTone('info');
       }
     } catch (error) {
       setTemplateOptions([]);
