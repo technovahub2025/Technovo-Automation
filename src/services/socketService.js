@@ -127,7 +127,9 @@ class SocketService {
 
     this.socket = io(resolvedUrl, {
       auth: nextToken ? { token: nextToken } : undefined,
-      transports: ['websocket'],
+      // Let Socket.IO establish over polling first and upgrade to WebSocket.
+      // A websocket-only connection can fail outright when a proxy or Render
+      // instance closes the upgrade handshake before it is established.
       withCredentials: this.useCredentials,
       reconnection: true,
       reconnectionAttempts: 10,
