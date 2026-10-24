@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { X, Save, Trash2 } from 'lucide-react';
+import { X, Save, Trash2, Copy, Plus, Volume2 } from 'lucide-react';
 import apiService from '../../../services/api';
 import { markTtsAudioFailure, shouldRefreshTtsAudio } from '../../../utils/ivrTtsAudio';
 import './NodeConfigPanel.css';
@@ -9,6 +9,50 @@ const getNodeField = (data, camelKey, snakeKey, fallback) => {
   if (data[camelKey] !== undefined && data[camelKey] !== null) return data[camelKey];
   if (snakeKey && data[snakeKey] !== undefined && data[snakeKey] !== null) return data[snakeKey];
   return fallback;
+};
+
+const getRawSlots = (data = {}) => getNodeField(data, 'slotDefinitions', 'slot_definitions', getNodeField(data, 'slots', null, getNodeField(data, 'slotDefinitionsText', 'slot_definitions_text', [])));
+const readSlots = (data = {}) => {
+  const raw = getRawSlots(data);
+  if (typeof raw === 'string') {
+    try { const parsed = raw.trim() ? JSON.parse(raw) : []; return Array.isArray(parsed) ? parsed : []; }
+    catch { return []; }
+  }
+  return Array.isArray(raw) ? raw : [];
+};
+const hasMalformedSlotConfig = (data = {}) => {
+  const raw = getRawSlots(data);
+  if (typeof raw === 'string') {
+    if (!raw.trim()) return false;
+    try { const parsed = JSON.parse(raw); return !Array.isArray(parsed) || parsed.some((slot) => !slot || typeof slot !== 'object' || Array.isArray(slot)); } catch { return true; }
+  }
+  return raw !== undefined && raw !== null && (!Array.isArray(raw) || raw.some((slot) => !slot || typeof slot !== 'object' || Array.isArray(slot)));
+};
+const formatSlotLabel = (time) => {
+  if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(time || '')) return '';
+  const [hour, minute] = time.split(':').map(Number);
+  return `${hour % 12 || 12}:${String(minute).padStart(2, '0')} ${hour >= 12 ? 'PM' : 'AM'}`;
+};
+const createSlot = (slot = {}, index = 0) => ({
+  ...slot,
+  key: String(slot.key || slot.slotKey || slot.id || slot.value || slot.digit || `slot_${index + 1}`),
+  label: String(slot.label || slot.title || slot.timeLabel || slot.name || slot.startTime || slot.start || ''),
+  startTime: String(slot.startTime || slot.start || slot.from || ''),
+  endTime: String(slot.endTime || slot.end || slot.to || ''),
+  capacity: slot.capacity ?? slot.limit ?? slot.maxMembers ?? slot.maxCapacity ?? 1,
+  digit: String(slot.digit ?? slot.option ?? slot.choice ?? index + 1),
+  order: index + 1,
+  active: slot.active !== false && slot.status !== 'disabled'
+});
+
+const findAvailableMenuDigit = (slots, digitsToRead = 1) => {
+  const used = new Set(slots.map((slot) => String(slot.digit ?? '').trim()));
+  const maxLength = Math.max(1, Math.min(5, Number(digitsToRead) || 1));
+  const max = (10 ** maxLength) - 1;
+  for (let digit = 1; digit <= max; digit += 1) {
+    if (!used.has(String(digit))) return String(digit);
+  }
+  return '';
 };
 
 const buildInitialConfig = (node) => {
@@ -82,10 +126,8 @@ const buildInitialConfig = (node) => {
     offerText: getNodeField(data, 'offerText', 'offer_text', ''),
     yesDigits: getNodeField(data, 'yesDigits', 'yes_digits', '1'),
     noDigits: getNodeField(data, 'noDigits', 'no_digits', '2'),
-    slotDefinitionsText: (() => {
-      const raw = getNodeField(data, 'slotDefinitions', 'slot_definitions', getNodeField(data, 'slots', null, []));
-      return typeof raw === 'string' ? raw : JSON.stringify(Array.isArray(raw) ? raw : [], null, 2);
-    })(),
+    slotDefinitions: readSlots(data).map((slot, index) => createSlot(slot, index)),
+    slotConfigMalformed: hasMalformedSlotConfig(data),
     selectionVariable: getNodeField(data, 'selectionVariable', 'selection_variable', 'booking.selectedSlotKey'),
     suggestedSlotVariable: getNodeField(data, 'suggestedSlotVariable', 'suggested_slot_variable', 'booking.nextAvailableSlotKey'),
     bookingReferencePrefix: getNodeField(data, 'bookingReferencePrefix', 'booking_reference_prefix', 'BK'),
@@ -127,6 +169,7 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
   const [isUploading, setIsUploading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [audioRefreshError, setAudioRefreshError] = useState('');
+  const [slotPreview, setSlotPreview] = useState(false);
   const parseNumber = (value, fallback = 0) => {
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
@@ -196,18 +239,27 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
       delete nextConfig.premiumTiersText;
     }
 
-    if (['availability_check', 'slot_offer', 'booking_confirm', 'booking_create', 'whatsapp_notify', 'handoff'].includes(node?.type)) {
-      try {
-        const parsedSlots = String(nextConfig.slotDefinitionsText || '').trim()
-          ? JSON.parse(nextConfig.slotDefinitionsText)
-          : [];
-        nextConfig.slotDefinitions = Array.isArray(parsedSlots) ? parsedSlots : [];
-      } catch (error) {
-        alert(`Slot definitions must be valid JSON: ${error.message}`);
-        return;
-      }
-      delete nextConfig.slotDefinitionsText;
+    if (node?.type === 'availability_check') {
+      if (nextConfig.slotConfigMalformed) { alert('The saved slot configuration is malformed. Its original data has been left untouched; correct it in the workflow source before saving this node.'); return; }
+      const slots = (nextConfig.slotDefinitions || []).map((slot, index) => createSlot(slot, index));
+      const errors = [];
+      if (!slots.length) errors.push('Add at least one time slot.');
+      slots.forEach((slot, index) => {
+        const label = `Slot ${index + 1}`;
+        if (!String(slot.label).trim()) errors.push(`${label}: enter a display name.`);
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(slot.startTime)) errors.push(`${label}: choose a valid start time.`);
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(slot.endTime)) errors.push(`${label}: choose a valid end time.`);
+        if (slot.startTime && slot.endTime && slot.endTime <= slot.startTime) errors.push(`${label}: end time must be after start time.`);
+        if (!Number.isInteger(Number(slot.capacity)) || Number(slot.capacity) < 1) errors.push(`${label}: capacity must be a whole number greater than zero.`);
+        if (!/^\d+$/.test(String(slot.digit).trim())) errors.push(`${label}: menu digit must contain numbers only.`);
+        else if (String(slot.digit).length > (Number(nextConfig.numDigits) || 1)) errors.push(`${label}: menu digit must be no longer than Digits to Read.`);
+      });
+      const digits = slots.filter((slot) => slot.active !== false).map((slot) => String(slot.digit).trim());
+      if (new Set(digits).size !== digits.length) errors.push('Each slot must use a unique menu digit.');
+      if (errors.length) { alert(errors.join('\n')); return; }
+      nextConfig.slotDefinitions = slots.map((slot, index) => ({ ...slot, capacity: Number(slot.capacity), order: index + 1 }));
     }
+    delete nextConfig.slotConfigMalformed;
 
     if (node?.type === 'whatsapp_notify') {
       const normalizeTextValue = (value, fallback = '') => String(value ?? fallback).trim();
@@ -668,12 +720,10 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
             <div className="form-row">
               <div className="form-group">
                 <label>Timezone</label>
-                <input
-                  type="text"
-                  value={config.timezone || 'Asia/Kolkata'}
-                  onChange={(e) => handleChange('timezone', e.target.value)}
-                  placeholder="Asia/Kolkata"
-                />
+                <select value={config.timezone || 'Asia/Kolkata'} onChange={(e) => handleChange('timezone', e.target.value)}>
+                  {[config.timezone, 'Asia/Kolkata', 'America/New_York', 'America/Chicago', 'America/Los_Angeles', 'Europe/London', 'Europe/Paris', 'Asia/Dubai', 'Asia/Singapore', 'Asia/Tokyo', 'Australia/Sydney', 'UTC'].filter((value, index, values) => value && values.indexOf(value) === index).map((zone) => <option key={zone} value={zone}>{zone}</option>)}
+                </select>
+                <small className="form-help">Times are interpreted in this location.</small>
               </div>
               <div className="form-group">
                 <label>Digits to Read</label>
@@ -684,6 +734,7 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
                   min={1}
                   max={5}
                 />
+                <small className="form-help">How many digits callers press to choose a slot.</small>
               </div>
             </div>
             <div className="form-row">
@@ -696,6 +747,7 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
                   min={1}
                   max={60}
                 />
+                <small className="form-help">How long to wait for a keypad response.</small>
               </div>
               <div className="form-group">
                 <label>Max Retries</label>
@@ -706,27 +758,22 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
                   min={1}
                   max={10}
                 />
+                <small className="form-help">Number of attempts before the flow follows its fallback branch.</small>
               </div>
             </div>
-            <div className="form-group">
-              <label>Selection Variable</label>
-              <input
-                type="text"
-                value={config.selectionVariable || 'booking.selectedSlotKey'}
-                onChange={(e) => handleChange('selectionVariable', e.target.value)}
-                placeholder="booking.selectedSlotKey"
-              />
-            </div>
-            <div className="form-group">
-              <label>Slot Definitions JSON</label>
-              <textarea
-                value={config.slotDefinitionsText || '[]'}
-                onChange={(e) => handleChange('slotDefinitionsText', e.target.value)}
-                rows={8}
-                placeholder='[{"key":"slot_1","label":"4:00 PM","startTime":"16:00","endTime":"16:30","capacity":5,"digit":"1","order":1,"active":true}]'
-              />
-              <small className="form-help">Provide a JSON array of slot objects. Each object may include key, label, startTime, endTime, capacity, digit, order, and active.</small>
-            </div>
+            <details className="slot-advanced-settings"><summary>Advanced Settings</summary>
+              <div className="form-group"><label>Selection Variable</label><input type="text" value={config.selectionVariable || 'booking.selectedSlotKey'} onChange={(e) => handleChange('selectionVariable', e.target.value)} /><small className="form-help">Where the selected slot is stored for booking steps.</small></div>
+            </details>
+            <div className="slot-builder-heading"><div><h5>Available time slots</h5><small className="form-help">Add the appointment times callers can choose.</small></div><button type="button" className="slot-add-button" onClick={() => { const currentSlots = config.slotDefinitions || []; const digit = findAvailableMenuDigit(currentSlots, config.numDigits); handleChange('slotDefinitions', [...currentSlots, createSlot({ startTime: '09:00', endTime: '09:30', label: '9:00 AM', digit }, currentSlots.length)]); }}><Plus size={15}/> Add Time Slot</button></div>
+            {config.slotConfigMalformed && <div className="slot-config-error" role="alert">This saved slot configuration is malformed. It has not been discarded. The node cannot be saved until its slot data is repaired.</div>}
+            {(config.slotDefinitions || []).map((slot, index) => <article className="slot-builder-card" key={`${slot.key || 'slot'}-${index}`}>
+              <div className="slot-builder-card-head"><strong>Slot {index + 1}</strong><label className="slot-active-toggle"><input type="checkbox" checked={slot.active !== false} onChange={(e) => handleChange('slotDefinitions', config.slotDefinitions.map((item, i) => i === index ? { ...item, active: e.target.checked } : item))}/> Active</label><div className="slot-card-actions"><button type="button" title="Duplicate slot" aria-label="Duplicate slot" onClick={() => { const next = [...config.slotDefinitions]; next.splice(index + 1, 0, { ...slot, key: `${slot.key || 'slot'}_copy_${Date.now()}`, digit: findAvailableMenuDigit(config.slotDefinitions, config.numDigits) }); handleChange('slotDefinitions', next.map((item, i) => ({ ...item, order: i + 1 }))); }}><Copy size={15}/></button><button type="button" title="Delete slot" aria-label="Delete slot" onClick={() => handleChange('slotDefinitions', config.slotDefinitions.filter((_, i) => i !== index).map((item, i) => ({ ...item, order: i + 1 })))}><Trash2 size={15}/></button></div></div>
+              <div className="form-row"><div className="form-group"><label>Display name</label><input value={slot.label || ''} onChange={(e) => handleChange('slotDefinitions', config.slotDefinitions.map((item, i) => i === index ? { ...item, label: e.target.value } : item))} placeholder="4:00 PM"/></div><div className="form-group"><label>Menu digit</label><input value={slot.digit ?? ''} inputMode="numeric" onChange={(e) => handleChange('slotDefinitions', config.slotDefinitions.map((item, i) => i === index ? { ...item, digit: e.target.value } : item))}/></div></div>
+              <div className="form-row"><div className="form-group"><label>Start time</label><input type="time" value={slot.startTime || ''} onChange={(e) => handleChange('slotDefinitions', config.slotDefinitions.map((item, i) => i === index ? { ...item, startTime: e.target.value, label: item.label === formatSlotLabel(item.startTime) || !item.label ? formatSlotLabel(e.target.value) : item.label } : item))}/></div><div className="form-group"><label>End time</label><input type="time" value={slot.endTime || ''} onChange={(e) => handleChange('slotDefinitions', config.slotDefinitions.map((item, i) => i === index ? { ...item, endTime: e.target.value } : item))}/></div></div>
+              <div className="form-group"><label>Booking capacity</label><input type="number" min="1" step="1" value={slot.capacity ?? ''} onChange={(e) => handleChange('slotDefinitions', config.slotDefinitions.map((item, i) => i === index ? { ...item, capacity: e.target.value === '' ? '' : Number(e.target.value) } : item))}/></div>
+            </article>)}
+            <button type="button" className="slot-preview-button" onClick={() => setSlotPreview((value) => !value)}><Volume2 size={15}/>{slotPreview ? 'Hide voice menu preview' : 'Preview Voice Menu'}</button>
+            {slotPreview && <div className="slot-menu-preview" role="status">{[config.promptText || 'Please choose an available appointment slot.', ...(config.slotDefinitions || []).filter((slot) => slot.active !== false).map((slot) => `Press ${slot.digit} for ${slot.label || formatSlotLabel(slot.startTime) || 'this time slot'}.`)].join(' ')}</div>}
           </>
         )}
 
