@@ -344,12 +344,13 @@ apiService.deleteCustomAudioByPublicId = (publicId) =>
 apiService.createIVRConfig = async (menuName, config) => {
   const data = buildIVRMenuRequestData(menuName, config);
   try {
-    return await requestWithIvrFallback({ method: 'post', path: '/menus', data });
+    // New IVRs are workflow drafts and may not have greeting/menu nodes yet.
+    // The legacy /menus endpoint requires those fields and rejects valid drafts.
+    return await requestWithIvrFallback({ method: 'post', path: '/menus/workflow', data });
   } catch (error) {
-    // Keep compatibility with older IVR deployments while preferring the
-    // collection route exposed by the current Node backend.
+    // Older deployments may not expose the workflow endpoint.
     if (error?.response?.status !== 404) throw error;
-    return requestWithIvrFallback({ method: 'post', path: '/menus/workflow', data });
+    return requestWithIvrFallback({ method: 'post', path: '/menus', data });
   }
 };
 apiService.updateIVRConfig = (menuId, config) =>

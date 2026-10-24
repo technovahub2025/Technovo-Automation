@@ -783,6 +783,43 @@ const CrmTasks = () => {
       .filter((agent) => agent.id && isActiveTaskAssignee(agent));
   }, [currentUserId, taskAdminAgents]);
 
+  const taskUserLabelsById = useMemo(() => {
+    const labels = new Map();
+    const addUser = (user) => {
+      const userId = normalizeTaskUserId(user);
+      const name = String(
+        user?.name || user?.displayName || user?.fullName || user?.username || user?.email || ''
+      ).trim();
+      if (userId && name) {
+        labels.set(userId, userId === currentUserId ? `${name} (Me)` : name);
+      }
+    };
+
+    (Array.isArray(users) ? users : []).forEach(addUser);
+    (Array.isArray(taskAdminAgents) ? taskAdminAgents : []).forEach(addUser);
+    addUser(authenticatedUser);
+    return labels;
+  }, [authenticatedUser, currentUserId, taskAdminAgents, users]);
+
+  const resolveTaskUserLabel = (value, emptyLabel = '-') => {
+    if (value === undefined || value === null || value === '') return emptyLabel;
+    const directName = typeof value === 'object'
+      ? String(value?.name || value?.displayName || value?.fullName || value?.username || value?.email || '').trim()
+      : String(value).trim();
+    const userId = normalizeTaskUserId(value);
+    const looksLikeId = (candidate) =>
+      /^[a-f\d]{24}$/i.test(candidate) ||
+      /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/i.test(candidate);
+
+    if (directName && !looksLikeId(directName)) {
+      return userId === currentUserId ? `${directName} (Me)` : directName;
+    }
+    if (userId && taskUserLabelsById.has(userId)) return taskUserLabelsById.get(userId);
+    if (userId === currentUserId) return 'Me';
+    if (!userId) return emptyLabel;
+    return looksLikeId(userId) ? 'Unknown user' : userId;
+  };
+
   const taskAdminBulkAssignCount =
     taskAdminBulkAssignBucket === "due_today"
       ? Number(summary?.dueToday ?? 0)
@@ -2017,7 +2054,7 @@ const CrmTasks = () => {
                           <div className="crm-task-submeta">
                             <span>Reminder: {formatDateTime(task?.reminderAt)}</span>
                             {task?.completedAt && <span>Completed: {formatDateTime(task.completedAt)}</span>}
-                            {task?.completedBy && <span>By: {task.completedBy}</span>}
+                            {task?.completedBy && <span>By: {resolveTaskUserLabel(task.completedBy, 'Unknown user')}</span>}
                           </div>
                           {isExpanded && (
                             <div className="crm-task-details-panel">
@@ -2077,9 +2114,11 @@ const CrmTasks = () => {
 
                     cells.push(
                       <td key={`${taskId}-assignee`} className="crm-task-col-assignee">
-                        <strong className="crm-task-assignee-value">{task?.assignedTo || "Unassigned"}</strong>
+                        <strong className="crm-task-assignee-value">
+                          {resolveTaskUserLabel(task?.assignedTo, 'Unassigned')}
+                        </strong>
                         <span className="crm-task-cell-line crm-task-owner-value">
-                          Owner: {contact?.ownerId || "-"}
+                          Owner: {resolveTaskUserLabel(contact?.ownerId)}
                         </span>
                       </td>
                     );

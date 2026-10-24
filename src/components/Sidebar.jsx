@@ -822,6 +822,16 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         );
     };
 
+    const renderPanelCountBadge = (value, ariaLabel) => {
+        const count = Number(value || 0);
+        if (!Number.isFinite(count) || count <= 0) return null;
+        return (
+            <span className="panel-item-count-badge" aria-label={`${count} ${ariaLabel}`}>
+                {count > 99 ? '99+' : count}
+            </span>
+        );
+    };
+
     const prefetchRoute = useCallback((route) => {
         const connection = navigator.connection;
         if (!route || connection?.saveData || ['slow-2g', '2g'].includes(connection?.effectiveType)) {
@@ -1410,6 +1420,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     >
                                         <FileText size={20} />
                                         <span>Tasks</span>
+                                        {renderPanelCountBadge(hubBadges.overdueTasks, 'overdue tasks')}
                                     </NavLink>
                                 )}
                                 {(showAllSidebarFeatures || featureFlags.crmDeals) && (
@@ -1422,6 +1433,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     >
                                         <BadgeDollarSign size={20} />
                                         <span>Deals</span>
+                                        {renderPanelCountBadge(hubBadges.openDeals, 'open deals')}
                                     </NavLink>
                                 )}
                                 {(showAllSidebarFeatures || featureFlags.crmMeetings) && (
@@ -1461,6 +1473,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     >
                                         <LineChart size={20} />
                                         <span>Follow-up Ops</span>
+                                        {renderPanelCountBadge(hubBadges.automationAlerts, 'response SLA alerts')}
                                     </NavLink>
                                 )}
                                 {/* <NavLink

@@ -214,8 +214,8 @@ const TemplateSendModal = ({
 
             {!canSendMarketingTemplate && !selectedTemplateIsMarketing ? (
               <div className="template-send-feedback template-send-feedback--info">
-                Marketing templates are hidden because this contact is not eligible for marketing sends.
-                Service templates can still be sent.
+                Approved marketing templates are shown but disabled because this contact is not eligible for marketing sends.
+                Eligible service templates can still be sent.
               </div>
             ) : null}
 
