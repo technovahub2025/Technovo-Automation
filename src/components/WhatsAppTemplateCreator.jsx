@@ -549,6 +549,8 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
       errors.body = 'Variables must use numeric format: {{1}}, {{2}}.';
     } else if (missingNumbers.length > 0) {
       errors.body = `Variables must be sequential. Missing ${missingNumbers.map((n) => `{{${n}}}`).join(', ')}.`;
+    } else if (!body.replace(/\{\{\d+\}\}/g, '').trim()) {
+      errors.body = 'Body must include regular text in addition to variables.';
     }
 
     if (vars.length > 0) {
