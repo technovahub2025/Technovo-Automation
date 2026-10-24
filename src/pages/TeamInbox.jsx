@@ -873,6 +873,34 @@ const TeamInbox = () => {
     []
   );
 
+  const latestInboundMessageAtFromThread = useMemo(() => {
+    const latestInboundMessage = (Array.isArray(messages) ? messages : [])
+      .filter((message) => String(message?.sender || '').trim().toLowerCase() === 'contact')
+      .reduce((latest, message) => {
+        const timestamp = new Date(message?.timestamp || message?.createdAt || message?.date || 0);
+        return !Number.isNaN(timestamp.getTime()) && timestamp > latest ? timestamp : latest;
+      }, new Date(0));
+    return latestInboundMessage.getTime() > 0 ? latestInboundMessage : null;
+  }, [messages]);
+
+  const selectedContactForWhatsAppState =
+    selectedConversation?.contactId && typeof selectedConversation.contactId === 'object'
+      ? selectedConversation.contactId
+      : {};
+  const selectedWhatsAppState = useMemo(
+    () =>
+      getWhatsAppConversationState({
+        ...selectedContactForWhatsAppState,
+        ...selectedConversation,
+        serviceWindowClosesAt:
+          selectedConversation?.serviceWindowClosesAt ||
+          selectedContactForWhatsAppState?.serviceWindowClosesAt,
+        lastInboundMessageAt:
+          selectedContactForWhatsAppState?.lastInboundMessageAt || latestInboundMessageAtFromThread
+      }),
+    [latestInboundMessageAtFromThread, selectedContactForWhatsAppState, selectedConversation]
+  );
+
   const applyWhatsAppContactUpdateLocally = (contactUpdate = {}) => {
     const normalizedContactId = String(
       contactUpdate?._id || contactUpdate?.id || ''
