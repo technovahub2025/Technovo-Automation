@@ -577,13 +577,15 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
   };
 
   const handleActivate = async () => {
-    if (validationErrors.length > 0) return;
     const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
 
-    // Enforce strict validation only when activating
+    // Keep invalid flows inactive, but explain why activation is blocked.
     if (newStatus === 'active' && !hasValidMenu) {
-      const topIssues = productionValidation.issues.slice(0, 8);
-      alert(`Cannot activate IVR menu:\n\n- ${topIssues.join('\n- ')}`);
+      const issues = [...new Set([
+        ...productionValidation.issues,
+        ...validationErrors.map((issue) => typeof issue === 'string' ? issue : issue?.message).filter(Boolean)
+      ])].slice(0, 8);
+      alert(`Cannot activate IVR menu:\n\n- ${issues.join('\n- ')}`);
       return;
     }
 
@@ -605,6 +607,17 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
       }
 
       setIsDirty(false);
+    } catch (error) {
+      const serverIssues = error?.response?.data?.validationErrors
+        ?.map((issue) => typeof issue === 'string' ? issue : issue?.message)
+        .filter(Boolean) || [];
+      const message = error?.response?.data?.error || error?.message || 'Unable to update workflow status.';
+      alert([
+        `Could not ${newStatus === 'active' ? 'activate' : 'deactivate'} IVR menu:`,
+        '',
+        message,
+        ...serverIssues.map((issue) => `- ${issue}`)
+      ].join('\n'));
     } finally {
       setIsSavingWorkflow(false);
     }
@@ -1109,7 +1122,7 @@ function IVRMenuCard({ menu, onUpdate, onDelete }) {
             className="action-btn"
             onClick={handleActivate}
             title={currentStatus === 'active' ? 'Deactivate Workflow' : 'Activate Workflow'}
-            disabled={validationErrors.length > 0 || isSavingWorkflow || (currentStatus !== 'active' && !hasValidMenu)}
+            disabled={isSavingWorkflow}
           >
             {currentStatus === 'active' ? <Pause size={16} /> : <Play size={16} />}
           </button>
