@@ -551,6 +551,13 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
       errors.body = `Variables must be sequential. Missing ${missingNumbers.map((n) => `{{${n}}}`).join(', ')}.`;
     } else if (!body.replace(/\{\{\d+\}\}/g, '').trim()) {
       errors.body = 'Body must include regular text in addition to variables.';
+    } else if (vars.length > 0) {
+      const bodyWordCount = body.split(/\s+/).filter(Boolean).length;
+      const fixedWordCount = bodyWordCount - vars.length;
+      const minimumFixedWords = (2 * vars.length) + 1;
+      if (fixedWordCount < minimumFixedWords) {
+        errors.body = `This body has too many variables for its length. Add more regular words or use fewer variables (aim for at least ${minimumFixedWords} non-variable words for ${vars.length} variable${vars.length === 1 ? '' : 's'}).`;
+      }
     }
 
     if (vars.length > 0) {
