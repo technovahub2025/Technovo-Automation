@@ -883,22 +883,22 @@ const TeamInbox = () => {
     return latestInboundMessage.getTime() > 0 ? latestInboundMessage : null;
   }, [messages]);
 
-  const selectedContactForWhatsAppState =
-    selectedConversation?.contactId && typeof selectedConversation.contactId === 'object'
-      ? selectedConversation.contactId
-      : {};
   const selectedWhatsAppState = useMemo(
-    () =>
-      getWhatsAppConversationState({
-        ...selectedContactForWhatsAppState,
+    () => {
+      const contact =
+        selectedConversation?.contactId && typeof selectedConversation.contactId === 'object'
+          ? selectedConversation.contactId
+          : {};
+      return getWhatsAppConversationState({
+        ...contact,
         ...selectedConversation,
         serviceWindowClosesAt:
-          selectedConversation?.serviceWindowClosesAt ||
-          selectedContactForWhatsAppState?.serviceWindowClosesAt,
+          selectedConversation?.serviceWindowClosesAt || contact?.serviceWindowClosesAt,
         lastInboundMessageAt:
-          selectedContactForWhatsAppState?.lastInboundMessageAt || latestInboundMessageAtFromThread
-      }),
-    [latestInboundMessageAtFromThread, selectedContactForWhatsAppState, selectedConversation]
+          contact?.lastInboundMessageAt || latestInboundMessageAtFromThread
+      });
+    },
+    [latestInboundMessageAtFromThread, selectedConversation]
   );
 
   const applyWhatsAppContactUpdateLocally = (contactUpdate = {}) => {
