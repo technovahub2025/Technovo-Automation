@@ -1251,7 +1251,7 @@
         font-size: 12px;
     }
 
-    .contact-info-item strong {
+    .contact-info-item > strong {
         max-width: 64%;
     }
 }
@@ -6189,10 +6189,10 @@
 }
 
 .contact-info-quick-actions__header {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    display: flex;
+    flex-direction: column;
     gap: 10px;
-    align-items: start;
+    align-items: stretch;
 }
 
 .contact-info-quick-actions__header h4 {
@@ -6214,10 +6214,10 @@
 }
 
 .contact-info-quick-actions__meta {
-    display: flex;
-    align-items: flex-start;
-    justify-content: flex-end;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-items: stretch;
+    justify-content: stretch;
     gap: 8px;
     min-width: 0;
 }
@@ -6225,7 +6225,10 @@
 .contact-info-followup-badge {
     display: inline-flex;
     align-items: center;
+    justify-content: center;
     gap: 6px;
+    min-width: 0;
+    width: 100%;
     padding: 7px 10px;
     border-radius: 999px;
     border: 1px solid #dbeafe;
@@ -6234,7 +6237,8 @@
     font-size: 11px;
     font-weight: 800;
     cursor: pointer;
-    white-space: nowrap;
+    white-space: normal;
+    text-align: center;
     transition: transform 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 }
 
@@ -6273,6 +6277,9 @@
 .contact-info-status-chip {
     display: inline-flex;
     flex-direction: column;
+    grid-column: 1 / -1;
+    align-items: center;
+    width: 100%;
     gap: 2px;
     min-width: 0;
     padding: 7px 10px;
@@ -6582,20 +6589,35 @@
 
 .contact-info-item--admin-strip .contact-info-assignment {
     width: 100%;
+    max-width: none;
     margin-top: 10px;
+    align-items: stretch;
 }
 
 .contact-info-item--admin-strip .contact-info-assignment__hint {
+    width: 100%;
     margin-top: 8px;
+    text-align: left;
 }
 
-.contact-info-item span {
+.contact-info-item--admin-strip .contact-info-assignment .lead-stage-select {
+    width: 100%;
+    max-width: 100%;
+}
+
+.contact-info-item--admin-strip > .contact-info-item-label-row {
+    flex: 0 0 auto;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.contact-info-item > span {
     color: #64748b;
     font-size: 13px;
     flex: 0 0 92px;
 }
 
-.contact-info-item strong {
+.contact-info-item > strong {
     font-size: 13px;
     text-align: right;
     max-width: 65%;
@@ -7392,11 +7414,11 @@
         gap: 8px;
     }
 
-    .contact-info-item span {
+    .contact-info-item > span {
         flex: 0 0 auto;
     }
 
-    .contact-info-item strong {
+    .contact-info-item > strong {
         max-width: 58%;
     }
 
@@ -8379,18 +8401,21 @@
 }
 
 .contact-info-item--actions {
-    align-items: flex-start;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
 }
 
 .contact-info-item--actions .whatsapp-status-actions {
     width: 100%;
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 8px;
 }
 
 .contact-info-item--actions .lead-action-btn {
-    flex: 1 1 140px;
+    min-width: 0;
+    margin-bottom: 0;
 }
 
 @media (max-width: 640px) {
