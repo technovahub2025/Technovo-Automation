@@ -4673,6 +4673,7 @@
     color: #111b21;
     display: -webkit-box;
     -webkit-box-orient: vertical;
+    line-clamp: 2;
     -webkit-line-clamp: 2;
     overflow: hidden;
     word-break: break-word;
@@ -7008,9 +7009,14 @@
 }
 
 .lead-action-btn--save-note {
-    background: #f8fafc;
-    border-color: #dbe3ea;
-    color: #94a3b8;
+    background: #16a34a;
+    border-color: #16a34a;
+    color: #ffffff;
+}
+
+.lead-action-btn--save-note:not(:disabled):hover {
+    background: #15803d;
+    border-color: #15803d;
 }
 
 .lead-action-btn:disabled {
