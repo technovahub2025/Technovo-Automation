@@ -194,9 +194,9 @@ const IVRMenuConfig = () => {
 
       const updatePayload = {
         ...(sanitizedWorkflowData ? { workflowConfig: sanitizedWorkflowData } : {}),
-        ...(workflowData?.status
-          ? { status: workflowData.status }
-          : (sanitizedWorkflowData ? { status: 'draft' } : {})),
+        // Saving graph edits must not silently demote an active workflow.
+        // The backend preserves the existing status when this field is omitted.
+        ...(workflowData?.status ? { status: workflowData.status } : {}),
         ...(workflowData?.lastEditedBy ? { lastEditedBy: workflowData.lastEditedBy } : {})
       };
 
