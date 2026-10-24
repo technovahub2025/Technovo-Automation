@@ -27,6 +27,7 @@ import {
   Star
 } from 'lucide-react';
 import AttachmentComposerOverlay from './AttachmentComposerOverlay';
+import { useWhatsAppWindowStatus } from './useWhatsAppWindowStatus';
 import webSocketService from '../../services/websocketService';
 import {
   buildAttachmentComposerItemId,
@@ -1043,6 +1044,15 @@ const ChatArea = ({
   const selectedConversationTransitionIdRef = useRef('');
   const selectedConversationTransitionStartedAtRef = useRef(0);
   const selectedConversationTransitionHideTimerRef = useRef(null);
+  const whatsappWindowStatus = useWhatsAppWindowStatus(
+    {
+      ...(selectedConversation || {}),
+      ...(selectedConversationLatestInboundMessageAt
+        ? { lastInboundMessageAt: selectedConversationLatestInboundMessageAt }
+        : {})
+    },
+    whatsappMessagingState || {}
+  );
   const conversationWhatsAppState = useMemo(() => {
     if (!selectedConversation) return whatsappMessagingState || null;
     const contactSource = {
@@ -1097,7 +1107,8 @@ const ChatArea = ({
   }, [
     selectedConversation,
     selectedConversationLatestInboundMessageAt,
-    whatsappMessagingState
+    whatsappMessagingState,
+    whatsappWindowStatus.now
   ]);
   const isFreeformBlocked = Boolean(
     selectedConversation && conversationWhatsAppState && !conversationWhatsAppState.freeformAllowed
@@ -3125,8 +3136,14 @@ const ChatArea = ({
   const leadStageValue = getLeadStageValue(selectedConversation);
   const leadStageLabel = String(getLeadStageLabel(selectedConversation)).trim() || 'New Lead';
   const leadStageTone = String(leadStageValue || 'new').trim().toLowerCase() || 'new';
-  const whatsappStateLabel = String(whatsappMessagingState?.statusLabel || '').trim();
-  const whatsappStateTone = String(whatsappMessagingState?.badgeTone || '').trim() || 'template-only';
+  const whatsappStateLabel = `${whatsappWindowStatus.status}${whatsappWindowStatus.countdown ? ` · ${whatsappWindowStatus.countdown}` : ''}`;
+  const whatsappStateTone = conversationWhatsAppState?.optedOut
+    ? 'opted-out'
+    : whatsappWindowStatus.status === 'Open'
+      ? 'service-open'
+      : whatsappWindowStatus.status === 'Expiring soon'
+        ? 'service-expiring'
+        : 'template-only';
   const selectedTypingConversationId = selectedConversationId;
   const selectedConversationTypingEntries = Array.isArray(typingState?.[selectedTypingConversationId])
     ? typingState[selectedTypingConversationId]
@@ -3210,10 +3227,12 @@ const ChatArea = ({
                 <span
                   className={`chat-header-operator-chip chat-header-operator-chip--whatsapp chat-header-operator-chip--whatsapp-${whatsappStateTone}`}
                   title={
-                    whatsappMessagingState?.optedOut
+                    conversationWhatsAppState?.optedOut
                       ? 'This contact has opted out of WhatsApp outreach.'
-                      : whatsappMessagingState?.freeformAllowed
-                        ? 'Free-form replies are allowed for this contact.'
+                      : whatsappWindowStatus.isOpen
+                        ? whatsappWindowStatus.countdown
+                          ? `Free-form replies are allowed. This window closes in ${whatsappWindowStatus.countdown}.`
+                          : 'Free-form replies are currently allowed.'
                         : 'Send an approved template and wait for the customer to reply before sending free-form messages.'
                   }
                 >

@@ -2165,6 +2165,11 @@
     color: #d1fae5;
 }
 
+.chat-header-operator-chip--whatsapp.chat-header-operator-chip--whatsapp-service-expiring {
+    background: rgba(245, 158, 11, 0.24);
+    color: #fef3c7;
+}
+
 .chat-header-operator-chip--whatsapp.chat-header-operator-chip--whatsapp-template-only {
     background: rgba(99, 102, 241, 0.22);
     color: #e0e7ff;
@@ -7088,6 +7093,12 @@
     background: #ecfdf5;
     color: #047857;
     border-color: #a7f3d0;
+}
+
+.whatsapp-status-badge--service-expiring {
+    background: #fffbeb;
+    color: #b45309;
+    border-color: #fcd34d;
 }
 
 .whatsapp-status-badge--template-only {
