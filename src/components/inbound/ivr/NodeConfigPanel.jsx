@@ -4,6 +4,14 @@ import apiService from '../../../services/api';
 import { markTtsAudioFailure, shouldRefreshTtsAudio } from '../../../utils/ivrTtsAudio';
 import './NodeConfigPanel.css';
 
+const AI_RELAY_VOICES = [
+  { id: 'mCQMfsqGDT6IDkEKR20a', label: 'English India (ElevenLabs)', language: 'en-IN' },
+  { id: 'UgBBYS2sOqTuMpoF3BR0', label: 'English US (ElevenLabs)', language: 'en-US' },
+  { id: 'Fahco4VZzobUeiPqni1S', label: 'English UK (ElevenLabs)', language: 'en-GB' },
+  { id: 'ZhJ5LanYnCmLKQUXvsV7', label: 'Tamil India (ElevenLabs)', language: 'ta-IN' },
+  { id: 'IvLWq57RKibBrqZGpQrC', label: 'Hindi India (ElevenLabs)', language: 'hi-IN' }
+];
+
 const getNodeField = (data, camelKey, snakeKey, fallback) => {
   if (!data || typeof data !== 'object') return fallback;
   if (data[camelKey] !== undefined && data[camelKey] !== null) return data[camelKey];
@@ -146,7 +154,19 @@ const buildInitialConfig = (node) => {
     customerTemplateLanguage: getNodeField(data, 'customerTemplateLanguage', 'customer_template_language', 'en_US'),
     adminTemplateLanguage: getNodeField(data, 'adminTemplateLanguage', 'admin_template_language', 'en_US'),
     announcementText: getNodeField(data, 'announcementText', 'announcement_text', ''),
-    bookingText: getNodeField(data, 'text', null, '')
+    bookingText: getNodeField(data, 'text', null, ''),
+    companyName: getNodeField(data, 'companyName', 'company_name', ''),
+    welcomeMessage: getNodeField(data, 'welcomeMessage', 'welcome_message', ''),
+    systemPrompt: getNodeField(data, 'systemPrompt', 'system_prompt', ''),
+    knowledgeBase: getNodeField(data, 'knowledgeBase', 'knowledge_base', ''),
+    language: getNodeField(data, 'language', null, 'en-IN'),
+    voiceSelection: getNodeField(data, 'voiceSelection', 'voice_selection', 'mCQMfsqGDT6IDkEKR20a'),
+    humanAgentPhoneNumber: getNodeField(data, 'humanAgentPhoneNumber', 'human_agent_phone_number', ''),
+    discountQuestion: getNodeField(data, 'discountQuestion', 'discount_question', 'Before we finish, would you like to speak with our team about any available discounts or special offers?'),
+    maxDuration: getNodeField(data, 'maxDuration', 'max_duration', 300),
+    silenceTimeout: getNodeField(data, 'silenceTimeout', 'silence_timeout', 2),
+    transferOnCustomerRequest: getNodeField(data, 'transferOnCustomerRequest', 'transfer_on_customer_request', true),
+    transferOnDiscountInterest: getNodeField(data, 'transferOnDiscountInterest', 'transfer_on_discount_interest', true)
   };
 };
 
@@ -223,6 +243,29 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
       const normalizedPromptAudioNodeId = String(nextConfig.promptAudioNodeId || '').trim();
       if (!normalizedPromptAudioNodeId) {
         alert('Prompt Audio Node is required for User Input. Please select one audio node.');
+        return;
+      }
+    }
+
+    if (node?.type === 'ai_voice_agent') {
+      const missing = ['companyName', 'welcomeMessage', 'systemPrompt', 'knowledgeBase', 'discountQuestion']
+        .filter((field) => !String(nextConfig[field] || '').trim());
+      if (missing.length) {
+        alert(`Complete these AI Voice Agent fields before saving: ${missing.join(', ')}`);
+        return;
+      }
+      const transferEnabled = nextConfig.transferOnCustomerRequest !== false || nextConfig.transferOnDiscountInterest !== false;
+      if (transferEnabled && !/^\+[1-9]\d{7,14}$/.test(String(nextConfig.humanAgentPhoneNumber || '').trim())) {
+        alert('Enter a valid human agent number in E.164 format, such as +14155550123.');
+        return;
+      }
+      const selectedVoice = AI_RELAY_VOICES.find((voice) => voice.id === nextConfig.voiceSelection);
+      if (!selectedVoice || selectedVoice.language !== nextConfig.language) {
+        alert('Choose a voice that matches the selected language.');
+        return;
+      }
+      if (Number(nextConfig.maxDuration) < 60 || Number(nextConfig.maxDuration) > 1800 || Number(nextConfig.silenceTimeout) < 1 || Number(nextConfig.silenceTimeout) > 5) {
+        alert('Set duration to 60–1800 seconds and silence timeout to 1–5 seconds.');
         return;
       }
     }
@@ -694,6 +737,65 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
     </div>
   );
 
+  const renderAIVoiceAgentConfig = () => (
+    <div className="config-section">
+      <h4>AI Voice Agent Configuration</h4>
+      <p className="form-help">This node uses Twilio ConversationRelay for live speech recognition and spoken responses, and the configured Groq AI service for answers.</p>
+      <div className="form-group">
+        <label>Company Name</label>
+        <input value={config.companyName || ''} maxLength={120} onChange={(e) => handleChange('companyName', e.target.value)} placeholder="Your company" />
+      </div>
+      <div className="form-group">
+        <label>Welcome Message</label>
+        <textarea value={config.welcomeMessage || ''} maxLength={500} rows={3} onChange={(e) => handleChange('welcomeMessage', e.target.value)} placeholder="Hello! Welcome to your company. I'm your AI assistant. How can I help you today?" />
+      </div>
+      <div className="form-group">
+        <label>AI System Prompt</label>
+        <textarea value={config.systemPrompt || ''} maxLength={8000} rows={6} onChange={(e) => handleChange('systemPrompt', e.target.value)} placeholder="Define the assistant's role, response style, and boundaries." />
+        <small className="form-help">The assistant is instructed to ground answers in the business knowledge below.</small>
+      </div>
+      <div className="form-group">
+        <label>Business Knowledge Base</label>
+        <textarea value={config.knowledgeBase || ''} maxLength={50000} rows={8} onChange={(e) => handleChange('knowledgeBase', e.target.value)} placeholder="Approved services, products, pricing, availability, offers, and business information." />
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label>Language</label>
+          <select value={config.language || 'en-IN'} onChange={(e) => { const language = e.target.value; const selected = AI_RELAY_VOICES.find((voice) => voice.language === language); handleChange('language', language); if (selected) handleChange('voiceSelection', selected.id); }}>
+            {AI_RELAY_VOICES.map((voice) => <option key={voice.language} value={voice.language}>{voice.language}</option>)}
+          </select>
+        </div>
+        <div className="form-group">
+          <label>Voice Selection</label>
+          <select value={config.voiceSelection || ''} onChange={(e) => { const selected = AI_RELAY_VOICES.find((voice) => voice.id === e.target.value); handleChange('voiceSelection', e.target.value); if (selected) handleChange('language', selected.language); }}>
+            {AI_RELAY_VOICES.map((voice) => <option key={voice.id} value={voice.id}>{voice.label}</option>)}
+          </select>
+        </div>
+      </div>
+      <div className="form-group">
+        <label>Human Agent Phone Number</label>
+        <input type="tel" value={config.humanAgentPhoneNumber || ''} onChange={(e) => handleChange('humanAgentPhoneNumber', e.target.value)} placeholder="+14155550123" />
+        <small className="form-help">Use E.164 format, such as +14155550123.</small>
+      </div>
+      <div className="form-group">
+        <label>Discount Question</label>
+        <textarea value={config.discountQuestion || ''} maxLength={500} rows={2} onChange={(e) => handleChange('discountQuestion', e.target.value)} />
+      </div>
+      <div className="form-row">
+        <div className="form-group">
+          <label>Maximum Conversation Duration (seconds)</label>
+          <input type="number" min={60} max={1800} value={config.maxDuration || 300} onChange={(e) => handleChange('maxDuration', parseNumber(e.target.value, 300))} />
+        </div>
+        <div className="form-group">
+          <label>Silence Timeout (seconds)</label>
+          <input type="number" min={1} max={5} value={config.silenceTimeout || 2} onChange={(e) => handleChange('silenceTimeout', parseNumber(e.target.value, 2))} />
+        </div>
+      </div>
+      <div className="form-group"><label><input type="checkbox" checked={config.transferOnCustomerRequest !== false} onChange={(e) => handleChange('transferOnCustomerRequest', e.target.checked)} /> Transfer on Customer Request</label></div>
+      <div className="form-group"><label><input type="checkbox" checked={config.transferOnDiscountInterest !== false} onChange={(e) => handleChange('transferOnDiscountInterest', e.target.checked)} /> Transfer on Discount Interest</label></div>
+    </div>
+  );
+
   const renderBookingConfig = (type) => {
     const isAvailability = type === 'availability_check';
     const isOffer = type === 'slot_offer';
@@ -1060,6 +1162,8 @@ const NodeConfigPanel = ({ node, workflowId, onSave, onClose, availableAudioNode
     switch (node?.type) {
       case 'audio':
         return renderAudioConfig();
+      case 'ai_voice_agent':
+        return renderAIVoiceAgentConfig();
       case 'availability_check':
       case 'slot_offer':
       case 'booking_confirm':
