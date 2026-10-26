@@ -1309,10 +1309,10 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                             </div>
                             <nav className="panel-menu">
                                 <NavLink
-                                    to="/campaignmanagement"
+                                    to="/broadcast"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onMouseEnter={() => prefetchRoute('/campaignmanagement')}
-                                    onFocus={() => prefetchRoute('/campaignmanagement')}
+                                    onMouseEnter={() => prefetchRoute('/broadcast')}
+                                    onFocus={() => prefetchRoute('/broadcast')}
                                     onClick={closeMobileMenusAfterNavigate}
                                 >
                                     <LayoutDashboard size={20} />
