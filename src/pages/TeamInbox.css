@@ -1989,14 +1989,6 @@
 
     flex: 1;
 
-    min-height: 0;
-
-    min-width: 0;
-
-    height: 100%;
-
-    overflow: hidden;
-
     display: flex;
 
     flex-direction: column;
@@ -2712,11 +2704,7 @@
 
 .chat-messages {
 
-    flex: 1 1 0%;
-
-    min-height: 0;
-
-    min-width: 0;
+    flex: 1;
 
     padding: 20px 8px 20px 24px;
 
@@ -2728,8 +2716,6 @@
 
     gap: 16px;
     position: relative;
-
-    overscroll-behavior: contain;
 
 }
 
@@ -3913,11 +3899,9 @@
 }
 
 .chat-messages-virtuoso {
-    flex: 1 1 0%;
+    flex: 1;
     min-height: 0;
-    max-height: 100%;
     width: 100%;
-    overflow-x: hidden;
     scrollbar-width: thin;
     scrollbar-color: rgba(148, 163, 184, 0.62) transparent;
 }
