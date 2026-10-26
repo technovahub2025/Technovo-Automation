@@ -58,6 +58,7 @@ const UsersListPage = lazy(() => import("./pages/superadmin/UsersListPage"));
 const AdminSetupPage = lazy(() => import("./pages/superadmin/AdminSetupPage"));
 const PaymentsDetailsPage = lazy(() => import("./pages/superadmin/PaymentsDetailsPage"));
 const ConsentLogsPage = lazy(() => import("./pages/superadmin/ConsentLogsPage"));
+const CustomerTargetingPage = lazy(() => import("./pages/superadmin/CustomerTargetingPage"));
 
 const renderLazyRoute = (element, label = "Loading page...") => (
   <Suspense fallback={<div style={{ padding: 24 }}>{label}</div>}>{element}</Suspense>
@@ -291,6 +292,14 @@ function App() {
             element={
               <ProtectedRoute requiredRole="superadmin">
                 {renderLazyRoute(<ConsentLogsPage />, "Loading consent logs...")}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/customer-targeting"
+            element={
+              <ProtectedRoute requiredRole="superadmin">
+                {renderLazyRoute(<CustomerTargetingPage />, "Loading customer targeting...")}
               </ProtectedRoute>
             }
           />

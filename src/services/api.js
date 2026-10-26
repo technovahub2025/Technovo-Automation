@@ -415,6 +415,14 @@ apiService.getAdminUsers = (config = {}) =>
     timeout: Number(import.meta.env.VITE_ADMIN_USERS_TIMEOUT_MS || 90000),
     ...config
   });
+apiService.getTargetingCustomers = () =>
+  apiService.get('/api/super-admin/customer-targeting/customers');
+apiService.getTargetingCustomerCampaigns = (companyId) =>
+  apiService.get(`/api/super-admin/customer-targeting/customers/${encodeURIComponent(companyId)}/campaigns`);
+apiService.getCampaignTargetingDetails = (companyId, campaignId) =>
+  apiService.get(
+    `/api/super-admin/customer-targeting/customers/${encodeURIComponent(companyId)}/campaigns/${encodeURIComponent(campaignId)}`
+  );
 apiService.getMyAgents = async (params = {}) => {
   const response = await apiService.get('/api/crm/ops/owner-dashboard', {
     params: {

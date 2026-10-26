@@ -9,6 +9,7 @@ import {
   Settings2,
   Shield,
   ShieldCheck,
+  Target,
   UserCog,
   UsersRound,
   WalletCards
@@ -76,6 +77,18 @@ const ADMIN_CARDS = [
     action: 'Open Verification',
     meta: 'Document review queue',
     accent: 'superadmin-dashboard-card--verification'
+  },
+  {
+    key: 'customer-targeting',
+    icon: Target,
+    label: 'CUSTOMER TARGETING',
+    title: 'Customer Targeting',
+    description: 'View interests, behaviours, and locations used in customer campaigns.',
+    path: '/admin/customer-targeting',
+    action: 'Open Targeting',
+    meta: 'Super Admin only',
+    hint: 'Super Admin only',
+    accent: 'superadmin-dashboard-card--users'
   }
 ];
 
@@ -175,7 +188,7 @@ const AdminDashboard = () => {
               <div className="superadmin-dashboard-card__footer">
                 <div className="superadmin-dashboard-card__hint">
                   <Shield size={15} />
-                  <span>Production-ready workflow</span>
+                  <span>{card.hint || 'Production-ready workflow'}</span>
                 </div>
                 <button
                   className="primary-btn superadmin-dashboard-card__action"
