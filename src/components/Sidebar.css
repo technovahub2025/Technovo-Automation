@@ -353,22 +353,6 @@
     color: #34346B;
 }
 
-.panel-item-count-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 20px;
-    height: 20px;
-    margin-left: auto;
-    padding: 0 6px;
-    border-radius: 999px;
-    background: #ef4444;
-    color: #ffffff;
-    font-size: 11px;
-    font-weight: 700;
-    line-height: 1;
-}
-
 .panel-item.active {
     background: 135deg;
     color: #2563eb;
