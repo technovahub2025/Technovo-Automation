@@ -1168,9 +1168,27 @@ const CampaignManagement = () => {
         return `${amount.toFixed(digits)}x`;
     };
     const getCampaignStatusMeta = (campaign) => {
+        const metaCampaignId = String(campaign?.metaCampaignId || '').trim();
+        const isMetaCampaign = Boolean(metaCampaignId) && !/^[a-f\d]{24}$/i.test(metaCampaignId);
+        if (isMetaCampaign) {
+            const label = campaign?.metaDeliverySnapshot?.campaign
+                ? getMetaDeliverySummary(campaign.metaDeliverySnapshot)
+                : 'Status unavailable';
+            const normalizedMetaLabel = String(label).toLowerCase();
+            const isEnded = ['completed', 'deleted', 'archived', 'rejected', 'issues detected'].includes(normalizedMetaLabel);
+            const isPaused = normalizedMetaLabel.includes('paused') || normalizedMetaLabel === 'paused';
+            const isRunning = normalizedMetaLabel === 'active';
+            return {
+                label: label.toUpperCase(),
+                sourceLabel: 'Meta Status',
+                badgeClass: isEnded ? 'cm-status-ended' : isPaused ? 'cm-status-paused' : isRunning ? 'cm-status-running' : 'cm-status-review',
+                metricsClass: isEnded || isPaused ? 'cm-faded-metrics' : ''
+            };
+        }
+
         const statusKey = String(campaign?.lifecycleStatus || campaign?.status || 'draft').toLowerCase();
         if (statusKey === 'rejected' && campaign?.metaResponse?.stage) {
-            return { label: 'PUBLISHING FAILED', badgeClass: 'cm-status-ended', metricsClass: 'cm-faded-metrics' };
+            return { label: 'PUBLISHING FAILED', sourceLabel: 'Nexion Status', badgeClass: 'cm-status-ended', metricsClass: 'cm-faded-metrics' };
         }
         const map = {
             active: { label: 'ACTIVE', badgeClass: 'cm-status-running', metricsClass: '' },
@@ -1181,7 +1199,7 @@ const CampaignManagement = () => {
             rejected: { label: 'REJECTED', badgeClass: 'cm-status-ended', metricsClass: 'cm-faded-metrics' },
             publishing: { label: 'PUBLISHING', badgeClass: 'cm-status-review', metricsClass: '' }
         };
-        return map[statusKey] || map.draft;
+        return { ...(map[statusKey] || map.draft), sourceLabel: 'Nexion Status' };
     };
     const totalBudgetBase = campaigns.reduce((sum, campaign) => sum + getCampaignBudgetBase(campaign), 0);
     const spendTargetPercentage = totalBudgetBase > 0 ? Math.round((totalSpend / totalBudgetBase) * 100) : null;
@@ -1466,7 +1484,7 @@ const CampaignManagement = () => {
                                                     <span>Starts {campaign.startDate || 'Not set'}{campaign.endDate ? ` - ${campaign.endDate}` : ''}</span>
                                                 </div>
                                             </div>
-                                            <span className={`cm-status-badge cm-list-status ${statusMeta.badgeClass}`}>Nexion Status: {statusMeta.label}</span>
+                                            <span className={`cm-status-badge cm-list-status ${statusMeta.badgeClass}`}>{statusMeta.sourceLabel}: {statusMeta.label}</span>
                                         </div>
                                         {renderMetaDeliveryStatus(campaign)}
                                         {campaign.lifecycleStatus === 'rejected' && campaign.reviewNotes ? (
@@ -1588,7 +1606,7 @@ const CampaignManagement = () => {
                                                     </div>
                                                 ) : null}
                                             </div>
-                                            <div className={`cm-status-badge ${statusMeta.badgeClass}`}>Nexion Status: {statusMeta.label}</div>
+                                            <div className={`cm-status-badge ${statusMeta.badgeClass}`}>{statusMeta.sourceLabel}: {statusMeta.label}</div>
                                         </div>
                                         <div className="cm-card-body">
                                             {renderMetaDeliveryStatus(campaign)}
