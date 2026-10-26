@@ -834,18 +834,17 @@ const CampaignManagement = () => {
         const snapshot = campaign?.metaDeliverySnapshot;
         const confirmed = Boolean(snapshot?.campaign);
         const stale = Boolean(campaign?.metaDeliveryStatusStale);
-        const label = confirmed
-            ? getMetaDeliverySummary(snapshot)
-            : (hasMetaId ? 'Status unavailable' : 'Not published to Meta');
+        const campaignStatus = confirmed ? getMetaDeliveryLabel(snapshot.campaign).toLowerCase() : '';
+        const adSetStatuses = (snapshot?.adSets || []).map(getMetaDeliveryLabel).filter((status) => status.toLowerCase() !== campaignStatus);
+        const adStatuses = (snapshot?.ads || []).map(getMetaDeliveryLabel).filter((status) => status.toLowerCase() !== campaignStatus);
         return (
             <div className="cm-meta-delivery-status" aria-label="Meta delivery status">
-                <span><strong>Meta Delivery Status:</strong> {label}{stale && confirmed ? ' — stale' : ''}</span>
-                {confirmed ? <small>{formatMetaSyncTime(campaign.metaDeliveryStatusSyncedAt)}</small> : null}
-                {confirmed && (snapshot.adSets?.length || snapshot.ads?.length) ? (
+                {confirmed ? <small>{formatMetaSyncTime(campaign.metaDeliveryStatusSyncedAt)}{stale ? ' · stale' : ''}</small> : null}
+                {confirmed && (adSetStatuses.length || adStatuses.length) ? (
                     <small>
-                        {snapshot.adSets?.length ? `Ad sets: ${snapshot.adSets.map(getMetaDeliveryLabel).join(', ')}` : ''}
-                        {snapshot.adSets?.length && snapshot.ads?.length ? ' · ' : ''}
-                        {snapshot.ads?.length ? `Ads: ${snapshot.ads.map(getMetaDeliveryLabel).join(', ')}` : ''}
+                        {adSetStatuses.length ? `Ad sets: ${adSetStatuses.join(', ')}` : ''}
+                        {adSetStatuses.length && adStatuses.length ? ' · ' : ''}
+                        {adStatuses.length ? `Ads: ${adStatuses.join(', ')}` : ''}
                     </small>
                 ) : null}
                 {metaStatusErrors[localId] ? <small role="status">{metaStatusErrors[localId]}</small> : null}
