@@ -9,6 +9,7 @@ import axios from "axios";
 import { buildIVRMenuRequestData } from '../utils/ivrWorkflowPersistence';
 import socketService from "./socketService";
 import resolveAdminApiUrl from "./adminApiUrl";
+import { resolveApiBaseUrl } from "./apiBaseUrl";
 
 // Base URL from environment variable
 const API_BASE_URL =
@@ -415,13 +416,23 @@ apiService.getAdminUsers = (config = {}) =>
     timeout: Number(import.meta.env.VITE_ADMIN_USERS_TIMEOUT_MS || 90000),
     ...config
   });
+const getCustomerTargetingAuthConfig = () => {
+  const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
+  const token = localStorage.getItem(tokenKey) || localStorage.getItem("authToken") || localStorage.getItem("token");
+  return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+};
+const CUSTOMER_TARGETING_API_BASE_URL = resolveApiBaseUrl();
 apiService.getTargetingCustomers = () =>
-  apiService.get('/api/super-admin/customer-targeting/customers');
+  axios.get(`${CUSTOMER_TARGETING_API_BASE_URL}/api/super-admin/customer-targeting/customers`, getCustomerTargetingAuthConfig());
 apiService.getTargetingCustomerCampaigns = (companyId) =>
-  apiService.get(`/api/super-admin/customer-targeting/customers/${encodeURIComponent(companyId)}/campaigns`);
+  axios.get(
+    `${CUSTOMER_TARGETING_API_BASE_URL}/api/super-admin/customer-targeting/customers/${encodeURIComponent(companyId)}/campaigns`,
+    getCustomerTargetingAuthConfig()
+  );
 apiService.getCampaignTargetingDetails = (companyId, campaignId) =>
-  apiService.get(
-    `/api/super-admin/customer-targeting/customers/${encodeURIComponent(companyId)}/campaigns/${encodeURIComponent(campaignId)}`
+  axios.get(
+    `${CUSTOMER_TARGETING_API_BASE_URL}/api/super-admin/customer-targeting/customers/${encodeURIComponent(companyId)}/campaigns/${encodeURIComponent(campaignId)}`,
+    getCustomerTargetingAuthConfig()
   );
 apiService.getMyAgents = async (params = {}) => {
   const response = await apiService.get('/api/crm/ops/owner-dashboard', {
