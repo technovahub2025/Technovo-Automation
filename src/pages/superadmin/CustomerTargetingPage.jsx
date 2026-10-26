@@ -185,7 +185,7 @@ const CustomerTargetingPage = () => {
           {campaigns.length > 0 ? <div className="customer-targeting__table-wrap"><table className="customer-targeting__table">
             <thead><tr><th>Campaign Name</th><th>Status</th><th>Created Date</th><th>Action</th></tr></thead>
             <tbody>{campaigns.map((campaign) => <tr key={campaign.id}>
-              <td data-label="Campaign Name">{campaign.name}</td><td data-label="Status"><span className="customer-targeting__status">{humanize(campaign.status)}</span></td>
+              <td data-label="Campaign Name">{campaign.name}</td><td data-label="Status"><span className="customer-targeting__status">{humanize(campaign.status)}{campaign.statusStale ? ' · Last known Meta status' : ''}</span></td>
               <td data-label="Created Date">{formatDate(campaign.createdAt)}</td>
               <td data-label="Action"><button type="button" className="primary-btn customer-targeting__button" onClick={() => openCampaign(campaign)}>View</button></td>
             </tr>)}</tbody>
@@ -196,7 +196,7 @@ const CustomerTargetingPage = () => {
       {!loading && selectedCustomer && selectedCampaign && campaignDetails ? (
         <section className="superadmin-panel superadmin-panel--page customer-targeting__details">
           <button type="button" className="btn-link superadmin-back-link" onClick={backToCampaigns}><ArrowLeft size={15} /> Back to Campaigns</button>
-          <div className="customer-targeting__campaign-heading"><div><span className="superadmin-dashboard-card__label">Campaign</span><h2>{campaignDetails.name}</h2></div><span className="customer-targeting__status">{humanize(campaignDetails.status)}</span></div>
+          <div className="customer-targeting__campaign-heading"><div><span className="superadmin-dashboard-card__label">Campaign</span><h2>{campaignDetails.name}</h2></div><span className="customer-targeting__status">{humanize(campaignDetails.status)}{campaignDetails.statusStale ? ' · Last known Meta status' : ''}</span></div>
           <div className="customer-targeting__meta-grid">
             <div><span>Customer</span><strong>{selectedCustomer.name}</strong></div>
             <div><span>Email</span><strong>{selectedCustomer.email || '—'}</strong></div>
