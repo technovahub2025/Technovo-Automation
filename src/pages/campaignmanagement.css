@@ -1352,7 +1352,7 @@
 
 .campaign-management .cm-kpi-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1.5rem;
 }
 
@@ -1389,6 +1389,7 @@
 .campaign-management .cm-kpi-icon-secondary { background: #d3e4fe; color: #38485d; }
 .campaign-management .cm-kpi-icon-tertiary { background: #ffdbcf; color: #832700; }
 .campaign-management .cm-kpi-icon-blue { background: #dbeafe; color: #1d4ed8; }
+.campaign-management .cm-kpi-icon-paused { background: #ffead5; color: #c2410c; }
 
 .campaign-management .cm-kpi-trend {
   font-size: 0.75rem;
@@ -1400,6 +1401,7 @@
 .campaign-management .cm-kpi-trend-muted { color: #64748b; }
 .campaign-management .cm-kpi-trend-tertiary { color: #a73400; }
 .campaign-management .cm-kpi-trend-blue { color: #2563eb; }
+.campaign-management .cm-kpi-trend-paused { color: #c2410c; }
 
 .campaign-management .cm-kpi-label {
   color: #64748b;
@@ -1436,6 +1438,7 @@
 .campaign-management .cm-kpi-fill-secondary { width: 50%; background: #505f76; }
 .campaign-management .cm-kpi-fill-tertiary { width: 85%; background: #7f2500; }
 .campaign-management .cm-kpi-fill-blue { width: 66.666%; background: #3b82f6; }
+.campaign-management .cm-kpi-fill-paused { width: 100%; background: #ea580c; }
 
 .campaign-management .cm-campaigns-head {
   display: flex;

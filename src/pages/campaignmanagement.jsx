@@ -29,6 +29,7 @@ import {
     Eye,
     MousePointer,
     BarChart3,
+    Layers,
     PieChart,
     Settings,
     Save,
@@ -45,6 +46,25 @@ const API_BASE_URL = resolveApiBaseUrl();
 const USE_MOCK = false;
 const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
 const ITEMS_PER_PAGE = 3;
+const getCampaignOverviewStatus = (campaign = {}) => {
+    const metaCampaignId = String(campaign.metaCampaignId || '').trim();
+    const isMetaCampaign = Boolean(metaCampaignId) && !/^[a-f\d]{24}$/i.test(metaCampaignId);
+    if (isMetaCampaign) {
+        if (!campaign.metaDeliverySnapshot?.campaign) return 'unavailable';
+        const status = getMetaDeliverySummary(campaign.metaDeliverySnapshot).toLowerCase();
+        if (status.includes('paused')) return 'paused';
+        if (status === 'active') return 'running';
+        if (['completed', 'deleted', 'archived'].includes(status)) return 'ended';
+        return status;
+    }
+    const statuses = [campaign.deliveryStatus, campaign.status, campaign.lifecycleStatus]
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter(Boolean);
+    if (statuses.some((status) => status.includes('paused'))) return 'paused';
+    if (statuses.some((status) => ['completed', 'ended', 'deleted', 'archived'].includes(status))) return 'ended';
+    if (statuses.some((status) => status === 'active' || status === 'running')) return 'running';
+    return statuses[0] || 'draft';
+};
 const getTodayDateValue = () => {
     const now = new Date();
     const offsetMs = now.getTimezoneOffset() * 60000;
@@ -1113,7 +1133,9 @@ const CampaignManagement = () => {
     ));
     const showingStart = filteredCampaigns.length === 0 ? 0 : startIndex + 1;
     const showingEnd = filteredCampaigns.length === 0 ? 0 : Math.min(endIndex, filteredCampaigns.length);
-    const activeCampaignsCount = campaigns.filter((campaign) => campaign.lifecycleStatus === 'running' || campaign.status === 'active').length;
+    const activeCampaignsCount = campaigns.filter((campaign) => getCampaignOverviewStatus(campaign) === 'running').length;
+    const pausedCampaignsCount = campaigns.filter((campaign) => getCampaignOverviewStatus(campaign) === 'paused').length;
+    const totalCampaignsCount = campaigns.length;
     const totalSpend = campaigns.reduce((sum, campaign) => sum + Number(campaign.spent || 0), 0);
     const totalRevenue = campaigns.reduce((sum, campaign) => sum + Number(campaign.revenue || 0), 0);
     const totalImpressions = campaigns.reduce((sum, campaign) => sum + Number(campaign.impressions || 0), 0);
@@ -1182,7 +1204,7 @@ const CampaignManagement = () => {
             };
         }
 
-        const statusKey = String(campaign?.lifecycleStatus || campaign?.status || 'draft').toLowerCase();
+        const statusKey = getCampaignOverviewStatus(campaign);
         if (statusKey === 'rejected' && campaign?.metaResponse?.stage) {
             return { label: 'PUBLISHING FAILED', sourceLabel: 'Nexion Status', badgeClass: 'cm-status-ended', metricsClass: 'cm-faded-metrics' };
         }
@@ -1200,8 +1222,11 @@ const CampaignManagement = () => {
     const totalBudgetBase = campaigns.reduce((sum, campaign) => sum + getCampaignBudgetBase(campaign), 0);
     const spendTargetPercentage = totalBudgetBase > 0 ? Math.round((totalSpend / totalBudgetBase) * 100) : null;
     const avgImpressionsPerCampaign = campaigns.length > 0 ? totalImpressions / campaigns.length : null;
-    const activeCampaignsTrendLabel = campaigns.length
-        ? `${Math.round((activeCampaignsCount / campaigns.length) * 100)}% active`
+    const activeCampaignsTrendLabel = totalCampaignsCount
+        ? `${Math.round((activeCampaignsCount / totalCampaignsCount) * 100)}% running`
+        : 'No campaigns';
+    const pausedCampaignsTrendLabel = totalCampaignsCount
+        ? `${Math.round((pausedCampaignsCount / totalCampaignsCount) * 100)}% of total`
         : 'No campaigns';
     const spendTrendLabel = spendTargetPercentage !== null
         ? `${spendTargetPercentage}% of budget`
@@ -1213,7 +1238,8 @@ const CampaignManagement = () => {
         ? `${compactCount(avgImpressionsPerCampaign)} avg`
         : 'No campaign data';
     const selectedDateRangeLabel = dateRangeLabels[dateRange] || 'Last 30 Days';
-    const activeFillPercent = campaigns.length ? Math.min(100, Math.round((activeCampaignsCount / campaigns.length) * 100)) : 0;
+    const activeFillPercent = totalCampaignsCount ? Math.min(100, Math.round((activeCampaignsCount / totalCampaignsCount) * 100)) : 0;
+    const pausedFillPercent = totalCampaignsCount ? Math.min(100, Math.round((pausedCampaignsCount / totalCampaignsCount) * 100)) : 0;
     const spendFillPercent = spendTargetPercentage !== null ? Math.min(100, Math.max(0, spendTargetPercentage)) : 0;
     const roasValue = getSafeRatio(totalRevenue, totalSpend);
     const revenueFillPercent = totalSpend > 0 ? Math.min(100, Math.max(0, Math.round(roasValue * 20))) : 0;
@@ -1364,10 +1390,38 @@ const CampaignManagement = () => {
                                 </div>
                                 <span className="cm-kpi-trend cm-kpi-trend-primary">{activeCampaignsTrendLabel}</span>
                             </div>
-                            <p className="cm-kpi-label">Active Campaigns</p>
+                            <p className="cm-kpi-label">Running Campaigns</p>
                             <h3 className="cm-kpi-value headline-font">{activeCampaignsCount}</h3>
                             <div className="cm-kpi-track">
                                 <div className="cm-kpi-fill cm-kpi-fill-primary" style={{ width: `${activeFillPercent}%` }} />
+                            </div>
+                        </div>
+
+                        <div className="cm-kpi-card">
+                            <div className="cm-kpi-top">
+                                <div className="cm-kpi-icon cm-kpi-icon-blue">
+                                    <Layers size={19} />
+                                </div>
+                                <span className="cm-kpi-trend cm-kpi-trend-blue">All statuses</span>
+                            </div>
+                            <p className="cm-kpi-label">Total Campaigns</p>
+                            <h3 className="cm-kpi-value headline-font">{totalCampaignsCount}</h3>
+                            <div className="cm-kpi-track">
+                                <div className="cm-kpi-fill cm-kpi-fill-blue" style={{ width: `${totalCampaignsCount ? 100 : 0}%` }} />
+                            </div>
+                        </div>
+
+                        <div className="cm-kpi-card">
+                            <div className="cm-kpi-top">
+                                <div className="cm-kpi-icon cm-kpi-icon-paused">
+                                    <Pause size={18} />
+                                </div>
+                                <span className="cm-kpi-trend cm-kpi-trend-paused">{pausedCampaignsTrendLabel}</span>
+                            </div>
+                            <p className="cm-kpi-label">Paused Campaigns</p>
+                            <h3 className="cm-kpi-value headline-font">{pausedCampaignsCount}</h3>
+                            <div className="cm-kpi-track">
+                                <div className="cm-kpi-fill cm-kpi-fill-paused" style={{ width: `${pausedFillPercent}%` }} />
                             </div>
                         </div>
 
