@@ -220,6 +220,7 @@ const resolveSafeExternalUrl = (value) => {
 const CampaignManagement = () => {
     const navigate = useNavigate();
     const [campaigns, setCampaigns] = useState([]);
+    const [allCampaignsCount, setAllCampaignsCount] = useState(null);
     const [loading, setLoading] = useState(true);
     const [savingCampaign, setSavingCampaign] = useState(false);
     const [error, setError] = useState('');
@@ -474,6 +475,7 @@ const CampaignManagement = () => {
     const fetchCampaigns = useCallback(async () => {
         if (USE_MOCK) {
             setCampaigns(mockCampaigns);
+            setAllCampaignsCount(mockCampaigns.length);
             setLoading(false);
             return;
         }
@@ -482,17 +484,30 @@ const CampaignManagement = () => {
         setError('');
         const requestedAt = Date.now();
         try {
-            const response = await api.get('/api/campaigns', {
-                headers: getAuthHeaders(),
-                params: {
-                    page: 1,
-                    platform: selectedPlatform !== 'all' ? selectedPlatform : undefined,
-                    status: selectedStatus !== 'all' ? selectedStatus : undefined,
-                    search: searchQuery || undefined,
-                    dateRange: dateRange || undefined
-                }
-            });
+            const headers = getAuthHeaders();
+            const [response, allCampaignsResponse] = await Promise.all([
+                api.get('/api/campaigns', {
+                    headers,
+                    params: {
+                        page: 1,
+                        platform: selectedPlatform !== 'all' ? selectedPlatform : undefined,
+                        status: selectedStatus !== 'all' ? selectedStatus : undefined,
+                        search: searchQuery || undefined,
+                        dateRange: dateRange || undefined
+                    }
+                }),
+                api.get('/api/campaigns', { headers, params: { page: 1 } })
+            ]);
             const data = response.data?.data || [];
+            const allCampaignsData = allCampaignsResponse.data?.data || [];
+            const reportedCampaignCount = Number(
+                allCampaignsResponse.data?.pagination?.total ??
+                allCampaignsResponse.data?.totalCount ??
+                allCampaignsResponse.data?.total
+            );
+            setAllCampaignsCount(Number.isFinite(reportedCampaignCount) && reportedCampaignCount >= 0
+                ? reportedCampaignCount
+                : allCampaignsData.length);
             setCampaigns((previous) => {
                 const incoming = data.map(normalizeCampaign);
                 const ids = new Set(incoming.map((item) => String(item.id)));
@@ -1135,7 +1150,7 @@ const CampaignManagement = () => {
     const showingEnd = filteredCampaigns.length === 0 ? 0 : Math.min(endIndex, filteredCampaigns.length);
     const activeCampaignsCount = campaigns.filter((campaign) => getCampaignOverviewStatus(campaign) === 'running').length;
     const pausedCampaignsCount = campaigns.filter((campaign) => getCampaignOverviewStatus(campaign) === 'paused').length;
-    const totalCampaignsCount = campaigns.length;
+    const totalCampaignsCount = allCampaignsCount ?? campaigns.length;
     const totalSpend = campaigns.reduce((sum, campaign) => sum + Number(campaign.spent || 0), 0);
     const totalRevenue = campaigns.reduce((sum, campaign) => sum + Number(campaign.revenue || 0), 0);
     const totalImpressions = campaigns.reduce((sum, campaign) => sum + Number(campaign.impressions || 0), 0);
