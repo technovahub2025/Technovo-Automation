@@ -67,7 +67,9 @@ const Login = () => {
     localStorage.setItem("authProvider", "firebase");
     loginUser(user, token, "firebase");
 
-    if (user.role === "superadmin") {
+    if (user.mustChangePassword) {
+      navigate("/change-password", { replace: true });
+    } else if (user.role === "superadmin") {
       navigate("/admin", { replace: true });
     } else if (resolveAgentWorkspaceState(user)) {
       navigate("/broadcast-dashboard", { replace: true });
@@ -132,7 +134,9 @@ const Login = () => {
       localStorage.setItem("authProvider", "local");
       loginUser(user, token, "local");
 
-      if (user.role === "superadmin") {
+      if (user.mustChangePassword) {
+        navigate("/change-password", { replace: true });
+      } else if (user.role === "superadmin") {
         navigate("/admin", { replace: true });
       } else if (resolveAgentWorkspaceState(user)) {
         navigate("/broadcast-dashboard", { replace: true });

@@ -59,6 +59,8 @@ const AdminSetupPage = lazy(() => import("./pages/superadmin/AdminSetupPage"));
 const PaymentsDetailsPage = lazy(() => import("./pages/superadmin/PaymentsDetailsPage"));
 const ConsentLogsPage = lazy(() => import("./pages/superadmin/ConsentLogsPage"));
 const CustomerTargetingPage = lazy(() => import("./pages/superadmin/CustomerTargetingPage"));
+const CustomerAgentHandlingPage = lazy(() => import("./pages/superadmin/CustomerAgentHandlingPage"));
+const ChangeTemporaryPasswordPage = lazy(() => import("./pages/ChangeTemporaryPasswordPage"));
 
 const renderLazyRoute = (element, label = "Loading page...") => (
   <Suspense fallback={<div style={{ padding: 24 }}>{label}</div>}>{element}</Suspense>
@@ -83,6 +85,7 @@ function App() {
       <Routes>
         {/* Public auth routes */}
         <Route path="/login" element={renderLazyRoute(<Login />)} />
+        <Route path="/change-password" element={<ProtectedRoute>{renderLazyRoute(<ChangeTemporaryPasswordPage />, "Loading password update...")}</ProtectedRoute>} />
         <Route path="/auth/callback" element={renderLazyRoute(<AuthCallback />)} />
         <Route path="/register" element={renderLazyRoute(<Register />)} />
         <Route path="/forgot-password" element={renderLazyRoute(<ForgotPassword />)} />
@@ -300,6 +303,14 @@ function App() {
             element={
               <ProtectedRoute requiredRole="superadmin">
                 {renderLazyRoute(<CustomerTargetingPage />, "Loading customer targeting...")}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/customer-agent-handling"
+            element={
+              <ProtectedRoute requiredRole="superadmin">
+                {renderLazyRoute(<CustomerAgentHandlingPage />, "Loading customer and agent accounts...")}
               </ProtectedRoute>
             }
           />

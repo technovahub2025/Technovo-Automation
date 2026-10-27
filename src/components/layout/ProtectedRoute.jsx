@@ -38,6 +38,12 @@ const ProtectedRoute = ({ children, requiredRole, requiredFeature, requireAuth =
     const isAuthenticated = !!user;
     const isAgentWorkspace = resolveAgentWorkspaceState(user);
     const isAgentRestricted = isAgentWorkspace && user?.role !== 'superadmin';
+    if (user?.mustChangePassword === true && currentPath !== '/change-password') {
+        return <Navigate to="/change-password" replace />;
+    }
+    if (currentPath === '/change-password' && user?.mustChangePassword !== true) {
+        return <Navigate to={user?.role === 'superadmin' ? '/admin' : '/'} replace />;
+    }
     const agentAllowedRoutes = [
         { path: '/inbox', nested: true },
         { path: '/bulk-messages', nested: true },

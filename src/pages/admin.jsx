@@ -10,6 +10,7 @@ import {
   Shield,
   ShieldCheck,
   Target,
+  UserRoundCog,
   UserCog,
   UsersRound,
   WalletCards
@@ -77,6 +78,18 @@ const ADMIN_CARDS = [
     action: 'Open Verification',
     meta: 'Document review queue',
     accent: 'superadmin-dashboard-card--verification'
+  },
+  {
+    key: 'customer-agent-handling',
+    icon: UserRoundCog,
+    label: 'CUSTOMER / AGENT',
+    title: 'Customer / Agent Handling',
+    description: 'Manage customer accounts, assigned agents, and account access.',
+    path: '/admin/customer-agent-handling',
+    action: 'Open Customer / Agent',
+    meta: 'Super Admin only',
+    hint: 'Super Admin only',
+    accent: 'superadmin-dashboard-card--users'
   },
   {
     key: 'customer-targeting',
