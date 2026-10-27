@@ -1032,9 +1032,13 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         >
                             <Users size={24} />
                             {renderHubBadge(
-                                hubBadges.overdueTasks > 0 ? hubBadges.overdueTasks : hubBadges.openDeals,
-                                hubBadges.overdueTasks > 0 ? 'Overdue CRM tasks' : 'Open deals',
-                                hubBadges.overdueTasks > 0 ? '/crm/tasks?bucket=overdue' : '/crm/deals'
+                                hubBadges.overdueTasks + hubBadges.openDeals + hubBadges.automationAlerts,
+                                `${hubBadges.overdueTasks} overdue tasks, ${hubBadges.openDeals} open deals, ${hubBadges.automationAlerts} follow-up alerts`,
+                                hubBadges.overdueTasks > 0
+                                    ? '/crm/tasks?bucket=overdue'
+                                    : hubBadges.openDeals > 0
+                                        ? '/crm/deals'
+                                        : '/crm/ops'
                             )}
                             <span className="icon-label">CRM</span>
                             <span className="submenu-arrow-indicator" aria-hidden="true">
@@ -1402,7 +1406,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 )}
                                 {(showAllSidebarFeatures || featureFlags.crmTasks) && (
                                     <NavLink
-                                        to="/crm/tasks"
+                                        to={hubBadges.overdueTasks > 0 ? "/crm/tasks?bucket=overdue" : "/crm/tasks"}
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                         onMouseEnter={() => prefetchRoute('/crm/tasks')}
                                         onFocus={() => prefetchRoute('/crm/tasks')}
@@ -1410,6 +1414,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     >
                                         <FileText size={20} />
                                         <span>Tasks</span>
+                                        {hubBadges.overdueTasks > 0 && <span className="panel-page-badge" aria-label={`${hubBadges.overdueTasks} overdue tasks`}>{hubBadges.overdueTasks > 99 ? '99+' : hubBadges.overdueTasks}</span>}
                                     </NavLink>
                                 )}
                                 {(showAllSidebarFeatures || featureFlags.crmDeals) && (
@@ -1422,6 +1427,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     >
                                         <BadgeDollarSign size={20} />
                                         <span>Deals</span>
+                                        {hubBadges.openDeals > 0 && <span className="panel-page-badge" aria-label={`${hubBadges.openDeals} open deals`}>{hubBadges.openDeals > 99 ? '99+' : hubBadges.openDeals}</span>}
                                     </NavLink>
                                 )}
                                 {(showAllSidebarFeatures || featureFlags.crmMeetings) && (
@@ -1461,6 +1467,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     >
                                         <LineChart size={20} />
                                         <span>Follow-up Ops</span>
+                                        {hubBadges.automationAlerts > 0 && <span className="panel-page-badge" aria-label={`${hubBadges.automationAlerts} follow-up alerts`}>{hubBadges.automationAlerts > 99 ? '99+' : hubBadges.automationAlerts}</span>}
                                     </NavLink>
                                 )}
                                 {/* <NavLink
