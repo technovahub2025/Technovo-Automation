@@ -11,7 +11,7 @@ import './Insights.css';
 const numberFormatter = new Intl.NumberFormat('en-IN');
 const currencyFormatter = new Intl.NumberFormat('en-IN', {
   style: 'currency',
-  currency: 'USD',
+  currency: 'INR',
   maximumFractionDigits: 2
 });
 

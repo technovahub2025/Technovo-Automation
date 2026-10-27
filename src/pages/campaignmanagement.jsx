@@ -218,7 +218,6 @@ const CampaignManagement = () => {
     const [metaSetupLoading, setMetaSetupLoading] = useState(true);
     const [metaSetupMessage, setMetaSetupMessage] = useState('');
     const [availableFunds, setAvailableFunds] = useState(null);
-    const [availableFundsCurrency, setAvailableFundsCurrency] = useState('INR');
     const [availableFundsLoading, setAvailableFundsLoading] = useState(false);
     const [metaSetup, setMetaSetup] = useState(null);
     const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState('');
@@ -513,7 +512,6 @@ const CampaignManagement = () => {
                         ? Number(balance)
                         : null
             );
-            setAvailableFundsCurrency(String(billing?.adAccount?.currency || 'INR').toUpperCase());
             const setup = response?.data?.setup || {};
             setMetaSetup(setup);
             const isReady = Boolean(setup.connected && setup.pageId);
@@ -550,7 +548,6 @@ const CampaignManagement = () => {
                         ? Number(amount)
                         : null
             );
-            setAvailableFundsCurrency(String(billing?.adAccount?.currency || 'INR').toUpperCase());
         } catch (refreshError) {
             console.error('Failed to refresh Meta available funds', refreshError?.response?.data || refreshError.message);
             setAvailableFunds(null);
@@ -1091,13 +1088,13 @@ const CampaignManagement = () => {
     const getCampaignBudgetLabel = (campaign) => {
         const dailyBudget = Number(campaign?.dailyBudget || 0);
         if (dailyBudget > 0) {
-            return `$${dailyBudget}/day`;
+            return `\u20B9${dailyBudget}/day`;
         }
         const lifetimeBudget = Number(campaign?.lifetimeBudget || 0);
         if (lifetimeBudget > 0) {
-            return `$${lifetimeBudget} lifetime`;
+            return `\u20B9${lifetimeBudget} lifetime`;
         }
-        return '$0';
+        return '\u20B90';
     };
 
     const totalPages = Math.max(1, Math.ceil(filteredCampaigns.length / ITEMS_PER_PAGE));
@@ -1125,9 +1122,9 @@ const CampaignManagement = () => {
     };
     const compactMoney = (value) => {
         const amount = Number(value || 0);
-        if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
-        if (amount >= 1000) return `$${(amount / 1000).toFixed(1)}K`;
-        return `$${amount.toFixed(0)}`;
+        if (amount >= 1000000) return `\u20B9${(amount / 1000000).toFixed(1)}M`;
+        if (amount >= 1000) return `\u20B9${(amount / 1000).toFixed(1)}K`;
+        return `\u20B9${amount.toFixed(0)}`;
     };
     const compactCount = (value) => {
         const amount = Number(value || 0);
@@ -1138,17 +1135,17 @@ const CampaignManagement = () => {
     const formatCurrency = (value, digits = 0) => {
         const amount = Number(value);
         if (!Number.isFinite(amount)) return '--';
-        return `$${amount.toLocaleString(undefined, {
+        return `\u20B9${amount.toLocaleString('en-IN', {
             minimumFractionDigits: digits,
             maximumFractionDigits: digits
         })}`;
     };
-    const formatMetaBalance = (value, currency = 'INR') => {
+    const formatMetaBalance = (value) => {
         if (value === null || value === undefined || !Number.isFinite(Number(value))) return '--';
         try {
             return new Intl.NumberFormat('en-IN', {
                 style: 'currency',
-                currency: String(currency || 'INR').toUpperCase(),
+                currency: 'INR',
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
             }).format(Number(value));
@@ -1263,7 +1260,7 @@ const CampaignManagement = () => {
                                 <span className="material-symbols-outlined cm-wallet-pill__icon">account_balance_wallet</span>
                                 <div className="cm-wallet-pill__copy">
                                     <span>Available funds</span>
-                                    <strong>{formatMetaBalance(availableFunds, availableFundsCurrency)}</strong>
+                                    <strong>{formatMetaBalance(availableFunds)}</strong>
                                 </div>
                                 <button
                                     className={`cm-wallet-pill__refresh${availableFundsLoading ? ' is-loading' : ''}`}
