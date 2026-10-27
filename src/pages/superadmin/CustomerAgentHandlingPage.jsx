@@ -96,7 +96,17 @@ export default function CustomerAgentHandlingPage() {
     {customer && !loading && !agent && <section className="superadmin-panel superadmin-panel--page">
       <button className="btn-link superadmin-back-link" onClick={backToCustomers}><ArrowLeft size={18}/> Back to Customers</button>
       <div className="customer-agent-handling__detail-heading"><div><span className="superadmin-dashboard-card__label">Customer Details</span><h2>{customer.name}</h2><p>{customer.email}</p></div><span className={`customer-agent-handling__status ${customer.status === 'Inactive' ? 'is-inactive' : ''}`}>{customer.status}</span></div>
-      <div className="customer-agent-handling__facts"><div><span>Login Email</span><strong>{customer.email || 'Not available'}</strong></div><div><span>Account Status</span><strong>{customer.status}</strong></div><div><span>Last Password Changed</span><strong>{dateLabel(customer.passwordChangedAt)}</strong></div><div><span>Last Login</span><strong>{dateLabel(customer.lastLoginAt)}</strong></div><div><span>Account Created</span><strong>{dateLabel(customer.createdAt)}</strong></div></div>
+      <div className="customer-agent-handling__facts">
+        <div><span>Login Email</span><strong>{customer.email || 'Not available'}</strong></div>
+        <div><span>Contact Phone</span><strong>{customer.phoneNumber || 'Not available'}</strong></div>
+        <div><span>Account Status</span><strong>{customer.status}</strong></div>
+        <div><span>Account Type</span><strong>{customer.accountRole || 'Customer'}</strong></div>
+        <div><span>Sign-in Method</span><strong>{customer.authProvider || 'Not available'}</strong></div>
+        <div><span>Account ID</span><strong>{customer.id}</strong></div>
+        <div><span>Last Password Changed</span><strong>{dateLabel(customer.passwordChangedAt)}</strong></div>
+        <div><span>Last Login</span><strong>{dateLabel(customer.lastLoginAt)}</strong></div>
+        <div><span>Account Created</span><strong>{dateLabel(customer.createdAt)}</strong></div>
+      </div>
       <div className="customer-agent-handling__section-heading"><h3>Agents</h3><span>{agents.length} assigned</span></div>
       {!agents.length && <div className="customer-agent-handling__empty">This customer has no assigned agents.</div>}
       {!!agents.length && <div className="customer-agent-handling__table-wrap"><table className="customer-agent-handling__table"><thead><tr><th>Agent Name</th><th>Email</th><th>Status</th><th>Last Password Change</th><th>Last Login</th><th>Action</th></tr></thead><tbody>{agents.map((item) => <tr key={item.id}><td data-label="Agent Name">{item.name}</td><td data-label="Email">{item.email}</td><td data-label="Status"><span className={`customer-agent-handling__status ${item.status === 'Inactive' ? 'is-inactive' : ''}`}>{item.status}</span></td><td data-label="Last Password Change">{dateLabel(item.passwordChangedAt)}</td><td data-label="Last Login">{dateLabel(item.lastLoginAt)}</td><td data-label="Action"><button className="primary-btn customer-agent-handling__button" onClick={() => openAgent(item)}>View</button></td></tr>)}</tbody></table></div>}
