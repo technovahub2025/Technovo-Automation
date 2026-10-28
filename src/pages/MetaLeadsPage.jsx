@@ -147,6 +147,12 @@ const MetaLeadsPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestParams.userId, requestParams.formId]);
 
+  useEffect(() => {
+    if (exportNotice?.type !== "success") return undefined;
+    const timeoutId = window.setTimeout(() => setExportNotice(null), 3000);
+    return () => window.clearTimeout(timeoutId);
+  }, [exportNotice]);
+
   const leadCount = leads.length;
   const visibleLeads = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
