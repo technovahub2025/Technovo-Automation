@@ -8129,6 +8129,15 @@
     font-size: 14px;
 }
 
+.template-send-image-preview {
+    display: block;
+    width: min(100%, 320px);
+    max-height: 220px;
+    object-fit: cover;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
 .template-send-variables h4 {
     margin: 4px 0 10px;
     font-size: 15px;

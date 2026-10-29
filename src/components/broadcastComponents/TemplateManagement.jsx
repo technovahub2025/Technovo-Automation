@@ -639,6 +639,19 @@ const TemplateManagement = () => {
               
               <div className="preview-message">
                 <div className="message-header">
+                  {String(previewTemplate.content?.header?.type || '').toLowerCase() === 'image' && (
+                    previewTemplate.content?.header?.mediaUrl ? (
+                      <img
+                        className="template-preview-header-image"
+                        src={previewTemplate.content.header.mediaUrl}
+                        alt="Template image header"
+                      />
+                    ) : (
+                      <div className="template-preview-header-image template-preview-header-image--empty">
+                        Image header
+                      </div>
+                    )
+                  )}
                   {previewTemplate.content?.header?.text && (
                     <div className="header-text">{previewTemplate.content.header.text}</div>
                   )}

@@ -639,6 +639,23 @@
   margin-bottom: 12px;
 }
 
+.template-preview-header-image {
+  display: block;
+  width: 100%;
+  max-height: 220px;
+  object-fit: cover;
+  border-radius: 8px;
+  margin-bottom: 8px;
+}
+
+.template-preview-header-image--empty {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  background: #f3f4f6;
+}
+
 .header-text {
   font-weight: 600;
   color: var(--color-text-primary);
