@@ -91,8 +91,7 @@ const MessagePreview = ({
             {messageType === "template" ? (
               templateName ? (
                 <>
-                  {templateHeaderType === "image" &&
-                  resolvedTemplateHeaderMediaUrl ? (
+                  {resolvedTemplateHeaderMediaUrl ? (
                     <div className="template-media-preview">
                       <img
                         src={resolvedTemplateHeaderMediaUrl}
