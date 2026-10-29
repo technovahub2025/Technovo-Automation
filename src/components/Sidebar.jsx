@@ -822,16 +822,6 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
         );
     };
 
-    const renderPanelCountBadge = (value, ariaLabel) => {
-        const count = Number(value || 0);
-        if (!Number.isFinite(count) || count <= 0) return null;
-        return (
-            <span className="panel-item-count-badge" aria-label={`${count} ${ariaLabel}`}>
-                {count > 99 ? '99+' : count}
-            </span>
-        );
-    };
-
     const prefetchRoute = useCallback((route) => {
         const connection = navigator.connection;
         if (!route || connection?.saveData || ['slow-2g', '2g'].includes(connection?.effectiveType)) {
@@ -1042,9 +1032,13 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                         >
                             <Users size={24} />
                             {renderHubBadge(
-                                hubBadges.overdueTasks > 0 ? hubBadges.overdueTasks : hubBadges.openDeals,
-                                hubBadges.overdueTasks > 0 ? 'Overdue CRM tasks' : 'Open deals',
-                                hubBadges.overdueTasks > 0 ? '/crm/tasks?bucket=overdue' : '/crm/deals'
+                                hubBadges.overdueTasks + hubBadges.openDeals + hubBadges.automationAlerts,
+                                `${hubBadges.overdueTasks} overdue tasks, ${hubBadges.openDeals} open deals, ${hubBadges.automationAlerts} follow-up alerts`,
+                                hubBadges.overdueTasks > 0
+                                    ? '/crm/tasks?bucket=overdue'
+                                    : hubBadges.openDeals > 0
+                                        ? '/crm/deals'
+                                        : '/crm/ops'
                             )}
                             <span className="icon-label">CRM</span>
                             <span className="submenu-arrow-indicator" aria-hidden="true">
@@ -1309,14 +1303,14 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                             </div>
                             <nav className="panel-menu">
                                 <NavLink
-                                    to="/campaignmanagement"
+                                    to="/broadcast-dashboard"
                                     className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
-                                    onMouseEnter={() => prefetchRoute('/campaignmanagement')}
-                                    onFocus={() => prefetchRoute('/campaignmanagement')}
+                                    onMouseEnter={() => prefetchRoute('/broadcast-dashboard')}
+                                    onFocus={() => prefetchRoute('/broadcast-dashboard')}
                                     onClick={closeMobileMenusAfterNavigate}
                                 >
                                     <LayoutDashboard size={20} />
-                                    <span>Campaigns</span>
+                                    <span>Broadcast Dashboard</span>
                                 </NavLink>
                                 <NavLink
                                     to="/broadcast"
@@ -1412,7 +1406,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                 )}
                                 {(showAllSidebarFeatures || featureFlags.crmTasks) && (
                                     <NavLink
-                                        to="/crm/tasks"
+                                        to={hubBadges.overdueTasks > 0 ? "/crm/tasks?bucket=overdue" : "/crm/tasks"}
                                         className={({ isActive }) => `panel-item ${isActive ? 'active' : ''}`}
                                         onMouseEnter={() => prefetchRoute('/crm/tasks')}
                                         onFocus={() => prefetchRoute('/crm/tasks')}
@@ -1420,7 +1414,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     >
                                         <FileText size={20} />
                                         <span>Tasks</span>
-                                        {renderPanelCountBadge(hubBadges.overdueTasks, 'overdue tasks')}
+                                        {hubBadges.overdueTasks > 0 && <span className="panel-page-badge" aria-label={`${hubBadges.overdueTasks} overdue tasks`}>{hubBadges.overdueTasks > 99 ? '99+' : hubBadges.overdueTasks}</span>}
                                     </NavLink>
                                 )}
                                 {(showAllSidebarFeatures || featureFlags.crmDeals) && (
@@ -1433,7 +1427,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     >
                                         <BadgeDollarSign size={20} />
                                         <span>Deals</span>
-                                        {renderPanelCountBadge(hubBadges.openDeals, 'open deals')}
+                                        {hubBadges.openDeals > 0 && <span className="panel-page-badge" aria-label={`${hubBadges.openDeals} open deals`}>{hubBadges.openDeals > 99 ? '99+' : hubBadges.openDeals}</span>}
                                     </NavLink>
                                 )}
                                 {(showAllSidebarFeatures || featureFlags.crmMeetings) && (
@@ -1473,7 +1467,7 @@ const Sidebar = ({ expandedPanel, setExpandedPanel }) => {
                                     >
                                         <LineChart size={20} />
                                         <span>Follow-up Ops</span>
-                                        {renderPanelCountBadge(hubBadges.automationAlerts, 'response SLA alerts')}
+                                        {hubBadges.automationAlerts > 0 && <span className="panel-page-badge" aria-label={`${hubBadges.automationAlerts} follow-up alerts`}>{hubBadges.automationAlerts > 99 ? '99+' : hubBadges.automationAlerts}</span>}
                                     </NavLink>
                                 )}
                                 {/* <NavLink

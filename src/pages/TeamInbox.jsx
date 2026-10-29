@@ -873,6 +873,34 @@ const TeamInbox = () => {
     []
   );
 
+  const latestInboundMessageAtFromThread = useMemo(() => {
+    const latestInboundMessage = (Array.isArray(messages) ? messages : [])
+      .filter((message) => String(message?.sender || '').trim().toLowerCase() === 'contact')
+      .reduce((latest, message) => {
+        const timestamp = new Date(message?.timestamp || message?.createdAt || message?.date || 0);
+        return !Number.isNaN(timestamp.getTime()) && timestamp > latest ? timestamp : latest;
+      }, new Date(0));
+    return latestInboundMessage.getTime() > 0 ? latestInboundMessage : null;
+  }, [messages]);
+
+  const selectedWhatsAppState = useMemo(
+    () => {
+      const contact =
+        selectedConversation?.contactId && typeof selectedConversation.contactId === 'object'
+          ? selectedConversation.contactId
+          : {};
+      return getWhatsAppConversationState({
+        ...contact,
+        ...selectedConversation,
+        serviceWindowClosesAt:
+          selectedConversation?.serviceWindowClosesAt || contact?.serviceWindowClosesAt,
+        lastInboundMessageAt:
+          contact?.lastInboundMessageAt || latestInboundMessageAtFromThread
+      });
+    },
+    [latestInboundMessageAtFromThread, selectedConversation]
+  );
+
   const applyWhatsAppContactUpdateLocally = (contactUpdate = {}) => {
     const normalizedContactId = String(
       contactUpdate?._id || contactUpdate?.id || ''
@@ -1068,6 +1096,7 @@ const TeamInbox = () => {
     selectedConversation,
     templateTarget: pendingTemplateTarget,
     conversationId,
+    whatsappMessagingState: selectedWhatsAppState,
     onMissingContactPhone: (message) => {
       setContactInfoMessage(message);
       setContactInfoMessageTone('error');
@@ -1107,53 +1136,6 @@ const TeamInbox = () => {
   }, [openTemplateSendModal, pendingTemplateTarget, showTemplateSendModal]);
 
   const groupedMessages = useMemo(() => buildGroupedMessages(messages), [messages]);
-  const latestInboundMessageAtFromThread = useMemo(() => {
-    if (!Array.isArray(messages) || messages.length === 0) return null;
-
-    let latestTime = 0;
-    for (const message of messages) {
-      if (String(message?.sender || '').trim().toLowerCase() !== 'contact') continue;
-      const candidate = new Date(
-        message?.whatsappTimestamp || message?.timestamp || message?.createdAt
-      );
-      const candidateTime = candidate.getTime();
-      if (Number.isNaN(candidateTime)) continue;
-      if (candidateTime > latestTime) {
-        latestTime = candidateTime;
-      }
-    }
-
-    return latestTime ? new Date(latestTime).toISOString() : null;
-  }, [messages]);
-
-  const whatsappStateContactSource = {
-    ...(selectedConversation?.contactId && typeof selectedConversation.contactId === 'object'
-      ? selectedConversation.contactId
-      : {}),
-    ...(selectedConversation?.contactId && typeof selectedConversation.contactId !== 'object'
-      ? { _id: selectedConversation.contactId }
-      : {}),
-    ...(selectedConversation?.contactName ? { name: selectedConversation.contactName } : {}),
-    ...(selectedConversation?.contactPhone ? { phone: selectedConversation.contactPhone } : {}),
-    ...(selectedConversation?.whatsappOptInStatus
-      ? { whatsappOptInStatus: selectedConversation.whatsappOptInStatus }
-      : {}),
-    ...(selectedConversation?.whatsappOptInScope
-      ? { whatsappOptInScope: selectedConversation.whatsappOptInScope }
-      : {}),
-    ...(selectedConversation?.serviceWindowClosesAt
-      ? { serviceWindowClosesAt: selectedConversation.serviceWindowClosesAt }
-      : {}),
-    ...(selectedConversation?.lastInboundMessageAt
-      ? { lastInboundMessageAt: selectedConversation.lastInboundMessageAt }
-      : {}),
-    ...(latestInboundMessageAtFromThread
-      ? { lastInboundMessageAt: latestInboundMessageAtFromThread }
-      : {})
-  };
-
-  const selectedWhatsAppState = getWhatsAppConversationState(whatsappStateContactSource);
-
   const refreshInboxOverview = useCallback(async ({ skipCache = false } = {}) => {
     try {
       const result = await whatsappService.getInboxOverview({

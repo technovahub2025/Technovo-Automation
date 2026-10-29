@@ -1,8 +1,9 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { AlertCircle, RefreshCw, Users, ChevronLeft } from "lucide-react";
+import { AlertCircle, RefreshCw, Users, ChevronLeft, Download } from "lucide-react";
 import { AuthContext } from "./authcontext";
 import metaAdsService from "../services/metaAdsService";
+import { downloadMetaLeadsWorkbook } from "../utils/metaLeadsXlsx";
 import "./MetaLeadsPage.css";
 
 const getCampaignId = (campaign) => String(
@@ -38,6 +39,8 @@ const MetaLeadsPage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportNotice, setExportNotice] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -144,6 +147,12 @@ const MetaLeadsPage = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestParams.userId, requestParams.formId]);
 
+  useEffect(() => {
+    if (exportNotice?.type !== "success") return undefined;
+    const timeoutId = window.setTimeout(() => setExportNotice(null), 3000);
+    return () => window.clearTimeout(timeoutId);
+  }, [exportNotice]);
+
   const leadCount = leads.length;
   const visibleLeads = useMemo(() => {
     const query = searchQuery.trim().toLowerCase();
@@ -163,6 +172,42 @@ const MetaLeadsPage = () => {
   const currentPage = Math.min(page, totalPages);
   const pageOffset = (currentPage - 1) * pageSize;
   const pageLeads = visibleLeads.slice(pageOffset, pageOffset + pageSize);
+
+  const exportLeads = async () => {
+    setExporting(true);
+    setExportNotice(null);
+    try {
+      const response = await metaAdsService.getMetaLeads(requestParams);
+      const latestLeads = Array.isArray(response?.leads) ? response.leads : [];
+      const query = searchQuery.trim().toLowerCase();
+      const start = startDate ? new Date(`${startDate}T00:00:00`).getTime() : null;
+      const end = endDate ? new Date(`${endDate}T23:59:59.999`).getTime() : null;
+      const matchingLeads = latestLeads.filter((lead) => {
+        if (selectedCampaignId && String(lead?.campaignId || lead?.campaign_id || "").trim() !== selectedCampaignId) return false;
+        if (query && ![lead?.fullName, lead?.phoneNumber, lead?.email].some((value) => String(value || "").toLowerCase().includes(query))) return false;
+        if (start !== null || end !== null) {
+          const created = new Date(lead?.createdTime || lead?.created_time || "").getTime();
+          if (!Number.isFinite(created) || (start !== null && created < start) || (end !== null && created > end)) return false;
+        }
+        return true;
+      });
+
+      if (!matchingLeads.length) {
+        setExportNotice({ type: "error", message: "No leads available to export." });
+        return;
+      }
+
+      downloadMetaLeadsWorkbook(matchingLeads);
+      setExportNotice({ type: "success", message: `${matchingLeads.length} leads exported successfully.` });
+    } catch (requestError) {
+      setExportNotice({
+        type: "error",
+        message: requestError?.response?.data?.error || requestError?.response?.data?.message || requestError.message || "Unable to export leads. Please try again."
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <div className="meta-leads-page">
@@ -197,6 +242,15 @@ const MetaLeadsPage = () => {
             >
               {loading || refreshing ? <RefreshCw className="spin" size={16} /> : <RefreshCw size={16} />}
               <span>{loading || refreshing ? "Refreshing..." : "Refresh Leads"}</span>
+            </button>
+            <button
+              type="button"
+              className="meta-leads-export-btn"
+              onClick={exportLeads}
+              disabled={loading || refreshing || exporting}
+            >
+              {exporting ? <RefreshCw className="spin" size={16} /> : <Download size={16} />}
+              <span>{exporting ? "Preparing Excel..." : "Export Excel"}</span>
             </button>
           </div>
         </header>
@@ -256,6 +310,11 @@ const MetaLeadsPage = () => {
             <div className="meta-leads-alert">
               <AlertCircle size={16} />
               <span>{error}</span>
+            </div>
+          ) : null}
+          {exportNotice ? (
+            <div className={`meta-leads-export-notice meta-leads-export-notice--${exportNotice.type}`} role="status" aria-live="polite">
+              {exportNotice.message}
             </div>
           ) : null}
 

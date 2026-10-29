@@ -43,9 +43,19 @@ const NODE_TYPES = [
   { type: 'booking_confirm', label: 'Booking Confirm', icon: CheckCircle, color: '#16a34a' },
   { type: 'booking_create', label: 'Booking Create', icon: Save, color: '#22c55e' },
   { type: 'whatsapp_notify', label: 'WhatsApp Notify', icon: MessageSquare, color: '#059669' },
+  { type: 'ai_voice_agent', label: 'AI Voice Agent', icon: MessageSquare, color: '#7c3aed' },
   { type: 'handoff', label: 'Hand Off', icon: PhoneCall, color: '#f59e0b' },
   { type: 'end', label: 'End', icon: X, color: '#ef4444' }
 ];
+
+const AI_VOICE_SELECTIONS = {
+  mCQMfsqGDT6IDkEKR20a: 'en-IN',
+  UgBBYS2sOqTuMpoF3BR0: 'en-US',
+  Fahco4VZzobUeiPqni1S: 'en-GB',
+  ZhJ5LanYnCmLKQUXvsV7: 'ta-IN',
+  IvLWq57RKibBrqZGpQrC: 'hi-IN'
+};
+const AI_VOICE_LANGUAGES = Object.values(AI_VOICE_SELECTIONS);
 
 const GRID_SIZE = 20;
 const NODE_WIDTH = 220;
@@ -183,6 +193,22 @@ const createNodeData = (type) => {
         timeout: 30,
         announcementText: 'Connecting you now.',
         promptKey: createUniqueId('handoff')
+      };
+    case 'ai_voice_agent':
+      return {
+        companyName: '',
+        welcomeMessage: '',
+        systemPrompt: 'You are a helpful phone assistant. Answer using only the approved business knowledge below. If the answer is not in the knowledge, say you do not have that information and offer to connect the caller to a person. Keep spoken answers short and natural. Respect the conversation state supplied with each turn. Only set intent to human_transfer for a clear request to speak with a person, discount_yes for a clear affirmative answer to the discount offer, discount_no for a clear negative answer to that offer, offer_discounts when it is time to offer discounts, end_call when the caller has no further questions, clarify when the caller is ambiguous, or continue otherwise. Return JSON with response and intent.',
+        knowledgeBase: '',
+        language: 'en-IN',
+        voiceSelection: 'mCQMfsqGDT6IDkEKR20a',
+        humanAgentPhoneNumber: '',
+        discountQuestion: 'Before we finish, would you like to speak with our team about any available discounts or special offers?',
+        maxDuration: 300,
+        silenceTimeout: 2,
+        transferOnCustomerRequest: true,
+        transferOnDiscountInterest: true,
+        promptKey: createUniqueId('ai_voice_agent')
       };
     default:
       return {
@@ -724,6 +750,34 @@ const WorkflowBuilderCanvas = ({
       if (nodeType === 'audio' || nodeType === 'greeting') {
         addVirtualReference(node.id, asNodeId(data.fallbackAudioNodeId));
       }
+
+      if (nodeType === 'ai_voice_agent') {
+        const requiredFields = ['companyName', 'welcomeMessage', 'systemPrompt', 'knowledgeBase', 'discountQuestion'];
+        requiredFields.forEach((field) => {
+          if (!String(data[field] || '').trim()) {
+            errors.push({ code: 'AI_VOICE_AGENT_FIELD_REQUIRED', message: `AI Voice Agent ${node.id} requires ${field}.`, nodeId: node.id });
+          }
+        });
+        const transferEnabled = data.transferOnCustomerRequest !== false || data.transferOnDiscountInterest !== false;
+        if (transferEnabled && !/^\+[1-9]\d{7,14}$/.test(String(data.humanAgentPhoneNumber || '').trim())) {
+          errors.push({ code: 'AI_VOICE_AGENT_TRANSFER_NUMBER', message: `AI Voice Agent ${node.id} requires a valid E.164 human agent number.`, nodeId: node.id });
+        }
+        if (!AI_VOICE_LANGUAGES.includes(data.language)) {
+          errors.push({ code: 'AI_VOICE_AGENT_LANGUAGE', message: `AI Voice Agent ${node.id} has an unsupported language.`, nodeId: node.id });
+        }
+        const voiceLanguage = AI_VOICE_SELECTIONS[data.voiceSelection];
+        if (!voiceLanguage || voiceLanguage !== data.language) {
+          errors.push({ code: 'AI_VOICE_AGENT_VOICE', message: `AI Voice Agent ${node.id} voice must match its language.`, nodeId: node.id });
+        }
+        const duration = Number(data.maxDuration);
+        const silence = Number(data.silenceTimeout);
+        if (!Number.isFinite(duration) || duration < 60 || duration > 1800) {
+          errors.push({ code: 'AI_VOICE_AGENT_DURATION', message: `AI Voice Agent ${node.id} duration must be between 60 and 1800 seconds.`, nodeId: node.id });
+        }
+        if (!Number.isFinite(silence) || silence < 1 || silence > 5) {
+          errors.push({ code: 'AI_VOICE_AGENT_SILENCE', message: `AI Voice Agent ${node.id} silence timeout must be between 1 and 5 seconds.`, nodeId: node.id });
+        }
+      }
       if (nodeType === 'voicemail') {
         addVirtualReference(node.id, asNodeId(data.greetingAudioNodeId || data.greeting_audio_node_id));
       }
@@ -1120,6 +1174,11 @@ const WorkflowBuilderCanvas = ({
     if (sourceNode.type === 'booking_create' || sourceNode.type === 'whatsapp_notify') {
       const existing = edges.filter((edge) => edge.source === sourceNode.id).map((edge) => edge.sourceHandle);
       sourceHandle = existing.includes('success') && !existing.includes('failure') ? 'failure' : 'success';
+    }
+    if (sourceNode.type === 'ai_voice_agent') {
+      const availableHandles = ['completed', 'transferred', 'error'];
+      const existing = new Set(edges.filter((edge) => edge.source === sourceNode.id).map((edge) => edge.sourceHandle));
+      sourceHandle = availableHandles.find((handle) => !existing.has(handle)) || 'completed';
     }
 
     const candidateEdge = {

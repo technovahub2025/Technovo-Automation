@@ -9,6 +9,7 @@ import axios from "axios";
 import { buildIVRMenuRequestData } from '../utils/ivrWorkflowPersistence';
 import socketService from "./socketService";
 import resolveAdminApiUrl from "./adminApiUrl";
+import { resolveApiBaseUrl } from "./apiBaseUrl";
 
 // Base URL from environment variable
 const API_BASE_URL =
@@ -415,6 +416,36 @@ apiService.getAdminUsers = (config = {}) =>
     timeout: Number(import.meta.env.VITE_ADMIN_USERS_TIMEOUT_MS || 90000),
     ...config
   });
+apiService.getCustomerAgentCustomers = () =>
+  apiService.get(`${ADMIN_API_BASE_URL}/api/super-admin/customer-agent/customers`);
+apiService.getCustomerAgentCustomer = (customerId) =>
+  apiService.get(`${ADMIN_API_BASE_URL}/api/super-admin/customer-agent/customers/${encodeURIComponent(customerId)}`);
+apiService.getCustomerAgentDetails = (customerId, agentId) =>
+  apiService.get(`${ADMIN_API_BASE_URL}/api/super-admin/customer-agent/customers/${encodeURIComponent(customerId)}/agents/${encodeURIComponent(agentId)}`);
+apiService.resetCustomerPassword = (customerId) =>
+  apiService.post(`${ADMIN_API_BASE_URL}/api/super-admin/customer-agent/customers/${encodeURIComponent(customerId)}/reset-password`);
+apiService.resetCustomerAgentPassword = (customerId, agentId) =>
+  apiService.post(`${ADMIN_API_BASE_URL}/api/super-admin/customer-agent/customers/${encodeURIComponent(customerId)}/agents/${encodeURIComponent(agentId)}/reset-password`);
+apiService.changeOwnPassword = (password) =>
+  apiService.put(`${ADMIN_API_BASE_URL}/api/account/password`, { password });
+const getCustomerTargetingAuthConfig = () => {
+  const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
+  const token = localStorage.getItem(tokenKey) || localStorage.getItem("authToken") || localStorage.getItem("token");
+  return token ? { headers: { Authorization: `Bearer ${token}` } } : {};
+};
+const CUSTOMER_TARGETING_API_BASE_URL = resolveApiBaseUrl();
+apiService.getTargetingCustomers = () =>
+  axios.get(`${CUSTOMER_TARGETING_API_BASE_URL}/api/super-admin/customer-targeting/customers`, getCustomerTargetingAuthConfig());
+apiService.getTargetingCustomerCampaigns = (companyId) =>
+  axios.get(
+    `${CUSTOMER_TARGETING_API_BASE_URL}/api/super-admin/customer-targeting/customers/${encodeURIComponent(companyId)}/campaigns`,
+    getCustomerTargetingAuthConfig()
+  );
+apiService.getCampaignTargetingDetails = (companyId, campaignId) =>
+  axios.get(
+    `${CUSTOMER_TARGETING_API_BASE_URL}/api/super-admin/customer-targeting/customers/${encodeURIComponent(companyId)}/campaigns/${encodeURIComponent(campaignId)}`,
+    getCustomerTargetingAuthConfig()
+  );
 apiService.getMyAgents = async (params = {}) => {
   const response = await apiService.get('/api/crm/ops/owner-dashboard', {
     params: {

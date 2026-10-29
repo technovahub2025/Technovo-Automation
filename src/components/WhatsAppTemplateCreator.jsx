@@ -157,7 +157,8 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
     { value: 'fr', label: 'French' },
     { value: 'de', label: 'German' },
     { value: 'pt', label: 'Portuguese' },
-    { value: 'hi', label: 'Hindi' }
+    { value: 'hi', label: 'Hindi' },
+    { value: 'ta', label: 'Tamil' }
   ];
 
   const headerTypes = [

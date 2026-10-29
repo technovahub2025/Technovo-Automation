@@ -29,6 +29,7 @@ import {
     Eye,
     MousePointer,
     BarChart3,
+    Layers,
     PieChart,
     Settings,
     Save,
@@ -45,6 +46,25 @@ const API_BASE_URL = resolveApiBaseUrl();
 const USE_MOCK = false;
 const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
 const ITEMS_PER_PAGE = 3;
+const getCampaignOverviewStatus = (campaign = {}) => {
+    const metaCampaignId = String(campaign.metaCampaignId || '').trim();
+    const isMetaCampaign = Boolean(metaCampaignId) && !/^[a-f\d]{24}$/i.test(metaCampaignId);
+    if (isMetaCampaign) {
+        if (!campaign.metaDeliverySnapshot?.campaign) return 'unavailable';
+        const status = getMetaDeliverySummary(campaign.metaDeliverySnapshot).toLowerCase();
+        if (status.includes('paused')) return 'paused';
+        if (status === 'active') return 'running';
+        if (['completed', 'deleted', 'archived'].includes(status)) return 'ended';
+        return status;
+    }
+    const statuses = [campaign.deliveryStatus, campaign.status, campaign.lifecycleStatus]
+        .map((value) => String(value || '').trim().toLowerCase())
+        .filter(Boolean);
+    if (statuses.some((status) => status.includes('paused'))) return 'paused';
+    if (statuses.some((status) => ['completed', 'ended', 'deleted', 'archived'].includes(status))) return 'ended';
+    if (statuses.some((status) => status === 'active' || status === 'running')) return 'running';
+    return statuses[0] || 'draft';
+};
 const getTodayDateValue = () => {
     const now = new Date();
     const offsetMs = now.getTimezoneOffset() * 60000;
@@ -200,6 +220,7 @@ const resolveSafeExternalUrl = (value) => {
 const CampaignManagement = () => {
     const navigate = useNavigate();
     const [campaigns, setCampaigns] = useState([]);
+    const [allCampaignsCount, setAllCampaignsCount] = useState(null);
     const [loading, setLoading] = useState(true);
     const [savingCampaign, setSavingCampaign] = useState(false);
     const [error, setError] = useState('');
@@ -218,7 +239,6 @@ const CampaignManagement = () => {
     const [metaSetupLoading, setMetaSetupLoading] = useState(true);
     const [metaSetupMessage, setMetaSetupMessage] = useState('');
     const [availableFunds, setAvailableFunds] = useState(null);
-    const [availableFundsCurrency, setAvailableFundsCurrency] = useState('INR');
     const [availableFundsLoading, setAvailableFundsLoading] = useState(false);
     const [metaSetup, setMetaSetup] = useState(null);
     const [metaPaymentFundUrl, setMetaPaymentFundUrl] = useState('');
@@ -455,6 +475,7 @@ const CampaignManagement = () => {
     const fetchCampaigns = useCallback(async () => {
         if (USE_MOCK) {
             setCampaigns(mockCampaigns);
+            setAllCampaignsCount(mockCampaigns.length);
             setLoading(false);
             return;
         }
@@ -463,17 +484,30 @@ const CampaignManagement = () => {
         setError('');
         const requestedAt = Date.now();
         try {
-            const response = await api.get('/api/campaigns', {
-                headers: getAuthHeaders(),
-                params: {
-                    page: 1,
-                    platform: selectedPlatform !== 'all' ? selectedPlatform : undefined,
-                    status: selectedStatus !== 'all' ? selectedStatus : undefined,
-                    search: searchQuery || undefined,
-                    dateRange: dateRange || undefined
-                }
-            });
+            const headers = getAuthHeaders();
+            const [response, allCampaignsResponse] = await Promise.all([
+                api.get('/api/campaigns', {
+                    headers,
+                    params: {
+                        page: 1,
+                        platform: selectedPlatform !== 'all' ? selectedPlatform : undefined,
+                        status: selectedStatus !== 'all' ? selectedStatus : undefined,
+                        search: searchQuery || undefined,
+                        dateRange: dateRange || undefined
+                    }
+                }),
+                api.get('/api/campaigns', { headers, params: { page: 1 } })
+            ]);
             const data = response.data?.data || [];
+            const allCampaignsData = allCampaignsResponse.data?.data || [];
+            const reportedCampaignCount = Number(
+                allCampaignsResponse.data?.pagination?.total ??
+                allCampaignsResponse.data?.totalCount ??
+                allCampaignsResponse.data?.total
+            );
+            setAllCampaignsCount(Number.isFinite(reportedCampaignCount) && reportedCampaignCount >= 0
+                ? reportedCampaignCount
+                : allCampaignsData.length);
             setCampaigns((previous) => {
                 const incoming = data.map(normalizeCampaign);
                 const ids = new Set(incoming.map((item) => String(item.id)));
@@ -513,7 +547,6 @@ const CampaignManagement = () => {
                         ? Number(balance)
                         : null
             );
-            setAvailableFundsCurrency(String(billing?.adAccount?.currency || 'INR').toUpperCase());
             const setup = response?.data?.setup || {};
             setMetaSetup(setup);
             const isReady = Boolean(setup.connected && setup.pageId);
@@ -550,7 +583,6 @@ const CampaignManagement = () => {
                         ? Number(amount)
                         : null
             );
-            setAvailableFundsCurrency(String(billing?.adAccount?.currency || 'INR').toUpperCase());
         } catch (refreshError) {
             console.error('Failed to refresh Meta available funds', refreshError?.response?.data || refreshError.message);
             setAvailableFunds(null);
@@ -834,18 +866,17 @@ const CampaignManagement = () => {
         const snapshot = campaign?.metaDeliverySnapshot;
         const confirmed = Boolean(snapshot?.campaign);
         const stale = Boolean(campaign?.metaDeliveryStatusStale);
-        const label = confirmed
-            ? getMetaDeliverySummary(snapshot)
-            : (hasMetaId ? 'Status unavailable' : 'Not published to Meta');
+        const campaignStatus = confirmed ? getMetaDeliveryLabel(snapshot.campaign).toLowerCase() : '';
+        const adSetStatuses = (snapshot?.adSets || []).map(getMetaDeliveryLabel).filter((status) => status.toLowerCase() !== campaignStatus);
+        const adStatuses = (snapshot?.ads || []).map(getMetaDeliveryLabel).filter((status) => status.toLowerCase() !== campaignStatus);
         return (
             <div className="cm-meta-delivery-status" aria-label="Meta delivery status">
-                <span><strong>Meta Delivery Status:</strong> {label}{stale && confirmed ? ' — stale' : ''}</span>
-                {confirmed ? <small>{formatMetaSyncTime(campaign.metaDeliveryStatusSyncedAt)}</small> : null}
-                {confirmed && (snapshot.adSets?.length || snapshot.ads?.length) ? (
+                {confirmed ? <small>{formatMetaSyncTime(campaign.metaDeliveryStatusSyncedAt)}{stale ? ' · stale' : ''}</small> : null}
+                {confirmed && (adSetStatuses.length || adStatuses.length) ? (
                     <small>
-                        {snapshot.adSets?.length ? `Ad sets: ${snapshot.adSets.map(getMetaDeliveryLabel).join(', ')}` : ''}
-                        {snapshot.adSets?.length && snapshot.ads?.length ? ' · ' : ''}
-                        {snapshot.ads?.length ? `Ads: ${snapshot.ads.map(getMetaDeliveryLabel).join(', ')}` : ''}
+                        {adSetStatuses.length ? `Ad sets: ${adSetStatuses.join(', ')}` : ''}
+                        {adSetStatuses.length && adStatuses.length ? ' · ' : ''}
+                        {adStatuses.length ? `Ads: ${adStatuses.join(', ')}` : ''}
                     </small>
                 ) : null}
                 {metaStatusErrors[localId] ? <small role="status">{metaStatusErrors[localId]}</small> : null}
@@ -1092,13 +1123,13 @@ const CampaignManagement = () => {
     const getCampaignBudgetLabel = (campaign) => {
         const dailyBudget = Number(campaign?.dailyBudget || 0);
         if (dailyBudget > 0) {
-            return `$${dailyBudget}/day`;
+            return `\u20B9${dailyBudget}/day`;
         }
         const lifetimeBudget = Number(campaign?.lifetimeBudget || 0);
         if (lifetimeBudget > 0) {
-            return `$${lifetimeBudget} lifetime`;
+            return `\u20B9${lifetimeBudget} lifetime`;
         }
-        return '$0';
+        return '\u20B90';
     };
 
     const totalPages = Math.max(1, Math.ceil(filteredCampaigns.length / ITEMS_PER_PAGE));
@@ -1117,7 +1148,9 @@ const CampaignManagement = () => {
     ));
     const showingStart = filteredCampaigns.length === 0 ? 0 : startIndex + 1;
     const showingEnd = filteredCampaigns.length === 0 ? 0 : Math.min(endIndex, filteredCampaigns.length);
-    const activeCampaignsCount = campaigns.filter((campaign) => campaign.lifecycleStatus === 'running' || campaign.status === 'active').length;
+    const activeCampaignsCount = campaigns.filter((campaign) => getCampaignOverviewStatus(campaign) === 'running').length;
+    const pausedCampaignsCount = campaigns.filter((campaign) => getCampaignOverviewStatus(campaign) === 'paused').length;
+    const totalCampaignsCount = allCampaignsCount ?? campaigns.length;
     const totalSpend = campaigns.reduce((sum, campaign) => sum + Number(campaign.spent || 0), 0);
     const totalRevenue = campaigns.reduce((sum, campaign) => sum + Number(campaign.revenue || 0), 0);
     const totalImpressions = campaigns.reduce((sum, campaign) => sum + Number(campaign.impressions || 0), 0);
@@ -1126,9 +1159,9 @@ const CampaignManagement = () => {
     };
     const compactMoney = (value) => {
         const amount = Number(value || 0);
-        if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
-        if (amount >= 1000) return `$${(amount / 1000).toFixed(1)}K`;
-        return `$${amount.toFixed(0)}`;
+        if (amount >= 1000000) return `\u20B9${(amount / 1000000).toFixed(1)}M`;
+        if (amount >= 1000) return `\u20B9${(amount / 1000).toFixed(1)}K`;
+        return `\u20B9${amount.toFixed(0)}`;
     };
     const compactCount = (value) => {
         const amount = Number(value || 0);
@@ -1139,17 +1172,17 @@ const CampaignManagement = () => {
     const formatCurrency = (value, digits = 0) => {
         const amount = Number(value);
         if (!Number.isFinite(amount)) return '--';
-        return `$${amount.toLocaleString(undefined, {
+        return `\u20B9${amount.toLocaleString('en-IN', {
             minimumFractionDigits: digits,
             maximumFractionDigits: digits
         })}`;
     };
-    const formatMetaBalance = (value, currency = 'INR') => {
+    const formatMetaBalance = (value) => {
         if (value === null || value === undefined || !Number.isFinite(Number(value))) return '--';
         try {
             return new Intl.NumberFormat('en-IN', {
                 style: 'currency',
-                currency: String(currency || 'INR').toUpperCase(),
+                currency: 'INR',
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
             }).format(Number(value));
@@ -1168,9 +1201,27 @@ const CampaignManagement = () => {
         return `${amount.toFixed(digits)}x`;
     };
     const getCampaignStatusMeta = (campaign) => {
-        const statusKey = String(campaign?.lifecycleStatus || campaign?.status || 'draft').toLowerCase();
+        const metaCampaignId = String(campaign?.metaCampaignId || '').trim();
+        const isMetaCampaign = Boolean(metaCampaignId) && !/^[a-f\d]{24}$/i.test(metaCampaignId);
+        if (isMetaCampaign) {
+            const label = campaign?.metaDeliverySnapshot?.campaign
+                ? getMetaDeliverySummary(campaign.metaDeliverySnapshot)
+                : 'Status unavailable';
+            const normalizedMetaLabel = String(label).toLowerCase();
+            const isEnded = ['completed', 'deleted', 'archived', 'rejected', 'issues detected'].includes(normalizedMetaLabel);
+            const isPaused = normalizedMetaLabel.includes('paused') || normalizedMetaLabel === 'paused';
+            const isRunning = normalizedMetaLabel === 'active';
+            return {
+                label: label.toUpperCase(),
+                sourceLabel: 'Meta Status',
+                badgeClass: isEnded ? 'cm-status-ended' : isPaused ? 'cm-status-paused' : isRunning ? 'cm-status-running' : 'cm-status-review',
+                metricsClass: isEnded || isPaused ? 'cm-faded-metrics' : ''
+            };
+        }
+
+        const statusKey = getCampaignOverviewStatus(campaign);
         if (statusKey === 'rejected' && campaign?.metaResponse?.stage) {
-            return { label: 'PUBLISHING FAILED', badgeClass: 'cm-status-ended', metricsClass: 'cm-faded-metrics' };
+            return { label: 'PUBLISHING FAILED', sourceLabel: 'Nexion Status', badgeClass: 'cm-status-ended', metricsClass: 'cm-faded-metrics' };
         }
         const map = {
             active: { label: 'ACTIVE', badgeClass: 'cm-status-running', metricsClass: '' },
@@ -1181,13 +1232,16 @@ const CampaignManagement = () => {
             rejected: { label: 'REJECTED', badgeClass: 'cm-status-ended', metricsClass: 'cm-faded-metrics' },
             publishing: { label: 'PUBLISHING', badgeClass: 'cm-status-review', metricsClass: '' }
         };
-        return map[statusKey] || map.draft;
+        return { ...(map[statusKey] || map.draft), sourceLabel: 'Nexion Status' };
     };
     const totalBudgetBase = campaigns.reduce((sum, campaign) => sum + getCampaignBudgetBase(campaign), 0);
     const spendTargetPercentage = totalBudgetBase > 0 ? Math.round((totalSpend / totalBudgetBase) * 100) : null;
     const avgImpressionsPerCampaign = campaigns.length > 0 ? totalImpressions / campaigns.length : null;
-    const activeCampaignsTrendLabel = campaigns.length
-        ? `${Math.round((activeCampaignsCount / campaigns.length) * 100)}% active`
+    const activeCampaignsTrendLabel = totalCampaignsCount
+        ? `${Math.round((activeCampaignsCount / totalCampaignsCount) * 100)}% running`
+        : 'No campaigns';
+    const pausedCampaignsTrendLabel = totalCampaignsCount
+        ? `${Math.round((pausedCampaignsCount / totalCampaignsCount) * 100)}% of total`
         : 'No campaigns';
     const spendTrendLabel = spendTargetPercentage !== null
         ? `${spendTargetPercentage}% of budget`
@@ -1199,7 +1253,8 @@ const CampaignManagement = () => {
         ? `${compactCount(avgImpressionsPerCampaign)} avg`
         : 'No campaign data';
     const selectedDateRangeLabel = dateRangeLabels[dateRange] || 'Last 30 Days';
-    const activeFillPercent = campaigns.length ? Math.min(100, Math.round((activeCampaignsCount / campaigns.length) * 100)) : 0;
+    const activeFillPercent = totalCampaignsCount ? Math.min(100, Math.round((activeCampaignsCount / totalCampaignsCount) * 100)) : 0;
+    const pausedFillPercent = totalCampaignsCount ? Math.min(100, Math.round((pausedCampaignsCount / totalCampaignsCount) * 100)) : 0;
     const spendFillPercent = spendTargetPercentage !== null ? Math.min(100, Math.max(0, spendTargetPercentage)) : 0;
     const roasValue = getSafeRatio(totalRevenue, totalSpend);
     const revenueFillPercent = totalSpend > 0 ? Math.min(100, Math.max(0, Math.round(roasValue * 20))) : 0;
@@ -1246,7 +1301,7 @@ const CampaignManagement = () => {
                                 <span className="material-symbols-outlined cm-wallet-pill__icon">account_balance_wallet</span>
                                 <div className="cm-wallet-pill__copy">
                                     <span>Available funds</span>
-                                    <strong>{formatMetaBalance(availableFunds, availableFundsCurrency)}</strong>
+                                    <strong>{formatMetaBalance(availableFunds)}</strong>
                                 </div>
                                 <button
                                     className={`cm-wallet-pill__refresh${availableFundsLoading ? ' is-loading' : ''}`}
@@ -1350,10 +1405,38 @@ const CampaignManagement = () => {
                                 </div>
                                 <span className="cm-kpi-trend cm-kpi-trend-primary">{activeCampaignsTrendLabel}</span>
                             </div>
-                            <p className="cm-kpi-label">Active Campaigns</p>
+                            <p className="cm-kpi-label">Running Campaigns</p>
                             <h3 className="cm-kpi-value headline-font">{activeCampaignsCount}</h3>
                             <div className="cm-kpi-track">
                                 <div className="cm-kpi-fill cm-kpi-fill-primary" style={{ width: `${activeFillPercent}%` }} />
+                            </div>
+                        </div>
+
+                        <div className="cm-kpi-card">
+                            <div className="cm-kpi-top">
+                                <div className="cm-kpi-icon cm-kpi-icon-blue">
+                                    <Layers size={19} />
+                                </div>
+                                <span className="cm-kpi-trend cm-kpi-trend-blue">All statuses</span>
+                            </div>
+                            <p className="cm-kpi-label">Total Campaigns</p>
+                            <h3 className="cm-kpi-value headline-font">{totalCampaignsCount}</h3>
+                            <div className="cm-kpi-track">
+                                <div className="cm-kpi-fill cm-kpi-fill-blue" style={{ width: `${totalCampaignsCount ? 100 : 0}%` }} />
+                            </div>
+                        </div>
+
+                        <div className="cm-kpi-card">
+                            <div className="cm-kpi-top">
+                                <div className="cm-kpi-icon cm-kpi-icon-paused">
+                                    <Pause size={18} />
+                                </div>
+                                <span className="cm-kpi-trend cm-kpi-trend-paused">{pausedCampaignsTrendLabel}</span>
+                            </div>
+                            <p className="cm-kpi-label">Paused Campaigns</p>
+                            <h3 className="cm-kpi-value headline-font">{pausedCampaignsCount}</h3>
+                            <div className="cm-kpi-track">
+                                <div className="cm-kpi-fill cm-kpi-fill-paused" style={{ width: `${pausedFillPercent}%` }} />
                             </div>
                         </div>
 
@@ -1466,7 +1549,7 @@ const CampaignManagement = () => {
                                                     <span>Starts {campaign.startDate || 'Not set'}{campaign.endDate ? ` - ${campaign.endDate}` : ''}</span>
                                                 </div>
                                             </div>
-                                            <span className={`cm-status-badge cm-list-status ${statusMeta.badgeClass}`}>Nexion Status: {statusMeta.label}</span>
+                                            <span className={`cm-status-badge cm-list-status ${statusMeta.badgeClass}`}>{statusMeta.sourceLabel}: {statusMeta.label}</span>
                                         </div>
                                         {renderMetaDeliveryStatus(campaign)}
                                         {campaign.lifecycleStatus === 'rejected' && campaign.reviewNotes ? (
@@ -1588,7 +1671,7 @@ const CampaignManagement = () => {
                                                     </div>
                                                 ) : null}
                                             </div>
-                                            <div className={`cm-status-badge ${statusMeta.badgeClass}`}>Nexion Status: {statusMeta.label}</div>
+                                            <div className={`cm-status-badge ${statusMeta.badgeClass}`}>{statusMeta.sourceLabel}: {statusMeta.label}</div>
                                         </div>
                                         <div className="cm-card-body">
                                             {renderMetaDeliveryStatus(campaign)}
