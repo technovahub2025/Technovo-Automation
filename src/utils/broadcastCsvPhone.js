@@ -59,6 +59,26 @@ export const normalizeCsvPhone = (value = "") => {
   return digits;
 };
 
+export const getCsvPhoneValidationRejectionReason = (value = "") => {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "phone_value_empty";
+  if (!/^\+?[\d\s().-]+$/.test(raw)) {
+    return "phone_contains_unsupported_characters";
+  }
+  const digits = normalizeCsvPhone(raw);
+  if (digits.length < 10 || digits.length > 15) {
+    return "phone_digit_count_out_of_range";
+  }
+  return "";
+};
+
+export const getCsvParsedColumnCount = (row = {}) => {
+  if (Array.isArray(row)) return row.length;
+  if (!row || typeof row !== "object") return 0;
+  const extraColumns = Array.isArray(row.__parsed_extra) ? row.__parsed_extra.length : 0;
+  return Object.keys(row).filter((key) => key !== "__parsed_extra").length + extraColumns;
+};
+
 export const validateCsvPhoneRows = (rows = [], phoneField = "") => {
   const invalidRows = [];
   const validRows = [];
@@ -66,11 +86,13 @@ export const validateCsvPhoneRows = (rows = [], phoneField = "") => {
   rows.forEach((entry, index) => {
     const row = entry?.data && typeof entry.data === "object" ? entry.data : entry;
     const lineNumber = Number(entry?.lineNumber || row?.__csvLineNumber) || index + 2;
-    const phone = normalizeCsvPhone(row?.[phoneField]);
-    if (phone.length < 10 || phone.length > 15) {
-      invalidRows.push({ lineNumber, reason: "Expected 10 to 15 phone digits." });
+    const rawPhone = row?.[phoneField];
+    const rejectionReason = getCsvPhoneValidationRejectionReason(rawPhone);
+    if (rejectionReason) {
+      invalidRows.push({ lineNumber, reason: rejectionReason });
       return;
     }
+    const phone = normalizeCsvPhone(rawPhone);
     validRows.push({ row, lineNumber, phone });
   });
 

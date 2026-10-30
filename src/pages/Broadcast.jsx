@@ -42,6 +42,7 @@ import OutboundDialer from "../components/outbound/OutboundDialer";
 import { stripAppRouteBase } from "../utils/appRouteBase";
 import {
   findCsvPhoneField,
+  getCsvParsedColumnCount,
   validateCsvPhoneRows,
 } from "../utils/broadcastCsvPhone";
 
@@ -995,6 +996,8 @@ const Broadcast = ({
     let detectedFields = [];
     let malformedRowCount = 0;
     let csvDataRowNumber = 0;
+    let detectedDelimiter = "";
+    const parseErrorCodes = new Set();
 
     const updateCsvUploadState = (phase, message, percent, force = false) => {
       const normalizedPercent = Math.max(
@@ -1039,9 +1042,18 @@ const Broadcast = ({
             ) {
               detectedFields = results.meta.fields;
             }
+            if (!detectedDelimiter) {
+              detectedDelimiter = String(results?.meta?.delimiter || "");
+            }
             const hasParseErrors =
               Array.isArray(results?.errors) && results.errors.length > 0;
-            if (hasParseErrors) malformedRowCount += 1;
+            if (hasParseErrors) {
+              malformedRowCount += 1;
+              results.errors.forEach((parseError) => {
+                const code = String(parseError?.code || parseError?.type || "parse_error");
+                parseErrorCodes.add(code.slice(0, 80));
+              });
+            }
             // Papa Parse can report a recoverable field-count error while
             // preserving the phone field in results.data. Keep that row and
             // validate the actual phone value instead of discarding it.
@@ -1049,6 +1061,7 @@ const Broadcast = ({
               data: row,
               lineNumber: csvDataRowNumber + 1,
               hasParseErrors,
+              parsedColumnCount: getCsvParsedColumnCount(row),
             });
 
             const cursor = Number(results?.meta?.cursor || 0);
@@ -1073,12 +1086,33 @@ const Broadcast = ({
           ? detectedFields
           : Object.keys(rawRows[0]?.data || {}),
       );
+      const logCsvDiagnostic = (details = {}) => {
+        console.warn("[Broadcast CSV] validation diagnostic", {
+          headers: detectedFields.map((header) => String(header || "").slice(0, 80)),
+          headerColumnCount: detectedFields.length,
+          parsedColumnCount: rawRows.reduce(
+            (maximum, entry) => Math.max(maximum, Number(entry?.parsedColumnCount) || 0),
+            0,
+          ),
+          delimiter: detectedDelimiter,
+          selectedPhoneColumn: phoneFieldResult.field || null,
+          parseErrorCodes: Array.from(parseErrorCodes).slice(0, 10),
+          parseErrorRowCount: malformedRowCount,
+          totalRows: csvDataRowNumber,
+          ...details,
+        });
+      };
       if (phoneFieldResult.error === "missing") {
+        logCsvDiagnostic({ rejectionReason: "phone_column_missing" });
         throw new Error(
           "No phone-number column was found. Add one column named phone, phone_number, mobile, mobile_number, whatsapp_number, contact, contact_number, telephone, or number.",
         );
       }
       if (phoneFieldResult.error === "ambiguous") {
+        logCsvDiagnostic({
+          rejectionReason: "multiple_phone_columns",
+          candidatePhoneColumns: phoneFieldResult.candidates,
+        });
         throw new Error(
           `Multiple possible phone columns were found (${phoneFieldResult.candidates.join(", ")}). Keep one phone column or rename the intended column to phone.`,
         );
@@ -1090,7 +1124,13 @@ const Broadcast = ({
       const validNumberCount = phoneValidation.validRows.length;
       const invalidRowExamples = phoneValidation.invalidRows
         .slice(0, 5)
-        .map(({ lineNumber }) => lineNumber);
+        .map(({ lineNumber, reason }) => ({ lineNumber, reason }));
+      if (malformedRowCount > 0 || phoneValidation.invalidRows.length > 0) {
+        logCsvDiagnostic({
+          validNumbers: validNumberCount,
+          invalidRows: phoneValidation.invalidRows.slice(0, 5),
+        });
+      }
       const parsedRecipients = phoneValidation.validRows
         .map(({ row, lineNumber, phone: normalizedPhone }) => {
           const normalizedRow = row && typeof row === "object" ? row : {};
@@ -1139,7 +1179,9 @@ const Broadcast = ({
 
       if (!recipientsWithFullData.length) {
         const examples = invalidRowExamples.length
-          ? ` Example CSV row numbers with invalid values: ${invalidRowExamples.join(", ")}.`
+          ? ` Example CSV row rejections: ${invalidRowExamples
+              .map(({ lineNumber, reason }) => `${lineNumber} (${reason})`)
+              .join(", ")}.`
           : "";
         throw new Error(
           `No valid phone numbers were found. Total data rows: ${totalRows}; valid numbers: ${validNumberCount}; invalid rows: ${invalidNumberCount}.${examples}`,
