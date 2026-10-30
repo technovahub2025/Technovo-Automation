@@ -280,6 +280,14 @@ const TemplateSendModal = ({
                   placeholder={`Enter ${getTemplateHeaderFormat(selectedTemplateOption).toLowerCase()} URL`}
                   disabled={templateSending}
                 />
+                {getTemplateHeaderFormat(selectedTemplateOption).toLowerCase() === 'image' &&
+                  /^https?:\/\//i.test(String(templateHeaderMediaUrl || '').trim()) && (
+                    <img
+                      className="template-send-image-preview"
+                      src={String(templateHeaderMediaUrl).trim()}
+                      alt="Template image header preview"
+                    />
+                  )}
               </label>
             )}
 
