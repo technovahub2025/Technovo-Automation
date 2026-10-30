@@ -1039,11 +1039,17 @@ const Broadcast = ({
             ) {
               detectedFields = results.meta.fields;
             }
-            if (Array.isArray(results?.errors) && results.errors.length > 0) {
-              malformedRowCount += 1;
-              return;
-            }
-            rawRows.push({ data: row, lineNumber: csvDataRowNumber + 1 });
+            const hasParseErrors =
+              Array.isArray(results?.errors) && results.errors.length > 0;
+            if (hasParseErrors) malformedRowCount += 1;
+            // Papa Parse can report a recoverable field-count error while
+            // preserving the phone field in results.data. Keep that row and
+            // validate the actual phone value instead of discarding it.
+            rawRows.push({
+              data: row,
+              lineNumber: csvDataRowNumber + 1,
+              hasParseErrors,
+            });
 
             const cursor = Number(results?.meta?.cursor || 0);
             const parseProgress =
@@ -1080,7 +1086,7 @@ const Broadcast = ({
       const phoneField = phoneFieldResult.field;
       const totalRows = csvDataRowNumber;
       const phoneValidation = validateCsvPhoneRows(rawRows, phoneField);
-      const invalidNumberCount = malformedRowCount + phoneValidation.invalidRows.length;
+      const invalidNumberCount = phoneValidation.invalidRows.length;
       const validNumberCount = phoneValidation.validRows.length;
       const invalidRowExamples = phoneValidation.invalidRows
         .slice(0, 5)
