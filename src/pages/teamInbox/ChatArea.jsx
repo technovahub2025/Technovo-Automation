@@ -737,7 +737,18 @@ const getMessageDisplayText = (message = {}) => {
     return `[${label}]`;
   }
 
-  return '[Unsupported message]';
+  const rawType = String(message?.rawMessageType || '').trim().toLowerCase();
+  const knownLabels = {
+    button: 'Button reply',
+    interactive: 'Interactive reply',
+    location: 'Location',
+    contacts: 'Contact card',
+    order: 'Order',
+    system: 'WhatsApp system message',
+    reaction: 'Reaction'
+  };
+  if (rawType) return knownLabels[rawType] || `[Unsupported message type: ${rawType}]`;
+  return '[Message content unavailable]';
 };
 
 const formatFileSize = (bytes) => {

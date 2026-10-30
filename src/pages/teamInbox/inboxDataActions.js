@@ -823,13 +823,17 @@ export const createInboxDataActions = ({
       .getMessagesPage(normalizedConversationId, {
         limit: pageLimit,
         scope: 'team',
-        skipCache: forceRefresh,
+        // The thread cache supplies instant UI; revalidate the selected page on the backend.
+        skipCache: true,
         signal: !loadOlder ? messageLoadAbortControllerRef?.current?.signal || null : null,
         ...(loadOlder && cachedMeta.nextCursor ? { cursor: cachedMeta.nextCursor } : {})
       })
       .then((data) => {
         const activeConversationId = String(activeMessagesConversationIdRef.current || '').trim();
-        if (loadOlder && activeConversationId !== normalizedConversationId) {
+        if (
+          activeConversationId !== normalizedConversationId ||
+          messageLoadRequestIdRef.current !== requestId
+        ) {
           return false;
         }
 
@@ -843,16 +847,10 @@ export const createInboxDataActions = ({
         )
           ? messageCacheRef.current.get(normalizedConversationId)
           : [];
-        const isStaleInitialResponse =
-          !loadOlder && messageLoadRequestIdRef.current !== requestId;
         const shouldPreserveExistingMessages =
           !loadOlder &&
           currentCachedMessages.length > 0 &&
           (!responseOk || fetchedMessages.length === 0);
-
-        if (isStaleInitialResponse && !shouldPreserveExistingMessages && fetchedMessages.length === 0) {
-          return false;
-        }
 
         const nextMessages = loadOlder
           ? mergeOrderedMessagesPreservingReplyContext(fetchedMessages, currentCachedMessages)
@@ -989,7 +987,9 @@ export const createInboxDataActions = ({
         return false;
       })
       .finally(() => {
-        messageLoadPromiseMapRef?.current?.delete(requestKey);
+        if (messageLoadPromiseMapRef?.current?.get(requestKey) === loadPromise) {
+          messageLoadPromiseMapRef.current.delete(requestKey);
+        }
         if (!loadOlder && messageLoadAbortControllerRef?.current === nextAbortController) {
           messageLoadAbortControllerRef.current = null;
         }

@@ -1,6 +1,7 @@
 import React, {
   useState,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useContext,
@@ -38,7 +39,8 @@ import useCrmRealtimeRefresh from '../hooks/useCrmRealtimeRefresh';
 import { useStableCallback } from '../hooks/useStableCallback';
 import {
   readTeamInboxBootstrapCache,
-  writeTeamInboxBootstrapCache
+  writeTeamInboxBootstrapCache,
+  readTeamInboxThreadCache
 } from './teamInbox/teamInboxSessionCache';
 import {
   requestTeamInboxNotificationPermission,
@@ -1316,40 +1318,69 @@ const TeamInbox = () => {
     setContactInfoMessageTone
   });
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     selectedConversationRef.current = selectedConversation;
-    threadCacheDisplaySourceRef.current = 'unknown';
-    threadFreshSyncAtRef.current = 0;
-  }, [selectedConversation]);
+    const nextConversationId = String(getConversationIdValue(selectedConversation) || '').trim();
+    const previousConversationId = String(activeMessagesConversationIdRef.current || '').trim();
+    if (nextConversationId === previousConversationId) return;
 
-  useEffect(() => {
-    if (activeConversationId) return;
-
-    activeMessagesConversationIdRef.current = '';
+    activeMessagesConversationIdRef.current = nextConversationId;
     threadWindowTrimmedRef.current = false;
     messageLoadRequestIdRef.current += 1;
     threadCacheDisplaySourceRef.current = 'unknown';
     threadFreshSyncAtRef.current = 0;
-    setMessagesHasMore(false);
+    if (messageLoadAbortControllerRef.current) {
+      messageLoadAbortControllerRef.current.abort();
+      messageLoadAbortControllerRef.current = null;
+    }
+    if (previousConversationId) {
+      messageLoadPromiseMapRef.current.delete(previousConversationId);
+      for (const key of messageLoadPromiseMapRef.current.keys()) {
+        if (key.startsWith(`${previousConversationId}::older::`)) {
+          messageLoadPromiseMapRef.current.delete(key);
+        }
+      }
+    }
+
+    const persistentThread = nextConversationId
+      ? readTeamInboxThreadCache({ currentUserId, conversationId: nextConversationId, allowStale: true })
+      : null;
+    const cachedMessages = nextConversationId
+      ? messageCacheRef.current.get(nextConversationId) || persistentThread?.messages || []
+      : [];
+    const cachedMeta = nextConversationId
+      ? messagePaginationCacheRef.current.get(nextConversationId) || persistentThread?.meta || {}
+      : {};
+    if (nextConversationId && !messageCacheRef.current.has(nextConversationId) && cachedMessages.length) {
+      messageCacheRef.current.set(nextConversationId, cachedMessages);
+    }
+    if (nextConversationId && !messagePaginationCacheRef.current.has(nextConversationId) && persistentThread?.meta) {
+      messagePaginationCacheRef.current.set(nextConversationId, persistentThread.meta);
+    }
+
+    setMessages(Array.isArray(cachedMessages) ? cachedMessages : []);
+    setMessagesHasMore(Boolean(cachedMeta?.hasMore));
     setMessagesOlderLoading(false);
-    setMessagesLoading(false);
-    setMessages([]);
+    setMessagesLoading(Boolean(nextConversationId) && (!Array.isArray(cachedMessages) || cachedMessages.length === 0));
     setThreadCacheInfo({
-      source: 'unknown',
-      isStale: false,
-      updatedAt: null,
-      messageCount: 0
+      source: cachedMessages.length ? 'cache' : nextConversationId ? 'network' : 'unknown',
+      isStale: Boolean(persistentThread?.isStale),
+      updatedAt: persistentThread?.updatedAt || null,
+      messageCount: cachedMessages.length
     });
-    setInboxDebugInfo({
-      lastEvent: 'selection_cleared',
-      lastEventAt: new Date().toISOString(),
-      source: 'ui',
-      reason: 'selection_cleared',
-      conversationId: '',
-      messageId: '',
-      details: 'No active conversation selected'
-    });
-  }, [activeConversationId]);
+    if (!nextConversationId) {
+      setMessagesLoading(false);
+      setInboxDebugInfo({
+        lastEvent: 'selection_cleared',
+        lastEventAt: new Date().toISOString(),
+        source: 'ui',
+        reason: 'selection_cleared',
+        conversationId: '',
+        messageId: '',
+        details: 'No active conversation selected'
+      });
+    }
+  }, [activeConversationId, currentUserId, getConversationIdValue, selectedConversation, setMessages]);
 
   useEffect(() => {
     const activeMessagesConversationId = String(
