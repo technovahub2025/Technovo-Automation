@@ -40,6 +40,11 @@ import CampaignAudiencePickerModal from "../components/broadcastComponents/Campa
 import SegmentAudiencePickerModal from "../components/broadcastComponents/SegmentAudiencePickerModal";
 import OutboundDialer from "../components/outbound/OutboundDialer";
 import { stripAppRouteBase } from "../utils/appRouteBase";
+import {
+  findCsvPhoneField,
+  validateCsvPhoneRows,
+} from "../utils/broadcastCsvPhone";
+import { isContactsImportedCrmEvent } from "./teamInbox/inboxRealtimePolicy";
 
 // Import styles
 import "../styles/whatsapp.css";
@@ -116,28 +121,6 @@ const getBroadcastErrorMessage = (
   }
 
   return backendMessage;
-};
-
-const findPhoneField = (fields = []) => {
-  const normalizedFields = Array.isArray(fields) ? fields : [];
-  const patterns = [
-    /whatsapp\s*number/i,
-    /\bphone\s*number\b/i,
-    /\bmobile\s*number\b/i,
-    /\bwhatsapp\b/i,
-    /\bphone\b/i,
-    /\bmobile\b/i,
-    /\bnumber\b/i,
-  ];
-
-  for (const pattern of patterns) {
-    const match = normalizedFields.find((field) =>
-      pattern.test(String(field || "").trim()),
-    );
-    if (match) return match;
-  }
-
-  return normalizedFields[0] || "";
 };
 
 const Broadcast = ({
@@ -504,7 +487,11 @@ const Broadcast = ({
   ]);
 
   useEffect(() => {
-    const handleCrmChanged = () => {
+    const handleCrmChanged = (event = {}) => {
+      // This screen performs the import itself and already has the canonical
+      // recipients. Re-querying the entire list after every import chunk is
+      // redundant and can race the current upload state.
+      if (isContactsImportedCrmEvent(event)) return;
       void refreshCsvRecipientsFromContacts();
     };
 
@@ -1012,6 +999,7 @@ const Broadcast = ({
     const rawRows = [];
     let detectedFields = [];
     let malformedRowCount = 0;
+    let csvDataRowNumber = 0;
 
     const updateCsvUploadState = (phase, message, percent, force = false) => {
       const normalizedPercent = Math.max(
@@ -1045,6 +1033,7 @@ const Broadcast = ({
           worker: true,
           skipEmptyLines: "greedy",
           step: (results) => {
+            csvDataRowNumber += 1;
             const row =
               results?.data && typeof results.data === "object"
                 ? results.data
@@ -1059,7 +1048,7 @@ const Broadcast = ({
               malformedRowCount += 1;
               return;
             }
-            rawRows.push(row);
+            rawRows.push({ data: row, lineNumber: csvDataRowNumber + 1 });
 
             const cursor = Number(results?.meta?.cursor || 0);
             const parseProgress =
@@ -1078,42 +1067,45 @@ const Broadcast = ({
 
       updateCsvUploadState("validating", "Validating numbers...", 80, true);
 
-      const phoneField = findPhoneField(
-        detectedFields.length ? detectedFields : Object.keys(rawRows[0] || {}),
+      const phoneFieldResult = findCsvPhoneField(
+        detectedFields.length
+          ? detectedFields
+          : Object.keys(rawRows[0]?.data || {}),
       );
-      const totalRows = rawRows.length + malformedRowCount;
-      let validNumberCount = 0;
-      let invalidNumberCount = 0;
-      const parsedRecipients = rawRows
-        .map((row, index) => {
+      if (phoneFieldResult.error === "missing") {
+        throw new Error(
+          "No phone-number column was found. Add one column named phone, phone_number, mobile, mobile_number, whatsapp_number, contact, contact_number, telephone, or number.",
+        );
+      }
+      if (phoneFieldResult.error === "ambiguous") {
+        throw new Error(
+          `Multiple possible phone columns were found (${phoneFieldResult.candidates.join(", ")}). Keep one phone column or rename the intended column to phone.`,
+        );
+      }
+      const phoneField = phoneFieldResult.field;
+      const totalRows = csvDataRowNumber;
+      const phoneValidation = validateCsvPhoneRows(rawRows, phoneField);
+      const invalidNumberCount = malformedRowCount + phoneValidation.invalidRows.length;
+      const validNumberCount = phoneValidation.validRows.length;
+      const invalidRowExamples = phoneValidation.invalidRows
+        .slice(0, 5)
+        .map(({ lineNumber }) => lineNumber);
+      const parsedRecipients = phoneValidation.validRows
+        .map(({ row, lineNumber, phone: normalizedPhone }) => {
           const normalizedRow = row && typeof row === "object" ? row : {};
-          const phone = normalizeText(
-            normalizedRow?.[phoneField] ||
-              normalizedRow.phone ||
-              normalizedRow.mobile ||
-              normalizedRow.whatsappNumber,
-          );
-          const normalizedPhone = normalizePhoneForDelivery(phone);
-          const phoneDigits = normalizedPhone.replace(/\D/g, "");
-          if (phoneDigits.length < 10 || phoneDigits.length > 15) {
-            invalidNumberCount += 1;
-            return null;
-          }
-          validNumberCount += 1;
 
           const fields = detectedFields.length
             ? detectedFields
             : Object.keys(normalizedRow || {});
           const variables = getCsvRowVariables(normalizedRow, fields, phoneField);
-          normalizedRow.lineNumber = normalizedRow.lineNumber || index + 1;
+          normalizedRow.lineNumber = normalizedRow.lineNumber || lineNumber;
 
           return {
             phone: normalizedPhone,
             variables,
             fullData: normalizedRow,
           };
-        })
-        .filter(Boolean);
+        });
       rawRows.length = 0;
 
       const recipientsByPhone = new Map();
@@ -1145,7 +1137,12 @@ const Broadcast = ({
       );
 
       if (!recipientsWithFullData.length) {
-        throw new Error("No valid phone numbers were found in the CSV file.");
+        const examples = invalidRowExamples.length
+          ? ` Example CSV row numbers with invalid values: ${invalidRowExamples.join(", ")}.`
+          : "";
+        throw new Error(
+          `No valid phone numbers were found. Total data rows: ${totalRows}; valid numbers: ${validNumberCount}; invalid rows: ${invalidNumberCount}.${examples}`,
+        );
       }
 
       let enrichedRecipients = recipientsWithFullData;

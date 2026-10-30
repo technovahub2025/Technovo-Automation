@@ -4,6 +4,7 @@ import {
   patchConversationInOrderedList,
   upsertConversationInOrderedList
 } from './teamInboxUtils';
+import { shouldRefreshInboxForCrmEvent } from './inboxRealtimePolicy';
 
 const MESSAGE_STATUS_BATCH_WINDOW_MS = 120;
 const LIST_REFRESH_DEBOUNCE_MS = 180;
@@ -936,7 +937,12 @@ export const useInboxRealtimeEffects = ({
       queueInboxOverviewRefresh();
     };
 
-    const handleCrmChanged = (data) => handleInboxMutationEvent(data, 'crm_changed');
+    const handleCrmChanged = (data) => {
+      // CSV contact imports never create conversations. Refreshing the inbox
+      // for every import chunk causes redundant list and overview requests.
+      if (!shouldRefreshInboxForCrmEvent(data)) return;
+      handleInboxMutationEvent(data, 'crm_changed');
+    };
     const handleInboxAssignmentUpdated = (data) =>
       handleInboxMutationEvent(data, 'inbox_assignment_updated');
     const handleInboxLeadStatusUpdated = (data) =>
