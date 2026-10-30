@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 
 export const useTeamInboxContactEffects = ({
   selectedConversation,
+  showContactInfo,
   toDateTimeLocalInputValue,
   getContactIdFromConversation,
   loadCrmActivitiesForContact,
@@ -40,6 +41,16 @@ export const useTeamInboxContactEffects = ({
   const selectedConversationContactNotes = String(selectedConversation?.contactId?.notes || '').trim();
   const selectedConversationFollowUpAt = selectedConversation?.contactId?.nextFollowUpAt;
   const selectedConversationContactId = getContactIdFromConversation(selectedConversation);
+  const selectedConversationId = String(
+    selectedConversation?.conversationId ||
+      selectedConversation?.conversation_id ||
+      selectedConversation?.threadConversationId ||
+      selectedConversation?._id ||
+      selectedConversation?.id ||
+      ''
+  ).trim();
+  const lastActivitiesConversationIdRef = useRef(selectedConversationId);
+  const lastDocumentsConversationIdRef = useRef(selectedConversationId);
 
   useEffect(() => {
     loadCrmActivitiesForContactRef.current = loadCrmActivitiesForContact;
@@ -122,20 +133,46 @@ export const useTeamInboxContactEffects = ({
   ]);
 
   useEffect(() => {
-    if (!selectedConversationContactId) {
+    const conversationChanged = lastActivitiesConversationIdRef.current !== selectedConversationId;
+    lastActivitiesConversationIdRef.current = selectedConversationId;
+    if (!showContactInfo || conversationChanged || !selectedConversationContactId) {
       setCrmActivities([]);
       setCrmActivitiesLoading(false);
       return;
     }
-    loadCrmActivitiesForContactRef.current({ contactId: selectedConversationContactId });
-  }, [selectedConversation?._id, selectedConversationContactId, setCrmActivities, setCrmActivitiesLoading]);
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    loadCrmActivitiesForContactRef.current({
+      contactId: selectedConversationContactId,
+      signal: controller?.signal
+    });
+    return () => controller?.abort();
+  }, [
+    selectedConversationId,
+    selectedConversationContactId,
+    setCrmActivities,
+    setCrmActivitiesLoading,
+    showContactInfo
+  ]);
 
   useEffect(() => {
-    if (!selectedConversationContactId) {
+    const conversationChanged = lastDocumentsConversationIdRef.current !== selectedConversationId;
+    lastDocumentsConversationIdRef.current = selectedConversationId;
+    if (!showContactInfo || conversationChanged || !selectedConversationContactId) {
       setCrmDocuments([]);
       setCrmDocumentsLoading(false);
       return;
     }
-    loadCrmDocumentsForContactRef.current({ contactId: selectedConversationContactId });
-  }, [selectedConversation?._id, selectedConversationContactId, setCrmDocuments, setCrmDocumentsLoading]);
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    loadCrmDocumentsForContactRef.current({
+      contactId: selectedConversationContactId,
+      signal: controller?.signal
+    });
+    return () => controller?.abort();
+  }, [
+    selectedConversationId,
+    selectedConversationContactId,
+    setCrmDocuments,
+    setCrmDocumentsLoading,
+    showContactInfo
+  ]);
 };

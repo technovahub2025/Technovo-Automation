@@ -13,6 +13,15 @@ import {
 const API_BASE_URL = resolveApiBaseUrl();
 registerUnauthorizedAxiosInterceptor(axios);
 const TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS = 15000;
+
+const shouldLogTeamInboxPerformance = () => {
+  if (import.meta.env.DEV) return true;
+  try {
+    return String(localStorage.getItem('debugTeamInbox') || '').trim() === '1';
+  } catch {
+    return false;
+  }
+};
 const WHATSAPP_DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_WHATSAPP_REQUEST_TIMEOUT_MS || 12000);
 const LEAD_SCORING_DEFAULTS = {
   isEnabled: true,
@@ -1359,6 +1368,10 @@ export const whatsappService = {
         scope
       }
     );
+    const requestId = typeof globalThis.crypto?.randomUUID === 'function'
+      ? globalThis.crypto.randomUUID()
+      : `inbox-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const shouldLogPerf = shouldLogTeamInboxPerformance();
     const buildEmptyPage = () => ({
       data: [],
       meta: {
@@ -1428,10 +1441,22 @@ export const whatsappService = {
     };
 
     const fetchPrimaryMessagesPage = async () => {
+      const requestStartedAt = globalThis.performance?.now?.() ?? Date.now();
+      if (shouldLogPerf) {
+        console.info('[team-inbox-perf]', {
+          phase: 'messages_api_request_start',
+          requestId,
+          conversationId: normalizedConversationId,
+          method: 'GET',
+          path: '/api/messages/:conversationId',
+          limit,
+          hasCursor: Boolean(cursor)
+        });
+      }
       const response = await axios.get(
         `${API_BASE_URL}/api/messages/${encodeURIComponent(normalizedConversationId)}`,
         {
-          headers: getAuthHeaders(false),
+          headers: { ...getAuthHeaders(false), 'x-request-id': requestId },
           timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
           signal,
           params: {
@@ -1441,6 +1466,16 @@ export const whatsappService = {
           }
         }
       );
+      if (shouldLogPerf) {
+        console.info('[team-inbox-perf]', {
+          phase: 'messages_api_response_received',
+          requestId,
+          conversationId: normalizedConversationId,
+          status: response.status,
+          contentLength: Number(response.headers?.['content-length'] || 0) || null,
+          durationMs: Math.round(((globalThis.performance?.now?.() ?? Date.now()) - requestStartedAt) * 100) / 100
+        });
+      }
       return normalizeMessagesPagePayload(response.data);
     };
 

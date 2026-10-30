@@ -437,6 +437,7 @@ const TeamInbox = () => {
   const selectedConversationRef = useRef(null);
   const pendingConversationRouteSyncRef = useRef('');
   const activeMessagesConversationIdRef = useRef('');
+  const conversationSelectionStartedAtRef = useRef(new Map());
   const filteredConversationsRef = useRef([]);
   const draftRestoreConversationIdRef = useRef('');
   const messageLoadRequestIdRef = useRef(0);
@@ -1325,6 +1326,17 @@ const TeamInbox = () => {
     if (nextConversationId === previousConversationId) return;
 
     activeMessagesConversationIdRef.current = nextConversationId;
+    if (nextConversationId && typeof globalThis.performance?.now === 'function') {
+      const selectionMarks = globalThis.performance.getEntriesByName?.(
+        `team-inbox-selection:${nextConversationId}`,
+        'mark'
+      ) || [];
+      globalThis.performance.clearMarks?.(`team-inbox-selection:${nextConversationId}`);
+      conversationSelectionStartedAtRef.current.set(
+        nextConversationId,
+        selectionMarks.length ? selectionMarks[selectionMarks.length - 1].startTime : globalThis.performance.now()
+      );
+    }
     threadWindowTrimmedRef.current = false;
     messageLoadRequestIdRef.current += 1;
     threadCacheDisplaySourceRef.current = 'unknown';
@@ -1383,6 +1395,28 @@ const TeamInbox = () => {
   }, [activeConversationId, currentUserId, getConversationIdValue, selectedConversation, setMessages]);
 
   useEffect(() => {
+    const renderedConversationId = String(activeConversationId || '').trim();
+    const startedAt = conversationSelectionStartedAtRef.current.get(renderedConversationId);
+    if (!renderedConversationId || !messages.length || typeof startedAt !== 'number') return;
+    conversationSelectionStartedAtRef.current.delete(renderedConversationId);
+    let shouldLogPerformance = Boolean(import.meta.env.DEV);
+    try {
+      shouldLogPerformance ||= String(localStorage.getItem('debugTeamInbox') || '').trim() === '1';
+    } catch {
+      // Ignore storage access failures.
+    }
+    if (shouldLogPerformance) {
+      console.info('[team-inbox-perf]', {
+        phase: 'first_message_rendered',
+        conversationId: renderedConversationId,
+        messageCount: messages.length,
+        durationMs:
+          Math.round(((globalThis.performance?.now?.() ?? Date.now()) - startedAt) * 100) / 100
+      });
+    }
+  }, [activeConversationId, messages]);
+
+  useEffect(() => {
     const activeMessagesConversationId = String(
       activeMessagesConversationIdRef.current || ''
     ).trim();
@@ -1413,6 +1447,7 @@ const TeamInbox = () => {
 
   useTeamInboxContactEffects({
     selectedConversation,
+    showContactInfo,
     toDateTimeLocalInputValue,
     getContactIdFromConversation,
     loadCrmActivitiesForContact,

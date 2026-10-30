@@ -33,6 +33,15 @@ let crmUserRosterSocketListenerBound = false;
 const crmUserRosterListeners = new Set();
 const crmUserProfileCache = new Map();
 
+const shouldLogTeamInboxPerformance = () => {
+  if (import.meta.env.DEV) return true;
+  try {
+    return String(localStorage.getItem('debugTeamInbox') || '').trim() === '1';
+  } catch {
+    return false;
+  }
+};
+
 const getWorkspaceScope = (scopeType = "createdBy") =>
   buildWorkspaceQueryScope(getStoredWorkspaceUser(), { scopeType });
 
@@ -772,17 +781,51 @@ export const crmService = {
   },
 
   async listContactDocuments(contactId, options = {}) {
+    const conversationId = String(options?.conversationId || '').trim();
+    const requestId = String(options?.requestId || '').trim();
+    const startedAt = globalThis.performance?.now?.() ?? Date.now();
+    const shouldLogPerf = shouldLogTeamInboxPerformance();
     try {
       const params = {};
-      const conversationId = String(options?.conversationId || '').trim();
       if (conversationId) {
         params.conversationId = conversationId;
       }
+      if (shouldLogPerf) {
+        console.info('[team-inbox-perf]', {
+          phase: 'crm_documents_api_request_start',
+          requestId: requestId || null,
+          conversationId: conversationId || null
+        });
+      }
       const response = await axios.get(`${API_BASE_URL}/api/crm/contacts/${contactId}/documents`, {
-        ...buildRequestConfig(false, { params })
+        ...buildRequestConfig(false, {
+          params,
+          signal: options?.signal,
+          headers: requestId ? { 'x-request-id': requestId } : {}
+        })
       });
+      if (shouldLogPerf) {
+        console.info('[team-inbox-perf]', {
+          phase: 'crm_documents_api_response_received',
+          requestId: requestId || null,
+          conversationId: conversationId || null,
+          status: response.status,
+          contentLength: Number(response.headers?.['content-length'] || 0) || null,
+          durationMs: Math.round(((globalThis.performance?.now?.() ?? Date.now()) - startedAt) * 100) / 100
+        });
+      }
       return response.data;
     } catch (error) {
+      if (shouldLogPerf && error?.response) {
+        console.info('[team-inbox-perf]', {
+          phase: 'crm_documents_api_response_received',
+          requestId: requestId || null,
+          conversationId: conversationId || null,
+          status: error.response.status,
+          contentLength: Number(error.response.headers?.['content-length'] || 0) || null,
+          durationMs: Math.round(((globalThis.performance?.now?.() ?? Date.now()) - startedAt) * 100) / 100
+        });
+      }
       return withServiceError(error, "Failed to fetch contact documents");
     }
   },
@@ -975,10 +1018,10 @@ export const crmService = {
     }
   },
 
-  async getActivities(contactId, limit = 100) {
+  async getActivities(contactId, limit = 100, options = {}) {
     try {
       const response = await axios.get(`${API_BASE_URL}/api/crm/activities/${contactId}`, {
-        ...buildRequestConfig(false, { params: { limit } })
+        ...buildRequestConfig(false, { params: { limit }, signal: options?.signal })
       });
       return response.data;
     } catch (error) {

@@ -667,6 +667,7 @@ export const createInboxDataActions = ({
       selectedConversationId === normalizedConversationId;
     const isConversationSwitch = previousConversationId !== normalizedConversationId;
     const nextRequestId = Number(messageLoadRequestIdRef.current || 0) + 1;
+    const cacheLookupStartedAt = globalThis.performance?.now?.() ?? Date.now();
     const persistentCachedThread = forceRefresh
       ? null
       : readTeamInboxThreadCache({
@@ -699,6 +700,14 @@ export const createInboxDataActions = ({
     const initialCachedMessages = Array.isArray(cachedMessages)
       ? trimMessagesToPage(cachedMessages, pageLimit)
       : null;
+    traceTeamInbox('loadMessages:cache_lookup', {
+      conversationId: normalizedConversationId,
+      requestId: nextRequestId,
+      cacheHit: Array.isArray(initialCachedMessages) && initialCachedMessages.length > 0,
+      cachedCount: Array.isArray(initialCachedMessages) ? initialCachedMessages.length : 0,
+      durationMs:
+        Math.round(((globalThis.performance?.now?.() ?? Date.now()) - cacheLookupStartedAt) * 100) / 100
+    });
     const cachedMeta = normalizeMessagePageMeta(
       (forceRefresh ? null : messagePaginationCacheRef?.current?.get(normalizedConversationId)) ||
         persistentCachedThread?.meta,

@@ -233,7 +233,7 @@ export const createContactCrmActions = ({
     }
   };
 
-  const loadCrmActivitiesForContact = async ({ contactId, silent = false } = {}) => {
+  const loadCrmActivitiesForContact = async ({ contactId, silent = false, signal } = {}) => {
     const resolvedContactId = String(
       contactId || getContactIdFromConversation(selectedConversation) || ''
     ).trim();
@@ -244,23 +244,25 @@ export const createContactCrmActions = ({
 
     try {
       if (!silent) setCrmActivitiesLoading(true);
-      const result = await crmService.getActivities(resolvedContactId, 15);
+      const result = await crmService.getActivities(resolvedContactId, 15, { signal });
+      if (signal?.aborted) return false;
       if (result?.success === false) {
         throw new Error(result?.error || 'Failed to load CRM activity');
       }
       setCrmActivities(Array.isArray(result?.data) ? result.data : []);
     } catch (error) {
+      if (signal?.aborted) return false;
       if (!silent) {
         setContactInfoMessage(error?.message || 'Failed to load CRM activity.');
         setContactInfoMessageTone('error');
       }
       setCrmActivities([]);
     } finally {
-      if (!silent) setCrmActivitiesLoading(false);
+      if (!silent && !signal?.aborted) setCrmActivitiesLoading(false);
     }
   };
 
-  const loadCrmDocumentsForContact = async ({ contactId, silent = false } = {}) => {
+  const loadCrmDocumentsForContact = async ({ contactId, silent = false, signal } = {}) => {
     const resolvedContactId = String(
       contactId || getContactIdFromConversation(selectedConversation) || ''
     ).trim();
@@ -272,20 +274,26 @@ export const createContactCrmActions = ({
     try {
       if (!silent) setCrmDocumentsLoading(true);
       const result = await crmService.listContactDocuments(resolvedContactId, {
-        conversationId: getConversationIdValue(selectedConversation)
+        conversationId: getConversationIdValue(selectedConversation),
+        signal,
+        requestId: typeof globalThis.crypto?.randomUUID === 'function'
+          ? globalThis.crypto.randomUUID()
+          : `crm-docs-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
       });
+      if (signal?.aborted) return false;
       if (result?.success === false) {
         throw new Error(result?.error || 'Failed to load contact documents');
       }
       setCrmDocuments(Array.isArray(result?.data) ? result.data : []);
     } catch (error) {
+      if (signal?.aborted) return false;
       if (!silent) {
         setContactInfoMessage(error?.message || 'Failed to load contact documents.');
         setContactInfoMessageTone('error');
       }
       setCrmDocuments([]);
     } finally {
-      if (!silent) setCrmDocumentsLoading(false);
+      if (!silent && !signal?.aborted) setCrmDocumentsLoading(false);
     }
   };
 

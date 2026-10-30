@@ -1,3 +1,12 @@
+const shouldLogTeamInboxPerformance = () => {
+  if (import.meta.env.DEV) return true;
+  try {
+    return String(localStorage.getItem('debugTeamInbox') || '').trim() === '1';
+  } catch {
+    return false;
+  }
+};
+
 export const createTeamInboxUiHandlers = ({
   selectedConversation,
   setSelectedConversation,
@@ -42,6 +51,16 @@ export const createTeamInboxUiHandlers = ({
         ''
     ).trim();
     if (activeConversationId !== conversationIdValue) {
+      if (typeof globalThis.performance?.mark === 'function') {
+        globalThis.performance.mark(`team-inbox-selection:${conversationIdValue}`);
+      }
+      if (shouldLogTeamInboxPerformance() && typeof globalThis.performance?.now === 'function') {
+        console.info('[team-inbox-perf]', {
+          phase: 'conversation_selected',
+          conversationId: conversationIdValue,
+          startedAt: Math.round(globalThis.performance.now() * 100) / 100
+        });
+      }
       setSelectedConversation(conversation);
     }
 
