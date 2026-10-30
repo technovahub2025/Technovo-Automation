@@ -44,7 +44,6 @@ import {
   findCsvPhoneField,
   validateCsvPhoneRows,
 } from "../utils/broadcastCsvPhone";
-import { isContactsImportedCrmEvent } from "./teamInbox/inboxRealtimePolicy";
 
 // Import styles
 import "../styles/whatsapp.css";
@@ -487,11 +486,7 @@ const Broadcast = ({
   ]);
 
   useEffect(() => {
-    const handleCrmChanged = (event = {}) => {
-      // This screen performs the import itself and already has the canonical
-      // recipients. Re-querying the entire list after every import chunk is
-      // redundant and can race the current upload state.
-      if (isContactsImportedCrmEvent(event)) return;
+    const handleCrmChanged = () => {
       void refreshCsvRecipientsFromContacts();
     };
 
