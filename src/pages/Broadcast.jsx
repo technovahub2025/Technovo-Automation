@@ -1011,6 +1011,7 @@ const Broadcast = ({
 
     const rawRows = [];
     let detectedFields = [];
+    let malformedRowCount = 0;
 
     const updateCsvUploadState = (phase, message, percent, force = false) => {
       const normalizedPercent = Math.max(
@@ -1054,6 +1055,10 @@ const Broadcast = ({
             ) {
               detectedFields = results.meta.fields;
             }
+            if (Array.isArray(results?.errors) && results.errors.length > 0) {
+              malformedRowCount += 1;
+              return;
+            }
             rawRows.push(row);
 
             const cursor = Number(results?.meta?.cursor || 0);
@@ -1076,7 +1081,10 @@ const Broadcast = ({
       const phoneField = findPhoneField(
         detectedFields.length ? detectedFields : Object.keys(rawRows[0] || {}),
       );
-      const recipientsWithFullData = rawRows
+      const totalRows = rawRows.length + malformedRowCount;
+      let validNumberCount = 0;
+      let invalidNumberCount = 0;
+      const parsedRecipients = rawRows
         .map((row, index) => {
           const normalizedRow = row && typeof row === "object" ? row : {};
           const phone = normalizeText(
@@ -1086,23 +1094,55 @@ const Broadcast = ({
               normalizedRow.whatsappNumber,
           );
           const normalizedPhone = normalizePhoneForDelivery(phone);
-          if (!normalizedPhone) return null;
+          const phoneDigits = normalizedPhone.replace(/\D/g, "");
+          if (phoneDigits.length < 10 || phoneDigits.length > 15) {
+            invalidNumberCount += 1;
+            return null;
+          }
+          validNumberCount += 1;
 
           const fields = detectedFields.length
             ? detectedFields
             : Object.keys(normalizedRow || {});
           const variables = getCsvRowVariables(normalizedRow, fields, phoneField);
+          normalizedRow.lineNumber = normalizedRow.lineNumber || index + 1;
 
           return {
             phone: normalizedPhone,
             variables,
-            fullData: {
-              ...normalizedRow,
-              lineNumber: normalizedRow?.lineNumber || index + 1,
-            },
+            fullData: normalizedRow,
           };
         })
         .filter(Boolean);
+      rawRows.length = 0;
+
+      const recipientsByPhone = new Map();
+      parsedRecipients.forEach((recipient) => {
+        const phoneKey = normalizePhoneForLookup(recipient.phone);
+        const existingRecipient = recipientsByPhone.get(phoneKey);
+        if (!existingRecipient) {
+          recipientsByPhone.set(phoneKey, recipient);
+          return;
+        }
+
+        recipientsByPhone.set(phoneKey, {
+          ...existingRecipient,
+          ...recipient,
+          variables:
+            recipient.variables.length > 0
+              ? recipient.variables
+              : existingRecipient.variables,
+          fullData: {
+            ...existingRecipient.fullData,
+            ...recipient.fullData,
+          },
+        });
+      });
+      const recipientsWithFullData = Array.from(recipientsByPhone.values());
+      const duplicateCount = Math.max(
+        0,
+        validNumberCount - recipientsWithFullData.length,
+      );
 
       if (!recipientsWithFullData.length) {
         throw new Error("No valid phone numbers were found in the CSV file.");
@@ -1233,6 +1273,9 @@ const Broadcast = ({
         })
         .filter((contact) => String(contact.phone || "").trim());
 
+      let importedContactCount = 0;
+      let failedContactCount = 0;
+      let contactImportError = "";
       if (csvRows.length > 0) {
         updateCsvUploadState("processing", "Processing contacts...", 92, true);
         const importedConsentLookup = buildContactLookupMap(csvRows);
@@ -1313,7 +1356,21 @@ const Broadcast = ({
 
       if (csvRows.length > 0) {
         try {
-          const importResult = await apiClient.importContacts(csvRows);
+          const importResult = await apiClient.importContacts(csvRows, {
+            onProgress: ({ completed = 0, total = csvRows.length } = {}) => {
+              const progressRatio = total > 0 ? Math.min(1, completed / total) : 1;
+              updateCsvUploadState(
+                "processing",
+                `Saving contacts ${Number(completed).toLocaleString()} of ${Number(total).toLocaleString()}...`,
+                92 + progressRatio * 6,
+              );
+            },
+          });
+          const importResults = importResult?.data?.results || {};
+          importedContactCount = Number(
+            importResults.imported ?? importResults.success ?? 0,
+          );
+          failedContactCount = Number(importResults.failed || 0);
           if (!importResult?.data?.success && importResult?.data?.error) {
             console.warn(
               "CSV contact import returned a non-success response:",
@@ -1326,6 +1383,8 @@ const Broadcast = ({
             "CSV contact import failed, continuing with parsed recipients:",
             importError,
           );
+          contactImportError =
+            importError?.response?.data?.error || importError?.message || "Contact import failed";
         }
       }
 
@@ -1337,7 +1396,9 @@ const Broadcast = ({
 
       updateCsvUploadState(
         "completed",
-        `Upload completed: ${Number(enrichedRecipients.length || 0).toLocaleString()} contacts ready`,
+        contactImportError
+          ? `CSV ready: ${totalRows.toLocaleString()} rows, ${validNumberCount.toLocaleString()} valid, ${invalidNumberCount.toLocaleString()} invalid, ${duplicateCount.toLocaleString()} duplicates, ${malformedRowCount.toLocaleString()} malformed, ${enrichedRecipients.length.toLocaleString()} recipients. CRM import failed: ${contactImportError}`
+          : `CSV ready: ${totalRows.toLocaleString()} rows, ${validNumberCount.toLocaleString()} valid, ${invalidNumberCount.toLocaleString()} invalid, ${duplicateCount.toLocaleString()} duplicates, ${malformedRowCount.toLocaleString()} malformed, ${enrichedRecipients.length.toLocaleString()} recipients; ${Number(importedContactCount || 0).toLocaleString()} contacts imported/updated, ${Number(failedContactCount || 0).toLocaleString()} failed.`,
         100,
         true,
       );

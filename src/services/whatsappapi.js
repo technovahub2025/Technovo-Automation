@@ -503,10 +503,20 @@ export const apiClient = {
    * Import multiple contacts
    * @param {Array} contacts - Array of contact objects
    */
-  importContacts: async (contacts) => {
+  importContacts: async (contacts, options = {}) => {
     const contactList = Array.isArray(contacts) ? contacts : [];
+    const importBatchSize = 1000;
+    const reportProgress = (completed) => {
+      try {
+        options?.onProgress?.({ completed, total: contactList.length });
+      } catch {
+        // UI progress callbacks must not fail a contact import.
+      }
+    };
     if (contactList.length <= 100) {
-      return api.post("/contacts/import", { contacts: contactList }, { timeout: LONG_TIMEOUT_MS });
+      const response = await api.post("/contacts/import", { contacts: contactList }, { timeout: LONG_TIMEOUT_MS });
+      reportProgress(contactList.length);
+      return response;
     }
 
     const aggregatedResults = {
@@ -518,6 +528,7 @@ export const apiClient = {
     let overallSuccess = true;
     const chunkMessages = [];
 
+    let completedCount = 0;
     const importChunk = async (chunk) => {
       if (!Array.isArray(chunk) || chunk.length === 0) return;
 
@@ -539,6 +550,8 @@ export const apiClient = {
         if (response?.data?.message) {
           chunkMessages.push(String(response.data.message).trim());
         }
+        completedCount += chunk.length;
+        reportProgress(completedCount);
         return;
       } catch (error) {
         if (isPayloadTooLargeError(error) && chunk.length > 1) {
@@ -558,7 +571,7 @@ export const apiClient = {
       }
     };
 
-    for (const chunk of chunkArray(contactList, 100)) {
+    for (const chunk of chunkArray(contactList, importBatchSize)) {
       await importChunk(chunk);
     }
 
