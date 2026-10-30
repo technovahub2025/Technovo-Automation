@@ -2,6 +2,7 @@ import { createContext, useState, useEffect } from "react";
 import axios from "axios";
 import { buildAgentAccessPayload } from "../utils/agentAccess";
 import resolveAdminApiUrl from "../services/adminApiUrl";
+import { disconnectWebSocket, reconnectWebSocketWithLatestToken } from "../services/websocketService";
 
 export const AuthContext = createContext();
 
@@ -32,6 +33,9 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem("authToken", token);
     localStorage.setItem("token", token); // Legacy key used in some modules
     localStorage.setItem("user", JSON.stringify(nextUser));
+    void reconnectWebSocketWithLatestToken(authenticatedUserId).catch((error) => {
+      console.warn("WebSocket reconnect after session update failed:", error?.message || error);
+    });
     if (provider) {
       localStorage.setItem("authProvider", provider);
       setAuthProvider(provider);
@@ -40,6 +44,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const logout = () => {
+    disconnectWebSocket();
     const tokenKey = import.meta.env.VITE_TOKEN_KEY || "authToken";
     localStorage.removeItem(tokenKey);
     localStorage.removeItem("authToken"); // Legacy key cleanup

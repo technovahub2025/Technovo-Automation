@@ -82,14 +82,15 @@ class WebSocketService extends EventEmitter {
     this.connecting = false;
     this.manualClose = false;
     this.currentUserId = null;
+    this.currentAuthToken = null;
     this.currentCompanyId = null;
     this.activeConversationId = '';
     this.reconnectAttempts = 0;
     this.maxReconnectAttempts = 10;
     this.baseReconnectDelay = 2000;
     this.maxReconnectDelay = 30000;
-    this.reconnectJitterMs = 0;
-    this.connectionTimeoutMs = 20000;
+    this.reconnectJitterMs = 300;
+    this.connectionTimeoutMs = 35000;
     this.reconnectTimer = null;
     this.heartbeatTimer = null;
     this.pongTimeout = null;
@@ -280,20 +281,32 @@ class WebSocketService extends EventEmitter {
 
     this.connectionPromise = new Promise((resolve, reject) => {
       let timeoutId = null;
+      this.authResolve = resolve;
+      this.authReject = reject;
 
       try {
         console.log(`Connecting to WebSocket: ${this.wsUrl}`);
-        this.ws = new WebSocket(this.wsUrl);
-        this.ws.onopen = (event) => this.handleOpen(event, resolve, reject, timeoutId);
-        this.ws.onmessage = this.handleMessage;
-        this.ws.onerror = (error) => this.handleError(error, reject, timeoutId);
-        this.ws.onclose = this.handleClose;
+        const socket = new WebSocket(this.wsUrl);
+        this.ws = socket;
+        socket.onopen = (event) => {
+          if (this.ws === socket) this.handleOpen(event, resolve, reject, timeoutId);
+        };
+        socket.onmessage = (event) => {
+          if (this.ws === socket) this.handleMessage(event);
+        };
+        socket.onerror = (error) => {
+          if (this.ws === socket) this.handleError(error, reject, timeoutId);
+        };
+        socket.onclose = (event) => this.handleClose(event, socket);
 
         timeoutId = setTimeout(() => {
           if (!this.connecting) return;
           this.connecting = false;
+          this.authReject?.(new Error('WebSocket connection timeout'));
+          this.ws?.close(1008, 'Authentication timeout');
           reject(new Error('WebSocket connection timeout'));
         }, this.connectionTimeoutMs);
+        this.connectionTimeoutTimer = timeoutId;
       } catch (error) {
         this.connecting = false;
         reject(normalizeError(error, "WebSocket connection failed"));
@@ -306,25 +319,60 @@ class WebSocketService extends EventEmitter {
   }
 
   handleOpen(event, resolve, _reject, timeoutId) {
-    if (timeoutId) clearTimeout(timeoutId);
-    this.connecting = false;
-    this.connected = true;
-    this.reconnectAttempts = 0;
-    this.circuitOpenUntil = 0;
-    this.lastCloseCode = null;
-    this.lastPongAt = Date.now();
-    this.clearHeartbeat();
-    this.startHeartbeat();
-    this.identify();
-    this.flushCrmMessageQueue();
-    this.emit('connected', { ws: this.ws, userId: this.currentUserId, event });
-    this.emit('connect', { ws: this.ws, userId: this.currentUserId, event });
-    if (resolve) resolve(this.ws);
+    const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
+    const token = localStorage.getItem(tokenKey) || localStorage.getItem('authToken') || localStorage.getItem('token');
+    if (!token) {
+      this.authReject?.(new Error('Nexion authentication token is missing'));
+      this.ws?.close(1008, 'Authentication required');
+      return;
+    }
+    try {
+      this.currentAuthToken = token;
+      this.ws.send(JSON.stringify({ type: 'authenticate', token }));
+    } catch (error) {
+      this.authReject?.(normalizeError(error, 'WebSocket authentication failed'));
+      this.ws?.close(1008, 'Authentication failed');
+    }
   }
 
   handleMessage(event) {
     try {
       const data = JSON.parse(event.data);
+      if (data?.type === 'authenticated') {
+        if (this.connectionTimeoutTimer) clearTimeout(this.connectionTimeoutTimer);
+        this.connectionTimeoutTimer = null;
+        this.connected = true;
+        this.connecting = false;
+        this.reconnectAttempts = 0;
+        this.circuitOpenUntil = 0;
+        this.lastCloseCode = null;
+        this.lastPongAt = Date.now();
+        this.clearHeartbeat();
+        this.startHeartbeat();
+        this.flushCrmMessageQueue();
+        if (this.activeConversationId) this.send({ type: 'conversation:subscribe', conversationId: this.activeConversationId });
+        this.emit('connected', { ws: this.ws, userId: this.currentUserId });
+        this.emit('connect', { ws: this.ws, userId: this.currentUserId });
+        this.authResolve?.(this.ws);
+        this.authResolve = null;
+        this.authReject = null;
+        return;
+      }
+      if (data?.type === 'auth_error') {
+        this.manualClose = true;
+        this.connected = false;
+        this.connecting = false;
+        this.authReject?.(new Error('Nexion WebSocket authentication rejected'));
+        this.authResolve = null;
+        this.authReject = null;
+        this.emit('connect_error', new Error('Nexion WebSocket authentication rejected'));
+        this.ws?.close(1008, 'Authentication failed');
+        return;
+      }
+      if (data?.type === 'auth_unavailable') {
+        this.emit('connect_error', new Error('Nexion authentication service is temporarily unavailable'));
+        return;
+      }
       if (data?.type === 'pong') {
         this.markPong(data);
         return;
@@ -356,7 +404,17 @@ class WebSocketService extends EventEmitter {
     if (reject && wasConnecting) reject(normalizeError(error, "WebSocket connection failed"));
   }
 
-  handleClose(event) {
+  handleClose(event, closedSocket = this.ws) {
+    if (closedSocket !== this.ws) {
+      this.emit('disconnected', { code: event?.code, reason: event?.reason, wasClean: event?.wasClean });
+      this.emit('disconnect', { code: event?.code, reason: event?.reason, wasClean: event?.wasClean });
+      return;
+    }
+    if (this.connectionTimeoutTimer) clearTimeout(this.connectionTimeoutTimer);
+    this.connectionTimeoutTimer = null;
+    this.authReject?.(new Error('WebSocket closed before authentication'));
+    this.authResolve = null;
+    this.authReject = null;
     this.ws = null;
     this.connected = false;
     this.connecting = false;
@@ -375,6 +433,7 @@ class WebSocketService extends EventEmitter {
       wasClean: event?.wasClean
     });
 
+    if (this.lastCloseCode === 1008) this.manualClose = true;
     if (!this.manualClose && this.reconnectAttempts < this.maxReconnectAttempts) {
       this.scheduleReconnect();
       return;
@@ -426,34 +485,7 @@ class WebSocketService extends EventEmitter {
   }
 
   identify() {
-    if (!this.currentUserId) return;
-
-    let displayName = '';
-    let email = '';
-    let role = '';
-    try {
-      const storedUser = JSON.parse(localStorage.getItem('user') || 'null');
-      displayName = String(
-        storedUser?.displayName || storedUser?.name || storedUser?.fullName || storedUser?.username || ''
-      ).trim();
-      email = String(storedUser?.email || '').trim();
-      role = String(storedUser?.companyRole || storedUser?.role || storedUser?.normalizedRole || '').trim();
-    } catch {
-      // Ignore storage parse issues and fall back to ID-only identification.
-    }
-
-    this.send({
-      type: 'identify',
-      userId: this.currentUserId,
-      companyId: this.currentCompanyId || undefined,
-      displayName: displayName || undefined,
-      name: displayName || undefined,
-      userName: displayName || undefined,
-      email: email || undefined,
-      role: role || undefined,
-      activeConversationId: this.activeConversationId || undefined,
-      timestamp: Date.now()
-    });
+    // Identity and tenant are supplied only by the verified Nexion JWT context.
   }
 
   setCompanyId(companyId) {
@@ -531,10 +563,15 @@ class WebSocketService extends EventEmitter {
 
   disconnect() {
     this.manualClose = true;
+    const rejectPendingAuthentication = this.authReject;
+    this.authResolve = null;
+    this.authReject = null;
+    rejectPendingAuthentication?.(new Error('WebSocket disconnected before authentication completed'));
     this.clearReconnect();
     this.clearHeartbeat();
     this.connecting = false;
     this.connectionPromise = null;
+    this.currentAuthToken = null;
     this.teardownNetworkListeners();
 
     if (this.ws) {
@@ -547,6 +584,18 @@ class WebSocketService extends EventEmitter {
     }
   }
 
+  reconnectWithLatestToken(userId) {
+    const shouldReconnect = Boolean(this.currentUserId || this.ws || this.connectionPromise);
+    const messageHandler = this.messageHandler;
+    this.disconnect();
+    this.currentUserId = userId || this.currentUserId;
+    this.currentAuthToken = null;
+    if (!shouldReconnect || !this.currentUserId) return Promise.resolve(null);
+    this.manualClose = false;
+    this.reconnectAttempts = 0;
+    return this.connect(this.currentUserId, messageHandler);
+  }
+
   setUserId(userId) {
     this.currentUserId = userId;
     if (this.isConnected()) this.identify();
@@ -557,7 +606,7 @@ class WebSocketService extends EventEmitter {
   }
 
   isConnected() {
-    return Boolean(this.ws && this.ws.readyState === WebSocket.OPEN);
+    return Boolean(this.connected && this.ws && this.ws.readyState === WebSocket.OPEN);
   }
 
   isConnecting() {
@@ -566,6 +615,7 @@ class WebSocketService extends EventEmitter {
 
   getConnectionState() {
     if (!this.ws) return 'DISCONNECTED';
+    if (this.ws.readyState === WebSocket.OPEN && !this.connected) return 'AUTHENTICATING';
     switch (this.ws.readyState) {
       case WebSocket.CONNECTING:
         return 'CONNECTING';
@@ -613,6 +663,7 @@ const webSocketService = new WebSocketService();
 
 export const connectWebSocket = (userId, onMessage) => webSocketService.connect(userId, onMessage);
 export const disconnectWebSocket = () => webSocketService.disconnect();
+export const reconnectWebSocketWithLatestToken = (userId) => webSocketService.reconnectWithLatestToken(userId);
 export const sendWebSocketMessage = (data) => webSocketService.send(data);
 export const sendCrmWebSocketMessage = (data) => webSocketService.sendCrm(data);
 export const getWebSocketStats = () => webSocketService.getStats();

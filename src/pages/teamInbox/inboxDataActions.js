@@ -668,16 +668,19 @@ export const createInboxDataActions = ({
     const isConversationSwitch = previousConversationId !== normalizedConversationId;
     const nextRequestId = Number(messageLoadRequestIdRef.current || 0) + 1;
     const cacheLookupStartedAt = globalThis.performance?.now?.() ?? Date.now();
-    const persistentCachedThread = forceRefresh
-      ? null
-      : readTeamInboxThreadCache({
-          currentUserId,
-          conversationId: normalizedConversationId,
-          allowStale: true
-        });
     const runtimeCachedMessages = forceRefresh
       ? null
       : messageCacheRef.current.get(normalizedConversationId);
+    const hasRuntimePagination =
+      !forceRefresh && Boolean(messagePaginationCacheRef?.current?.has(normalizedConversationId));
+    const persistentCachedThread =
+      forceRefresh || (Array.isArray(runtimeCachedMessages) && hasRuntimePagination)
+        ? null
+        : readTeamInboxThreadCache({
+            currentUserId,
+            conversationId: normalizedConversationId,
+            allowStale: true
+          });
     const visibleMessagesForConversation =
       !forceRefresh &&
       !loadOlder &&

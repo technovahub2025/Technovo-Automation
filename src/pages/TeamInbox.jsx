@@ -1354,9 +1354,14 @@ const TeamInbox = () => {
       }
     }
 
-    const persistentThread = nextConversationId
-      ? readTeamInboxThreadCache({ currentUserId, conversationId: nextConversationId, allowStale: true })
-      : null;
+    const hasRuntimeMessages =
+      Boolean(nextConversationId) && messageCacheRef.current.has(nextConversationId);
+    const hasRuntimePagination =
+      Boolean(nextConversationId) && messagePaginationCacheRef.current.has(nextConversationId);
+    const persistentThread =
+      nextConversationId && (!hasRuntimeMessages || !hasRuntimePagination)
+        ? readTeamInboxThreadCache({ currentUserId, conversationId: nextConversationId, allowStale: true })
+        : null;
     const cachedMessages = nextConversationId
       ? messageCacheRef.current.get(nextConversationId) || persistentThread?.messages || []
       : [];
