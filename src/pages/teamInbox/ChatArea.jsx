@@ -1043,6 +1043,7 @@ const ChatArea = ({
   const openMenuRef = useRef(null);
   const reactionPickerRef = useRef(null);
   const messageListRef = useRef(null);
+  const [isAtBottom, setIsAtBottom] = useState(true);
   const pendingPrependAnchorKeyRef = useRef('');
   const selectedConversationScrollKeyRef = useRef('');
   const canTriggerOlderLoadRef = useRef(false);
@@ -3256,7 +3257,6 @@ const ChatArea = ({
       ),
     [selectedMessagesForDeletion]
   );
-  const [isAtBottom, setIsAtBottom] = useState(true);
   const hasVisibleMessages = Array.isArray(messages) && messages.length > 0;
   const showEmptyThreadState =
     !isThreadTransitioning && !messagesLoading && !olderMessagesLoading && !hasVisibleMessages;
