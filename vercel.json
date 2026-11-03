@@ -4,8 +4,37 @@
   "installCommand": "npm install",
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
+  "headers": [
+    {
+      "source": "/(.*)\\.(js|css)$",
+      "headers": [
+        { "key": "Cache-Control", "value": "public, max-age=31536000, immutable" }
+      ]
+    },
+    {
+      "source": "/index.html",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    },
+    {
+      "source": "/nexion/",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache, no-store, must-revalidate" }
+      ]
+    }
+  ],
   "routes": [
     { "handle": "filesystem" },
+    { "src": "/nexion/assets/(.*)", "dest": "/assets/$1" },
+    { "src": "/assets/.*\\.(js|css)$", "dest": "/404.html", "status": 404 },
+    { "src": "/nexion/assets/.*\\.(js|css)$", "dest": "/404.html", "status": 404 },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
 }

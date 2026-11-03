@@ -533,15 +533,23 @@ export const useInboxRealtimeEffects = ({
       const targetConversationId = String(incomingMessage?.conversationId || conversationId || '').trim();
       const conversationLabel = getConversationLabel(data);
       const activeConversation = activeId ? conversationLookupMap?.get(activeId) : null;
-      const isActiveThreadEvent = Boolean(activeId && targetConversationId === activeId);
+      const relatedConversationIds = Array.isArray(data?.relatedConversationIds)
+        ? data.relatedConversationIds.map((id) => String(id || '').trim()).filter(Boolean)
+        : [];
+      const isActiveThreadEvent = Boolean(
+        activeId && (targetConversationId === activeId || relatedConversationIds.includes(activeId))
+      );
+      const messageForActiveThread = isActiveThreadEvent
+        ? { ...incomingMessage, conversationId: activeId }
+        : incomingMessage;
 
       if (targetConversationId && activeId && isActiveThreadEvent) {
         if (typeof upsertMessage === 'function') {
-          upsertMessage(incomingMessage);
+          upsertMessage(messageForActiveThread);
         } else if (typeof appendMessageUnique === 'function') {
-          appendMessageUnique(incomingMessage);
+          appendMessageUnique(messageForActiveThread);
         } else if (typeof setMessages === 'function') {
-          setMessages((prev) => (prev.some((message) => String(message?._id || '') === String(incomingMessage?._id || '')) ? prev : [...prev, incomingMessage]));
+          setMessages((prev) => (prev.some((message) => String(message?._id || '') === String(messageForActiveThread?._id || '')) ? prev : [...prev, messageForActiveThread]));
         }
         const existingConversation =
           conversationLookupMap?.get(activeId) || conversationLookupMap?.get(targetConversationId);

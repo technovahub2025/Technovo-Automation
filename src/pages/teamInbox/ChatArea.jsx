@@ -726,15 +726,50 @@ const isPlaceholderMediaText = (text, mediaType) => {
   return normalizedText === `[${normalizedMediaType.charAt(0).toUpperCase()}${normalizedMediaType.slice(1)}]`;
 };
 
+const SUPPORTED_MESSAGE_TYPES = new Set([
+  'text', 'image', 'video', 'audio', 'document', 'sticker', 'interactive', 'button',
+  'location', 'contacts', 'reaction', 'order', 'system'
+]);
+
+const getStructuredMessagePayload = (message = {}) => {
+  const root = message?.contentPayload || message?.messagePayload || {};
+  const queue = [{ value: root, depth: 0 }];
+  const visited = new Set();
+  while (queue.length) {
+    const { value, depth } = queue.shift();
+    if (!value || typeof value !== 'object' || Array.isArray(value) || visited.has(value) || depth > 3) continue;
+    visited.add(value);
+    const type = String(value?.type || value?.messageType || '').trim().toLowerCase();
+    if (SUPPORTED_MESSAGE_TYPES.has(type)) return { payload: value, type };
+    const payloadType = Object.keys(value).find((key) => SUPPORTED_MESSAGE_TYPES.has(key));
+    if (payloadType) return { payload: value, type: payloadType };
+    ['message', 'payload', 'data', 'content'].forEach((key) => {
+      if (value[key] && typeof value[key] === 'object') queue.push({ value: value[key], depth: depth + 1 });
+    });
+  }
+  return { payload: root && typeof root === 'object' ? root : {}, type: '' };
+};
+
+const getMessageCanonicalType = (message = {}) => {
+  const declaredType = String(message?.rawMessageType || message?.messageType || message?.type || '')
+    .trim()
+    .toLowerCase();
+  return SUPPORTED_MESSAGE_TYPES.has(declaredType)
+    ? declaredType
+    : getStructuredMessagePayload(message).type || declaredType;
+};
+
 export const getMessageDisplayText = (message = {}) => {
   const mediaType = String(message?.mediaType || '').trim();
   const text = String(message?.text || '').trim();
   const isUnsupportedPlaceholder = /^\[?unsupported(?: message)?\]?$/i.test(text);
-  const originalType = String(message?.rawMessageType || message?.messageType || message?.type || '')
-    .trim()
-    .toLowerCase();
-  const normalizedMediaType = String(mediaType || originalType).trim().toLowerCase();
-  const structuredContent = message?.contentPayload || message?.messagePayload || {};
+  const textIsGeneratedTypeFallback =
+    /^\[[^\]]+ message\]$/i.test(text) || /^\[unsupported message type:[^\]]+\]$/i.test(text);
+  const { payload: structuredContent, type: structuredType } = getStructuredMessagePayload(message);
+  const originalType = getMessageCanonicalType(message) || structuredType;
+  const normalizedMediaType = String(
+    mediaType || (['image', 'video', 'audio', 'document', 'sticker'].includes(originalType) ? originalType : '')
+  ).trim().toLowerCase();
   const firstContact = Array.isArray(structuredContent?.contacts) ? structuredContent.contacts[0] : null;
   const contactPhones = (Array.isArray(firstContact?.phones) ? firstContact.phones : [])
     .map((phone) => String(phone?.phone || phone?.wa_id || '').trim())
@@ -758,6 +793,12 @@ export const getMessageDisplayText = (message = {}) => {
       structuredContent?.interactive?.list_reply?.title ||
       structuredContent?.location?.name ||
       structuredContent?.location?.address ||
+      (structuredContent?.location?.latitude != null &&
+      structuredContent?.location?.longitude != null &&
+      Number.isFinite(Number(structuredContent?.location?.latitude)) &&
+      Number.isFinite(Number(structuredContent?.location?.longitude))
+        ? `Location: ${structuredContent.location.latitude}, ${structuredContent.location.longitude}`
+        : '') ||
       structuredContent?.reaction?.emoji ||
       (firstContact
         ? [firstContact?.name?.formatted_name || firstContact?.name?.first_name, ...contactPhones]
@@ -775,11 +816,16 @@ export const getMessageDisplayText = (message = {}) => {
     Boolean(message?.attachment?.originalFileName) ||
     Boolean(message?.mediaId);
 
-  if (text && !isUnsupportedPlaceholder && !(hasAttachment && isPlaceholderMediaText(text, normalizedMediaType))) {
+  if (
+    text &&
+    !isUnsupportedPlaceholder &&
+    !textIsGeneratedTypeFallback &&
+    !(hasAttachment && isPlaceholderMediaText(text, normalizedMediaType))
+  ) {
     return text;
   }
 
-  if (isUnsupportedPlaceholder && structuredText) return structuredText;
+  if ((isUnsupportedPlaceholder || textIsGeneratedTypeFallback || !text) && structuredText) return structuredText;
 
   if (['image', 'video', 'audio', 'document', 'sticker'].includes(normalizedMediaType)) {
     if (normalizedMediaType === 'audio') {
@@ -802,8 +848,8 @@ export const getMessageDisplayText = (message = {}) => {
     system: 'WhatsApp system message',
     reaction: 'Reaction'
   };
-  if (rawType) return knownLabels[rawType] || `[Unsupported message type: ${rawType}]`;
-  return '[Message content unavailable]';
+  if (rawType && knownLabels[rawType]) return knownLabels[rawType];
+  return 'This message type is not supported yet.';
 };
 
 const formatFileSize = (bytes) => {
@@ -1730,7 +1776,7 @@ const ChatArea = ({
     const latestReactionByMessageKey = new Map();
 
     (Array.isArray(messages) ? messages : []).forEach((message) => {
-      if (String(message?.rawMessageType || '').trim().toLowerCase() !== 'reaction') return;
+      if (getMessageCanonicalType(message) !== 'reaction') return;
 
       let targetMessageKey = '';
       const targetMessageId = getMessageReferenceId(message?.reactionTo || message?.replyTo);
@@ -1799,7 +1845,7 @@ const ChatArea = ({
 
   const canReactToMessage = (message = {}) =>
     Boolean(String(message?.whatsappMessageId || '').trim()) &&
-    String(message?.rawMessageType || '').trim().toLowerCase() !== 'reaction' &&
+    getMessageCanonicalType(message) !== 'reaction' &&
     String(message?.status || '').trim().toLowerCase() !== 'sending';
 
   const getReplySourceMessage = (message = {}) => {
@@ -2335,9 +2381,8 @@ const ChatArea = ({
 
   const getAttachmentInfo = (message = {}) => {
     const attachment = message?.attachment || {};
-    const mediaType = String(
-      message?.mediaType || message?.rawMessageType || message?.messageType || message?.type || ''
-    ).trim().toLowerCase();
+    const structuredType = getStructuredMessagePayload(message).type;
+    const mediaType = String(message?.mediaType || getMessageCanonicalType(message) || structuredType).trim().toLowerCase();
     const fileCategory = String(attachment?.fileCategory || mediaType || '').toLowerCase();
     const isImage = fileCategory === 'image' || mediaType === 'image';
     const isAudio = fileCategory === 'audio' || mediaType === 'audio';
