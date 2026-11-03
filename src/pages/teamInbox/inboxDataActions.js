@@ -116,6 +116,7 @@ const buildConversationListQuerySignature = ({
 
 export const createInboxDataActions = ({
   currentUserId,
+  currentCompanyId,
   currentUserDisplayName,
   currentUserInternalRole,
   normalizeConversation,
@@ -678,6 +679,7 @@ export const createInboxDataActions = ({
         ? null
         : readTeamInboxThreadCache({
             currentUserId,
+            companyId: currentCompanyId,
             conversationId: normalizedConversationId,
             allowStale: true
           });
@@ -850,7 +852,15 @@ export const createInboxDataActions = ({
         }
 
         const responseOk = Boolean(data?.ok !== false);
-        const fetchedMessages = Array.isArray(data?.data) ? data.data : [];
+        const responseMessages = Array.isArray(data?.data) ? data.data : [];
+        const fetchedMessages = responseMessages.filter(
+          (message) => String(message?.conversationId || '').trim() === normalizedConversationId
+        );
+        if (fetchedMessages.length !== responseMessages.length) {
+          traceTeamInbox('loadMessages:conversation_mismatch_rejected', {
+            rejectedCount: responseMessages.length - fetchedMessages.length
+          });
+        }
         const fetchedInitialPageMessages = trimMessagesToPage(fetchedMessages, pageLimit);
         const fetchedMeta = normalizeMessagePageMeta(data?.meta, pageLimit);
         const wasCanceled = Boolean(data?.canceled);
@@ -921,6 +931,7 @@ export const createInboxDataActions = ({
           messageCacheRef.current.set(normalizedConversationId, nextMessages);
           writeTeamInboxThreadCache({
             currentUserId,
+            companyId: currentCompanyId,
             conversationId: normalizedConversationId,
             messages: nextMessages,
             meta: nextMeta

@@ -15,28 +15,6 @@ const OVERVIEW_REFRESH_MIN_INTERVAL_MS = 1200;
 const getConversationId = (conversation) =>
   String(conversation?._id || conversation?.id || '').trim();
 
-const normalizePhoneDigits = (value = '') => String(value || '').replace(/\D/g, '');
-
-const getRelatedConversationIds = (data = {}, fallbackId = '') =>
-  Array.from(
-    new Set(
-      [
-        fallbackId,
-        data?.conversationId,
-        data?.message?.conversationId,
-        data?.conversation?._id,
-        data?.conversation?.id,
-        ...(Array.isArray(data?.relatedConversationIds) ? data.relatedConversationIds : []),
-        ...(Array.isArray(data?.message?.relatedConversationIds) ? data.message.relatedConversationIds : []),
-        ...(Array.isArray(data?.conversation?.relatedConversationIds)
-          ? data.conversation.relatedConversationIds
-          : [])
-      ]
-        .map((id) => String(id || '').trim())
-        .filter(Boolean)
-  )
-  );
-
 const getConversationContactId = (conversation = {}) =>
   String(conversation?.contactId?._id || conversation?.contactId?.id || conversation?.contactId || '')
     .trim();
@@ -451,29 +429,8 @@ export const useInboxRealtimeEffects = ({
       ).trim();
       const activeId = String(activeConversationId || '').trim();
       const targetConversationId = String(incomingMessage?.conversationId || conversationId || '').trim();
-      const eventConversationIds = getRelatedConversationIds(data, targetConversationId || conversationId);
       const activeConversation = activeId ? conversationLookupMap?.get(activeId) : null;
-      const eventPhone = normalizePhoneDigits(
-        data?.conversation?.contactPhone ||
-          data?.conversation?.contactId?.phone ||
-          data?.contactPhone ||
-          incomingMessage?.conversation?.contactPhone ||
-          ''
-      );
-      const activePhone = normalizePhoneDigits(
-        activeConversation?.contactPhone ||
-          activeConversation?.contactId?.phone ||
-          activeConversation?.phone ||
-          ''
-      );
-      const isSamePhoneThread =
-        Boolean(activePhone && eventPhone) &&
-        (activePhone === eventPhone ||
-          activePhone.endsWith(eventPhone.slice(-10)) ||
-          eventPhone.endsWith(activePhone.slice(-10)));
-      const isActiveThreadEvent =
-        Boolean(activeId) &&
-        (eventConversationIds.includes(activeId) || isSamePhoneThread);
+      const isActiveThreadEvent = Boolean(activeId && targetConversationId === activeId);
       const incomingConversation =
         data?.conversation && typeof data.conversation === 'object'
           ? data.conversation
@@ -492,10 +449,7 @@ export const useInboxRealtimeEffects = ({
       }
 
       if (conversationId && incomingMessage && Object.keys(incomingMessage).length > 0) {
-        const messageForActiveThread =
-          isActiveThreadEvent && activeId
-            ? { ...incomingMessage, conversationId: activeId }
-            : incomingMessage;
+        const messageForActiveThread = incomingMessage;
         if (typeof upsertMessage === 'function') {
           upsertMessage(messageForActiveThread);
         } else if (typeof appendMessageUnique === 'function') {
@@ -578,29 +532,8 @@ export const useInboxRealtimeEffects = ({
       const incomingMessage = data?.message || data;
       const targetConversationId = String(incomingMessage?.conversationId || conversationId || '').trim();
       const conversationLabel = getConversationLabel(data);
-      const eventConversationIds = getRelatedConversationIds(data, targetConversationId);
       const activeConversation = activeId ? conversationLookupMap?.get(activeId) : null;
-      const eventPhone = normalizePhoneDigits(
-        data?.conversation?.contactPhone ||
-          data?.conversation?.contactId?.phone ||
-          data?.contactPhone ||
-          incomingMessage?.conversation?.contactPhone ||
-          ''
-      );
-      const activePhone = normalizePhoneDigits(
-        activeConversation?.contactPhone ||
-          activeConversation?.contactId?.phone ||
-          activeConversation?.phone ||
-          ''
-      );
-      const isSamePhoneThread =
-        Boolean(activePhone && eventPhone) &&
-        (activePhone === eventPhone ||
-          activePhone.endsWith(eventPhone.slice(-10)) ||
-          eventPhone.endsWith(activePhone.slice(-10)));
-      const isActiveThreadEvent =
-        Boolean(activeId) &&
-        (eventConversationIds.includes(activeId) || isSamePhoneThread);
+      const isActiveThreadEvent = Boolean(activeId && targetConversationId === activeId);
 
       if (targetConversationId && activeId && isActiveThreadEvent) {
         if (typeof upsertMessage === 'function') {

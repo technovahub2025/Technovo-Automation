@@ -446,6 +446,7 @@ const TeamInbox = () => {
   const messageCacheRef = useRef(new Map());
   const messagePaginationCacheRef = useRef(new Map());
   const messageLoadPromiseMapRef = useRef(new Map());
+  const messageCacheScopeRef = useRef(null);
   const threadWindowTrimmedRef = useRef(false);
   const conversationLoadPromiseMapRef = useRef(new Map());
   const threadAutoLoadAttemptRef = useRef('');
@@ -1319,6 +1320,27 @@ const TeamInbox = () => {
     setContactInfoMessageTone
   });
 
+  useEffect(() => {
+    const nextCacheScope = `${String(currentCompanyId || '').trim()}:${String(currentUserId || '').trim()}`;
+    if (messageCacheScopeRef.current === null) {
+      messageCacheScopeRef.current = nextCacheScope;
+      return;
+    }
+    if (messageCacheScopeRef.current === nextCacheScope) return;
+    messageCacheScopeRef.current = nextCacheScope;
+    messageLoadAbortControllerRef.current?.abort();
+    messageLoadAbortControllerRef.current = null;
+    messageLoadRequestIdRef.current += 1;
+    messageCacheRef.current.clear();
+    messagePaginationCacheRef.current.clear();
+    messageLoadPromiseMapRef.current.clear();
+    threadAutoLoadAttemptRef.current = '';
+    setMessages([]);
+    setMessagesLoading(false);
+    setMessagesOlderLoading(false);
+    setMessagesHasMore(false);
+  }, [currentCompanyId, currentUserId, setMessages]);
+
   useLayoutEffect(() => {
     selectedConversationRef.current = selectedConversation;
     const nextConversationId = String(getConversationIdValue(selectedConversation) || '').trim();
@@ -1360,7 +1382,12 @@ const TeamInbox = () => {
       Boolean(nextConversationId) && messagePaginationCacheRef.current.has(nextConversationId);
     const persistentThread =
       nextConversationId && (!hasRuntimeMessages || !hasRuntimePagination)
-        ? readTeamInboxThreadCache({ currentUserId, conversationId: nextConversationId, allowStale: true })
+        ? readTeamInboxThreadCache({
+            currentUserId,
+            companyId: currentCompanyId,
+            conversationId: nextConversationId,
+            allowStale: true
+          })
         : null;
     const cachedMessages = nextConversationId
       ? messageCacheRef.current.get(nextConversationId) || persistentThread?.messages || []
@@ -1498,6 +1525,7 @@ const TeamInbox = () => {
     loadContacts
   } = createInboxDataActions({
     currentUserId,
+    currentCompanyId,
     currentUserDisplayName,
     currentUserInternalRole: currentViewerInternalRole,
     normalizeConversation,
@@ -1613,7 +1641,9 @@ const TeamInbox = () => {
     return () => window.clearTimeout(timer);
   }, [
     loadMessagesStable,
-    activeConversationId
+    activeConversationId,
+    currentCompanyId,
+    currentUserId
   ]);
 
   useEffect(() => {

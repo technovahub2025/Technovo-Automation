@@ -362,6 +362,18 @@ const ChatMessageRow = React.memo(
             </div>
           )}
           {!showAttachmentCaption && !hasImageAttachment && displayText && !useCompactInlineMeta && displayText}
+          {String(message?.interactionType || '').trim().toLowerCase() === 'location' &&
+            /^https:\/\/www\.google\.com\/maps\?q=/.test(String(message?.interactionId || '').trim()) && (
+              <a
+                className="message-location-link"
+                href={message.interactionId}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(event) => event.stopPropagation()}
+              >
+                Open map
+              </a>
+            )}
           {useCompactInlineMeta && (
             <div
               className={`message-text-content message-text-content--compact-meta ${
@@ -714,30 +726,73 @@ const isPlaceholderMediaText = (text, mediaType) => {
   return normalizedText === `[${normalizedMediaType.charAt(0).toUpperCase()}${normalizedMediaType.slice(1)}]`;
 };
 
-const getMessageDisplayText = (message = {}) => {
+export const getMessageDisplayText = (message = {}) => {
   const mediaType = String(message?.mediaType || '').trim();
   const text = String(message?.text || '').trim();
+  const isUnsupportedPlaceholder = /^\[?unsupported(?: message)?\]?$/i.test(text);
+  const originalType = String(message?.rawMessageType || message?.messageType || message?.type || '')
+    .trim()
+    .toLowerCase();
+  const normalizedMediaType = String(mediaType || originalType).trim().toLowerCase();
+  const structuredContent = message?.contentPayload || message?.messagePayload || {};
+  const firstContact = Array.isArray(structuredContent?.contacts) ? structuredContent.contacts[0] : null;
+  const contactPhones = (Array.isArray(firstContact?.phones) ? firstContact.phones : [])
+    .map((phone) => String(phone?.phone || phone?.wa_id || '').trim())
+    .filter(Boolean);
+  const orderProducts = Array.isArray(structuredContent?.order?.product_items)
+    ? structuredContent.order.product_items
+        .map((item) => {
+          if (typeof item === 'string') return item;
+          const product = String(item?.product_retailer_id || item?.name || 'Item').trim();
+          const quantity = Number(item?.quantity || 0);
+          return `${product}${quantity > 0 ? ` × ${quantity}` : ''}`;
+        })
+        .filter(Boolean)
+        .join('\n')
+    : '';
+  const structuredText = String(
+    message?.interactionTitle ||
+      structuredContent?.text?.body ||
+      structuredContent?.button?.text ||
+      structuredContent?.interactive?.button_reply?.title ||
+      structuredContent?.interactive?.list_reply?.title ||
+      structuredContent?.location?.name ||
+      structuredContent?.location?.address ||
+      structuredContent?.reaction?.emoji ||
+      (firstContact
+        ? [firstContact?.name?.formatted_name || firstContact?.name?.first_name, ...contactPhones]
+            .filter(Boolean)
+            .join(' — ')
+        : '') ||
+      (orderProducts ? `Order\n${orderProducts}` : '') ||
+      structuredContent?.system?.body ||
+      message?.mediaCaption ||
+      ''
+  ).trim();
   const hasAttachment =
     Boolean(message?.mediaUrl) ||
     Boolean(message?.attachment?.publicId) ||
-    Boolean(message?.attachment?.originalFileName);
+    Boolean(message?.attachment?.originalFileName) ||
+    Boolean(message?.mediaId);
 
-  if (text && !(hasAttachment && isPlaceholderMediaText(text, mediaType))) {
+  if (text && !isUnsupportedPlaceholder && !(hasAttachment && isPlaceholderMediaText(text, normalizedMediaType))) {
     return text;
   }
 
-  if (mediaType) {
-    if (String(mediaType).trim().toLowerCase() === 'audio') {
+  if (isUnsupportedPlaceholder && structuredText) return structuredText;
+
+  if (['image', 'video', 'audio', 'document', 'sticker'].includes(normalizedMediaType)) {
+    if (normalizedMediaType === 'audio') {
       return '';
     }
     if (hasAttachment) {
       return '';
     }
-    const label = mediaType.charAt(0).toUpperCase() + mediaType.slice(1);
+    const label = normalizedMediaType.charAt(0).toUpperCase() + normalizedMediaType.slice(1);
     return `[${label}]`;
   }
 
-  const rawType = String(message?.rawMessageType || '').trim().toLowerCase();
+  const rawType = originalType || mediaType.toLowerCase();
   const knownLabels = {
     button: 'Button reply',
     interactive: 'Interactive reply',
@@ -2265,7 +2320,9 @@ const ChatArea = ({
 
   const getAttachmentInfo = (message = {}) => {
     const attachment = message?.attachment || {};
-    const mediaType = String(message?.mediaType || '').trim();
+    const mediaType = String(
+      message?.mediaType || message?.rawMessageType || message?.messageType || message?.type || ''
+    ).trim().toLowerCase();
     const fileCategory = String(attachment?.fileCategory || mediaType || '').toLowerCase();
     const isImage = fileCategory === 'image' || mediaType === 'image';
     const isAudio = fileCategory === 'audio' || mediaType === 'audio';
@@ -2656,7 +2713,8 @@ const ChatArea = ({
     const hasAttachmentMeta =
       Boolean(attachment?.publicId) ||
       Boolean(attachment?.originalFileName) ||
-      Boolean(attachment?.bytes);
+      Boolean(attachment?.bytes) ||
+      Boolean(message?.mediaId);
     if (!hasMedia && !hasAttachmentMeta && !isAudio && !isVideo && !isSticker) return null;
     const canOpen = Boolean(onOpenAttachment);
     const isDeleted = Boolean(deletedAt);

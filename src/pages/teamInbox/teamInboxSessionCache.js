@@ -1,4 +1,4 @@
-const TEAM_INBOX_CACHE_VERSION = 8;
+const TEAM_INBOX_CACHE_VERSION = 9;
 const TEAM_INBOX_CACHE_PREFIX = 'team-inbox-cache';
 
 const TEAM_INBOX_BOOTSTRAP_TTL_MS = 30 * 60 * 1000;
@@ -67,12 +67,14 @@ const buildBootstrapCacheKey = (currentUserId) => {
   ].join(':');
 };
 
-const buildThreadCacheKey = (currentUserId) => {
+const buildThreadCacheKey = (currentUserId, companyId) => {
   const normalizedUserId = toTrimmedString(currentUserId);
   if (!normalizedUserId) return '';
+  const normalizedCompanyId = toTrimmedString(companyId) || 'no-company';
   return [
     TEAM_INBOX_CACHE_PREFIX,
     `v${TEAM_INBOX_CACHE_VERSION}`,
+    normalizedCompanyId,
     normalizedUserId,
     'threads'
   ].join(':');
@@ -149,6 +151,10 @@ const sanitizeReplyMessage = (message = {}) => {
     interactionType: pickString(message.interactionType),
     interactionId: pickString(message.interactionId),
     interactionTitle: pickString(message.interactionTitle),
+    contentPayload:
+      message.contentPayload && typeof message.contentPayload === 'object'
+        ? message.contentPayload
+        : undefined,
     attachmentDeleted: Boolean(message.attachmentDeleted),
     attachment: sanitizeAttachment(message.attachment),
     attachments: sanitizeAttachments(message)
@@ -181,6 +187,10 @@ export const sanitizeTeamInboxMessageForCache = (message = {}) => {
     interactionType: pickString(message.interactionType),
     interactionId: pickString(message.interactionId),
     interactionTitle: pickString(message.interactionTitle),
+    contentPayload:
+      message.contentPayload && typeof message.contentPayload === 'object'
+        ? message.contentPayload
+        : undefined,
     errorMessage: pickString(message.errorMessage),
     reaction: pickString(message.reaction),
     replyToMessageId: pickString(message.replyToMessageId),
@@ -406,11 +416,12 @@ const sanitizeMessagePageMeta = (meta = {}) => ({
 
 export const readTeamInboxThreadCache = ({
   currentUserId,
+  companyId,
   conversationId,
   allowStale = true
 } = {}) => {
   const normalizedConversationId = pickString(conversationId);
-  const cacheKey = buildThreadCacheKey(currentUserId);
+  const cacheKey = buildThreadCacheKey(currentUserId, companyId);
   if (!cacheKey || !normalizedConversationId) return null;
 
   const now = Date.now();
@@ -419,10 +430,12 @@ export const readTeamInboxThreadCache = ({
   if (runtimeEntry) {
     const isStale = toPositiveNumber(runtimeEntry.expiresAt, 0) <= now;
     if (!isStale || allowStale) {
+      const ownedMessages = (Array.isArray(runtimeEntry.messages) ? runtimeEntry.messages : [])
+        .filter((message) => pickString(message?.conversationId) === normalizedConversationId);
       return {
         updatedAt: toPositiveNumber(runtimeEntry.updatedAt, now),
         expiresAt: toPositiveNumber(runtimeEntry.expiresAt, now),
-        messages: Array.isArray(runtimeEntry.messages) ? runtimeEntry.messages : [],
+        messages: ownedMessages,
         meta: sanitizeMessagePageMeta(runtimeEntry.meta),
         isStale
       };
@@ -444,10 +457,12 @@ export const readTeamInboxThreadCache = ({
     return null;
   }
 
+  const ownedMessages = (Array.isArray(storedEntry.messages) ? storedEntry.messages : [])
+    .filter((message) => pickString(message?.conversationId) === normalizedConversationId);
   return {
     updatedAt: toPositiveNumber(storedEntry.updatedAt, now),
     expiresAt: toPositiveNumber(storedEntry.expiresAt, now),
-    messages: Array.isArray(storedEntry.messages) ? storedEntry.messages : [],
+    messages: ownedMessages,
     meta: sanitizeMessagePageMeta(storedEntry.meta),
     isStale
   };
@@ -455,12 +470,13 @@ export const readTeamInboxThreadCache = ({
 
 export const writeTeamInboxThreadCache = ({
   currentUserId,
+  companyId,
   conversationId,
   messages = [],
   meta = {}
 } = {}) => {
   const normalizedConversationId = pickString(conversationId);
-  const cacheKey = buildThreadCacheKey(currentUserId);
+  const cacheKey = buildThreadCacheKey(currentUserId, companyId);
   if (!cacheKey || !normalizedConversationId) return null;
 
   const now = Date.now();
@@ -479,6 +495,7 @@ export const writeTeamInboxThreadCache = ({
       updatedAt: now,
       expiresAt: now + TEAM_INBOX_THREAD_TTL_MS,
       messages: (Array.isArray(messages) ? messages : [])
+        .filter((message) => pickString(message?.conversationId) === normalizedConversationId)
         .map(sanitizeTeamInboxMessageForCache)
         .filter(Boolean)
         .slice(-TEAM_INBOX_MAX_MESSAGES_PER_THREAD),
