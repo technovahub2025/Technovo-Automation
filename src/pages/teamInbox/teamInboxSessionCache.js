@@ -1,4 +1,4 @@
-const TEAM_INBOX_CACHE_VERSION = 9;
+const TEAM_INBOX_CACHE_VERSION = 10;
 const TEAM_INBOX_CACHE_PREFIX = 'team-inbox-cache';
 
 const TEAM_INBOX_BOOTSTRAP_TTL_MS = 30 * 60 * 1000;
@@ -6,7 +6,7 @@ const TEAM_INBOX_THREAD_TTL_MS = 15 * 60 * 1000;
 const TEAM_INBOX_MAX_CONVERSATIONS = 150;
 const TEAM_INBOX_MAX_CONTACT_NAMES = 500;
 const TEAM_INBOX_MAX_THREADS = 12;
-const TEAM_INBOX_MAX_MESSAGES_PER_THREAD = 40;
+const TEAM_INBOX_MAX_MESSAGES_PER_THREAD = 20;
 
 const runtimeBootstrapCache = new Map();
 const runtimeThreadCache = new Map();
@@ -531,9 +531,10 @@ export const writeTeamInboxThreadCache = ({
 
 export const clearTeamInboxThreadCache = ({
   currentUserId,
+  companyId,
   conversationId
 } = {}) => {
-  const cacheKey = buildThreadCacheKey(currentUserId);
+  const cacheKey = buildThreadCacheKey(currentUserId, companyId);
   if (!cacheKey) return false;
 
   const normalizedConversationId = pickString(conversationId);

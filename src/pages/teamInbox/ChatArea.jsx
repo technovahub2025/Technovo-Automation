@@ -982,6 +982,7 @@ const estimateMessageHeight = (item = {}) => {
 const ChatArea = ({
   selectedConversation,
   currentThreadConversationId = '',
+  threadScrollAnchor = null,
   currentViewerUserId = '',
   currentViewerInternalRole = '',
   currentViewerDisplayName = '',
@@ -1603,10 +1604,11 @@ const ChatArea = ({
       onVisibleMessageWindowChange({
         startIndex: safeStartIndex,
         endIndex: safeEndIndex,
-        visibleMessageKeys: visibleKeys
+        visibleMessageKeys: visibleKeys,
+        isAtBottom
       });
     },
-    [onVisibleMessageWindowChange, virtualMessageLayout.items]
+    [isAtBottom, onVisibleMessageWindowChange, virtualMessageLayout.items]
   );
 
   const scrollThreadToBottom = useCallback(
@@ -1645,12 +1647,24 @@ const ChatArea = ({
     const lastIndex = virtualMessageLayout.items.length - 1;
     if (lastIndex < 0) return;
 
+    const savedAnchorKey = String(threadScrollAnchor?.messageKey || '').trim();
+    const savedAnchorIndex = !threadScrollAnchor?.atBottom && savedAnchorKey
+      ? virtualMessageIndexByKey.get(savedAnchorKey)
+      : null;
+
     canTriggerOlderLoadRef.current = false;
     userRequestedOlderLoadRef.current = false;
     topLoadUnlockAtRef.current = Date.now() + INITIAL_THREAD_TOP_LOAD_LOCK_MS;
     initialScrollTimersRef.current.forEach((timerId) => window.clearTimeout(timerId));
     initialScrollTimersRef.current = [];
     window.requestAnimationFrame(() => {
+      if (typeof savedAnchorIndex === 'number') {
+        messageListRef.current?.scrollToIndex?.({ index: savedAnchorIndex, align: 'start', behavior: 'auto' });
+        selectedConversationScrollKeyRef.current = selectedConversationId;
+        canTriggerOlderLoadRef.current = true;
+        topLoadUnlockAtRef.current = Date.now();
+        return;
+      }
       scrollThreadToBottom('auto');
 
       const correctionTimers = [40, 120, 260, 520, INITIAL_THREAD_TOP_LOAD_LOCK_MS].map((delay) =>
@@ -1665,7 +1679,7 @@ const ChatArea = ({
       );
       initialScrollTimersRef.current = correctionTimers;
     });
-  }, [scrollThreadToBottom, selectedConversationId, virtualMessageLayout.items.length]);
+  }, [scrollThreadToBottom, selectedConversationId, threadScrollAnchor, virtualMessageIndexByKey, virtualMessageLayout.items.length]);
 
   useEffect(
     () => () => {
@@ -2779,7 +2793,7 @@ const ChatArea = ({
             }}
             aria-label={isSticker ? 'Open sticker attachment' : 'Open image attachment'}
           >
-            <img src={message.mediaUrl} alt={fileName} />
+            <img src={message.mediaUrl} alt={fileName} loading="lazy" decoding="async" />
             {!hasCaptionText && (
               <span className="message-image-meta">
                 <span className="timestamp">{messageTimestamp}</span>
@@ -2810,7 +2824,7 @@ const ChatArea = ({
                 <audio
                   className="message-voice-note-player"
                   controls
-                  preload="metadata"
+                  preload="none"
                   src={message.mediaUrl}
                 />
               ) : (
@@ -2894,7 +2908,7 @@ const ChatArea = ({
             aria-label="Open video attachment"
           >
             {canPlayVideo ? (
-              <video className="message-video-player" controls preload="metadata" src={message.mediaUrl} />
+              <video className="message-video-player" controls preload="none" src={message.mediaUrl} />
             ) : (
               <div className="message-video-player message-video-player--unavailable">
                 <span className="message-video-unavailable-label">Video attachment unavailable</span>

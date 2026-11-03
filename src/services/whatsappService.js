@@ -4,6 +4,7 @@ import { resolveApiBaseUrl } from "./apiBaseUrl";
 import { registerUnauthorizedAxiosInterceptor } from "./serviceAuth";
 import { isNotFoundError, runFallbackSequence } from "./messageFallback.js";
 import { normalizeError } from "../utils/errorUtils";
+import { createInboxRequestId, diagnosticId, logTeamInboxPerformance } from "../pages/teamInbox/teamInboxPerformance";
 import {
   buildWorkspaceOwnershipPayload,
   buildWorkspaceQueryScope,
@@ -1368,9 +1369,7 @@ export const whatsappService = {
         scope
       }
     );
-    const requestId = typeof globalThis.crypto?.randomUUID === 'function'
-      ? globalThis.crypto.randomUUID()
-      : `inbox-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    const requestId = String(options?.requestId || '').trim() || createInboxRequestId();
     const shouldLogPerf = shouldLogTeamInboxPerformance();
     const buildEmptyPage = () => ({
       data: [],
@@ -1446,7 +1445,7 @@ export const whatsappService = {
         console.info('[team-inbox-perf]', {
           phase: 'messages_api_request_start',
           requestId,
-          conversationId: normalizedConversationId,
+          conversationDiagnosticId: diagnosticId(normalizedConversationId),
           method: 'GET',
           path: '/api/messages/:conversationId',
           limit,
@@ -1470,13 +1469,25 @@ export const whatsappService = {
         console.info('[team-inbox-perf]', {
           phase: 'messages_api_response_received',
           requestId,
-          conversationId: normalizedConversationId,
+          conversationDiagnosticId: diagnosticId(normalizedConversationId),
           status: response.status,
           contentLength: Number(response.headers?.['content-length'] || 0) || null,
+          messageCount: Array.isArray(response.data?.messages)
+            ? response.data.messages.length
+            : Array.isArray(response.data?.data) ? response.data.data.length : 0,
           durationMs: Math.round(((globalThis.performance?.now?.() ?? Date.now()) - requestStartedAt) * 100) / 100
         });
       }
-      return normalizeMessagesPagePayload(response.data);
+      const normalizationStartedAt = globalThis.performance?.now?.() ?? Date.now();
+      const normalized = normalizeMessagesPagePayload(response.data);
+      logTeamInboxPerformance({
+        phase: 'service_response_normalization',
+        requestId,
+        conversationDiagnosticId: diagnosticId(normalizedConversationId),
+        messageCount: normalized.data.length,
+        durationMs: Math.round(((globalThis.performance?.now?.() ?? Date.now()) - normalizationStartedAt) * 100) / 100
+      });
+      return normalized;
     };
 
     const fetchCompatMessagesPage = async () => {
@@ -1488,7 +1499,7 @@ export const whatsappService = {
               axios.get(
                 `${API_BASE_URL}/api/messages/conversation/${encodeURIComponent(normalizedConversationId)}`,
                 {
-                  headers: getAuthHeaders(false),
+                  headers: { ...getAuthHeaders(false), 'x-request-id': requestId },
                   timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
                   signal,
                   params: {
@@ -1502,7 +1513,7 @@ export const whatsappService = {
             name: 'paged-messages-attachments-compat',
             run: async () =>
               axios.get(`${API_BASE_URL}/api/messages/attachments`, {
-                headers: getAuthHeaders(false),
+                headers: { ...getAuthHeaders(false), 'x-request-id': requestId },
                 timeout: TEAM_INBOX_BOOTSTRAP_TIMEOUT_MS,
                 signal,
                 params: {

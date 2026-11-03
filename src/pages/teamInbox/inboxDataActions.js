@@ -12,6 +12,7 @@ import {
   writeTeamInboxThreadCache
 } from './teamInboxSessionCache';
 import { upsertConversationInOrderedList } from './teamInboxUtils';
+import { createInboxRequestId, diagnosticId, logTeamInboxPerformance } from './teamInboxPerformance';
 
 const DEFAULT_CONVERSATION_PAGE_LIMIT = 20;
 const DEFAULT_MESSAGES_PAGE_LIMIT = 20;
@@ -634,7 +635,7 @@ export const createInboxDataActions = ({
     const normalizedReason = String(options?.reason || 'unknown').trim() || 'unknown';
     const parsedPageLimit = Number(options?.limit);
     const pageLimit = Number.isFinite(parsedPageLimit)
-      ? Math.max(20, Math.min(parsedPageLimit, 80))
+      ? Math.max(20, Math.min(parsedPageLimit, DEFAULT_MESSAGES_PAGE_LIMIT))
       : DEFAULT_MESSAGES_PAGE_LIMIT;
 
     if (!normalizedConversationId) {
@@ -668,6 +669,7 @@ export const createInboxDataActions = ({
       selectedConversationId === normalizedConversationId;
     const isConversationSwitch = previousConversationId !== normalizedConversationId;
     const nextRequestId = Number(messageLoadRequestIdRef.current || 0) + 1;
+    const perfRequestId = createInboxRequestId();
     const cacheLookupStartedAt = globalThis.performance?.now?.() ?? Date.now();
     const runtimeCachedMessages = forceRefresh
       ? null
@@ -705,9 +707,10 @@ export const createInboxDataActions = ({
     const initialCachedMessages = Array.isArray(cachedMessages)
       ? trimMessagesToPage(cachedMessages, pageLimit)
       : null;
-    traceTeamInbox('loadMessages:cache_lookup', {
-      conversationId: normalizedConversationId,
-      requestId: nextRequestId,
+    logTeamInboxPerformance({
+      phase: 'cache_lookup',
+      conversationDiagnosticId: diagnosticId(normalizedConversationId),
+      requestId: perfRequestId,
       cacheHit: Array.isArray(initialCachedMessages) && initialCachedMessages.length > 0,
       cachedCount: Array.isArray(initialCachedMessages) ? initialCachedMessages.length : 0,
       durationMs:
@@ -837,6 +840,7 @@ export const createInboxDataActions = ({
       .getMessagesPage(normalizedConversationId, {
         limit: pageLimit,
         scope: 'team',
+        requestId: perfRequestId,
         // The thread cache supplies instant UI; revalidate the selected page on the backend.
         skipCache: true,
         signal: !loadOlder ? messageLoadAbortControllerRef?.current?.signal || null : null,
@@ -853,6 +857,7 @@ export const createInboxDataActions = ({
 
         const responseOk = Boolean(data?.ok !== false);
         const responseMessages = Array.isArray(data?.data) ? data.data : [];
+        const normalizationStartedAt = globalThis.performance?.now?.() ?? Date.now();
         const fetchedMessages = responseMessages.filter(
           (message) => String(message?.conversationId || '').trim() === normalizedConversationId
         );
@@ -862,6 +867,13 @@ export const createInboxDataActions = ({
           });
         }
         const fetchedInitialPageMessages = trimMessagesToPage(fetchedMessages, pageLimit);
+        logTeamInboxPerformance({
+          phase: 'message_normalization',
+          requestId: perfRequestId,
+          conversationDiagnosticId: diagnosticId(normalizedConversationId),
+          messageCount: fetchedInitialPageMessages.length,
+          durationMs: Math.round(((globalThis.performance?.now?.() ?? Date.now()) - normalizationStartedAt) * 100) / 100
+        });
         const fetchedMeta = normalizeMessagePageMeta(data?.meta, pageLimit);
         const wasCanceled = Boolean(data?.canceled);
         const currentCachedMessages = Array.isArray(
@@ -904,7 +916,6 @@ export const createInboxDataActions = ({
         }
 
         traceTeamInbox('loadMessages:success', {
-          conversationId: normalizedConversationId,
           loadOlder,
           requestId,
           fetchedCount: fetchedMessages.length,
@@ -912,6 +923,14 @@ export const createInboxDataActions = ({
           responseOk,
           hasMore: Boolean(nextMeta.hasMore),
           nextCursor: nextMeta.nextCursor || null
+        });
+        logTeamInboxPerformance({
+          phase: 'rest_messages_applied',
+          requestId: perfRequestId,
+          conversationDiagnosticId: diagnosticId(normalizedConversationId),
+          messageCount: nextMessages.length,
+          totalLoadDurationMs: Math.round(((globalThis.performance?.now?.() ?? Date.now()) - cacheLookupStartedAt) * 100) / 100,
+          fromCache: Boolean(initialCachedMessages?.length)
         });
         recordInboxDebugEvent(
           setInboxDebugInfo,

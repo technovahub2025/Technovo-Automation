@@ -1,11 +1,4 @@
-const shouldLogTeamInboxPerformance = () => {
-  if (import.meta.env.DEV) return true;
-  try {
-    return String(localStorage.getItem('debugTeamInbox') || '').trim() === '1';
-  } catch {
-    return false;
-  }
-};
+import { diagnosticId, logTeamInboxPerformance } from './teamInboxPerformance';
 
 export const createTeamInboxUiHandlers = ({
   selectedConversation,
@@ -52,12 +45,12 @@ export const createTeamInboxUiHandlers = ({
     ).trim();
     if (activeConversationId !== conversationIdValue) {
       if (typeof globalThis.performance?.mark === 'function') {
-        globalThis.performance.mark(`team-inbox-selection:${conversationIdValue}`);
+        globalThis.performance.mark(`team-inbox-selection:${diagnosticId(conversationIdValue)}`);
       }
-      if (shouldLogTeamInboxPerformance() && typeof globalThis.performance?.now === 'function') {
-        console.info('[team-inbox-perf]', {
+      if (typeof globalThis.performance?.now === 'function') {
+        logTeamInboxPerformance({
           phase: 'conversation_selected',
-          conversationId: conversationIdValue,
+          conversationDiagnosticId: diagnosticId(conversationIdValue),
           startedAt: Math.round(globalThis.performance.now() * 100) / 100
         });
       }

@@ -20,6 +20,7 @@ import ContactInfoPanel from './teamInbox/ContactInfoPanel';
 import WhatsAppOptInModal from '../components/WhatsAppOptInModal';
 import WhatsAppConsentAuditModal from '../components/WhatsAppConsentAuditModal';
 import ConversationSidebar from './teamInbox/ConversationSidebar';
+import { diagnosticId, logTeamInboxPerformance } from './teamInbox/teamInboxPerformance';
 import ChatArea from './teamInbox/ChatArea';
 import { useTemplateSendModal } from './teamInbox/useTemplateSendModal';
 import { createContactCrmActions } from './teamInbox/contactCrmActions';
@@ -445,6 +446,7 @@ const TeamInbox = () => {
   const conversationLoadRequestIdRef = useRef(0);
   const messageCacheRef = useRef(new Map());
   const messagePaginationCacheRef = useRef(new Map());
+  const threadScrollPositionsRef = useRef(new Map());
   const messageLoadPromiseMapRef = useRef(new Map());
   const messageCacheScopeRef = useRef(null);
   const threadWindowTrimmedRef = useRef(false);
@@ -1333,6 +1335,7 @@ const TeamInbox = () => {
     messageLoadRequestIdRef.current += 1;
     messageCacheRef.current.clear();
     messagePaginationCacheRef.current.clear();
+    threadScrollPositionsRef.current.clear();
     messageLoadPromiseMapRef.current.clear();
     threadAutoLoadAttemptRef.current = '';
     setMessages([]);
@@ -1350,10 +1353,10 @@ const TeamInbox = () => {
     activeMessagesConversationIdRef.current = nextConversationId;
     if (nextConversationId && typeof globalThis.performance?.now === 'function') {
       const selectionMarks = globalThis.performance.getEntriesByName?.(
-        `team-inbox-selection:${nextConversationId}`,
+        `team-inbox-selection:${diagnosticId(nextConversationId)}`,
         'mark'
       ) || [];
-      globalThis.performance.clearMarks?.(`team-inbox-selection:${nextConversationId}`);
+      globalThis.performance.clearMarks?.(`team-inbox-selection:${diagnosticId(nextConversationId)}`);
       conversationSelectionStartedAtRef.current.set(
         nextConversationId,
         selectionMarks.length ? selectionMarks[selectionMarks.length - 1].startTime : globalThis.performance.now()
@@ -1427,6 +1430,17 @@ const TeamInbox = () => {
   }, [activeConversationId, currentUserId, getConversationIdValue, selectedConversation, setMessages]);
 
   useEffect(() => {
+    const conversationId = String(activeConversationId || '').trim();
+    const startedAt = conversationSelectionStartedAtRef.current.get(conversationId);
+    if (!conversationId || typeof startedAt !== 'number') return;
+    logTeamInboxPerformance({
+      phase: 'conversation_state_committed',
+      conversationDiagnosticId: diagnosticId(conversationId),
+      durationMs: Math.round(((globalThis.performance?.now?.() ?? Date.now()) - startedAt) * 100) / 100
+    });
+  }, [activeConversationId]);
+
+  useEffect(() => {
     const renderedConversationId = String(activeConversationId || '').trim();
     const startedAt = conversationSelectionStartedAtRef.current.get(renderedConversationId);
     if (!renderedConversationId || !messages.length || typeof startedAt !== 'number') return;
@@ -1438,9 +1452,9 @@ const TeamInbox = () => {
       // Ignore storage access failures.
     }
     if (shouldLogPerformance) {
-      console.info('[team-inbox-perf]', {
+      logTeamInboxPerformance({
         phase: 'first_message_rendered',
-        conversationId: renderedConversationId,
+        conversationDiagnosticId: diagnosticId(renderedConversationId),
         messageCount: messages.length,
         durationMs:
           Math.round(((globalThis.performance?.now?.() ?? Date.now()) - startedAt) * 100) / 100
@@ -1619,26 +1633,24 @@ const TeamInbox = () => {
     if (!activeId) return;
     if (messageLoadPromiseMapRef.current?.has(activeId)) return;
     if (threadAutoLoadAttemptRef.current === activeId) return;
-
-    const timer = window.setTimeout(() => {
-      if (String(getConversationIdValue(selectedConversationRef.current) || '').trim() !== activeId) {
-        return;
+    if (String(getConversationIdValue(selectedConversationRef.current) || '').trim() !== activeId) return;
+    threadAutoLoadAttemptRef.current = activeId;
+    let cancelled = false;
+    void Promise.resolve(
+      loadMessagesStable(activeId, {
+        reason: 'selection_load',
+        forceRefresh: false,
+        limit: 20
+      })
+    ).then((didLoad) => {
+      if (!cancelled && didLoad === false && threadAutoLoadAttemptRef.current === activeId) {
+        threadAutoLoadAttemptRef.current = '';
       }
-      threadAutoLoadAttemptRef.current = activeId;
-      void Promise.resolve(
-        loadMessagesStable(activeId, {
-          reason: 'selection_load',
-          forceRefresh: false,
-          limit: 20
-        })
-      ).then((didLoad) => {
-        if (didLoad === false && threadAutoLoadAttemptRef.current === activeId) {
-          threadAutoLoadAttemptRef.current = '';
-        }
-      });
-    }, 0);
+    });
 
-    return () => window.clearTimeout(timer);
+    return () => {
+      cancelled = true;
+    };
   }, [
     loadMessagesStable,
     activeConversationId,
@@ -1823,9 +1835,16 @@ const TeamInbox = () => {
   });
 
   const handleVisibleMessageWindowChange = useCallback(
-    ({ visibleMessageKeys = [] } = {}) => {
+    ({ visibleMessageKeys = [], isAtBottom = true } = {}) => {
       const activeId = String(activeMessagesConversationIdRef.current || '').trim();
       if (!activeId) return;
+
+      if (Array.isArray(visibleMessageKeys) && visibleMessageKeys.length > 0) {
+        threadScrollPositionsRef.current.set(activeId, {
+          messageKey: String(visibleMessageKeys[isAtBottom ? visibleMessageKeys.length - 1 : 0] || '').trim(),
+          atBottom: Boolean(isAtBottom)
+        });
+      }
 
       const fullThreadMessages = messageCacheRef.current.get(activeId);
       if (!Array.isArray(fullThreadMessages) || fullThreadMessages.length < THREAD_WINDOW_MIN_FULL_SIZE) {
@@ -2479,9 +2498,23 @@ const TeamInbox = () => {
               onClearInboxNotifications={() => setInboxNotifications([])}
             />
 
+            <React.Profiler
+              id="team-inbox-chat"
+              onRender={(_id, phase, actualDuration, baseDuration) => {
+                logTeamInboxPerformance({
+                  phase: 'chat_render_commit',
+                  conversationDiagnosticId: diagnosticId(activeConversationId),
+                  renderPhase: phase,
+                  actualDurationMs: Math.round(actualDuration * 100) / 100,
+                  baseDurationMs: Math.round(baseDuration * 100) / 100,
+                  messageCount: messages.length
+                });
+              }}
+            >
             <ChatArea
               selectedConversation={selectedConversation}
               currentThreadConversationId={String(activeMessagesConversationIdRef.current || '').trim()}
+              threadScrollAnchor={threadScrollPositionsRef.current.get(activeConversationId) || null}
               currentViewerUserId={currentUserId}
               currentViewerInternalRole={currentViewerInternalRole}
               currentViewerDisplayName={currentUserDisplayName}
@@ -2540,6 +2573,7 @@ const TeamInbox = () => {
               getMessageKey={getMessageKey}
               formatMessageTime={formatMessageTime}
             />
+            </React.Profiler>
           </div>
 
           <ContactInfoPanel
