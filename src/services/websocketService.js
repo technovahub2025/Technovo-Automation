@@ -102,6 +102,8 @@ class WebSocketService extends EventEmitter {
     this.crmMessageQueue = [];
     this.connecting = false;
     this.connectionPromise = null;
+    this.socketGeneration = 0;
+    this.connectionAttempt = 0;
     
     // WhatsApp/CRM realtime uses the raw WebSocket backend, not the voice Socket.IO backend.
     const explicitWhatsAppWsUrl = import.meta.env.VITE_WHATSAPP_WS_URL || '';
@@ -279,6 +281,8 @@ class WebSocketService extends EventEmitter {
     this.setupNetworkListeners();
     this.clearReconnect();
 
+    const generation = ++this.socketGeneration;
+    const attempt = ++this.connectionAttempt;
     this.connectionPromise = new Promise((resolve, reject) => {
       let timeoutId = null;
       this.authResolve = resolve;
@@ -287,17 +291,18 @@ class WebSocketService extends EventEmitter {
       try {
         console.log(`Connecting to WebSocket: ${this.wsUrl}`);
         const socket = new WebSocket(this.wsUrl);
+        console.info('[nexion-ws] created', { attempt, generation });
         this.ws = socket;
         socket.onopen = (event) => {
-          if (this.ws === socket) this.handleOpen(event, resolve, reject, timeoutId);
+          if (this.ws === socket && generation === this.socketGeneration) this.handleOpen(event, resolve, reject, timeoutId, socket, attempt);
         };
         socket.onmessage = (event) => {
-          if (this.ws === socket) this.handleMessage(event);
+          if (this.ws === socket && generation === this.socketGeneration) this.handleMessage(event, socket, attempt);
         };
         socket.onerror = (error) => {
-          if (this.ws === socket) this.handleError(error, reject, timeoutId);
+          if (this.ws === socket && generation === this.socketGeneration) this.handleError(error, reject, timeoutId);
         };
-        socket.onclose = (event) => this.handleClose(event, socket);
+        socket.onclose = (event) => this.handleClose(event, socket, generation, attempt);
 
         timeoutId = setTimeout(() => {
           if (!this.connecting) return;
@@ -312,33 +317,38 @@ class WebSocketService extends EventEmitter {
         reject(normalizeError(error, "WebSocket connection failed"));
       }
     }).finally(() => {
-      this.connectionPromise = null;
+      if (this.socketGeneration === generation) this.connectionPromise = null;
     });
 
     return this.connectionPromise;
   }
 
-  handleOpen(event, resolve, _reject, timeoutId) {
+  handleOpen(event, resolve, _reject, timeoutId, socket = this.ws, attempt = this.connectionAttempt) {
+    console.info('[nexion-ws] opened', { attempt });
     const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
     const token = localStorage.getItem(tokenKey) || localStorage.getItem('authToken') || localStorage.getItem('token');
     if (!token) {
       this.authReject?.(new Error('Nexion authentication token is missing'));
-      this.ws?.close(1008, 'Authentication required');
+      socket?.close(1008, 'Authentication required');
       return;
     }
     try {
       this.currentAuthToken = token;
-      this.ws.send(JSON.stringify({ type: 'authenticate', token }));
+      socket.send(JSON.stringify({ type: 'authenticate', token }));
+      console.info('[nexion-ws] authentication frame sent', { attempt });
     } catch (error) {
       this.authReject?.(normalizeError(error, 'WebSocket authentication failed'));
-      this.ws?.close(1008, 'Authentication failed');
+      socket?.close(1008, 'Authentication failed');
     }
   }
 
-  handleMessage(event) {
+  handleMessage(event, socket = this.ws, attempt = this.connectionAttempt) {
     try {
       const data = JSON.parse(event.data);
       if (data?.type === 'authenticated') {
+        if (socket !== this.ws) return;
+        socket.__nexionAuthenticated = true;
+        console.info('[nexion-ws] authentication acknowledgement received', { attempt });
         if (this.connectionTimeoutTimer) clearTimeout(this.connectionTimeoutTimer);
         this.connectionTimeoutTimer = null;
         this.connected = true;
@@ -359,6 +369,7 @@ class WebSocketService extends EventEmitter {
         return;
       }
       if (data?.type === 'auth_error') {
+        console.warn('[nexion-ws] authentication rejected', { attempt });
         this.manualClose = true;
         this.connected = false;
         this.connecting = false;
@@ -370,6 +381,7 @@ class WebSocketService extends EventEmitter {
         return;
       }
       if (data?.type === 'auth_unavailable') {
+        console.warn('[nexion-ws] authentication service unavailable', { attempt });
         this.emit('connect_error', new Error('Nexion authentication service is temporarily unavailable'));
         return;
       }
@@ -404,12 +416,15 @@ class WebSocketService extends EventEmitter {
     if (reject && wasConnecting) reject(normalizeError(error, "WebSocket connection failed"));
   }
 
-  handleClose(event, closedSocket = this.ws) {
-    if (closedSocket !== this.ws) {
-      this.emit('disconnected', { code: event?.code, reason: event?.reason, wasClean: event?.wasClean });
-      this.emit('disconnect', { code: event?.code, reason: event?.reason, wasClean: event?.wasClean });
-      return;
-    }
+  handleClose(event, closedSocket = this.ws, generation = this.socketGeneration, attempt = this.connectionAttempt) {
+    console.warn('[nexion-ws] closed', {
+      attempt,
+      beforeAuthentication: !closedSocket?.__nexionAuthenticated,
+      code: Number(event?.code || 0),
+      reason: String(event?.reason || '').slice(0, 160),
+      wasClean: Boolean(event?.wasClean)
+    });
+    if (closedSocket !== this.ws || generation !== this.socketGeneration) return;
     if (this.connectionTimeoutTimer) clearTimeout(this.connectionTimeoutTimer);
     this.connectionTimeoutTimer = null;
     this.authReject?.(new Error('WebSocket closed before authentication'));
@@ -463,6 +478,7 @@ class WebSocketService extends EventEmitter {
 
     this.reconnectTimer = setTimeout(() => {
       this.reconnectAttempts += 1;
+      console.info('[nexion-ws] reconnection attempt', { attempt: this.reconnectAttempts });
       this.connect(this.currentUserId, this.messageHandler).catch((error) => {
         console.error('Reconnection failed:', normalizeError(error, 'WebSocket reconnection failed'));
         if (this.reconnectAttempts >= 5) {
@@ -566,9 +582,13 @@ class WebSocketService extends EventEmitter {
     const rejectPendingAuthentication = this.authReject;
     this.authResolve = null;
     this.authReject = null;
+    if (rejectPendingAuthentication) console.info('[nexion-ws] disconnect while authentication pending', { attempt: this.connectionAttempt });
     rejectPendingAuthentication?.(new Error('WebSocket disconnected before authentication completed'));
+    this.socketGeneration += 1;
     this.clearReconnect();
     this.clearHeartbeat();
+    if (this.connectionTimeoutTimer) clearTimeout(this.connectionTimeoutTimer);
+    this.connectionTimeoutTimer = null;
     this.connecting = false;
     this.connectionPromise = null;
     this.currentAuthToken = null;
@@ -585,6 +605,22 @@ class WebSocketService extends EventEmitter {
   }
 
   reconnectWithLatestToken(userId) {
+    if (this.isConnected() && (!userId || userId === this.currentUserId)) {
+      const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
+      const latestToken = localStorage.getItem(tokenKey) || localStorage.getItem('authToken') || localStorage.getItem('token');
+      if (latestToken && latestToken === this.currentAuthToken) {
+        console.info('[nexion-ws] token refresh completed; authenticated socket remains current', { attempt: this.connectionAttempt });
+        return Promise.resolve(this.ws);
+      }
+    }
+    if (this.connectionPromise) {
+      const tokenKey = import.meta.env.VITE_TOKEN_KEY || 'authToken';
+      const latestToken = localStorage.getItem(tokenKey) || localStorage.getItem('authToken') || localStorage.getItem('token');
+      if (!latestToken || latestToken === this.currentAuthToken) {
+        console.info('[nexion-ws] reconnect request joined existing authentication', { attempt: this.connectionAttempt });
+        return this.connectionPromise;
+      }
+    }
     const shouldReconnect = Boolean(this.currentUserId || this.ws || this.connectionPromise);
     const messageHandler = this.messageHandler;
     this.disconnect();
@@ -593,6 +629,7 @@ class WebSocketService extends EventEmitter {
     if (!shouldReconnect || !this.currentUserId) return Promise.resolve(null);
     this.manualClose = false;
     this.reconnectAttempts = 0;
+    console.info('[nexion-ws] reconnecting with latest available token', { attempt: this.connectionAttempt + 1 });
     return this.connect(this.currentUserId, messageHandler);
   }
 

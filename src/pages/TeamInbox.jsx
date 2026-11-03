@@ -1589,7 +1589,6 @@ const TeamInbox = () => {
   useEffect(() => {
     const activeId = String(getConversationIdValue(selectedConversation) || '').trim();
     if (!activeId) return;
-    if (messagesLoading || messagesOlderLoading) return;
     if (messageLoadPromiseMapRef.current?.has(activeId)) return;
     if (threadAutoLoadAttemptRef.current === activeId) return;
 
@@ -1614,8 +1613,6 @@ const TeamInbox = () => {
     return () => window.clearTimeout(timer);
   }, [
     loadMessagesStable,
-    messagesLoading,
-    messagesOlderLoading,
     activeConversationId
   ]);
 

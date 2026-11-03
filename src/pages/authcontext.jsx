@@ -33,6 +33,7 @@ export const AuthProvider = ({ children }) => {
     localStorage.setItem("authToken", token);
     localStorage.setItem("token", token); // Legacy key used in some modules
     localStorage.setItem("user", JSON.stringify(nextUser));
+    console.info("[nexion-ws] session token updated");
     void reconnectWebSocketWithLatestToken(authenticatedUserId).catch((error) => {
       console.warn("WebSocket reconnect after session update failed:", error?.message || error);
     });
