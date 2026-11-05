@@ -2369,12 +2369,17 @@ export const whatsappService = {
 
   },
 
-  async deleteTemplateFromMeta(templateName) {
+  async deleteTemplateFromMeta(templateName, metaTemplateId) {
     try {
       const encodedName = encodeURIComponent(String(templateName || '').trim());
+      const hsmId = String(metaTemplateId || '').trim();
+      if (!hsmId) {
+        return { success: false, error: 'Meta template ID is required to delete one language version.' };
+      }
       const response = await axios.delete(`${API_BASE_URL}/api/templates/meta/${encodedName}`, {
         headers: getAuthHeaders(false),
-        timeout: WHATSAPP_DEFAULT_TIMEOUT_MS
+        timeout: WHATSAPP_DEFAULT_TIMEOUT_MS,
+        params: { hsm_id: hsmId }
       });
       return response.data;
     } catch (error) {
@@ -2385,7 +2390,8 @@ export const whatsappService = {
           error?.response?.data?.error ||
           error?.response?.data?.message ||
           error?.message ||
-          "Failed to delete template"
+          "Failed to delete template",
+        meta: error?.response?.data?.meta || null
       };
     }
   }

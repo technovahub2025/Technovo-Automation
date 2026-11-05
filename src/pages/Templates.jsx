@@ -226,18 +226,22 @@ const Templates = () => {
     if (!confirmed) return;
 
     setDeletingTemplateName(templateName);
+    showToast(`Deleting template "${templateName}"${localOnly ? '' : ' from Meta'}…`, 'info');
     try {
       // Local records must be deleted through the ID endpoint. The backend uses
       // whatsappTemplateId to decide whether this is local-only or Meta + local.
       const result = template?._id
         ? await whatsappService.deleteTemplate(template._id)
-        : await whatsappService.deleteTemplateFromMeta(templateName);
+        : await whatsappService.deleteTemplateFromMeta(
+          templateName,
+          template?.whatsappTemplateId || template?.metaTemplateId || template?.id
+        );
       if (!result?.success) {
         showToast(result?.error || 'Failed to delete template', 'error');
         return;
       }
       await loadTemplates();
-      showToast(`Deleted template "${templateName}".`, 'success');
+      showToast(`Deleted template "${templateName}"${template?.language ? ` (${template.language})` : ''}.`, 'success');
     } catch (err) {
       showToast(extractErrorMessage(err, 'Failed to delete template'), 'error');
     } finally {
