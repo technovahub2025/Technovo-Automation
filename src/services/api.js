@@ -418,6 +418,10 @@ apiService.getAdminUsers = (config = {}) =>
   });
 apiService.getCustomerAgentCustomers = () =>
   apiService.get(`${ADMIN_API_BASE_URL}/api/super-admin/customer-agent/customers`);
+apiService.listPasswordResetAccounts = (params = {}) =>
+  apiService.get(`${ADMIN_API_BASE_URL}/api/super-admin/password-reset/accounts`, { params });
+apiService.resetAccountPassword = (userId, payload) =>
+  apiService.put(`${ADMIN_API_BASE_URL}/api/super-admin/password-reset/accounts/${encodeURIComponent(userId)}`, payload);
 apiService.getCustomerAgentCustomer = (customerId) =>
   apiService.get(`${ADMIN_API_BASE_URL}/api/super-admin/customer-agent/customers/${encodeURIComponent(customerId)}`);
 apiService.getCustomerAgentDetails = (customerId, agentId) =>

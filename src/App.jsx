@@ -60,6 +60,7 @@ const PaymentsDetailsPage = lazy(() => import("./pages/superadmin/PaymentsDetail
 const ConsentLogsPage = lazy(() => import("./pages/superadmin/ConsentLogsPage"));
 const CustomerTargetingPage = lazy(() => import("./pages/superadmin/CustomerTargetingPage"));
 const CustomerAgentHandlingPage = lazy(() => import("./pages/superadmin/CustomerAgentHandlingPage"));
+const PasswordResetManagementPage = lazy(() => import("./pages/superadmin/PasswordResetManagementPage"));
 const ChangeTemporaryPasswordPage = lazy(() => import("./pages/ChangeTemporaryPasswordPage"));
 
 const renderLazyRoute = (element, label = "Loading page...") => (
@@ -279,6 +280,14 @@ function App() {
             element={
               <ProtectedRoute requiredRole="superadmin">
                 {renderLazyRoute(<AdminSetupPage />, "Loading admin setup...")}
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="admin/password-reset-management"
+            element={
+              <ProtectedRoute requiredRole="superadmin">
+                {renderLazyRoute(<PasswordResetManagementPage />, "Loading password management...")}
               </ProtectedRoute>
             }
           />

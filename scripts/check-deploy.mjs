@@ -25,6 +25,58 @@ const readLocalBuild = async () => {
   return readFile(url, "utf8");
 };
 
+const checkAssetTree = async (html, pageUrl) => {
+  const queue = [...toAssetSet(html)].map((asset) => new URL(asset, pageUrl));
+  const seen = new Set();
+  const failures = [];
+  while (queue.length && seen.size < 250) {
+    const batch = queue.splice(0, 8).filter((url) => url.origin === new URL(pageUrl).origin && !seen.has(url.href));
+    if (!batch.length) continue;
+    batch.forEach((url) => seen.add(url.href));
+    const results = await Promise.all(batch.map(async (url) => {
+      const extension = url.pathname.split('.').pop().toLowerCase();
+      try {
+        const response = await axios.get(url.href, {
+          responseType: extension === 'js' || extension === 'mjs' ? 'text' : 'arraybuffer',
+          headers: { 'cache-control': 'no-cache' },
+          validateStatus: () => true
+        });
+        const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
+        const isJavaScript = ['js', 'mjs'].includes(extension);
+        const expectedMime = isJavaScript
+          ? /(?:application|text)\/(?:javascript|ecmascript)/.test(contentType)
+          : extension !== 'css' || contentType.includes('text/css');
+        const bodyText = typeof response.data === 'string'
+          ? response.data
+          : Buffer.from(response.data || []).subarray(0, 200).toString('utf8');
+        const isHtmlBody = /^\s*(?:<!doctype\s+html|<html)/i.test(bodyText);
+        const ok = response.status >= 200 && response.status < 300 && expectedMime && !isHtmlBody;
+        if (!ok) {
+          failures.push({
+            asset: url.pathname,
+            status: response.status,
+            contentType: contentType || '(missing)',
+            returnedHtml: isHtmlBody
+          });
+        }
+        return isJavaScript && ok ? { url, body: response.data } : null;
+      } catch (error) {
+        failures.push({ asset: url.pathname, error: error?.message || 'request failed' });
+        return null;
+      }
+    }));
+    results.filter(Boolean).forEach(({ url, body }) => {
+      const importPattern = /(?:import\s*\(\s*|\bfrom\s*)["']([^"']+\.(?:m?js)(?:\?[^"']*)?)["']/g;
+      let match;
+      while ((match = importPattern.exec(body))) {
+        const childUrl = new URL(match[1], url);
+        if (childUrl.origin === new URL(pageUrl).origin && !seen.has(childUrl.href)) queue.push(childUrl);
+      }
+    });
+  }
+  return { checkedCount: seen.size, failures };
+};
+
 const fetchLiveHtml = async (url) => {
   const response = await axios.get(url, {
     headers: {
@@ -38,14 +90,16 @@ const fetchLiveHtml = async (url) => {
     throw new Error(`Request failed with ${response.status} ${response.statusText || ""}`.trim());
   }
 
-  return response.data;
+  const resolvedUrl = response.request?.res?.responseUrl || response.config?.url || url;
+  return { html: response.data, resolvedUrl };
 };
 
 const main = async () => {
-  const [localHtml, liveHtml] = await Promise.all([
+  const [localHtml, livePage] = await Promise.all([
     readLocalBuild(),
     fetchLiveHtml(targetUrl)
   ]);
+  const liveHtml = livePage.html;
 
   const localAssets = toAssetSet(localHtml);
   const liveAssets = toAssetSet(liveHtml);
@@ -55,14 +109,19 @@ const main = async () => {
   const missingAssets = [...localAssets].filter((asset) => !liveAssets.has(asset));
   const extraAssets = [...liveAssets].filter((asset) => !localAssets.has(asset));
   const titleMatches = localTitle === liveTitle;
+  const assetCheck = await checkAssetTree(liveHtml, livePage.resolvedUrl);
 
   console.log(`Target URL: ${targetUrl}`);
+  if (livePage.resolvedUrl !== targetUrl) console.log(`Resolved URL: ${livePage.resolvedUrl}`);
   console.log(`Local title: ${localTitle || "(none)"}`);
   console.log(`Live title: ${liveTitle || "(none)"}`);
   console.log(`Local assets: ${[...localAssets].join(", ") || "(none)"}`);
   console.log(`Live assets: ${[...liveAssets].join(", ") || "(none)"}`);
+  console.log(`Live JavaScript/CSS assets checked: ${assetCheck.checkedCount}`);
+  console.log(`Asset MIME/status failures: ${assetCheck.failures.length}`);
+  assetCheck.failures.forEach((failure) => console.error(`Invalid deployment asset: ${JSON.stringify(failure)}`));
 
-  if (!titleMatches || missingAssets.length || extraAssets.length) {
+  if (!titleMatches || missingAssets.length || extraAssets.length || assetCheck.failures.length) {
     console.error("Deployment mismatch detected.");
     if (!titleMatches) {
       console.error(`Title mismatch: expected "${localTitle}", got "${liveTitle}"`);

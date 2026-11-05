@@ -6,6 +6,7 @@ import {
   BadgeCheck,
   CreditCard,
   Fingerprint,
+  KeyRound,
   Settings2,
   Shield,
   ShieldCheck,
@@ -56,6 +57,18 @@ const ADMIN_CARDS = [
     accent: 'superadmin-dashboard-card--setup'
   },
   {
+    key: 'password-reset-management',
+    icon: KeyRound,
+    label: 'ACCOUNT SECURITY',
+    title: 'Password Reset Management',
+    description: 'View registered accounts and securely assign or reset their login passwords.',
+    path: '/admin/password-reset-management',
+    action: 'Manage Passwords',
+    meta: 'Super Admin only',
+    hint: 'Super Admin only',
+    accent: 'superadmin-dashboard-card--users'
+  },
+  {
     key: 'payments',
     icon: WalletCards,
     label: 'Billing control',
@@ -99,6 +112,20 @@ const ADMIN_CARDS = [
     description: 'View interests, behaviours, and locations used in customer campaigns.',
     path: '/admin/customer-targeting',
     action: 'Open Targeting',
+    meta: 'Super Admin only',
+    hint: 'Super Admin only',
+    accent: 'superadmin-dashboard-card--users'
+  },
+  {
+    key: 'google-ads',
+    icon: Target,
+    label: 'GOOGLE ADS',
+    title: 'Google Ads',
+    description: 'Manage Google Ads access, connected accounts, and customer advertising configuration.',
+    // The workspace dashboard embeds the configured Google Ads module and
+    // performs the existing Nexion auth-context handshake with it.
+    path: '/',
+    action: 'Open Google Ads',
     meta: 'Super Admin only',
     hint: 'Super Admin only',
     accent: 'superadmin-dashboard-card--users'

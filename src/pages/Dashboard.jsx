@@ -100,7 +100,7 @@ const Dashboard = () => {
     };
 
     const handleMessage = async (event) => {
-      if (event.origin !== landingOrigin) return;
+      if (event.origin !== landingOrigin || event.source !== iframeRef.current?.contentWindow) return;
       const data = event?.data || {};
 
       if (data.type === "nexion-ready") {
