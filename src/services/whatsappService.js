@@ -24,6 +24,10 @@ const shouldLogTeamInboxPerformance = () => {
   }
 };
 const WHATSAPP_DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_WHATSAPP_REQUEST_TIMEOUT_MS || 12000);
+const WHATSAPP_TEMPLATE_SYNC_TIMEOUT_MS = Math.max(
+  WHATSAPP_DEFAULT_TIMEOUT_MS,
+  Number(import.meta.env.VITE_WHATSAPP_TEMPLATE_SYNC_TIMEOUT_MS || 120000),
+);
 const LEAD_SCORING_DEFAULTS = {
   isEnabled: true,
   readScore: 2,
@@ -2031,7 +2035,7 @@ export const whatsappService = {
         {},
         {
           headers: getAuthHeaders(),
-          timeout: WHATSAPP_DEFAULT_TIMEOUT_MS
+          timeout: WHATSAPP_TEMPLATE_SYNC_TIMEOUT_MS
         }
       );
       return response.data;

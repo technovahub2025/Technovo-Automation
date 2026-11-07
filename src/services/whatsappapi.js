@@ -21,6 +21,12 @@ const DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_API_TIMEOUT_MS || 30000);
 const LONG_TIMEOUT_MS = Number(
   import.meta.env.VITE_API_LONG_TIMEOUT_MS || 300000,
 );
+// Sync can include Meta pagination plus database reconciliation. Keep it above
+// the short timeout sometimes configured for ordinary API requests.
+const TEMPLATE_SYNC_TIMEOUT_MS = Math.max(
+  LONG_TIMEOUT_MS,
+  Number(import.meta.env.VITE_TEMPLATE_SYNC_TIMEOUT_MS || 120000),
+);
 
 const getWorkspaceScope = (method = "get", url = "") => {
   const user = getStoredWorkspaceUser();
@@ -686,7 +692,7 @@ export const apiClient = {
    * Sync templates from Meta WhatsApp Business API
    */
   syncTemplates: () =>
-    api.post("/templates/meta/sync", undefined, { timeout: LONG_TIMEOUT_MS }),
+    api.post("/templates/meta/sync", undefined, { timeout: TEMPLATE_SYNC_TIMEOUT_MS }),
 
   /**
    * Get single template by ID
