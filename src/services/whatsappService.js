@@ -24,6 +24,7 @@ const shouldLogTeamInboxPerformance = () => {
   }
 };
 const WHATSAPP_DEFAULT_TIMEOUT_MS = Number(import.meta.env.VITE_WHATSAPP_REQUEST_TIMEOUT_MS || 12000);
+const TEMPLATE_CATALOG_TIMEOUT_MS = Math.max(WHATSAPP_DEFAULT_TIMEOUT_MS, 45000);
 const WHATSAPP_TEMPLATE_SYNC_TIMEOUT_MS = Math.max(
   WHATSAPP_DEFAULT_TIMEOUT_MS,
   Number(import.meta.env.VITE_WHATSAPP_TEMPLATE_SYNC_TIMEOUT_MS || 120000),
@@ -153,11 +154,12 @@ const logAxiosServiceError = (label, error, fallbackMessage) => {
 
 const getTemplateMergeKey = (template = {}) => {
   const metaId = String(template?.whatsappTemplateId || template?.metaTemplateId || template?.id || '').trim();
-  if (metaId) return `id:${metaId}`;
-  const localId = String(template?._id || '').trim();
-  if (localId) return `local:${localId}`;
-  const name = String(template?.name || '').trim().toLowerCase();
+  const wabaId = String(template?.businessAccountId || template?.wabaId || '').trim();
   const language = String(template?.language || '').trim().toLowerCase();
+  if (metaId) return `id:${wabaId}:${metaId}:${language}`;
+  const localId = String(template?._id || '').trim();
+  if (localId) return `local:${wabaId}:${localId}:${language}`;
+  const name = String(template?.name || '').trim().toLowerCase();
   return name ? `name:${name}:${language}` : '';
 };
 
@@ -1969,19 +1971,51 @@ export const whatsappService = {
 
   // Get all templates from Meta and local DB, merged so saved drafts stay visible.
   async getTemplates() {
+    let metaWabaId = '';
     const fetchMetaTemplates = async () => {
-      const response = await axios.get(`${API_BASE_URL}/api/templates/meta`, {
-        headers: getAuthHeaders(false),
-        timeout: WHATSAPP_DEFAULT_TIMEOUT_MS
-      });
+      let response;
+      try {
+        response = await axios.get(`${API_BASE_URL}/api/templates/meta`, {
+          headers: getAuthHeaders(false),
+          timeout: TEMPLATE_CATALOG_TIMEOUT_MS
+        });
+      } catch (error) {
+        console.warn('[WHATSAPP_TEMPLATE_LIST_RESPONSE]', JSON.stringify({
+          source: 'meta', outcome: 'failure',
+          status: error?.response?.status || null,
+          error: String(error?.response?.data?.error || error?.message || 'Meta template list failed')
+        }));
+        throw error;
+      }
       const data = response.data;
-      return Array.isArray(data) ? data : data.data || [];
+      const templates = Array.isArray(data) ? data : data.data || [];
+      metaWabaId = String(data?.wabaId || '').trim();
+      console.info('[WHATSAPP_TEMPLATE_LIST_RESPONSE]', JSON.stringify({
+        source: data?.source || 'meta',
+        catalogVersion: data?.catalogVersion || data?.fetchedAt || null,
+        wabaId: data?.wabaId || null,
+        templateCount: templates.length,
+        templates: templates.map(template => ({
+          name: String(template?.name || ''),
+          metaTemplateId: String(template?.id || template?.whatsappTemplateId || ''),
+          language: String(template?.language || ''),
+          status: String(template?.status || ''),
+          bodyVariableCount: (String(
+            template?.components?.find(component => component?.type === 'BODY')?.text ||
+            template?.content?.body || ''
+          ).match(/\{\{\d+\}\}/g) || []).length
+        }))
+      }));
+      return templates.map(template => ({
+        ...template,
+        businessAccountId: template?.businessAccountId || template?.wabaId || data?.wabaId || ''
+      }));
     };
 
     const fetchLocalTemplates = async () => {
       const response = await axios.get(`${API_BASE_URL}/api/templates`, {
         headers: getAuthHeaders(false),
-        timeout: WHATSAPP_DEFAULT_TIMEOUT_MS
+        timeout: TEMPLATE_CATALOG_TIMEOUT_MS
       });
       const data = response.data;
       return Array.isArray(data) ? data : data.data || [];
@@ -1994,7 +2028,22 @@ export const whatsappService = {
       ]);
 
       const metaTemplates = metaResult.status === 'fulfilled' ? metaResult.value : [];
-      const localTemplates = localResult.status === 'fulfilled' ? localResult.value : [];
+      const localTemplates = localResult.status === 'fulfilled'
+        ? localResult.value.filter((template) => {
+            const hasMetaIdentity = Boolean(String(
+              template?.whatsappTemplateId || template?.metaTemplateId || template?.id || ''
+            ).trim());
+            if (!hasMetaIdentity) return true;
+            const wabaId = String(template?.businessAccountId || '').trim();
+            if (!metaWabaId || !wabaId) {
+              return !metaTemplates.some((metaTemplate) =>
+                String(metaTemplate?.name || '').toLowerCase() === String(template?.name || '').toLowerCase() &&
+                String(metaTemplate?.language || '').toLowerCase() === String(template?.language || '').toLowerCase()
+              );
+            }
+            return wabaId === metaWabaId;
+          })
+        : [];
 
       if (metaTemplates.length || localTemplates.length) {
         return mergeTemplateLists(metaTemplates, localTemplates);
@@ -2008,7 +2057,10 @@ export const whatsappService = {
             : null;
       throw failure || new Error('Failed to fetch templates');
     } catch (error) {
-      console.error('Failed to fetch templates from Meta/local DB:', error);
+      console.error('[WHATSAPP_TEMPLATE_LIST_RESPONSE]', JSON.stringify({
+        source: 'unavailable', status: error?.response?.status || null,
+        error: String(error?.response?.data?.error || error?.message || 'Template list failed')
+      }));
       try {
         return await fetchLocalTemplates();
       } catch (localError) {
@@ -2038,9 +2090,34 @@ export const whatsappService = {
           timeout: WHATSAPP_TEMPLATE_SYNC_TIMEOUT_MS
         }
       );
-      return response.data;
+      const result = response.data || {};
+      console.info('[WHATSAPP_TEMPLATE_SYNC_RESPONSE]', JSON.stringify({
+        success: Boolean(result.success),
+        syncVersion: result.syncVersion || null,
+        tenantId: result.tenantId || null,
+        clientId: result.clientId || null,
+        wabaId: result.wabaId || null,
+        phoneNumberId: result.phoneNumberId || null,
+        credentialOwnerUserId: result.credentialOwnerUserId || null,
+        credentialSource: result.credentialSource || null,
+        syncedCount: Number(result.count || result.templates?.length || 0),
+        failedCount: Array.isArray(result.failedTemplates) ? result.failedTemplates.length : 0,
+        templates: (Array.isArray(result.templates) ? result.templates : []).map(template => ({
+          name: String(template?.name || ''),
+          metaTemplateId: String(template?.whatsappTemplateId || ''),
+          language: String(template?.language || ''),
+          status: String(template?.status || ''),
+          bodyVariableCount: (String(template?.content?.body || '').match(/\{\{\d+\}\}/g) || []).length,
+          syncedAt: template?.syncedAt || null
+        }))
+      }));
+      return result;
     } catch (error) {
-      console.error('Failed to sync templates from Meta:', error);
+      console.error('[WHATSAPP_TEMPLATE_SYNC_RESPONSE]', JSON.stringify({
+        success: false,
+        status: error?.response?.status || null,
+        error: String(error?.response?.data?.error || error?.message || 'Template sync failed')
+      }));
       const backendMessage =
         error?.response?.data?.error ||
         error?.response?.data?.message ||
