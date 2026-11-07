@@ -258,14 +258,11 @@ const TemplateManagement = () => {
   const categories = [...new Set(templates.map(t => t.category).filter(Boolean))];
 
   const renderTemplatePreview = (template) => {
-    let preview = prepareMetaTemplateText(template.content?.body || '').text;
-    
-    // Replace variables with examples
-    template.variables?.forEach((variable, index) => {
-      const placeholder = `{{${index + 1}}}`;
-      const replacement = variable.example || `[${variable.name || 'Variable ' + (index + 1)}]`;
-      preview = preview.replace(new RegExp(placeholder.replace(/[{}]/g, '\\$&'), 'g'), replacement);
-    });
+    const preview = String(
+      template.content?.body ||
+      template.components?.find((component) => String(component?.type || '').toUpperCase() === 'BODY')?.text ||
+      ''
+    );
 
     return String(preview)
       .split('\n')

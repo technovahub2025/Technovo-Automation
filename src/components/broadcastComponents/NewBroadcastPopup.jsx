@@ -14,6 +14,7 @@ import {
   UserPlus,
 } from "lucide-react";
 import MessagePreview from "./MessagePreview";
+import { getWhatsAppTemplateSelectionValue } from "../../utils/whatsappTemplateSelection";
 import { downloadCsv } from "../../utils/csvExport";
 import "./Modal.css";
 
@@ -23,6 +24,7 @@ const NewBroadcastPopup = ({
   onBroadcastNameChange,
   messageType,
   templateName,
+  language = "en_US",
   onTemplateNameChange,
   officialTemplates,
   uploadedFile,
@@ -90,7 +92,7 @@ const NewBroadcastPopup = ({
   const addRecipientMenuRef = React.useRef(null);
   const selectedTemplate =
     (officialTemplates || []).find(
-      (template) => template.name === templateName,
+      (template) => template.name === templateName && String(template.language || '') === String(language || ''),
     ) || null;
   const selectedTemplateHeader =
     selectedTemplate?.content?.header ||
@@ -384,14 +386,14 @@ const NewBroadcastPopup = ({
             <div className="form-group">
               <label>Template *</label>
               <select
-                value={templateName}
+                value={selectedTemplate ? getWhatsAppTemplateSelectionValue(selectedTemplate) : ""}
                 onChange={onTemplateNameChange}
                 className="form-input"
               >
                 <option value="">Select a template</option>
                 {officialTemplates.map((template) => (
-                  <option key={template.name} value={template.name}>
-                    {template.name} ({template.category}) - {template.status}
+                  <option key={`${template.name}:${template.language || ''}`} value={getWhatsAppTemplateSelectionValue(template)}>
+                    {template.name} ({template.language || template.category}) - {template.status}
                   </option>
                 ))}
               </select>

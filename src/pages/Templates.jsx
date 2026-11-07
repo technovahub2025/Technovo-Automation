@@ -71,6 +71,7 @@ const Templates = () => {
   const [error, setError] = useState(null);
   const [toast, setToast] = useState(null);
   const initialLoadKeyRef = React.useRef('');
+  const templateLoadRequestSeqRef = React.useRef(0);
   const currentUserId = resolveCacheUserId();
 
   useEffect(() => {
@@ -104,6 +105,7 @@ const Templates = () => {
   }, [currentUserId]);
 
   const loadTemplates = useCallback(async ({ silent = false } = {}) => {
+    const requestSeq = ++templateLoadRequestSeqRef.current;
     const releaseLoadingGuard = startLoadingTimeoutGuard(
       () => {
         if (!silent) setIsLoading(false);
@@ -115,6 +117,8 @@ const Templates = () => {
 
     try {
       const response = await whatsappService.getTemplates();
+
+      if (requestSeq !== templateLoadRequestSeqRef.current) return;
 
       let allTemplates = [];
       if (Array.isArray(response)) {
@@ -169,17 +173,36 @@ const Templates = () => {
   }, [currentUserId, loadTemplates]);
 
   const syncTemplates = async () => {
+    const syncSeq = ++templateLoadRequestSeqRef.current;
     setIsSyncing(true);
     setError(null);
 
     try {
       const result = await whatsappService.syncTemplates();
+      if (syncSeq === templateLoadRequestSeqRef.current && Array.isArray(result?.templates)) {
+        // The sync response contains rows verified after persistence. Show
+        // those immediately instead of retaining cache after a slow Meta read.
+        const getTemplateIdentity = (template) => {
+          const wabaId = String(template?.businessAccountId || result.wabaId || '').trim().toLowerCase();
+          const name = String(template?.name || '').trim().toLowerCase();
+          const language = String(template?.language || '').trim().toLowerCase();
+          return `${wabaId}:${name}:${language}`;
+        };
+        const syncedKeys = new Set(result.templates.map(getTemplateIdentity));
+        const keptTemplates = officialTemplates.filter((template) => {
+          if (String(template?.type || '').toLowerCase() === 'custom') return true;
+          if (!String(template?.businessAccountId || '').trim()) return true;
+          return !syncedKeys.has(getTemplateIdentity(template));
+        });
+        const nextTemplates = [...result.templates, ...keptTemplates];
+        setOfficialTemplates(nextTemplates);
+        persistTemplatesCache(nextTemplates);
+      }
       if (result?.success) {
-        await loadTemplates();
         showToast('Templates synced successfully.', 'success');
       } else {
         const msg = result?.error || result?.message || 'Failed to sync templates';
-        setError(msg);
+        if (!Array.isArray(result?.templates)) setError(msg);
         showToast(msg, 'error');
       }
     } catch (err) {
@@ -374,7 +397,7 @@ const Templates = () => {
       {!isLoading && !error && (
         <div className="templates-grid">
           {filteredTemplates.map((template) => (
-            <div key={template.id || template._id || template.name} className="template-card official">
+            <div key={`${template.whatsappTemplateId || template.id || template._id || template.name}:${template.language || ''}`} className="template-card official">
               <div className="card-header">
                 <span className="template-name">{template.name}</span>
                 <span className={`status-badge ${template.status?.toLowerCase()}`}>

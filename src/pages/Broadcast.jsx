@@ -29,6 +29,7 @@ import ScheduleForm from "../components/broadcastComponents/ScheduleForm";
 import DeleteModal from "../components/broadcastComponents/DeleteModal";
 import BroadcastTypeChoice from "../components/broadcastComponents/BroadcastTypeChoice";
 import NewBroadcastPopup from "../components/broadcastComponents/NewBroadcastPopup";
+import { parseWhatsAppTemplateSelectionValue } from "../utils/whatsappTemplateSelection";
 
 import AllCampaignsPopup from "../components/broadcastComponents/AllCampaignsPopup";
 
@@ -937,12 +938,14 @@ const Broadcast = ({
   };
 
   const handleTemplateNameChange = (e) => {
-    const selectedTemplateName = e.target.value;
+    const selection = parseWhatsAppTemplateSelectionValue(e.target.value);
+    const selectedTemplateName = selection.name;
 
     setTemplateName(selectedTemplateName);
 
     const selectedTemplate = officialTemplates.find(
-      (t) => t.name === selectedTemplateName,
+      (t) => t.name === selectedTemplateName &&
+        (!selection.language || String(t.language || '') === selection.language),
     );
 
     if (selectedTemplate) {
@@ -2651,12 +2654,12 @@ const Broadcast = ({
   const selectedTemplateCategory = React.useMemo(() => {
     if (messageType !== "template") return "";
     const selectedTemplate = officialTemplates.find(
-      (template) => template.name === templateName,
+      (template) => template.name === templateName && String(template.language || '') === String(language || ''),
     );
     return String(selectedTemplate?.category || "")
       .trim()
       .toLowerCase();
-  }, [messageType, officialTemplates, templateName]);
+  }, [messageType, officialTemplates, templateName, language]);
 
   const openAudienceValidationModal = (validationResult) => {
     setPendingAudienceValidation(validationResult);
@@ -2754,7 +2757,7 @@ const Broadcast = ({
         return;
       }
 
-      selectedTemplate = officialTemplates.find((t) => t.name === templateName);
+      selectedTemplate = officialTemplates.find((t) => t.name === templateName && String(t.language || '') === String(language || ''));
       const selectedTemplateRequiresImageHeader =
         templateRequiresImageHeader(selectedTemplate);
 
@@ -2988,7 +2991,7 @@ const Broadcast = ({
         return;
       }
 
-      selectedTemplate = officialTemplates.find((t) => t.name === templateName);
+      selectedTemplate = officialTemplates.find((t) => t.name === templateName && String(t.language || '') === String(language || ''));
       const selectedTemplateRequiresImageHeader =
         templateRequiresImageHeader(selectedTemplate);
 
@@ -3357,7 +3360,7 @@ const Broadcast = ({
       : [];
     const selectedTemplate =
       messageType === "template"
-        ? officialTemplates.find((t) => t.name === templateName) || null
+        ? officialTemplates.find((t) => t.name === templateName && String(t.language || '') === String(language || '')) || null
         : null;
     const mode = scheduledTime ? "create" : "send";
     const payload = buildBroadcastPayloadFromValidation({
@@ -3469,7 +3472,7 @@ const Broadcast = ({
         }
 
         const selectedTemplate =
-          officialTemplates.find((t) => t.name === templateName) || null;
+          officialTemplates.find((t) => t.name === templateName && String(t.language || '') === String(language || '')) || null;
         const firstRecipientVariables = Array.isArray(
           recipients?.[0]?.variables,
         )
@@ -3535,6 +3538,7 @@ const Broadcast = ({
           broadcastName={broadcastName}
           onBroadcastNameChange={(e) => setBroadcastName(e.target.value)}
           templateName={templateName}
+          language={language}
           onTemplateNameChange={handleTemplateNameChange}
           templateFilter={templateFilter}
           onTemplateFilterChange={(value) => setTemplateFilter(value)}
@@ -3853,6 +3857,7 @@ const Broadcast = ({
               broadcastName={broadcastName}
               onBroadcastNameChange={(e) => setBroadcastName(e.target.value)}
               templateName={templateName}
+              language={language}
               onTemplateNameChange={handleTemplateNameChange}
               templateFilter={templateFilter}
               onTemplateFilterChange={(value) => setTemplateFilter(value)}
@@ -3941,6 +3946,7 @@ const Broadcast = ({
             onBroadcastNameChange={(e) => setBroadcastName(e.target.value)}
             messageType={messageType}
             templateName={templateName}
+            language={language}
             onTemplateNameChange={handleTemplateNameChange}
             officialTemplates={officialTemplates}
             uploadedFile={uploadedFile}

@@ -10,6 +10,7 @@ import {
   buildWorkspaceQueryScope,
   getStoredWorkspaceUser
 } from "../utils/agentAccess";
+import { normalizeMetaWhatsAppTemplate } from "../utils/whatsappTemplateSelection";
 
 const API_BASE_URL = resolveApiBaseUrl();
 registerUnauthorizedAxiosInterceptor(axios);
@@ -2007,7 +2008,7 @@ export const whatsappService = {
         }))
       }));
       return templates.map(template => ({
-        ...template,
+        ...normalizeMetaWhatsAppTemplate(template),
         businessAccountId: template?.businessAccountId || template?.wabaId || data?.wabaId || ''
       }));
     };
@@ -2035,13 +2036,13 @@ export const whatsappService = {
             ).trim());
             if (!hasMetaIdentity) return true;
             const wabaId = String(template?.businessAccountId || '').trim();
-            if (!metaWabaId || !wabaId) {
-              return !metaTemplates.some((metaTemplate) =>
-                String(metaTemplate?.name || '').toLowerCase() === String(template?.name || '').toLowerCase() &&
-                String(metaTemplate?.language || '').toLowerCase() === String(template?.language || '').toLowerCase()
-              );
-            }
-            return wabaId === metaWabaId;
+            if (metaWabaId && wabaId && wabaId !== metaWabaId) return false;
+            const hasCurrentMetaDefinition = metaTemplates.some((metaTemplate) =>
+              String(metaTemplate?.name || '').trim().toLowerCase() === String(template?.name || '').trim().toLowerCase() &&
+              String(metaTemplate?.language || '').trim().toLowerCase() === String(template?.language || '').trim().toLowerCase()
+            );
+            if (hasCurrentMetaDefinition) return false;
+            return !metaWabaId || !wabaId || wabaId === metaWabaId;
           })
         : [];
 

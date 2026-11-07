@@ -512,8 +512,16 @@ export const useBroadcast = () => {
   const syncTemplates = useCallback(async () => {
     try {
       const response = await apiClient.syncTemplates();
-      const responseData = response?.data?.data ?? response?.data ?? [];
-      const templates = Array.isArray(responseData) ? responseData : [];
+      const responseData = response?.data?.data ?? response?.data ?? {};
+      const templates = Array.isArray(responseData)
+        ? responseData
+        : Array.isArray(responseData?.templates)
+          ? responseData.templates
+          : [];
+
+      if (responseData?.success === false) {
+        throw new Error(responseData?.error || responseData?.message || "Template sync failed");
+      }
 
       setOfficialTemplates(templates);
       persistBroadcastPageCache({ officialTemplates: templates });

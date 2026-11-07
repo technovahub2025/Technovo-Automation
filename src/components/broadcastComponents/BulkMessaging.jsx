@@ -2,6 +2,7 @@
 import { Send, FileText, Download, X, RefreshCw } from "lucide-react";
 import Papa from "papaparse";
 import { apiClient } from "../services/whatsappapi";
+import { getWhatsAppTemplateSelectionValue, parseWhatsAppTemplateSelectionValue } from "../utils/whatsappTemplateSelection";
 import webSocketService from "../../services/websocketService";
 import CampaignResults from "./CampaignResults";
 import ContactAudiencePickerModal from "./ContactAudiencePickerModal";
@@ -393,6 +394,9 @@ const BulkMessaging = () => {
 
   const isCsvImportBusy = ["uploading", "queued", "processing"].includes(
     String(csvImportStatus || "").trim(),
+  );
+  const selectedTemplate = templates.find((template) =>
+    template.name === templateName && String(template.language || '') === String(language || ''),
   );
 
   const startCsvImportUpload = async (file, sessionId) => {
@@ -1108,8 +1112,12 @@ const BulkMessaging = () => {
             <div className="form-group">
               <label className="form-label">Select Template</label>
               <select
-                value={templateName}
-                onChange={(e) => setTemplateName(e.target.value)}
+                value={selectedTemplate ? getWhatsAppTemplateSelectionValue(selectedTemplate) : ""}
+                onChange={(e) => {
+                  const selected = parseWhatsAppTemplateSelectionValue(e.target.value);
+                  setTemplateName(selected.name);
+                  if (selected.language) setLanguage(selected.language);
+                }}
                 className="form-select"
                 required
               >
@@ -1118,10 +1126,10 @@ const BulkMessaging = () => {
                   .filter((t) => t.status === "approved")
                   .map((template) => (
                     <option
-                      key={template._id || template.name}
-                      value={template.name}
+                      key={`${template.name}:${template.language || ''}:${template.whatsappTemplateId || template._id || ''}`}
+                      value={getWhatsAppTemplateSelectionValue(template)}
                     >
-                      {template.name}{" "}
+                      {template.name} ({template.language || 'en_US'}){" "}
                       {template.category && `(${template.category})`}
                     </option>
                   ))}

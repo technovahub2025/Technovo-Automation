@@ -15,6 +15,7 @@ import {
 import MessagePreview from "./MessagePreview";
 import "./ScheduleForm.css";
 import { downloadCsv } from "../../utils/csvExport";
+import { getWhatsAppTemplateSelectionValue } from "../../utils/whatsappTemplateSelection";
 
 const BROADCAST_SCHEDULE_DRAFT_KEY = "broadcast:schedule-form:draft:v1";
 const DEFAULT_COUNTRY_CODE = String(
@@ -50,6 +51,7 @@ const ScheduleForm = ({
   broadcastName,
   onBroadcastNameChange,
   templateName,
+  language = "en_US",
   onTemplateNameChange,
   templateFilter,
   onTemplateFilterChange,
@@ -480,8 +482,10 @@ const ScheduleForm = ({
 
   const selectedTemplate = React.useMemo(
     () =>
-      (officialTemplates || []).find((t) => t.name === templateName) || null,
-    [officialTemplates, templateName],
+      (officialTemplates || []).find((t) =>
+        t.name === templateName && String(t.language || '') === String(language || ''),
+      ) || null,
+    [officialTemplates, templateName, language],
   );
   const selectedTemplateHeader =
     selectedTemplate?.content?.header ||
@@ -1291,10 +1295,13 @@ const ScheduleForm = ({
                 </div>
 
                 <div className="template-selector-with-sync">
-                  <select value={templateName} onChange={onTemplateNameChange}>
+                  <select
+                    value={selectedTemplate ? getWhatsAppTemplateSelectionValue(selectedTemplate) : ""}
+                    onChange={onTemplateNameChange}
+                  >
                     <option value="">Select template...</option>
                     {filteredTemplates.map((template) => (
-                      <option key={template.name} value={template.name}>
+                      <option key={`${template.name}:${template.language || ''}`} value={getWhatsAppTemplateSelectionValue(template)}>
                         {template.name} ({template.language}) -{" "}
                         {template.status}
                       </option>
