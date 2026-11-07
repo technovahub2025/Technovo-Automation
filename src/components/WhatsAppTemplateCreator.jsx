@@ -2,6 +2,7 @@ import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Upload, X, Plus, Send, CheckCircle, Clock, ChevronDown } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { whatsappService } from '../services/whatsappService';
+import { extractTemplateVariableNumbers, insertNextTemplateVariable, prepareMetaTemplateText } from '../utils/metaTemplateText';
 import whatsappLogo from '../assets/WhatsApp.svg.webp';
 import './WhatsAppTemplateCreator.css';
 
@@ -26,30 +27,6 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
   const buildFriendlySubmitErrorMessage = (actualError) => {
     const reason = getReadableErrorMessage(actualError, 'The template could not be submitted.');
     return `Template submission failed.\n\nReason: ${reason}\n\nThis may happen because of wrong input, a server issue, or a Meta WhatsApp approval/API issue. Kindly reach out to customer service if you need help.`;
-  };
-
-  const prepareMetaTemplateText = (value) => {
-    const normalized = String(value || '')
-      .replace(/\r\n/g, '\n')
-      .replace(/^\n+|\n+$/g, '');
-    if (!normalized) return { text: '', examples: [] };
-
-    const placeholderExamples = [];
-    let placeholderIndex = 1;
-    const hasExplicitPlaceholders = /\{\{\d+\}\}/.test(normalized);
-    if (hasExplicitPlaceholders) {
-      return { text: normalized, examples: [] };
-    }
-
-    const metaBodyPattern = /(?:https?:\/\/[^\s]+|www\.[^\s]+|\+?\d[\d\s().-]{7,}\d)/g;
-    const text = normalized.replace(metaBodyPattern, (match) => {
-      placeholderExamples.push(match.trim());
-      const placeholder = `{{${placeholderIndex}}}`;
-      placeholderIndex += 1;
-      return placeholder;
-    });
-
-    return { text, examples: placeholderExamples };
   };
 
   const getTemplateBodyText = (template = {}) => {
@@ -388,21 +365,8 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
     setSubmitStatus(null);
   }, [initialTemplate]);
 
-  const extractVariableNumbers = (text) => {
-    const matches = text.match(/\{\{(\d+)\}\}/g);
-    if (!matches) return [];
-    
-    const numbers = matches.map(match => {
-      const num = match.match(/\{\{(\d+)\}\}/)[1];
-      return parseInt(num);
-    });
-    
-    // Get unique numbers and sort them
-    return [...new Set(numbers)].sort((a, b) => a - b);
-  };
-
   const detectedVariables = useMemo(
-    () => extractVariableNumbers(templateData.content.body || ''),
+    () => extractTemplateVariableNumbers(templateData.content.body || ''),
     [templateData.content.body]
   );
 
@@ -439,10 +403,19 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
   };
 
   const insertNextVariable = () => {
-    const current = detectedVariables;
-    const nextNumber = current.length > 0 ? Math.max(...current) + 1 : 1;
-    ensureVariableExample(nextNumber);
-    insertVariable(`{{${nextNumber}}}`);
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    const insertion = insertNextTemplateVariable(
+      templateData.content.body || '',
+      textarea.selectionStart,
+      textarea.selectionEnd
+    );
+    ensureVariableExample(insertion.number);
+    handleContentChange('body', insertion.text);
+    setTimeout(() => {
+      textarea.focus();
+      textarea.setSelectionRange(insertion.cursor, insertion.cursor);
+    }, 0);
   };
 
   const applyInlineFormatting = (wrapper) => {
@@ -482,12 +455,7 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
     const prepared = prepareMetaTemplateText(rawText);
     const text = String(prepared.text || '').replace(/\{\{(\d+)\}\}/g, (_, number) => {
       const explicitValue = variableExamples[Number(number)];
-      const autoValue = prepared.examples[Number(number) - 1];
-      return explicitValue && String(explicitValue).trim()
-        ? String(explicitValue).trim()
-        : autoValue && String(autoValue).trim()
-          ? String(autoValue).trim()
-          : `{{${number}}}`;
+      return explicitValue && String(explicitValue).trim() ? String(explicitValue).trim() : `{{${number}}}`;
     });
     if (!text) return '';
 
@@ -668,7 +636,7 @@ const WhatsAppTemplateCreator = ({ initialTemplate = null }) => {
         };
         
         // Add examples if variables are present
-        const variableNumbers = extractVariableNumbers(sanitizedBody);
+        const variableNumbers = extractTemplateVariableNumbers(sanitizedBody);
         if (variableNumbers.length > 0) {
           // Use the actual variable examples from the state
           const exampleValues = variableNumbers.map((num, index) =>
